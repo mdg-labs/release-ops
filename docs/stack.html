@@ -62,6 +62,9 @@ pre code { background: none; border: none; padding: 0; color: var(--text); }
   cmd/worker/        # Go: HTTP API + Poll-Scheduler (ein Binary)
   internal/          # Go packages (api, poll, providers, store, crypto)
   migrations/        # SQL-Migrations für app.db (golang-migrate)
+  scripts/ci/        # create-draft-release.mjs, build-push helpers
+  .github/workflows/ # pr, dev, main, release + reusable ci / prepare-release / build-and-push
+  VERSION            # Semver — Release-Tag v{VERSION} auf main bump
   docs/              # Diese Spezifikation
   docker-compose.yml</code></pre>
 
@@ -75,6 +78,7 @@ pre code { background: none; border: none; padding: 0; color: var(--text); }
     <tr><td><code>golang-migrate</code></td><td>Versionierte Migrations wie im alten Drizzle-Modell — kein <code>push</code>, nur <code>up</code> beim Start.</td></tr>
     <tr><td><code>robfig/cron</code></td><td>Scheduler für Poll-Loop (Alternative: <code>time.Ticker</code> wenn Cron-Features nicht gebraucht).</td></tr>
     <tr><td><code>github.com/golang-jwt/jwt/v5</code></td><td>JWT-Validierung (BetterAuth JWKS) für API-Auth.</td></tr>
+    <tr><td><code>github.com/containrrr/shoutrrr</code></td><td>Notifications an Slack, ntfy, Discord, … via URL-Schema — keine eigenen Chat-Clients.</td></tr>
   </table>
 
   <h2>Frontend — Next.js + COSS</h2>
@@ -93,14 +97,14 @@ pre code { background: none; border: none; padding: 0; color: var(--text); }
   <table>
     <tr><th>Datei</th><th>Owner</th><th>Inhalt</th></tr>
     <tr><td><code>/data/auth.db</code></td><td>Next.js / BetterAuth</td><td>User, Session, Account, JWT/JWKS-Tabellen (BetterAuth-generiert)</td></tr>
-    <tr><td><code>/data/app.db</code></td><td>Go Worker</td><td>Repos, Integrations, Poll-Runs — siehe <a href="schema.html">Schema</a></td></tr>
+    <tr><td><code>/data/app.db</code></td><td>Go Worker</td><td>Repos, Integrations, Ticket-Projekte, Notifications, Poll-Runs — siehe <a href="schema.html">Schema</a></td></tr>
   </table>
   <p>Zwei Dateien vermeiden SQLite-Multi-Writer-Probleme. Beide liegen auf einem gemeinsamen Docker-Volume.</p>
 
   <h2>Secrets</h2>
   <table>
     <tr><th>Werkzeug</th><th>Warum</th></tr>
-    <tr><td><code>AES-256-GCM</code> (Go <code>crypto/aes</code>)</td><td>Integration-Credentials in <code>app.db</code> verschlüsselt speichern.</td></tr>
+    <tr><td><code>AES-256-GCM</code> (Go <code>crypto/aes</code>)</td><td>Integration-Credentials und Shoutrrr-URLs in <code>app.db</code> verschlüsselt speichern.</td></tr>
     <tr><td><code>BETTER_AUTH_SECRET</code></td><td>Session-Signing (Next.js Env).</td></tr>
     <tr><td><code>APP_ENCRYPTION_KEY</code></td><td>32-Byte Key (hex) für Credential-Verschlüsselung (Go Env).</td></tr>
   </table>
@@ -114,12 +118,21 @@ pre code { background: none; border: none; padding: 0; color: var(--text); }
     <tr><td>Web Lint</td><td><code>eslint</code> + <code>prettier</code></td></tr>
   </table>
 
+  <h2>CI/CD</h2>
+  <table>
+    <tr><th>Werkzeug</th><th>Warum</th></tr>
+    <tr><td>GitHub Actions</td><td>Branch-Entrypoints (<code>pr</code>, <code>dev</code>, <code>main</code>, <code>release</code>) + reusable <code>workflow_call</code> (slugbase/pipewatch-Pattern).</td></tr>
+    <tr><td>GHCR</td><td><code>dev</code>: <code>nightly</code> + short SHA · Release publish: <code>latest</code> + <code>v{VERSION}</code>.</td></tr>
+    <tr><td>Root <code>VERSION</code></td><td>Semver für Release-Tag und Draft-Release auf <code>main</code> (nur bei Bump).</td></tr>
+    <tr><td><code>docker/build-push-action</code></td><td>Multi-image Matrix <code>web</code> + <code>worker</code>.</td></tr>
+  </table>
+
   <h2>Deployment</h2>
   <table>
     <tr><th>Werkzeug</th><th>Warum</th></tr>
     <tr><td><code>Docker</code> multi-stage</td><td>Separate Images: <code>web</code>, <code>worker</code> — Coolify-kompatibel.</td></tr>
     <tr><td><code>docker-compose</code></td><td>Lokale Entwicklung + Referenz-Deployment.</td></tr>
-    <tr><td>GitHub Actions → GHCR</td><td>CI: test/lint beider Apps, Image-Push bei <code>main</code>.</td></tr>
+    <tr><td>GitHub Actions</td><td>CI: <code>go test</code>, lint, typecheck — siehe <a href="specs.html#ci">Spec §11</a>.</td></tr>
   </table>
 
   <h2>Bewusst nicht genutzt (MVP)</h2>
@@ -129,7 +142,7 @@ pre code { background: none; border: none; padding: 0; color: var(--text); }
     <li><strong>Kein Drizzle</strong> — Go-Stack nutzt sqlc + golang-migrate.</li>
     <li><strong>Kein Express/Fiber im Frontend</strong> — Next.js Server Routes reichen.</li>
     <li><strong>Kein OAuth/Social Login</strong> im MVP — nur Email/Password (BetterAuth).</li>
-    <li><strong>Kein Codeberg/Gitea</strong> — MVP: GitHub + GitLab Sources; Phasical + Jira + Linear Tickets.</li>
+    <li><strong>Kein Bitbucket / Azure DevOps</strong> — MVP: fünf Source-Kinds; Phasical + Jira + Linear Tickets.</li>
     <li><strong>Kein Redis/Postgres</strong> — SQLite reicht für Single-Instance Self-Host.</li>
   </ul>
 

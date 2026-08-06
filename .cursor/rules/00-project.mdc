@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Release Ops
 
-Self-hosted release monitor — polls GitHub releases and creates Phasical tickets when new releases ship. Config and credentials via Web UI (COSS); worker/API in Go.
+Self-hosted release monitor — polls releases on GitHub, GitLab, Gitea, Forgejo, and Codeberg; creates tickets in Phasical, Jira, or Linear when new releases ship. Config and credentials via Web UI (COSS); worker/API in Go.
 
 ## Tech stack
 

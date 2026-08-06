@@ -7,7 +7,7 @@
 | Shorthand | Path | Topics |
 | --------- | ---- | ------ |
 | `docs` | `docs/index.html` | Doc hub, MVP summary |
-| `spec` | `docs/specs.html` | MVP contract, APIs, UI, providers, domain logic |
+| `spec` | `docs/specs.html` | MVP contract, APIs, UI, providers, CI/CD (§11), domain logic |
 | `schema` | `docs/schema.sql` | SQLite app.db schema (source file) |
 | `schema-html` | `docs/schema.html` | Schema browser view (local preview) |
 | `stack` | `docs/stack.html` | Go, Next.js, COSS, BetterAuth, Docker |
@@ -20,7 +20,8 @@
 | Go test | `go test ./...` |
 | Go lint | `golangci-lint run` |
 | Web test | `npm test` (in `apps/web`) |
-| Web lint | `npm run lint` (in `apps/web`) |
+| Web typecheck | `npm run typecheck` (in `apps/web`) |
+| CI layout | `docs/specs.html#ci` — `pr` / `dev` / `main` / `release` entrypoints |
 
 Map committed paths per `.cursor/rules/06-local-ci-before-commit.mdc`.
 

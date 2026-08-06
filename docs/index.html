@@ -56,7 +56,7 @@ li { margin-bottom: 6px; }
   <p class="eyebrow">Spezifikation</p>
   <h1>Release Ops</h1>
   <p class="lede">
-    Self-hosted Release-Monitor mit Web-UI: Releases von GitHub und GitLab pollen,
+    Self-hosted Release-Monitor mit Web-UI: Releases von GitHub, GitLab, Gitea, Forgejo und Codeberg pollen,
     bei echten neuen Releases Tickets in Phasical, Jira oder Linear anlegen.
     Konfiguration und Credentials nur über die UI.
   </p>
@@ -93,13 +93,21 @@ li { margin-bottom: 6px; }
     <span class="tag">BetterAuth</span>
     <span class="tag">GitHub</span>
     <span class="tag">GitLab</span>
+    <span class="tag">Gitea</span>
+    <span class="tag">Forgejo</span>
+    <span class="tag">Codeberg</span>
     <span class="tag">Phasical</span>
     <span class="tag">Jira</span>
     <span class="tag">Linear</span>
+    <span class="tag">Shoutrrr</span>
   </p>
   <ul>
-    <li>Sources: GitHub + GitLab · Tickets: Phasical + Jira + Linear (alle ab Tag 1)</li>
-    <li>Admin-UI für Repos, Integrationen, Poll-Intervall</li>
+    <li>Sources: GitHub, GitLab, Gitea, Forgejo, Codeberg · Tickets: Phasical, Jira, Linear (alle ab Tag 1)</li>
+    <li>Ticket-Integrationen mit <strong>mehreren Projekt-/Team-Zielen</strong> — jedes mit eigenem open/done/cancelled/superseded-Mapping</li>
+    <li>Idempotenz bei offenen Tickets: Default <code>supersede</code>, alternativ <code>merge</code> oder <code>skip_if_open</code></li>
+    <li>Notifications via Shoutrrr (Slack, ntfy, …) — keine Custom-Chat-Integrationen</li>
+    <li>Admin-UI für Repos, Integrationen, Ticket-Projekte, Notifications, Poll-Intervall</li>
+    <li>CI: Entrypoint-Workflows + reusable CI/Release/Image-Build (dev → nightly, main → VERSION-Draft, release → GHCR)</li>
     <li>Baseline / Skip / Create — kein Ticket beim ersten Sehen eines Repos</li>
   </ul>
   <p class="docnav"><a href="index.html">Docs</a> · <a href="specs.html">Spec</a> · <a href="stack.html">Stack</a> · <a href="schema.html">Schema</a></p>

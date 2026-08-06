@@ -9,10 +9,10 @@ alwaysApply: true
 
 | Branch | Role |
 |--------|------|
-| `main` | Integration / development — verified work lands here |
-| `main` | Production — **protected**; agents must not push here |
+| `dev` | Integration — nightly GHCR images on push (after CI) |
+| `main` | Release track — CI + draft release when `VERSION` bumps; production images on GitHub Release publish |
 
-- Feature work on `main` (Lane S) or `orchestrator/<TASK-ID>` branches (Lane P).
+- Feature work on `dev` (Lane S) or `orchestrator/<TASK-ID>` branches (Lane P); merge to `main` for release.
 - **Never push** unless the user explicitly asks.
 - **Never push to `main`** from agents without explicit user request.
 
