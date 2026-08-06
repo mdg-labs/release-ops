@@ -1,0 +1,41 @@
+---
+description: Release Ops project identity, doc precedence, and current-phase awareness
+alwaysApply: true
+---
+
+# Release Ops
+
+Self-hosted release monitor — polls GitHub releases and creates Phasical tickets when new releases ship. Config and credentials via Web UI (COSS); worker/API in Go.
+
+## Tech stack
+
+- Go worker/API (`cmd/worker`), `sqlc`, `golang-migrate`, SQLite (`app.db`)
+- Next.js App Router + COSS UI + BetterAuth (`apps/web`), SQLite (`auth.db`)
+- Vitest (web), `go test` (worker), ESLint, Prettier, golangci-lint
+- Docker Compose (web + worker); GitHub Actions → GHCR
+
+## Repository state
+
+Early phase: product spec in `docs/`; application scaffold not started. Roadmap (`docs/roadmap.html`) follows from spec.
+
+## Spec doc precedence (when docs conflict)
+
+1. `docs/specs.html` — MVP contract, APIs, UI, domain logic
+2. `docs/schema.sql` — database schema
+3. `docs/stack.html` — tooling choices
+4. `docs/index.html` — doc hub (not implementation roadmap)
+
+Deprecated (do not use): old learning-path HTML under <code>docs/</code> — removed.
+
+## Hard rules
+
+- If behaviour is not defined in a spec doc, **ask before guessing**.
+- Never invent fields, endpoints, or IDs not in the spec.
+- Schema changes only via versioned SQL migrations (`migrations/`, generated from `docs/schema.sql` baseline).
+
+## Agent config
+
+- Orchestrator: `.agents/skills/orchestrator/SKILL.md` (from `mdg-labs/skills`)
+- Sub-agent monitoring: `.agents/skills/orchestrator/references/sub-agent-monitoring.md` — mandatory when dispatching Task sub-agents
+- Project constants: `.agents/project/orchestrator/project.config.md`
+- Plan file: `docs/index.html`

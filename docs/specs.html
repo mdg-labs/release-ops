@@ -3,372 +3,557 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Specs — release-monitor</title>
+<title>Spec — Release Ops</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
-
 :root {
-  --ink: #10141a;
-  --panel: #171d26;
-  --panel-2: #1c2330;
-  --border: #262e3a;
-  --text: #dce3ea;
-  --text-dim: #8590a3;
-  --text-faint: #5b6577;
-  --amber: #e8a33d;
-  --amber-dim: #6b551f;
-  --teal: #4fd1c5;
-  --teal-dim: #1f4844;
-  --danger: #c1583f;
-  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --radius: 6px;
-  --maxw: 860px;
+  --ink: #10141a; --panel: #171d26; --panel-2: #1c2330; --border: #262e3a;
+  --text: #dce3ea; --text-dim: #8590a3; --text-faint: #5b6577;
+  --amber: #e8a33d; --amber-dim: #6b551f; --teal: #4fd1c5; --teal-dim: #1f4844;
+  --danger: #c1583f; --mono: 'JetBrains Mono', ui-monospace, monospace; --sans: 'Inter', sans-serif;
+  --radius: 6px; --maxw: 900px;
 }
-
 * { box-sizing: border-box; }
-
 html { scroll-behavior: smooth; }
-
-body {
-  margin: 0;
-  background: var(--ink);
-  background-image:
-    radial-gradient(ellipse 900px 500px at 50% -10%, rgba(232,163,61,0.06), transparent),
-    repeating-linear-gradient(180deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
-  color: var(--text);
-  font-family: var(--sans);
-  line-height: 1.6;
-  font-size: 16px;
-  -webkit-font-smoothing: antialiased;
-}
-
+body { margin: 0; background: var(--ink); color: var(--text); font-family: var(--sans); line-height: 1.6; font-size: 16px; }
 a { color: var(--teal); text-decoration: none; }
 a:hover { text-decoration: underline; }
-a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
-  outline: 2px solid var(--amber);
-  outline-offset: 2px;
-}
-
-.wrap {
-  max-width: var(--maxw);
-  margin: 0 auto;
-  padding: 48px 24px 96px;
-}
-
-/* Top nav */
-.topnav {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  font-family: var(--mono);
-  font-size: 13px;
-  color: var(--text-dim);
-  padding: 18px 24px;
-  border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
-}
-.topnav .brand { color: var(--amber); font-weight: 700; letter-spacing: 0.02em; }
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 48px 24px 96px; }
+.topnav { display: flex; gap: 20px; font-family: var(--mono); font-size: 13px; color: var(--text-dim); padding: 18px 24px; border-bottom: 1px solid var(--border); flex-wrap: wrap; align-items: center; }
 .topnav a { color: var(--text-dim); }
 .topnav a:hover { color: var(--teal); text-decoration: none; }
-.topnav .sep { color: var(--text-faint); }
+.topnav a.brand { color: var(--amber); font-weight: 700; }
 .topnav .current { color: var(--text); }
-
-/* Headings */
-.eyebrow {
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--amber);
-  margin: 0 0 10px;
-}
-h1 {
-  font-family: var(--sans);
-  font-size: clamp(28px, 4vw, 40px);
-  font-weight: 700;
-  line-height: 1.15;
-  margin: 0 0 14px;
-  letter-spacing: -0.01em;
-}
-h2 {
-  font-family: var(--sans);
-  font-size: 22px;
-  font-weight: 700;
-  margin: 44px 0 14px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
-}
-h3 {
-  font-family: var(--mono);
-  font-size: 15px;
-  color: var(--amber);
-  margin: 28px 0 10px;
-}
-p { color: var(--text); margin: 0 0 14px; }
-p.lede { color: var(--text-dim); font-size: 17px; max-width: 640px; }
+.topnav .sep { color: var(--text-faint); }
+.docnav { margin-top: 32px; font-family: var(--mono); font-size: 13px; color: var(--text-dim); }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--amber); margin: 0 0 10px; }
+h1 { font-size: clamp(28px, 4vw, 40px); font-weight: 700; margin: 0 0 14px; }
+h2 { font-size: 22px; font-weight: 700; margin: 44px 0 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+h3 { font-family: var(--mono); font-size: 15px; color: var(--amber); margin: 28px 0 10px; }
+h4 { font-size: 15px; margin: 20px 0 8px; }
+p.lede { color: var(--text-dim); font-size: 17px; max-width: 720px; }
+p { margin: 0 0 14px; }
 ul, ol { padding-left: 22px; margin: 0 0 16px; }
 li { margin-bottom: 6px; }
-strong { color: #fff; font-weight: 600; }
-code {
-  font-family: var(--mono);
-  font-size: 0.88em;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 6px;
-  color: var(--teal);
-}
-pre {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px 18px;
-  overflow-x: auto;
-  margin: 0 0 18px;
-}
-pre code {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--text);
-  font-size: 13.5px;
-  line-height: 1.55;
-}
-
-/* Cards */
-.card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 22px 24px;
-  margin-bottom: 18px;
-}
-.card.amber { border-color: var(--amber-dim); }
-.card.teal { border-color: var(--teal-dim); }
-
-/* Box types used across module pages */
-.box { border-radius: var(--radius); padding: 16px 18px; margin: 0 0 18px; border: 1px solid var(--border); }
-.box-title { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 8px; }
-.box.goal { background: rgba(79,209,197,0.06); border-color: var(--teal-dim); }
-.box.goal .box-title { color: var(--teal); }
-.box.task { background: rgba(232,163,61,0.06); border-color: var(--amber-dim); }
-.box.task .box-title { color: var(--amber); }
-.box.pitfall { background: rgba(193,88,63,0.07); border-color: rgba(193,88,63,0.35); }
-.box.pitfall .box-title { color: var(--danger); }
-.box.check { background: var(--panel-2); }
-.box.check .box-title { color: var(--text-dim); }
-.box p:last-child, .box ul:last-child { margin-bottom: 0; }
-
-/* Terminal pipeline (signature element, index page) */
-.pipeline { position: relative; margin: 40px 0 0; padding-left: 34px; }
-.pipeline::before {
-  content: '';
-  position: absolute;
-  left: 10px;
-  top: 10px;
-  bottom: 10px;
-  width: 1px;
-  background: linear-gradient(180deg, var(--amber-dim), var(--border) 90%);
-}
-.phase {
-  position: relative;
-  margin-bottom: 14px;
-  display: block;
-}
-.phase::before {
-  content: '';
-  position: absolute;
-  left: -34px;
-  top: 22px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--text-faint);
-  border: 2px solid var(--ink);
-  box-shadow: 0 0 0 1px var(--border);
-}
-.phase.current::before { background: var(--amber); box-shadow: 0 0 0 1px var(--amber), 0 0 8px 1px rgba(232,163,61,0.6); }
-.phase.done::before { background: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
-.phase-card {
-  display: block;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px 20px;
-  transition: border-color 0.15s ease, transform 0.15s ease;
-}
-.phase-card:hover { border-color: var(--text-faint); text-decoration: none; transform: translateX(2px); }
-.phase.current .phase-card { border-color: var(--amber-dim); }
-.phase-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
-.phase-num { font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
-.phase-title { font-family: var(--sans); font-weight: 600; font-size: 16px; color: var(--text); }
-.phase-status {
-  font-family: var(--mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 2px 7px;
-  border-radius: 3px;
-  margin-left: auto;
-  color: var(--text-dim);
-  border: 1px solid var(--border);
-}
-.phase.current .phase-status { color: var(--amber); border-color: var(--amber-dim); }
-.phase-desc { color: var(--text-dim); font-size: 14px; margin: 0; }
-
-/* Prompt line */
-.prompt { font-family: var(--mono); font-size: 13px; color: var(--text-faint); }
-.prompt::before { content: '$ '; color: var(--teal); }
-
-/* Footer nav between modules */
-.modnav {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  margin-top: 56px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
-  font-family: var(--mono);
-  font-size: 13px;
-}
-.modnav a { display: block; color: var(--text-dim); }
-.modnav a:hover { color: var(--teal); }
-.modnav .dir { display: block; color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
-.modnav .right { text-align: right; }
-
-/* Grid links (stack/specs index cards) */
-.linkgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 22px 0 0; }
-@media (max-width: 620px) { .linkgrid { grid-template-columns: 1fr; } }
-.linkcard {
-  display: block;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px 18px;
-  color: var(--text);
-}
-.linkcard:hover { border-color: var(--teal-dim); text-decoration: none; }
-.linkcard .t { font-weight: 600; margin-bottom: 4px; }
-.linkcard .d { color: var(--text-dim); font-size: 13.5px; }
-
+strong { color: #fff; }
+code { font-family: var(--mono); font-size: 0.88em; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; color: var(--teal); }
+pre { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; overflow-x: auto; margin: 0 0 18px; }
+pre code { background: none; border: none; padding: 0; color: var(--text); font-size: 13.5px; }
 table { width: 100%; border-collapse: collapse; margin: 0 0 18px; font-size: 14px; }
-th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
-th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.05em; }
-td code { white-space: nowrap; }
-
-.tag {
-  display: inline-block;
-  font-family: var(--mono);
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 3px;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  margin: 0 6px 6px 0;
-}
-
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color: var(--text-faint); }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 18px; }
+.card.amber { border-color: var(--amber-dim); }
+.toc { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; margin: 24px 0; font-size: 14px; }
+.toc a { color: var(--text-dim); }
+.tag { display: inline-block; font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-dim); margin: 0 4px 4px 0; }
 </style>
 </head>
 <body>
 <nav class="topnav">
-  <span class="brand">release-monitor</span>
+  <a class="brand" href="index.html">release-ops</a>
   <span class="sep">/</span>
-  <a href="index.html">roadmap</a>
+  <a href="index.html">docs</a>
   <span class="sep">·</span>
-  <span class="current">specs</span>
+  <span class="current">spec</span>
   <span class="sep">·</span>
   <a href="stack.html">stack</a>
+  <span class="sep">·</span>
+  <a href="schema.html">schema</a>
 </nav>
 
 <div class="wrap">
-  <p class="eyebrow">Referenz</p>
-  <h1>Projekt-Spezifikation</h1>
-  <p class="lede">Was release-monitor am Ende tut — als Referenz, auf die die Module verweisen. Du musst das jetzt nicht alles verstehen, das kommt Stück für Stück.</p>
+  <p class="eyebrow">Produktspezifikation · MVP</p>
+  <h1>Release Ops</h1>
+  <p class="lede">
+    Self-hosted Service: überwacht GitHub-Releases für konfigurierte Repos und erstellt bei
+    <em>echten</em> neuen Releases (nicht beim ersten Baseline-Sehen) Tickets in Phasical.
+    Konfiguration, Integration-Credentials und Monitoring laufen über eine geschützte Web-UI (COSS).
+    Worker und REST-API laufen in Go; Auth und UI in Next.js mit BetterAuth.
+  </p>
 
-  <h2>Zweck</h2>
-  <p>Ein Docker-Container, der in festen Abständen eine Liste von GitHub-Repos abfragt, das jeweils neueste <strong>stable</strong> Release prüft und bei einem echten neuen Release (nicht beim allerersten Sehen des Repos) ein Ticket in Phasical erstellt.</p>
+  <div class="card amber">
+    <strong>Version:</strong> Spec v2.1 (2026-08-06) — Multi-Provider MVP (GitHub/GitLab · Phasical/Jira/Linear).
+  </div>
 
-  <h2>Config (<code>repos.yml</code>)</h2>
-  <p>Der Nutzer pflegt eine YAML-Datei, die im Container gemountet wird:</p>
-  <pre><code>repos:
-  - source: github
-    owner: FreshRSS
-    repo: FreshRSS
-  - source: github
-    owner: usekaneo
-    repo: kaneo
+  <nav class="toc">
+    <strong>Inhalt</strong>
+    <ol style="margin-top:8px">
+      <li><a href="#purpose">Zweck &amp; Nicht-Ziele</a></li>
+      <li><a href="#architecture">Architektur</a></li>
+      <li><a href="#auth">Authentifizierung</a></li>
+      <li><a href="#schema">Datenmodell</a></li>
+      <li><a href="#domain">Domänenlogik</a></li>
+      <li><a href="#providers">Provider-Interfaces (Go)</a></li>
+      <li><a href="#api">REST API (Go)</a></li>
+      <li><a href="#ui">Web-UI &amp; COSS Particles</a></li>
+      <li><a href="#env">Environment-Variablen</a></li>
+      <li><a href="#deployment">Deployment</a></li>
+      <li><a href="#mvp">MVP Acceptance Criteria</a></li>
+      <li><a href="#future">Post-MVP</a></li>
+    </ol>
+  </nav>
 
-ticketing:
-  provider: phasical
-  projectId: "abc123"</code></pre>
-  <p><code>source</code> ist heute immer <code>github</code>, aber das Feld existiert von Anfang an — Phase 09 erklärt warum.</p>
+  <h2 id="purpose">1. Zweck &amp; Nicht-Ziele</h2>
+  <h3>Zweck</h3>
+  <ul>
+    <li>Pollt in konfigurierbaren Intervallen das jeweils neueste <strong>stable</strong> Release pro konfiguriertem Projekt.</li>
+    <li><strong>Sources (MVP):</strong> GitHub (<code>releases/latest</code>) und GitLab (<code>releases/permalink/latest</code>).</li>
+    <li>Speichert den zuletzt gesehenen Tag pro Projekt in SQLite.</li>
+    <li>Erstellt bei Tag-Wechsel (nach Baseline) ein Ticket im gewählten System.</li>
+    <li><strong>Tickets (MVP):</strong> Phasical, Jira, Linear — pro Repo frei kombinierbar mit Source.</li>
+    <li>Zeigt Betriebsstatus in der UI: letzter Poll, Fehler, Projekt-Übersicht.</li>
+  </ul>
+  <h3>MVP-Nicht-Ziele</h3>
+  <ul>
+    <li>Kein Codeberg / Gitea / weitere Sources.</li>
+    <li>Kein Multi-User-RBAC (ein Admin reicht; alle eingeloggten User sind gleichberechtigt).</li>
+    <li>Kein öffentliches Sign-up (Admin-Account per Seed/CLI oder einmalig in UI).</li>
+    <li>Kein High-Availability / Horizontal Scaling.</li>
+  </ul>
 
-  <h2>Environment-Variablen</h2>
+  <h2 id="architecture">2. Architektur</h2>
+  <pre><code>┌─────────────────────────────────────────────────────────────┐
+│  Browser                                                    │
+│    COSS UI (React) ──► Next.js (apps/web)                     │
+│         │                    │                              │
+│         │                    ├─ /api/auth/*  BetterAuth     │
+│         │                    ├─ auth.db (SQLite)              │
+│         │                    └─ /api/go/*    Proxy + JWT      │
+└─────────┼────────────────────┼──────────────────────────────┘
+          │                    │ Authorization: Bearer &lt;JWT&gt;
+          │                    ▼
+          │         ┌──────────────────────────┐
+          │         │  Go worker (cmd/worker)    │
+          │         │  - REST /api/v1/*        │
+          │         │  - Poll scheduler        │
+          │         │  - app.db (SQLite)       │
+          │         └──────────┬───────────────┘
+          │                    │
+          ▼                    ▼
+   GitHub / GitLab     Phasical / Jira / Linear</code></pre>
+
+  <h3>Prozesse</h3>
   <table>
-    <tr><th>Variable</th><th>Pflicht</th><th>Beschreibung</th></tr>
-    <tr><td><code>CONFIG_PATH</code></td><td>nein</td><td>Pfad zur <code>repos.yml</code>, Default <code>/config/repos.yml</code></td></tr>
-    <tr><td><code>DB_PATH</code></td><td>nein</td><td>Pfad zur SQLite-Datei, Default <code>/data/release-monitor.db</code></td></tr>
-    <tr><td><code>GITHUB_TOKEN</code></td><td>nein</td><td>PAT für höheres Rate-Limit &amp; private Repos</td></tr>
-    <tr><td><code>PHASICAL_API_KEY</code></td><td>ja</td><td>Bearer-Token für die Phasical-API</td></tr>
-    <tr><td><code>PHASICAL_BASE_URL</code></td><td>ja</td><td>z.B. <code>https://phasical.mdg-labs.dev/api</code></td></tr>
-    <tr><td><code>POLL_INTERVAL_MINUTES</code></td><td>nein</td><td>Default <code>360</code> (6h)</td></tr>
-    <tr><td><code>PORT</code></td><td>nein</td><td>Port des Status-Endpoints, Default <code>3000</code></td></tr>
+    <tr><th>Prozess</th><th>Port (Default)</th><th>Verantwortung</th></tr>
+    <tr><td><code>web</code></td><td>3000</td><td>UI, BetterAuth, Proxy zu Go</td></tr>
+    <tr><td><code>worker</code></td><td>8080 (intern)</td><td>REST API, Credential-Decrypt, Polling</td></tr>
+  </table>
+  <p>Der Browser spricht nur mit <code>web</code>. Go ist nicht öffentlich exponiert (Docker-Netzwerk intern).</p>
+
+  <h2 id="auth">3. Authentifizierung</h2>
+  <h3>BetterAuth (Next.js)</h3>
+  <ul>
+    <li>Plugin: <code>better-auth</code> mit SQLite-Adapter auf <code>auth.db</code>.</li>
+    <li>MVP-Provider: <strong>Email + Password</strong> only.</li>
+    <li>Plugin: <code>jwt()</code> — JWKS unter <code>/api/auth/jwks</code> (oder BetterAuth-Default).</li>
+    <li><code>disableSignUp: true</code> nach Erst-Admin — oder Sign-up nur bis erster User existiert.</li>
+  </ul>
+  <h3>Go API Auth</h3>
+  <ul>
+    <li>Next.js Route <code>apps/web/app/api/go/[...path]/route.ts</code> holt Session-JWT via <code>auth.api.getToken()</code> und forwarded an Go mit <code>Authorization: Bearer</code>.</li>
+    <li>Go Middleware validiert JWT gegen BetterAuth JWKS (Cache Keys, Standard-JWT-Verify).</li>
+    <li>Alle <code>/api/v1/*</code> Endpoints erfordern gültiges JWT — außer optional <code>GET /healthz</code> für Container-Probes.</li>
+  </ul>
+  <p>Kein Session-Cookie direkt an Go — nur JWT-Proxy-Pattern (vermeidet CORS/Cookie-SameSite-Probleme).</p>
+
+  <h2 id="schema">4. Datenmodell</h2>
+  <p>Kanonisches SQL: <a href="schema.html">schema.html</a> · <a href="schema.sql">schema.sql</a>. Migrations in <code>migrations/</code> müssen dem Schema entsprechen.</p>
+
+  <h3>4.1 <code>app_settings</code></h3>
+  <p>Singleton (immer <code>id = 1</code>).</p>
+  <table>
+    <tr><th>Spalte</th><th>Typ</th><th>Default</th><th>Beschreibung</th></tr>
+    <tr><td><code>poll_interval_minutes</code></td><td>INTEGER</td><td>360</td><td>Globaler Poll-Intervall; Min 5</td></tr>
+    <tr><td><code>updated_at</code></td><td>TEXT (ISO8601)</td><td>—</td><td>UTC</td></tr>
   </table>
 
-  <h2>Die zwei Kern-Interfaces</h2>
-  <h3>SourceProvider</h3>
-  <pre><code>interface SourceProvider {
-  getLatestRelease(owner: string, repo: string): Promise&lt;Release | null&gt;;
-}
-
-interface Release {
-  tag: string;
-  name: string;
-  url: string;
-  publishedAt: string;
-}</code></pre>
-  <p><code>null</code> bedeutet: kein stable Release vorhanden (z.B. GitHub-404).</p>
-
-  <h3>TicketProvider</h3>
-  <pre><code>interface TicketProvider {
-  createTicket(input: TicketInput): Promise&lt;string&gt;; // gibt Ticket-ID zurück
-}
-
-interface TicketInput {
-  title: string;
-  description: string;
-}</code></pre>
-
-  <h2>Datenbank-Tabelle <code>known_releases</code></h2>
+  <h3>4.2 <code>integrations</code></h3>
+  <p>Credential-Speicher für externe APIs. Secrets nie im Klartext — siehe §4.6.</p>
   <table>
-    <tr><th>Spalte</th><th>Typ</th><th>Hinweis</th></tr>
-    <tr><td><code>id</code></td><td>integer</td><td>Primary Key, autoincrement</td></tr>
-    <tr><td><code>owner</code></td><td>text</td><td>zusammen mit <code>repo</code> eindeutig</td></tr>
-    <tr><td><code>repo</code></td><td>text</td><td></td></tr>
-    <tr><td><code>tag</code></td><td>text</td><td>zuletzt gesehener Tag</td></tr>
-    <tr><td><code>createdAt</code></td><td>text</td><td>von Drizzle/SQLite gesetzt</td></tr>
-    <tr><td><code>updatedAt</code></td><td>text</td><td>bei jedem Upsert aktualisiert</td></tr>
+    <tr><th>Spalte</th><th>Typ</th><th>Beschreibung</th></tr>
+    <tr><td><code>id</code></td><td>TEXT (UUID)</td><td>PK</td></tr>
+    <tr><td><code>kind</code></td><td>TEXT</td><td><code>github</code> | <code>gitlab</code> | <code>phasical</code> | <code>jira</code> | <code>linear</code></td></tr>
+    <tr><td><code>name</code></td><td>TEXT</td><td>Anzeigename in UI</td></tr>
+    <tr><td><code>base_url</code></td><td>TEXT NULL</td><td>Siehe Tabelle unten</td></tr>
+    <tr><td><code>encrypted_payload</code></td><td>TEXT</td><td>JSON verschlüsselt</td></tr>
+    <tr><td><code>created_at</code>, <code>updated_at</code></td><td>TEXT</td><td>UTC ISO8601</td></tr>
+  </table>
+  <table>
+    <tr><th>kind</th><th>Rolle</th><th>base_url</th></tr>
+    <tr><td><code>github</code></td><td>Source</td><td>NULL (api.github.com)</td></tr>
+    <tr><td><code>gitlab</code></td><td>Source</td><td>Pflicht — z.B. <code>https://gitlab.com</code> oder Self-Hosted</td></tr>
+    <tr><td><code>phasical</code></td><td>Ticket</td><td>Pflicht — API-Base</td></tr>
+    <tr><td><code>jira</code></td><td>Ticket</td><td>Pflicht — z.B. <code>https://company.atlassian.net</code></td></tr>
+    <tr><td><code>linear</code></td><td>Ticket</td><td>NULL (<code>api.linear.app</code> fest)</td></tr>
   </table>
 
-  <h2>Entscheidungslogik</h2>
+  <h4>Payload-Schema (vor Verschlüsselung)</h4>
+  <pre><code>// github — token optional
+{ "token": "ghp_..." }
+
+// gitlab — token Pflicht
+{ "token": "glpat-..." }
+
+// phasical
+{ "api_key": "..." }
+
+// jira — Basic Auth
+{ "email": "user@company.com", "api_token": "..." }
+
+// linear
+{ "api_key": "lin_api_..." }</code></pre>
+
+  <h3>4.3 <code>monitored_repos</code></h3>
+  <table>
+    <tr><th>Spalte</th><th>Typ</th><th>Beschreibung</th></tr>
+    <tr><td><code>id</code></td><td>TEXT (UUID)</td><td>PK</td></tr>
+    <tr><td><code>source_kind</code></td><td>TEXT</td><td><code>github</code> | <code>gitlab</code></td></tr>
+    <tr><td><code>project_path</code></td><td>TEXT</td><td>GitHub: <code>owner/repo</code> · GitLab: <code>namespace/project</code></td></tr>
+    <tr><td><code>enabled</code></td><td>INTEGER 0/1</td><td>Deaktiviert = kein Poll</td></tr>
+    <tr><td><code>source_integration_id</code></td><td>TEXT FK NULL</td><td>GitHub optional; GitLab Pflicht</td></tr>
+    <tr><td><code>ticket_kind</code></td><td>TEXT</td><td><code>phasical</code> | <code>jira</code> | <code>linear</code></td></tr>
+    <tr><td><code>ticket_integration_id</code></td><td>TEXT FK</td><td>Pflicht</td></tr>
+    <tr><td><code>ticket_config</code></td><td>TEXT (JSON)</td><td>Provider-spezifisch — siehe §5.2</td></tr>
+    <tr><td><code>last_known_tag</code></td><td>TEXT NULL</td><td>Letzter Release-Tag</td></tr>
+    <tr><td><code>last_polled_at</code>, <code>last_error</code></td><td>TEXT NULL</td><td>UTC / Fehlertext</td></tr>
+    <tr><td><code>created_at</code>, <code>updated_at</code></td><td>TEXT</td><td>UTC</td></tr>
+  </table>
+  <p>Unique: <code>(source_kind, project_path)</code>.</p>
+
+  <h3>4.4 <code>poll_runs</code> &amp; <code>poll_run_events</code></h3>
+  <p>Audit des Pollers. <code>errors_json</code> ist Array von <code>{ "repoId", "message" }</code>.</p>
+  <p><code>poll_run_events.action</code>: <code>baseline</code> | <code>skip</code> | <code>create</code> | <code>error</code>.</p>
+
+  <h3>4.5 Zeitstempel</h3>
+  <p>Alle <code>TEXT</code>-Timestamps: RFC3339/ISO8601 UTC mit Millisekunden, z.B. <code>2026-08-06T12:00:00.000Z</code>.</p>
+
+  <h3>4.6 Credential-Verschlüsselung</h3>
+  <ul>
+    <li>Algorithmus: AES-256-GCM.</li>
+    <li>Key: <code>APP_ENCRYPTION_KEY</code> — 32 Bytes, hex-encoded (64 Zeichen).</li>
+    <li>Stored format: <code>base64(nonce + ciphertext + tag)</code> oder JSON <code>{ "v": 1, "data": "..." }</code>.</li>
+    <li>Go entschlüsselt nur im Worker/API — niemals an Frontend senden außer „configured“ / Maskierung.</li>
+    <li>API gibt bei Integrations <code>has_secret: true</code>, nie den Secret-Wert.</li>
+  </ul>
+
+  <h2 id="domain">5. Domänenlogik</h2>
+  <h3>5.1 Release-Entscheidung (pro Repo)</h3>
   <ol>
-    <li>Kein Eintrag für <code>owner+repo</code> vorhanden → <strong>baseline</strong> (nur speichern, kein Ticket)</li>
-    <li>Eintrag vorhanden, Tag identisch → <strong>skip</strong> (nichts tun)</li>
-    <li>Eintrag vorhanden, Tag unterschiedlich → <strong>create</strong> (Ticket + Tag aktualisieren)</li>
+    <li><strong>baseline</strong> — <code>last_known_tag</code> ist NULL → Tag speichern, kein Ticket.</li>
+    <li><strong>skip</strong> — Tag identisch mit <code>last_known_tag</code> → nichts tun.</li>
+    <li><strong>create</strong> — Tag unterschiedlich → Ticket im gewählten System anlegen, <code>last_known_tag</code> aktualisieren.</li>
+    <li><strong>error</strong> — API-Fehler (außer „kein Release“) → <code>last_error</code> setzen, Run fortsetzen.</li>
+  </ol>
+  <p>„Kein Release“: GitHub 404 auf <code>/releases/latest</code>; GitLab 404 auf latest-release-Endpoint — kein Error, nur kein Tag.</p>
+
+  <h3>5.2 Ticket-Inhalt</h3>
+  <p>Gemeinsam für alle Ticket-Provider:</p>
+  <table>
+    <tr><th>Feld</th><th>Wert</th></tr>
+    <tr><td><code>title</code></td><td><code>Release: {source_kind} {project_path} {tag}</code></td></tr>
+    <tr><td><code>description</code></td><td>Markdown: Release-Name, URL, <code>publishedAt</code></td></tr>
+  </table>
+
+  <h4><code>ticket_config</code> pro <code>ticket_kind</code></h4>
+  <pre><code>// phasical
+{ "projectId": "...", "status": "ready", "priority": "medium" }
+
+// jira
+{ "projectKey": "DEV", "issueType": "Task", "priority": "Medium" }
+
+// linear
+{ "teamId": "...", "priority": 2, "stateId": "..." }  // priority 0–4, stateId optional</code></pre>
+
+  <h4>API-Aufrufe (Implementierung verifizieren)</h4>
+  <table>
+    <tr><th>Provider</th><th>Auth</th><th>Create</th></tr>
+    <tr><td>Phasical</td><td>Bearer <code>api_key</code></td><td><code>POST {base_url}/task/{projectId}</code></td></tr>
+    <tr><td>Jira</td><td>Basic (email + api_token)</td><td><code>POST {base_url}/rest/api/3/issue</code></td></tr>
+    <tr><td>Linear</td><td>Header <code>Authorization: {api_key}</code></td><td>GraphQL <code>issueCreate</code> auf <code>api.linear.app/graphql</code></td></tr>
+  </table>
+
+  <h3>5.3 Poll-Run Ablauf</h3>
+  <ol>
+    <li>Insert <code>poll_runs</code> status <code>running</code>.</li>
+    <li>Für jedes <code>enabled</code> Repo: Source abfragen → Entscheidung → Event loggen.</li>
+    <li>Run status: <code>success</code> (keine Errors), <code>partial</code> (einige Errors), <code>failed</code> (alle fehlgeschlagen oder kritischer Fehler).</li>
+    <li>Kein paralleles Polling desselben Runs (Mutex / <code>running</code>-Guard).</li>
   </ol>
 
-  <h2>Status-Endpoint</h2>
-  <p><code>GET /status</code> liefert JSON:</p>
-  <pre><code>{
-  "lastRunAt": "2026-08-02T06:00:00.000Z",
-  "repos": [
-    { "owner": "FreshRSS", "repo": "FreshRSS", "lastKnownTag": "1.26.0" }
-  ],
-  "lastErrors": []
+  <h3>5.4 Scheduler</h3>
+  <p>Intervall aus <code>app_settings.poll_interval_minutes</code>. Zusätzlich: manueller Trigger via API/UI.</p>
+
+  <h2 id="providers">6. Provider-Interfaces (Go)</h2>
+  <pre><code>type Release struct {
+    Tag         string
+    Name        string
+    URL         string
+    PublishedAt time.Time
+}
+
+type SourceProvider interface {
+    GetLatestRelease(ctx context.Context, projectPath string) (*Release, error)
+    // (*Release, nil) = kein Release; (nil, err) = echter Fehler
+}
+
+type TicketInput struct {
+    Title       string
+    Description string
+    Config      TicketConfig // aus ticket_config + ticket_kind
+}
+
+type TicketProvider interface {
+    CreateTicket(ctx context.Context, input TicketInput) (externalID string, err error)
 }</code></pre>
 
-  <p style="margin-top:32px"><a href="index.html">← zurück zur Roadmap</a></p>
+  <h3>6.1 Source: GitHub</h3>
+  <ul>
+    <li><code>GET https://api.github.com/repos/{projectPath}/releases/latest</code></li>
+    <li>Headers: <code>Accept: application/vnd.github+json</code>, <code>X-GitHub-Api-Version: 2022-11-28</code>, <code>User-Agent: release-ops</code></li>
+    <li><code>Authorization: Bearer</code> wenn Token in Integration</li>
+    <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>html_url</code>→<code>URL</code>, <code>published_at</code>→<code>PublishedAt</code></li>
+  </ul>
+
+  <h3>6.2 Source: GitLab</h3>
+  <ul>
+    <li><code>GET {base_url}/api/v4/projects/{urlencoded_path}/releases/permalink/latest</code></li>
+    <li><code>projectPath</code> → URL-encode (<code>/</code> → <code>%2F</code>)</li>
+    <li>Header: <code>PRIVATE-TOKEN: {token}</code></li>
+    <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>_links.self</code> oder <code>assets.links</code>→<code>URL</code>, <code>released_at</code>→<code>PublishedAt</code></li>
+    <li>404 = kein Release</li>
+  </ul>
+
+  <h3>6.3 Ticket: Phasical / Jira / Linear</h3>
+  <p>Factory pro <code>ticket_kind</code>. Jeder Provider mappt <code>TicketInput</code> + <code>ticket_config</code> auf natives API-Format (§5.2).</p>
+  <p>Connectivity-Tests: GitHub/GitLab <code>GET /user</code>; Phasical lightweight GET; Jira <code>GET /rest/api/3/myself</code>; Linear GraphQL <code>viewer</code>.</p>
+
+  <h2 id="api">7. REST API (Go)</h2>
+  <p>Base path: <code>/api/v1</code>. JSON Request/Response. Fehlerformat:</p>
+  <pre><code>{ "error": { "code": "VALIDATION_ERROR", "message": "..." } }</code></pre>
+
+  <h3>7.1 Status</h3>
+  <table>
+    <tr><th>Method</th><th>Path</th><th>Beschreibung</th></tr>
+    <tr><td>GET</td><td><code>/api/v1/status</code></td><td>Aggregierter Betriebsstatus (siehe JSON unten)</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/poll/trigger</code></td><td>Manueller Poll (async start, 202)</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/poll/runs</code></td><td>Liste letzter Runs (paginiert, default limit 20)</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/poll/runs/{id}</code></td><td>Run inkl. Events</td></tr>
+  </table>
+  <pre><code>// GET /api/v1/status
+{
+  "pollIntervalMinutes": 360,
+  "lastRun": {
+    "id": "...",
+    "startedAt": "...",
+    "finishedAt": "...",
+    "status": "success",
+    "reposChecked": 5,
+    "ticketsCreated": 1,
+    "errors": []
+  },
+  "repos": [
+    {
+      "id": "...",
+      "sourceKind": "github",
+      "projectPath": "FreshRSS/FreshRSS",
+      "ticketKind": "phasical",
+      "enabled": true,
+      "lastKnownTag": "1.26.0",
+      "lastPolledAt": "...",
+      "lastError": null
+    }
+  ],
+  "isPolling": false
+}</code></pre>
+
+  <h3>7.2 Settings</h3>
+  <table>
+    <tr><th>Method</th><th>Path</th><th>Body</th></tr>
+    <tr><td>GET</td><td><code>/api/v1/settings</code></td><td>—</td></tr>
+    <tr><td>PATCH</td><td><code>/api/v1/settings</code></td><td><code>{ "pollIntervalMinutes": 360 }</code></td></tr>
+  </table>
+
+  <h3>7.3 Integrations</h3>
+  <table>
+    <tr><th>Method</th><th>Path</th><th>Notes</th></tr>
+    <tr><td>GET</td><td><code>/api/v1/integrations</code></td><td>Liste ohne Secrets</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/integrations</code></td><td>Create mit <code>kind</code>, <code>name</code>, <code>baseUrl?</code>, <code>secret</code> (einmalig)</td></tr>
+    <tr><td>PATCH</td><td><code>/api/v1/integrations/{id}</code></td><td><code>name</code>, optional <code>secret</code> (replace)</td></tr>
+    <tr><td>DELETE</td><td><code>/api/v1/integrations/{id}</code></td><td>409 wenn noch von Repos referenziert</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/integrations/{id}/test</code></td><td>Connectivity pro kind (§6.3)</td></tr>
+  </table>
+  <pre><code>// Integration list item (never includes secret)
+{
+  "id": "...",
+  "kind": "github",
+  "name": "GitHub PAT",
+  "baseUrl": null,
+  "hasSecret": true,
+  "createdAt": "...",
+  "updatedAt": "..."
+}</code></pre>
+
+  <h3>7.4 Monitored Repos</h3>
+  <table>
+    <tr><th>Method</th><th>Path</th></tr>
+    <tr><td>GET</td><td><code>/api/v1/repos</code></td></tr>
+    <tr><td>POST</td><td><code>/api/v1/repos</code></td></tr>
+    <tr><td>PATCH</td><td><code>/api/v1/repos/{id}</code></td></tr>
+    <tr><td>DELETE</td><td><code>/api/v1/repos/{id}</code></td></tr>
+  </table>
+  <pre><code>// POST /api/v1/repos
+{
+  "sourceKind": "github",
+  "projectPath": "FreshRSS/FreshRSS",
+  "enabled": true,
+  "sourceIntegrationId": "uuid-or-null",
+  "ticketKind": "jira",
+  "ticketIntegrationId": "uuid",
+  "ticketConfig": {
+    "projectKey": "DEV",
+    "issueType": "Task",
+    "priority": "Medium"
+  }
+}</code></pre>
+
+  <h3>7.5 Health</h3>
+  <table>
+    <tr><th>GET</th><th><code>/healthz</code></th><th>200 OK, kein Auth</th></tr>
+  </table>
+
+  <h2 id="ui">8. Web-UI &amp; COSS Particles</h2>
+  <p>Alle UI mit COSS Primitives + festgelegten Particles (install via <code>npx shadcn@latest add @coss/...</code> bzw. Particle JSON URLs).</p>
+
+  <h3>8.1 App-Shell (alle authentifizierten Seiten)</h3>
+  <table>
+    <tr><th>Primitive</th><th>Particle / Pattern</th><th>Nutzung</th></tr>
+    <tr><td><code>Sidebar</code> (+ <code>SidebarProvider</code>)</td><td>sidebar primitive docs</td><td>Navigation: Dashboard, Repos, Integrations, Settings</td></tr>
+    <tr><td><code>Frame</code></td><td><a href="https://coss.com/ui/r/p-frame-3.json">p-frame-3</a> — multiple separated panels</td><td>Seiten-Layout mit Header-Bereich + Content</td></tr>
+    <tr><td><code>Breadcrumb</code></td><td><a href="https://coss.com/ui/r/p-breadcrumb-3.json">p-breadcrumb-3</a> — home icon</td><td>Sub-Seiten Kontext</td></tr>
+    <tr><td><code>Toaster</code></td><td><a href="https://coss.com/ui/r/p-toast-2.json">p-toast-2</a> — semantic types</td><td>Global Feedback (success/error)</td></tr>
+    <tr><td><code>Spinner</code></td><td><a href="https://coss.com/ui/r/p-spinner-1.json">p-spinner-1</a></td><td>Loading states</td></tr>
+  </table>
+
+  <h3>8.2 Routen</h3>
+  <table>
+    <tr><th>Route</th><th>Seite</th><th>Beschreibung</th></tr>
+    <tr><td><code>/login</code></td><td>Login</td><td>Unauthenticated</td></tr>
+    <tr><td><code>/</code></td><td>Dashboard</td><td>Status, letzter Run, Quick Actions</td></tr>
+    <tr><td><code>/repos</code></td><td>Repos</td><td>CRUD monitored repos</td></tr>
+    <tr><td><code>/integrations</code></td><td>Integrations</td><td>CRUD credentials</td></tr>
+    <tr><td><code>/settings</code></td><td>Settings</td><td>Poll-Intervall</td></tr>
+  </table>
+  <p>Middleware: alle außer <code>/login</code> und <code>/api/auth/*</code> erfordern Session.</p>
+
+  <h3>8.3 Seiten-Detail &amp; Particles</h3>
+
+  <h4>/login</h4>
+  <table>
+    <tr><th>Particle</th><th>Verwendung</th></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-card-1.json">p-card-1</a> Basic card</td><td>Zentrierter Login-Container</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-field-2.json">p-field-2</a> required</td><td>Email, Password</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-input-group-1.json">p-input-group-1</a></td><td>Password mit Toggle (falls in group particle)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>Submit „Sign in“</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-alert-7.json">p-alert-7</a> error</td><td>Login-Fehler</td></tr>
+  </table>
+
+  <h4>/ — Dashboard</h4>
+  <table>
+    <tr><th>Particle</th><th>Verwendung</th></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-card-10.json">p-card-10</a> frame header+footer</td><td>„Last poll“ Summary Card</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-badge-5.json">p-badge-5</a> (semantic)</td><td>Run status badge</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>„Run poll now“ (triggers POST trigger)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a> TanStack sort+pagination</td><td>Repo-Status-Tabelle (subset)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-alert-6.json">p-alert-6</a> warning</td><td>Errors from last run</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-empty-1.json">p-empty-1</a></td><td>Keine Repos konfiguriert → CTA zu /repos</td></tr>
+  </table>
+
+  <h4>/repos</h4>
+  <table>
+    <tr><th>Particle</th><th>Verwendung</th></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-3.json">p-table-3</a> checkboxes</td><td>Repo-Liste, Bulk enable/disable optional</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-dialog-1.json">p-dialog-1</a> form</td><td>Add / Edit Repo</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-alert-dialog-1.json">p-alert-dialog-1</a></td><td>Delete confirmation</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td>Source kind, ticket kind, integrations</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-tabs-1.json">p-tabs-1</a></td><td>Ticket-config Subform je ticket_kind</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-switch-1.json">p-switch-1</a></td><td>Enabled toggle in form</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-badge-1.json">p-badge-1</a></td><td>source_kind + ticket_kind in tables</td></tr>
+  </table>
+
+  <h4>/integrations</h4>
+  <table>
+    <tr><th>Particle</th><th>Verwendung</th></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-2.json">p-table-2</a> card-style</td><td>Integration-Liste</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-drawer-10.json">p-drawer-10</a> edit form</td><td>Create/Edit Integration (mobile-friendly)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>Name; Base URL (gitlab, phasical, jira)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-field-2.json">p-field-2</a></td><td>Jira: email field</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-input-1.json">p-input-1</a> type password</td><td>Token / API Key (never re-display)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>„Test connection“</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-toast-5.json">p-toast-5</a> promise</td><td>Test connection async feedback</td></tr>
+  </table>
+
+  <h4>/settings</h4>
+  <table>
+    <tr><th>Particle</th><th>Verwendung</th></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-card-8.json">p-card-8</a> within frame</td><td>Settings section</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-number-field-1.json">p-number-field-1</a></td><td>Poll interval (minutes), min 5</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>Save</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-alert-5.json">p-alert-5</a> success</td><td>Settings saved</td></tr>
+  </table>
+
+  <h3>8.4 API-Client (Frontend)</h3>
+  <p>Alle Daten-Calls an <code>/api/go/api/v1/...</code> (Next Proxy). React Query Hooks: <code>useStatus</code>, <code>useRepos</code>, <code>useIntegrations</code>, <code>useSettings</code>.</p>
+
+  <h2 id="env">9. Environment-Variablen</h2>
+  <table>
+    <tr><th>Variable</th><th>Service</th><th>Pflicht</th><th>Default</th><th>Beschreibung</th></tr>
+    <tr><td><code>BETTER_AUTH_SECRET</code></td><td>web</td><td>ja</td><td>—</td><td>Session signing</td></tr>
+    <tr><td><code>BETTER_AUTH_URL</code></td><td>web</td><td>ja</td><td>—</td><td>Public URL der App</td></tr>
+    <tr><td><code>DATABASE_URL</code></td><td>web</td><td>ja</td><td><code>file:/data/auth.db</code></td><td>BetterAuth SQLite</td></tr>
+    <tr><td><code>GO_API_URL</code></td><td>web</td><td>ja</td><td><code>http://worker:8080</code></td><td>Internal Go base URL</td></tr>
+    <tr><td><code>APP_DB_PATH</code></td><td>worker</td><td>nein</td><td><code>/data/app.db</code></td><td>Application SQLite</td></tr>
+    <tr><td><code>APP_ENCRYPTION_KEY</code></td><td>worker</td><td>ja</td><td>—</td><td>64 hex chars</td></tr>
+    <tr><td><code>JWKS_URL</code></td><td>worker</td><td>ja</td><td>—</td><td>e.g. <code>{BETTER_AUTH_URL}/api/auth/jwks</code></td></tr>
+    <tr><td><code>PORT</code></td><td>worker</td><td>nein</td><td>8080</td><td>Go HTTP</td></tr>
+    <tr><td><code>PORT</code></td><td>web</td><td>nein</td><td>3000</td><td>Next.js</td></tr>
+  </table>
+  <p><strong>Entfernt</strong> gegenüber alter Spec: <code>CONFIG_PATH</code>, <code>GITHUB_TOKEN</code>, <code>PHASICAL_API_KEY</code>, <code>PHASICAL_BASE_URL</code>, <code>POLL_INTERVAL_MINUTES</code> (alles in DB/UI).</p>
+
+  <h2 id="deployment">10. Deployment</h2>
+  <ul>
+    <li><code>docker-compose.yml</code>: Services <code>web</code>, <code>worker</code>, Volume <code>release-ops-data:/data</code>.</li>
+    <li>Worker startet Migrations (<code>golang-migrate up</code>) vor HTTP + Scheduler.</li>
+    <li>Web abhängig von Worker (healthz) für sauberen Start.</li>
+    <li>Einzelnes öffentliches Ingress auf <code>web:3000</code>.</li>
+    <li>CI: Go test/lint, web test/lint, Docker build push to GHCR.</li>
+  </ul>
+
+  <h2 id="mvp">11. MVP Acceptance Criteria</h2>
+  <ol>
+    <li>Admin kann sich einloggen (Email/Password).</li>
+    <li>Admin kann Integrationen für alle fünf <code>kind</code>-Werte anlegen; Secrets nie in API-Responses.</li>
+    <li>Admin kann monitored Repo mit beliebiger Source/Ticket-Kombination anlegen (GitHub+Linear, GitLab+Jira, …).</li>
+    <li>Integration-Test pro Provider liefert Erfolg/Fehler in UI.</li>
+    <li>Erster Poll: <strong>baseline</strong> — kein Ticket, <code>last_known_tag</code> gesetzt.</li>
+    <li>Poll ohne Release-Wechsel: <strong>skip</strong>.</li>
+    <li>Neues Release: <strong>create</strong> — Ticket im gewählten System sichtbar.</li>
+    <li>Mindestens ein End-to-End-Test pro Source (GitHub + GitLab) und pro Ticket-Provider (Phasical + Jira + Linear) in CI (mock oder Sandbox).</li>
+    <li>Dashboard, manueller Poll, Settings-Intervall, <code>docker compose up</code> wie zuvor.</li>
+    <li>Go + Web Tests grün in CI.</li>
+  </ol>
+
+  <h2 id="future">12. Post-MVP</h2>
+  <ul>
+    <li>Codeberg / Gitea / weitere Sources.</li>
+    <li>Per-Repo Poll-Intervall.</li>
+    <li>Release-Filter (Pre-Releases, Regex auf Tags).</li>
+    <li>Webhook statt Poll.</li>
+    <li>Multi-User mit Rollen.</li>
+    <li>OAuth/Social Login (COSS: <a href="https://coss.com/ui/r/p-button-38.json">p-button-38</a>).</li>
+  </ul>
+
+  <p class="docnav"><a href="index.html">Docs</a> · <a href="specs.html">Spec</a> · <a href="stack.html">Stack</a> · <a href="schema.html">Schema</a></p>
 </div>
 </body>
 </html>

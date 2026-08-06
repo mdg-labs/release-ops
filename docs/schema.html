@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Schema — Release Ops</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+:root {
+  --ink: #10141a; --panel: #171d26; --panel-2: #1c2330; --border: #262e3a;
+  --text: #dce3ea; --text-dim: #8590a3; --text-faint: #5b6577;
+  --amber: #e8a33d; --amber-dim: #6b551f; --teal: #4fd1c5; --teal-dim: #1f4844;
+  --mono: 'JetBrains Mono', ui-monospace, monospace; --sans: 'Inter', sans-serif;
+  --radius: 6px; --maxw: 900px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ink); color: var(--text); font-family: var(--sans); line-height: 1.6; font-size: 16px; }
+a { color: var(--teal); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 48px 24px 96px; }
+.topnav { display: flex; gap: 20px; font-family: var(--mono); font-size: 13px; color: var(--text-dim); padding: 18px 24px; border-bottom: 1px solid var(--border); flex-wrap: wrap; align-items: center; }
+.topnav a { color: var(--text-dim); }
+.topnav a:hover { color: var(--teal); text-decoration: none; }
+.topnav a.brand { color: var(--amber); font-weight: 700; }
+.topnav .current { color: var(--text); }
+.topnav .sep { color: var(--text-faint); }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--amber); margin: 0 0 10px; }
+h1 { font-size: clamp(28px, 4vw, 40px); font-weight: 700; margin: 0 0 14px; }
+p.lede { color: var(--text-dim); font-size: 17px; max-width: 720px; }
+p { margin: 0 0 14px; }
+code { font-family: var(--mono); font-size: 0.88em; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; color: var(--teal); }
+pre { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; overflow-x: auto; margin: 0 0 18px; }
+pre code { background: none; border: none; padding: 0; color: var(--text); font-size: 13px; line-height: 1.55; white-space: pre; }
+.docnav { margin-top: 32px; font-family: var(--mono); font-size: 13px; color: var(--text-dim); }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 18px; font-size: 14px; color: var(--text-dim); }
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <a class="brand" href="index.html">release-ops</a>
+  <span class="sep">/</span>
+  <a href="index.html">docs</a>
+  <span class="sep">·</span>
+  <a href="specs.html">spec</a>
+  <span class="sep">·</span>
+  <a href="stack.html">stack</a>
+  <span class="sep">·</span>
+  <span class="current">schema</span>
+</nav>
+<div class="wrap">
+  <p class="eyebrow">Datenbank</p>
+  <h1>SQLite Schema (<code>app.db</code>)</h1>
+  <p class="lede">
+    Kanonische Struktur für Application-Daten. Auth-Tabellen (BetterAuth) liegen in
+    <code>auth.db</code> — siehe <a href="specs.html#auth">Spec § Authentifizierung</a>.
+  </p>
+  <div class="card">
+    Datei im Repo: <code>docs/schema.sql</code> (identischer Inhalt — für Migrations und Tooling).
+  </div>
+  <pre><code>-- Release Ops — application schema (app.db)
+-- Auth tables (BetterAuth) live in auth.db — see specs.html § Authentication
+-- Apply via golang-migrate from worker on startup
+
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE app_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  poll_interval_minutes INTEGER NOT NULL DEFAULT 360 CHECK (poll_interval_minutes >= 5),
+  updated_at TEXT NOT NULL
+);
+
+-- kind: source → github, gitlab | ticket → phasical, jira, linear
+CREATE TABLE integrations (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('github', 'gitlab', 'phasical', 'jira', 'linear')),
+  name TEXT NOT NULL,
+  base_url TEXT,
+  encrypted_payload TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK (
+    (kind = 'github' AND base_url IS NULL)
+    OR (kind = 'gitlab' AND base_url IS NOT NULL)
+    OR (kind = 'phasical' AND base_url IS NOT NULL)
+    OR (kind = 'jira' AND base_url IS NOT NULL)
+    OR (kind = 'linear' AND base_url IS NULL)
+  )
+);
+
+CREATE TABLE monitored_repos (
+  id TEXT PRIMARY KEY,
+  source_kind TEXT NOT NULL CHECK (source_kind IN ('github', 'gitlab')),
+  project_path TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+  source_integration_id TEXT REFERENCES integrations(id),
+  ticket_kind TEXT NOT NULL CHECK (ticket_kind IN ('phasical', 'jira', 'linear')),
+  ticket_integration_id TEXT NOT NULL REFERENCES integrations(id),
+  ticket_config TEXT NOT NULL,
+  last_known_tag TEXT,
+  last_polled_at TEXT,
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (source_kind, project_path),
+  CHECK (
+    json_valid(ticket_config)
+    AND (
+      (ticket_kind = 'phasical' AND json_extract(ticket_config, '$.projectId') IS NOT NULL)
+      OR (ticket_kind = 'jira' AND json_extract(ticket_config, '$.projectKey') IS NOT NULL)
+      OR (ticket_kind = 'linear' AND json_extract(ticket_config, '$.teamId') IS NOT NULL)
+    )
+  )
+);
+
+CREATE TABLE poll_runs (
+  id TEXT PRIMARY KEY,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  status TEXT NOT NULL CHECK (status IN ('running', 'success', 'partial', 'failed')),
+  repos_checked INTEGER NOT NULL DEFAULT 0,
+  tickets_created INTEGER NOT NULL DEFAULT 0,
+  errors_json TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE poll_run_events (
+  id TEXT PRIMARY KEY,
+  poll_run_id TEXT NOT NULL REFERENCES poll_runs(id) ON DELETE CASCADE,
+  monitored_repo_id TEXT REFERENCES monitored_repos(id) ON DELETE SET NULL,
+  action TEXT NOT NULL CHECK (action IN ('baseline', 'skip', 'create', 'error')),
+  detail TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_integrations_kind ON integrations (kind);
+CREATE INDEX idx_monitored_repos_enabled ON monitored_repos (enabled);
+CREATE INDEX idx_monitored_repos_source ON monitored_repos (source_kind);
+CREATE INDEX idx_poll_run_events_run ON poll_run_events (poll_run_id);
+CREATE INDEX idx_poll_runs_started ON poll_runs (started_at);</code></pre>
+  <p class="docnav"><a href="index.html">Docs</a> · <a href="specs.html">Spec</a> · <a href="stack.html">Stack</a> · <a href="schema.html">Schema</a></p>
+</div>
+</body>
+</html>

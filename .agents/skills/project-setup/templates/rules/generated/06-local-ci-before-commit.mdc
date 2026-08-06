@@ -1,0 +1,42 @@
+---
+description: Run scoped CI before every task commit; full gate only before push
+alwaysApply: true
+---
+
+# Local CI before commit
+
+## Scoped gate (every task commit and verifier Layer 2)
+
+Map staged/committed paths → package filter(s). Run **only** affected packages — not the full monorepo unless the task touched root tooling.
+
+```bash
+{SCOPED_CI_CMD}
+```
+
+Examples by stack (customize in project-setup):
+
+```bash
+# pnpm + turbo monorepo
+bash scripts/with-ci-env.sh pnpm turbo run lint typecheck test:unit --filter=@scope/<pkg>
+
+# simple monorepo
+pnpm lint && pnpm typecheck && pnpm test
+```
+
+Mark checks `n/a` when not defined for the current phase. On failure → `blocked`; no commit.
+
+## Full gate (pre-push only)
+
+When the user **explicitly asks to push**:
+
+```bash
+{FULL_CI_CMD}
+```
+
+Sub-agents must **not** run the full gate during routine task execution unless push is requested.
+
+## Rules
+
+- Derive `--filter` from WRITE ∪ READ scope paths (see `doc-index.md` or `02-orchestrator.mdc`).
+- Docs-only / `.cursor/**` changes: skip monorepo gate; run targeted validation only.
+- Lane P parallel agents: use per-worktree `WORK_ROOT`; never global `pkill` that kills sibling agents.

@@ -3,334 +3,137 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stack — release-monitor</title>
+<title>Stack — Release Ops</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
-
 :root {
-  --ink: #10141a;
-  --panel: #171d26;
-  --panel-2: #1c2330;
-  --border: #262e3a;
-  --text: #dce3ea;
-  --text-dim: #8590a3;
-  --text-faint: #5b6577;
-  --amber: #e8a33d;
-  --amber-dim: #6b551f;
-  --teal: #4fd1c5;
-  --teal-dim: #1f4844;
-  --danger: #c1583f;
-  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --radius: 6px;
-  --maxw: 860px;
+  --ink: #10141a; --panel: #171d26; --panel-2: #1c2330; --border: #262e3a;
+  --text: #dce3ea; --text-dim: #8590a3; --text-faint: #5b6577;
+  --amber: #e8a33d; --amber-dim: #6b551f; --teal: #4fd1c5; --teal-dim: #1f4844;
+  --mono: 'JetBrains Mono', ui-monospace, monospace; --sans: 'Inter', sans-serif;
+  --radius: 6px; --maxw: 860px;
 }
-
 * { box-sizing: border-box; }
-
-html { scroll-behavior: smooth; }
-
-body {
-  margin: 0;
-  background: var(--ink);
-  background-image:
-    radial-gradient(ellipse 900px 500px at 50% -10%, rgba(232,163,61,0.06), transparent),
-    repeating-linear-gradient(180deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
-  color: var(--text);
-  font-family: var(--sans);
-  line-height: 1.6;
-  font-size: 16px;
-  -webkit-font-smoothing: antialiased;
-}
-
+body { margin: 0; background: var(--ink); color: var(--text); font-family: var(--sans); line-height: 1.6; font-size: 16px; }
 a { color: var(--teal); text-decoration: none; }
 a:hover { text-decoration: underline; }
-a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
-  outline: 2px solid var(--amber);
-  outline-offset: 2px;
-}
-
-.wrap {
-  max-width: var(--maxw);
-  margin: 0 auto;
-  padding: 48px 24px 96px;
-}
-
-/* Top nav */
-.topnav {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  font-family: var(--mono);
-  font-size: 13px;
-  color: var(--text-dim);
-  padding: 18px 24px;
-  border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
-}
-.topnav .brand { color: var(--amber); font-weight: 700; letter-spacing: 0.02em; }
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 48px 24px 96px; }
+.topnav { display: flex; gap: 20px; font-family: var(--mono); font-size: 13px; color: var(--text-dim); padding: 18px 24px; border-bottom: 1px solid var(--border); flex-wrap: wrap; align-items: center; }
 .topnav a { color: var(--text-dim); }
 .topnav a:hover { color: var(--teal); text-decoration: none; }
-.topnav .sep { color: var(--text-faint); }
+.topnav a.brand { color: var(--amber); font-weight: 700; }
 .topnav .current { color: var(--text); }
-
-/* Headings */
-.eyebrow {
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--amber);
-  margin: 0 0 10px;
-}
-h1 {
-  font-family: var(--sans);
-  font-size: clamp(28px, 4vw, 40px);
-  font-weight: 700;
-  line-height: 1.15;
-  margin: 0 0 14px;
-  letter-spacing: -0.01em;
-}
-h2 {
-  font-family: var(--sans);
-  font-size: 22px;
-  font-weight: 700;
-  margin: 44px 0 14px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
-}
-h3 {
-  font-family: var(--mono);
-  font-size: 15px;
-  color: var(--amber);
-  margin: 28px 0 10px;
-}
-p { color: var(--text); margin: 0 0 14px; }
+.topnav .sep { color: var(--text-faint); }
+.docnav { margin-top: 32px; font-family: var(--mono); font-size: 13px; color: var(--text-dim); }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--amber); margin: 0 0 10px; }
+h1 { font-size: clamp(28px, 4vw, 40px); font-weight: 700; margin: 0 0 14px; }
+h2 { font-size: 22px; font-weight: 700; margin: 44px 0 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+h3 { font-family: var(--mono); font-size: 15px; color: var(--amber); margin: 28px 0 10px; }
 p.lede { color: var(--text-dim); font-size: 17px; max-width: 640px; }
-ul, ol { padding-left: 22px; margin: 0 0 16px; }
-li { margin-bottom: 6px; }
-strong { color: #fff; font-weight: 600; }
-code {
-  font-family: var(--mono);
-  font-size: 0.88em;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 6px;
-  color: var(--teal);
-}
-pre {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px 18px;
-  overflow-x: auto;
-  margin: 0 0 18px;
-}
-pre code {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--text);
-  font-size: 13.5px;
-  line-height: 1.55;
-}
-
-/* Cards */
-.card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 22px 24px;
-  margin-bottom: 18px;
-}
-.card.amber { border-color: var(--amber-dim); }
-.card.teal { border-color: var(--teal-dim); }
-
-/* Box types used across module pages */
-.box { border-radius: var(--radius); padding: 16px 18px; margin: 0 0 18px; border: 1px solid var(--border); }
-.box-title { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 8px; }
-.box.goal { background: rgba(79,209,197,0.06); border-color: var(--teal-dim); }
-.box.goal .box-title { color: var(--teal); }
-.box.task { background: rgba(232,163,61,0.06); border-color: var(--amber-dim); }
-.box.task .box-title { color: var(--amber); }
-.box.pitfall { background: rgba(193,88,63,0.07); border-color: rgba(193,88,63,0.35); }
-.box.pitfall .box-title { color: var(--danger); }
-.box.check { background: var(--panel-2); }
-.box.check .box-title { color: var(--text-dim); }
-.box p:last-child, .box ul:last-child { margin-bottom: 0; }
-
-/* Terminal pipeline (signature element, index page) */
-.pipeline { position: relative; margin: 40px 0 0; padding-left: 34px; }
-.pipeline::before {
-  content: '';
-  position: absolute;
-  left: 10px;
-  top: 10px;
-  bottom: 10px;
-  width: 1px;
-  background: linear-gradient(180deg, var(--amber-dim), var(--border) 90%);
-}
-.phase {
-  position: relative;
-  margin-bottom: 14px;
-  display: block;
-}
-.phase::before {
-  content: '';
-  position: absolute;
-  left: -34px;
-  top: 22px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--text-faint);
-  border: 2px solid var(--ink);
-  box-shadow: 0 0 0 1px var(--border);
-}
-.phase.current::before { background: var(--amber); box-shadow: 0 0 0 1px var(--amber), 0 0 8px 1px rgba(232,163,61,0.6); }
-.phase.done::before { background: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
-.phase-card {
-  display: block;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px 20px;
-  transition: border-color 0.15s ease, transform 0.15s ease;
-}
-.phase-card:hover { border-color: var(--text-faint); text-decoration: none; transform: translateX(2px); }
-.phase.current .phase-card { border-color: var(--amber-dim); }
-.phase-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
-.phase-num { font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
-.phase-title { font-family: var(--sans); font-weight: 600; font-size: 16px; color: var(--text); }
-.phase-status {
-  font-family: var(--mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 2px 7px;
-  border-radius: 3px;
-  margin-left: auto;
-  color: var(--text-dim);
-  border: 1px solid var(--border);
-}
-.phase.current .phase-status { color: var(--amber); border-color: var(--amber-dim); }
-.phase-desc { color: var(--text-dim); font-size: 14px; margin: 0; }
-
-/* Prompt line */
-.prompt { font-family: var(--mono); font-size: 13px; color: var(--text-faint); }
-.prompt::before { content: '$ '; color: var(--teal); }
-
-/* Footer nav between modules */
-.modnav {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  margin-top: 56px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
-  font-family: var(--mono);
-  font-size: 13px;
-}
-.modnav a { display: block; color: var(--text-dim); }
-.modnav a:hover { color: var(--teal); }
-.modnav .dir { display: block; color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
-.modnav .right { text-align: right; }
-
-/* Grid links (stack/specs index cards) */
-.linkgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 22px 0 0; }
-@media (max-width: 620px) { .linkgrid { grid-template-columns: 1fr; } }
-.linkcard {
-  display: block;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px 18px;
-  color: var(--text);
-}
-.linkcard:hover { border-color: var(--teal-dim); text-decoration: none; }
-.linkcard .t { font-weight: 600; margin-bottom: 4px; }
-.linkcard .d { color: var(--text-dim); font-size: 13.5px; }
-
 table { width: 100%; border-collapse: collapse; margin: 0 0 18px; font-size: 14px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
-th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.05em; }
-td code { white-space: nowrap; }
-
-.tag {
-  display: inline-block;
-  font-family: var(--mono);
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 3px;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  margin: 0 6px 6px 0;
-}
-
+th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color: var(--text-faint); }
+code { font-family: var(--mono); font-size: 0.88em; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; color: var(--teal); }
+ul { padding-left: 22px; }
+pre { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; overflow-x: auto; font-size: 13.5px; }
+pre code { background: none; border: none; padding: 0; color: var(--text); }
 </style>
 </head>
 <body>
 <nav class="topnav">
-  <span class="brand">release-monitor</span>
+  <a class="brand" href="index.html">release-ops</a>
   <span class="sep">/</span>
-  <a href="index.html">roadmap</a>
+  <a href="index.html">docs</a>
   <span class="sep">·</span>
-  <a href="specs.html">specs</a>
+  <a href="specs.html">spec</a>
   <span class="sep">·</span>
   <span class="current">stack</span>
+  <span class="sep">·</span>
+  <a href="schema.html">schema</a>
 </nav>
-
 <div class="wrap">
   <p class="eyebrow">Referenz</p>
-  <h1>Tech-Stack &amp; Werkzeuge</h1>
-  <p class="lede">Was wir benutzen, und in einem Satz warum — damit du die Wahl nachvollziehen kannst statt sie hinzunehmen.</p>
+  <h1>Tech-Stack</h1>
+  <p class="lede">Zwei-Prozess-Architektur: Go für Worker + API, Next.js für UI + Auth. SQLite bleibt die einzige persistente Datenbank — aufgeteilt in zwei Dateien wegen SQLite-Schreibkonflikten.</p>
 
-  <h2>Sprache &amp; Runtime</h2>
+  <h2>Repository-Layout (Ziel)</h2>
+  <pre><code>release-ops/
+  apps/web/          # Next.js App Router, COSS, BetterAuth
+  cmd/worker/        # Go: HTTP API + Poll-Scheduler (ein Binary)
+  internal/          # Go packages (api, poll, providers, store, crypto)
+  migrations/        # SQL-Migrations für app.db (golang-migrate)
+  docs/              # Diese Spezifikation
+  docker-compose.yml</code></pre>
+
+  <h2>Backend — Go</h2>
   <table>
     <tr><th>Werkzeug</th><th>Warum</th></tr>
-    <tr><td><code>Node.js</code> (LTS)</td><td>Weitester Verbreitung, größtes Ökosystem, läuft überall wo Docker läuft.</td></tr>
-    <tr><td><code>TypeScript</code></td><td>Typen zeigen dir Fehler beim Schreiben statt erst zur Laufzeit — gerade als Einsteiger enorm wertvoll.</td></tr>
-    <tr><td><code>tsx</code></td><td>Führt TS-Dateien direkt aus, ohne manuellen Kompilierschritt während der Entwicklung.</td></tr>
+    <tr><td><code>Go 1.22+</code></td><td>Ein Binary für API + Background-Worker; gute Fit für Polling, HTTP-Clients, SQLite; kleines Container-Image.</td></tr>
+    <tr><td><code>chi</code> oder <code>echo</code></td><td>Leichtgewichtiger HTTP-Router für REST-API.</td></tr>
+    <tr><td><code>modernc.org/sqlite</code> oder <code>github.com/mattn/go-sqlite3</code></td><td>SQLite ohne CGO bevorzugt (<code>modernc</code>) für einfachere Cross-Builds; CGO-Variante wenn Performance kritisch.</td></tr>
+    <tr><td><code>sqlc</code></td><td>Typisierte Queries aus SQL — Schema in <code>docs/schema.sql</code> + Migrations als Source of Truth.</td></tr>
+    <tr><td><code>golang-migrate</code></td><td>Versionierte Migrations wie im alten Drizzle-Modell — kein <code>push</code>, nur <code>up</code> beim Start.</td></tr>
+    <tr><td><code>robfig/cron</code></td><td>Scheduler für Poll-Loop (Alternative: <code>time.Ticker</code> wenn Cron-Features nicht gebraucht).</td></tr>
+    <tr><td><code>github.com/golang-jwt/jwt/v5</code></td><td>JWT-Validierung (BetterAuth JWKS) für API-Auth.</td></tr>
+  </table>
+
+  <h2>Frontend — Next.js + COSS</h2>
+  <table>
+    <tr><th>Werkzeug</th><th>Warum</th></tr>
+    <tr><td><code>Next.js 15</code> (App Router)</td><td>Server Routes für BetterAuth + API-Proxy zu Go ohne CORS-Probleme.</td></tr>
+    <tr><td><code>React 19</code></td><td>COSS-Standard.</td></tr>
+    <tr><td><code>Tailwind CSS v4</code></td><td>Pflicht für COSS.</td></tr>
+    <tr><td><code>@base-ui/react</code> + COSS Registry</td><td>UI-Komponenten laut <code>.agents/skills/coss</code>.</td></tr>
+    <tr><td><code>better-auth</code></td><td>Einfache Email/Password-Auth, SQLite-Adapter, JWT-Plugin für Go-Backend.</td></tr>
+    <tr><td><code>@tanstack/react-query</code></td><td>Server-State für Tabellen/Forms (optional, empfohlen für Poll-Status).</td></tr>
+    <tr><td><code>@tanstack/react-table</code></td><td>Für COSS-Table-Particles mit Sortierung/Checkboxen.</td></tr>
   </table>
 
   <h2>Daten</h2>
   <table>
-    <tr><th>Werkzeug</th><th>Warum</th></tr>
-    <tr><td><code>better-sqlite3</code></td><td>Synchroner, schneller SQLite-Treiber — kein separater DB-Server nötig, eine Datei reicht.</td></tr>
-    <tr><td><code>Drizzle ORM</code> + <code>drizzle-kit</code></td><td>Schema als TS-Code, Migrations werden automatisch generiert — erzwingt strukturell, dass die DB nie am Schema vorbei verändert wird.</td></tr>
-    <tr><td><code>zod</code></td><td>Validiert die YAML-Config zur Laufzeit gegen ein Schema, mit lesbaren Fehlermeldungen.</td></tr>
-    <tr><td><code>yaml</code> (npm package)</td><td>Parst <code>repos.yml</code> in ein JS-Objekt.</td></tr>
+    <tr><th>Datei</th><th>Owner</th><th>Inhalt</th></tr>
+    <tr><td><code>/data/auth.db</code></td><td>Next.js / BetterAuth</td><td>User, Session, Account, JWT/JWKS-Tabellen (BetterAuth-generiert)</td></tr>
+    <tr><td><code>/data/app.db</code></td><td>Go Worker</td><td>Repos, Integrations, Poll-Runs — siehe <a href="schema.html">Schema</a></td></tr>
   </table>
+  <p>Zwei Dateien vermeiden SQLite-Multi-Writer-Probleme. Beide liegen auf einem gemeinsamen Docker-Volume.</p>
 
-  <h2>Ausführung</h2>
+  <h2>Secrets</h2>
   <table>
     <tr><th>Werkzeug</th><th>Warum</th></tr>
-    <tr><td>native <code>node:http</code></td><td>Für den einen <code>/status</code>-Endpoint reicht das eingebaute Modul — kein Express nötig für so wenig Oberfläche.</td></tr>
-    <tr><td><code>node-cron</code></td><td>Einfache, lesbare Wiederholungs-Zeitpläne für den Poll-Loop.</td></tr>
+    <tr><td><code>AES-256-GCM</code> (Go <code>crypto/aes</code>)</td><td>Integration-Credentials in <code>app.db</code> verschlüsselt speichern.</td></tr>
+    <tr><td><code>BETTER_AUTH_SECRET</code></td><td>Session-Signing (Next.js Env).</td></tr>
+    <tr><td><code>APP_ENCRYPTION_KEY</code></td><td>32-Byte Key (hex) für Credential-Verschlüsselung (Go Env).</td></tr>
   </table>
 
   <h2>Qualität</h2>
   <table>
-    <tr><th>Werkzeug</th><th>Warum</th></tr>
-    <tr><td><code>vitest</code></td><td>Schneller Test-Runner mit vertrauter <code>describe/it</code>-Syntax, gute TS-Unterstützung out of the box. Wird schon in Phase 00 eingerichtet, nicht erst nachträglich.</td></tr>
-    <tr><td><code>eslint</code> + <code>prettier</code></td><td>Konsistenter Stil, findet Flüchtigkeitsfehler automatisch.</td></tr>
+    <tr><th>Bereich</th><th>Werkzeug</th></tr>
+    <tr><td>Go Tests</td><td><code>go test</code>, <code>httptest</code>, Provider-Mocks</td></tr>
+    <tr><td>Go Lint</td><td><code>golangci-lint</code></td></tr>
+    <tr><td>Web Tests</td><td><code>vitest</code> + React Testing Library (Forms)</td></tr>
+    <tr><td>Web Lint</td><td><code>eslint</code> + <code>prettier</code></td></tr>
   </table>
 
   <h2>Deployment</h2>
   <table>
     <tr><th>Werkzeug</th><th>Warum</th></tr>
-    <tr><td><code>Docker</code> (multi-stage build)</td><td>Ein Image, überall lauffähig — passt zu deinem bestehenden Coolify-Setup.</td></tr>
+    <tr><td><code>Docker</code> multi-stage</td><td>Separate Images: <code>web</code>, <code>worker</code> — Coolify-kompatibel.</td></tr>
+    <tr><td><code>docker-compose</code></td><td>Lokale Entwicklung + Referenz-Deployment.</td></tr>
+    <tr><td>GitHub Actions → GHCR</td><td>CI: test/lint beider Apps, Image-Push bei <code>main</code>.</td></tr>
   </table>
 
-  <h2>Bewusst nicht genutzt</h2>
+  <h2>Bewusst nicht genutzt (MVP)</h2>
   <ul>
-    <li><strong>Kein Frontend-Framework</strong> — der Service hat keine UI, nur einen JSON-Endpoint. Siehe <a href="modules/09-ausblick.html">Phase 09</a> für den möglichen Nachtrag.</li>
-    <li><strong>Kein PocketBase / kein BaaS</strong> — würde Admin-UI, Auth und generische REST-Endpoints mitbringen, die hier niemand braucht, und die eigentliche Logik trotzdem selbst geschrieben werden müsste.</li>
-    <li><strong>Kein Prisma</strong> — braucht bei SQLite eine zusätzliche Query-Engine-Binary im Image. Drizzle kommt ohne aus und zeigt dir echtes SQL in den Migrations, was zum Lernen besser ist.</li>
+    <li><strong>Kein YAML-Config</strong> — alles über UI + <code>app.db</code>.</li>
+    <li><strong>Kein Node-Worker</strong> — Polling nur in Go.</li>
+    <li><strong>Kein Drizzle</strong> — Go-Stack nutzt sqlc + golang-migrate.</li>
+    <li><strong>Kein Express/Fiber im Frontend</strong> — Next.js Server Routes reichen.</li>
+    <li><strong>Kein OAuth/Social Login</strong> im MVP — nur Email/Password (BetterAuth).</li>
+    <li><strong>Kein Codeberg/Gitea</strong> — MVP: GitHub + GitLab Sources; Phasical + Jira + Linear Tickets.</li>
+    <li><strong>Kein Redis/Postgres</strong> — SQLite reicht für Single-Instance Self-Host.</li>
   </ul>
 
-  <p style="margin-top:32px"><a href="index.html">← zurück zur Roadmap</a></p>
+  <p class="docnav"><a href="index.html">Docs</a> · <a href="specs.html">Spec</a> · <a href="stack.html">Stack</a> · <a href="schema.html">Schema</a></p>
 </div>
 </body>
 </html>

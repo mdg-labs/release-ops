@@ -1,0 +1,45 @@
+---
+description: Link every task commit to a GitHub issue number (synced from Phasical) for commit/PR traceability
+alwaysApply: true
+---
+
+# Phasical / GitHub commit linking
+
+Every **task-related** commit must include the **GitHub issue number** so commits and PRs link in GitHub when pushed. Phasical is the project-management source of truth; Phasical auto-syncs tasks to GitHub issues. **Commits use the GitHub number — not the Phasical task ID.**
+
+## Required subject format
+
+```
+<type>(<scope>)[#<N>]: <imperative summary>
+```
+
+| Part | Rule |
+|------|------|
+| `<type>` | Conventional Commits: `feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `ci`, `build`, `perf` |
+| `<scope>` | Allowed scopes from `01-git-workflow.mdc` |
+| `[#<N>]` | **Mandatory** on task commits — square brackets, hash + GitHub issue number |
+| Summary | Imperative mood; whole subject ≤72 chars |
+
+### Issue number precedence
+
+1. **Phasical task with GitHub sync** — `[#N]` where `N` is `externalLinks[].externalId` for `resourceType: "issue"`
+2. **Roadmap only** — `[P2-01]` when no Phasical/GitHub issue exists yet
+3. **Combined batch** — primary leaf GitHub number in brackets; list siblings in session memory
+
+### Examples
+
+```bash
+feat(web)[#36]: add Playwright auth fixture
+fix(worker)[#42]: skip expiry while vehicles en route
+chore(plan)[P8-07]: mark P8-07 verified   # roadmap-only
+```
+
+## Body
+
+Use `fixes #N` in the body when the project requires it for auto-close on merge to production branch. Phasical MCP owns status transitions — do not use GitHub smart commands (`#time`, `#comment`, `#resolve`) in commit messages.
+
+## Forbidden
+
+- Phasical `taskId` or Phasical task number in any commit message
+- Task commits without `[#N]` or `[P*-*]` when Phasical sync was in scope
+- Setting GitHub issue state directly — use Phasical `update_task_status`

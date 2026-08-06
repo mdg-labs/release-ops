@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "source": "mdg-labs/skills",
+  "rules": {
+    "02-orchestrator": {
+      "installPath": ".cursor/rules/02-orchestrator.mdc",
+      "templatePath": "project-setup/templates/rules/shared/02-orchestrator.mdc",
+      "managed": "shared",
+      "computedHash": "3b12daa84a7ba486b60900e4682bdb9f1ee0c5a51c087b86631675a470a4900f"
+    },
+    "07-phasical-commit-linking": {
+      "installPath": ".cursor/rules/07-phasical-commit-linking.mdc",
+      "templatePath": "project-setup/templates/rules/shared/07-phasical-commit-linking.mdc",
+      "managed": "shared",
+      "computedHash": "3a214fcac383b0fa901a6e63e6f114e09d739240b548d28250f546c1a85aaeed"
+    },
+    "08-dependabot-alerts": {
+      "installPath": ".cursor/rules/08-dependabot-alerts.mdc",
+      "templatePath": "project-setup/templates/rules/shared/08-dependabot-alerts.mdc",
+      "managed": "shared",
+      "computedHash": "7892def85170c8dff45cd737e4e0e9b1d298e1ebc0f8ce0d4950405ac75fd56c"
+    },
+    "09-sub-agent-prompt-contract": {
+      "installPath": ".cursor/rules/09-sub-agent-prompt-contract.mdc",
+      "templatePath": "project-setup/templates/rules/shared/09-sub-agent-prompt-contract.mdc",
+      "managed": "shared",
+      "computedHash": "2bf422c9ca22c8a0c40493ff01dbfdd9b75055a9e5b94f090dfa9f6e4c47929a"
+    },
+    "13-no-amend-pushed": {
+      "installPath": ".cursor/rules/13-no-amend-pushed.mdc",
+      "templatePath": "project-setup/templates/rules/shared/13-no-amend-pushed.mdc",
+      "managed": "shared",
+      "computedHash": "a22da8082641de03353d3f2c0c09101cf3446170d8536fdbfe5b3e21e8f20afc"
+    },
+    "00-project": {
+      "installPath": ".cursor/rules/00-project.mdc",
+      "templatePath": "project-setup/templates/rules/generated/00-project.mdc",
+      "managed": "generated",
+      "computedHash": "90eea6ad0b0cb4cc229fdc613d78561a0f2c27125ec618ae1758e910a8a90c5d"
+    },
+    "01-git-workflow": {
+      "installPath": ".cursor/rules/01-git-workflow.mdc",
+      "templatePath": "project-setup/templates/rules/generated/01-git-workflow.mdc",
+      "managed": "generated",
+      "computedHash": "0470c9dbf5eeb84ba794f6340501f7722819b5af3e2101688fb88c637eac46f7"
+    },
+    "06-local-ci-before-commit": {
+      "installPath": ".cursor/rules/06-local-ci-before-commit.mdc",
+      "templatePath": "project-setup/templates/rules/generated/06-local-ci-before-commit.mdc",
+      "managed": "generated",
+      "computedHash": "5bba8e75bdb31d208db3451075b0bf9d1e2baca338ef372c0ec2b2625acf8848"
+    }
+  }
+}

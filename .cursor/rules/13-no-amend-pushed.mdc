@@ -1,0 +1,37 @@
+---
+description: Never amend commits that have been pushed to remote
+alwaysApply: true
+---
+
+# Never amend pushed commits
+
+## Rule
+
+**NEVER use `git commit --amend` on any commit that exists on a remote branch.**
+
+Amending rewrites the commit SHA. When the old SHA is already on the remote, local and remote diverge.
+
+## What to do instead
+
+Create a **new commit**:
+
+```bash
+git add <path>...
+git commit -m "fix(api)[#12]: adjust validation"
+```
+
+## The only exception
+
+`--amend` is safe **only** when ALL are true:
+
+1. The commit was created by **this agent** in **this conversation**
+2. The commit has **never been pushed**
+3. The user explicitly asked to amend
+
+## Anti-patterns
+
+```bash
+# WRONG
+git commit --amend --no-edit
+git push --force-with-lease
+```

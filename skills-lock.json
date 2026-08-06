@@ -12,6 +12,42 @@
       "sourceType": "github",
       "skillPath": "apps/ui/skills/coss-particles/SKILL.md",
       "computedHash": "44c9d1c501a8f76c5332740795a2fa0f07dc814cd1a2c4a6103a971eb982db79"
+    },
+    "customer-docs": {
+      "source": "mdg-labs/skills",
+      "sourceType": "github",
+      "skillPath": "customer-docs/SKILL.md",
+      "computedHash": "73c56da2477ab0f2ef83f3e251f133e72a0cd761f2d8bdcda7a710945ab15eca"
+    },
+    "dependabot-triage": {
+      "source": "mdg-labs/skills",
+      "sourceType": "github",
+      "skillPath": "dependabot-triage/SKILL.md",
+      "computedHash": "5f23a55b76c788ba59653948f8205d771d645bc4f7fcbc315a6f584925640644"
+    },
+    "orchestrator": {
+      "source": "mdg-labs/skills",
+      "sourceType": "github",
+      "skillPath": "orchestrator/SKILL.md",
+      "computedHash": "16133146418149875777e08c0bade4a03bb6b756ce4037238799ed8de451fd7d"
+    },
+    "phasical-intake": {
+      "source": "mdg-labs/skills",
+      "sourceType": "github",
+      "skillPath": "phasical-intake/SKILL.md",
+      "computedHash": "1f2aa985e6c40cb99f174fcfac2e0fcb74c8845017e43395c3fc7256a4c693cd"
+    },
+    "phasical-triage": {
+      "source": "mdg-labs/skills",
+      "sourceType": "github",
+      "skillPath": "phasical-triage/SKILL.md",
+      "computedHash": "36e88f5c7aa7335608629c76b8b721c689a43c0bd1f9e641e74aa7c6201d8875"
+    },
+    "project-setup": {
+      "source": "mdg-labs/skills",
+      "sourceType": "github",
+      "skillPath": "project-setup/SKILL.md",
+      "computedHash": "38a5ec0181c50bb2d2479dc1f590a746270151fe69d2d5861712981b3d9f065b"
     }
   }
 }

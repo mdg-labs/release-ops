@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "skills": {
+    "orchestrator": {
+      "source": "mdg-labs/skills",
+      "sourceType": "github",
+      "skillPath": "orchestrator/SKILL.md",
+      "computedHash": ""
+    },
+    "phasical-intake": {
+      "source": "mdg-labs/skills",
+      "sourceType": "github",
+      "skillPath": "phasical-intake/SKILL.md",
+      "computedHash": ""
+    },
+    "phasical-triage": {
+      "source": "mdg-labs/skills",
+      "sourceType": "github",
+      "skillPath": "phasical-triage/SKILL.md",
+      "computedHash": ""
+    },
+    "dependabot-triage": {
+      "source": "mdg-labs/skills",
+      "sourceType": "github",
+      "skillPath": "dependabot-triage/SKILL.md",
+      "computedHash": ""
+    },
+    "customer-docs": {
+      "source": "mdg-labs/skills",
+      "sourceType": "github",
+      "skillPath": "customer-docs/SKILL.md",
+      "computedHash": ""
+    }
+  }
+}

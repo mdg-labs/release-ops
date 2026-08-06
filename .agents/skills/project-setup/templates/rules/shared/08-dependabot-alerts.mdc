@@ -1,0 +1,34 @@
+---
+description: Never dismiss Dependabot security alerts manually — fix and commit instead
+alwaysApply: true
+---
+
+# Dependabot alert resolution policy
+
+## Rule
+
+**Never dismiss a Dependabot alert via the GitHub UI or API** (`PATCH state=dismissed`).
+
+The correct resolution is to **upgrade the vulnerable dependency** and land the fix on the integration branch. GitHub auto-closes the alert when the vulnerability is no longer present in the dependency graph.
+
+## Correct workflow
+
+1. Read the alert: package, vulnerable range, patched version.
+2. Upgrade in the relevant `package.json`; update lockfile.
+3. Run the project's scoped CI gate (see `06-local-ci-before-commit.mdc`).
+4. Commit: `fix(deps)[#N]: bump <pkg> to <version> (CVE-XXXX-XXXX)`.
+5. Alert auto-closes when the fix is on the default/integration branch.
+
+Use **dependabot-triage** skill to create a Phasical bug if no ticket exists.
+
+## Dismissal is only acceptable when
+
+- The vulnerability does not affect this project's usage **AND**
+- The user explicitly reviewed the CVE **AND**
+- Dismissal reason is documented in the alert.
+
+Even then, prefer a version bump if available.
+
+## This rule applies to ALL agents
+
+No sub-agent may dismiss an alert. Report `blocked` if the bump cannot land — never dismiss.

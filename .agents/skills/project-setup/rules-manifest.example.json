@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "source": "mdg-labs/skills",
+  "rules": {
+    "02-orchestrator": {
+      "installPath": ".cursor/rules/02-orchestrator.mdc",
+      "templatePath": "project-setup/templates/rules/shared/02-orchestrator.mdc",
+      "managed": "shared",
+      "computedHash": ""
+    },
+    "07-phasical-commit-linking": {
+      "installPath": ".cursor/rules/07-phasical-commit-linking.mdc",
+      "templatePath": "project-setup/templates/rules/shared/07-phasical-commit-linking.mdc",
+      "managed": "shared",
+      "computedHash": ""
+    },
+    "08-dependabot-alerts": {
+      "installPath": ".cursor/rules/08-dependabot-alerts.mdc",
+      "templatePath": "project-setup/templates/rules/shared/08-dependabot-alerts.mdc",
+      "managed": "shared",
+      "computedHash": ""
+    },
+    "09-sub-agent-prompt-contract": {
+      "installPath": ".cursor/rules/09-sub-agent-prompt-contract.mdc",
+      "templatePath": "project-setup/templates/rules/shared/09-sub-agent-prompt-contract.mdc",
+      "managed": "shared",
+      "computedHash": ""
+    },
+    "13-no-amend-pushed": {
+      "installPath": ".cursor/rules/13-no-amend-pushed.mdc",
+      "templatePath": "project-setup/templates/rules/shared/13-no-amend-pushed.mdc",
+      "managed": "shared",
+      "computedHash": ""
+    },
+    "00-project": {
+      "installPath": ".cursor/rules/00-project.mdc",
+      "templatePath": "project-setup/templates/rules/generated/00-project.mdc",
+      "managed": "generated",
+      "computedHash": ""
+    },
+    "01-git-workflow": {
+      "installPath": ".cursor/rules/01-git-workflow.mdc",
+      "templatePath": "project-setup/templates/rules/generated/01-git-workflow.mdc",
+      "managed": "generated",
+      "computedHash": ""
+    },
+    "06-local-ci-before-commit": {
+      "installPath": ".cursor/rules/06-local-ci-before-commit.mdc",
+      "templatePath": "project-setup/templates/rules/generated/06-local-ci-before-commit.mdc",
+      "managed": "generated",
+      "computedHash": ""
+    }
+  }
+}

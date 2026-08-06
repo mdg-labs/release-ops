@@ -1,0 +1,41 @@
+---
+description: Git branch policy, commit format, staging rules, never-push default
+alwaysApply: true
+---
+
+# Git workflow
+
+## Branches
+
+| Branch | Role |
+|--------|------|
+| `main` | Integration / development — verified work lands here |
+| `main` | Production — **protected**; agents must not push here |
+
+- Feature work on `main` (Lane S) or `orchestrator/<TASK-ID>` branches (Lane P).
+- **Never push** unless the user explicitly asks.
+- **Never push to `main`** from agents without explicit user request.
+
+## Commit messages (Conventional Commits)
+
+Subject ≤72 chars, imperative mood, **scoped**. Task commits link work items per `07-phasical-commit-linking.mdc`.
+
+```
+feat(<scope>)[#123]: <summary>
+fix(<scope>)[#123]: <summary>
+chore(<scope>)[P2-01]: <summary>   # roadmap-only when no Phasical mirror
+```
+
+**Allowed scopes**: release-ops, api, db, config, ci, docs, deps
+
+Plan-file verifier commits: `chore(plan)[#123]: mark P00 verified`
+
+Session memory (`.agents/project/agent-memory/`) is **gitignored** — never commit session files.
+
+## Staging
+
+Stage explicit paths only. Never `git add .` or `git add -A`.
+
+## Push policy
+
+Agents default to **local commits only**. Full CI gate before push when user explicitly requests push (see `06-local-ci-before-commit.mdc`).
