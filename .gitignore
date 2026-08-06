@@ -1,5 +1,10 @@
 node_modules
+.next
+out
+dist
+coverage
+*.db
+*.db-journal
+.env
 .agents/project/agent-memory/archive/
 .agents/project/phasical-intake/plans/
-
-.env
