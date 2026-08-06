@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -9,14 +10,34 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/mdguggenbichler/release-ops/internal/api/auth"
+	apimw "github.com/mdguggenbichler/release-ops/internal/api/middleware"
+	storedb "github.com/mdguggenbichler/release-ops/internal/store/db"
 )
 
 const apiV1Prefix = "/api/v1"
 
+// ServerDeps holds dependencies for the production HTTP router.
+type ServerDeps struct {
+	DB      *sql.DB
+	Session *scs.SessionManager
+	Queries *storedb.Queries
+}
+
 // NewRouter builds the root HTTP handler with health and API routes.
 func NewRouter() http.Handler {
+	return newBaseRouter(nil)
+}
+
+// NewServerRouter builds the production handler with auth routes and session middleware.
+func NewServerRouter(deps *ServerDeps) http.Handler {
+	return newBaseRouter(deps)
+}
+
+func newBaseRouter(deps *ServerDeps) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -24,9 +45,30 @@ func NewRouter() http.Handler {
 	r.Use(middleware.Recoverer)
 
 	r.Get("/healthz", Health)
-	MountAPI(r)
+
+	api := MountAPI(r)
+	if deps != nil {
+		registerAuthRoutes(api, deps)
+	}
 
 	return r
+}
+
+func registerAuthRoutes(api chi.Router, deps *ServerDeps) {
+	api.Use(deps.Session.LoadAndSave)
+
+	h := &auth.Handlers{
+		SessionManager: deps.Session,
+		Queries:        deps.Queries,
+	}
+
+	api.Post("/auth/login", h.Login)
+	api.Get("/auth/session", h.Session)
+
+	api.Group(func(protected chi.Router) {
+		protected.Use(apimw.RequireSession(deps.Session))
+		protected.Post("/auth/logout", h.Logout)
+	})
 }
 
 // MountAPI registers the /api/v1 subrouter on r and returns it for route registration.
