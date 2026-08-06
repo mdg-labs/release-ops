@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roadmap — Release Ops</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+:root {
+  --ink: #10141a; --panel: #171d26; --panel-2: #1c2330; --border: #262e3a;
+  --text: #dce3ea; --text-dim: #8590a3; --text-faint: #5b6577;
+  --amber: #e8a33d; --teal: #4fd1c5; --mono: 'JetBrains Mono', ui-monospace, monospace; --sans: 'Inter', sans-serif;
+  --radius: 6px; --maxw: 1100px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ink); color: var(--text); font-family: var(--sans); line-height: 1.6; font-size: 15px; }
+a { color: var(--teal); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 48px 24px 96px; }
+.topnav { display: flex; gap: 20px; font-family: var(--mono); font-size: 13px; color: var(--text-dim); padding: 18px 24px; border-bottom: 1px solid var(--border); flex-wrap: wrap; align-items: center; }
+.topnav a { color: var(--text-dim); }
+.topnav a.brand { color: var(--amber); font-weight: 700; }
+.topnav .current { color: var(--text); }
+.topnav .sep { color: var(--text-faint); }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--amber); margin: 0 0 10px; }
+h1 { font-size: clamp(28px, 4vw, 40px); font-weight: 700; margin: 0 0 14px; }
+h2 { font-size: 20px; margin: 36px 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+h4 { font-size: 14px; color: var(--amber); margin: 14px 0 6px; font-family: var(--mono); }
+p.lede { color: var(--text-dim); font-size: 17px; max-width: 760px; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; margin: 20px 0; font-size: 14px; color: var(--text-dim); }
+.epic-body { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin: 10px 0 16px; font-size: 14px; color: var(--text-dim); }
+.epic-body li, .desc-body li { margin: 4px 0; }
+.epic-body li.ac, .desc-body li.ac { list-style: none; padding-left: 0; }
+.epic-body li.ac::before, .desc-body li.ac::before { content: "☐ "; color: var(--amber); font-family: var(--mono); }
+table { width: 100%; border-collapse: collapse; margin: 12px 0 24px; font-size: 13px; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-family: var(--mono); font-size: 10px; text-transform: uppercase; color: var(--text-faint); }
+td.cb { font-family: var(--mono); white-space: nowrap; color: var(--amber); width: 56px; }
+code { font-family: var(--mono); font-size: 0.88em; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: var(--teal); }
+.tag { display: inline-block; font-family: var(--mono); font-size: 10px; padding: 1px 7px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-dim); margin-left: 6px; }
+.toc { columns: 2; font-size: 14px; }
+.toc a { color: var(--text-dim); }
+.docnav { margin-top: 32px; font-family: var(--mono); font-size: 13px; color: var(--text-dim); }
+details.task-detail { margin-top: 6px; }
+details.task-detail summary { cursor: pointer; color: var(--text-dim); font-size: 13px; list-style: disclosure-closed; }
+details.task-detail[open] summary { margin-bottom: 8px; color: var(--text); }
+details.task-detail .meta { color: var(--text-faint); font-size: 12px; }
+.desc-body { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; font-size: 13px; color: var(--text-dim); max-height: 480px; overflow-y: auto; }
+@media (max-width: 800px) { table { font-size: 12px; } .toc { columns: 1; } }
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <a class="brand" href="index.html">release-ops</a>
+  <span class="sep">/</span>
+  <a href="index.html">docs</a>
+  <span class="sep">·</span>
+  <span class="current">roadmap</span>
+  <span class="sep">·</span>
+  <a href="roadmap.json">roadmap.json</a>
+</nav>
+<div class="wrap">
+  <p class="eyebrow">Implementation plan · MVP</p>
+  <h1>Release Ops roadmap</h1>
+  <p class="lede">
+    11 epics · 51 leaf tasks · generated 2026-08-06.
+    Each task has a full markdown description with spec backlinks, implementation notes, and acceptance criteria.
+    Canonical source: <a href="roadmap.json"><code>roadmap.json</code></a> (<code>phasical-intake-v2</code>).
+    Regenerate: <code>node scripts/generate-roadmap.mjs</code>.
+  </p>
+
+  <div class="card">
+    <strong>Status checkboxes</strong> (orchestrator): <code>- [ ]</code> not started ·
+    <code>- [~]</code> awaiting verification · <code>- [x]</code> verified · <code>- [!]</code> failed.<br>
+  Expand any task row for the full description. <strong>Phasical import</strong> uses <code>description</code> field from JSON (markdown with spec links).
+  </div>
+
+  <h2>Epic index</h2>
+  <nav class="toc">
+    <div><a href="#E01"><code>E01</code> Foundation — scaffold, database &amp; Go server</a></div>
+    <div><a href="#E02"><code>E02</code> Authentication &amp; credential encryption</a></div>
+    <div><a href="#E03"><code>E03</code> Store layer — sqlc repositories</a></div>
+    <div><a href="#E04"><code>E04</code> REST API — all /api/v1 handlers</a></div>
+    <div><a href="#E05"><code>E05</code> Source providers — GitHub, GitLab, Gitea, Forgejo, Codeberg</a></div>
+    <div><a href="#E06"><code>E06</code> Ticket providers — Phasical, Jira, Linear</a></div>
+    <div><a href="#E07"><code>E07</code> Poll engine, scheduler &amp; Shoutrrr notifications</a></div>
+    <div><a href="#E08"><code>E08</code> Web platform — proxy, hooks, shell &amp; i18n</a></div>
+    <div><a href="#E09"><code>E09</code> Web config UI — login and settings pages</a></div>
+    <div><a href="#E10"><code>E10</code> Dashboard — status, manual poll &amp; run history</a></div>
+    <div><a href="#E11"><code>E11</code> Ship — Docker, CI/CD &amp; MVP verification</a></div>
+  </nav>
+
+  <section class="epic" id="E01">
+    <h2><code>E01</code> Foundation — scaffold, database &amp; Go server <span class="tag">config</span></h2>
+    <div class="epic-body"><h4>Context</h4></p><p>Monorepo skeleton (Go + Next.js), db/schema.sql with sqldiff migrations, sqlc scaffold, and runnable Go server with config, chi router, GET /healthz, SQLite + golang-migrate. Merges former P00, P01, P02.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#architecture">§2 Architecture</a></li><br><li><a href="specs.html#schema">§4 Data model</a></li><br><li><a href="specs.html#schema-migrations">§4.0 Schema migrations (sqldiff)</a></li><br><li><a href="specs.html#deployment">§10 Deployment</a></li><br><li><a href="specs.html#env">§9 Environment variables</a></li></p><p><h4>Stack references</h4></p><p><li><a href="stack.html">Tech stack — Repository layout</a></li><br><li><a href="stack.html">Tech stack — Backend (Go)</a></li><br><li><a href="stack.html">Tech stack — Data</a></li><br><li><a href="stack.html">Tech stack — Quality</a></li></p><p><h4>Implementation notes</h4></p><p><li>go.mod, cmd/server, internal/* placeholders, apps/web Next 15 + COSS</li><br><li>db/schema.sql → make migrate-diff name=init, npm run db:check</li><br><li>sqlc.yaml, Makefile migrate-up/down/diff</li><br><li>internal/config, chi router, GET /healthz, modernc sqlite</li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>go build ./cmd/server and npm run lint pass</li><br><li class='ac'>npm run db:check passes after initial migration</li><br><li class='ac'>migrate-up applies to fresh app.db</li><br><li class='ac'>GET /healthz returns 200</li><br><li class='ac'>Layout matches stack.html</li></p><p>---</p><p>**Roadmap ID:** E01</div>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Status</th><th>Task</th><th>Domain</th><th>Depends</th><th>Doc Ref</th></tr>
+      </thead>
+      <tbody>
+        <tr data-task-id="E01-01">
+          <td><code>E01-01</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Scaffold Go module, internal packages, and Next.js COSS web</strong>
+            <details class="task-detail">
+              <summary>## Context  Repository layout per stack.html: cmd/server, internal/{api,config,store,crypto,poll,providers}, apps/web with Next.js 15 App Router, Tailwind v4, COSS components.json, root package.json s… <span class="meta">(7 AC · specs.html#architecture, specs.html#ui, stack.html)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>Repository layout per stack.html: cmd/server, internal/{api,config,store,crypto,poll,providers}, apps/web with Next.js 15 App Router, Tailwind v4, COSS components.json, root package.json scripts.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#architecture">§2 Architecture</a></li><br><li><a href="specs.html#ui">§8 Web UI &amp; COSS Particles</a></li></p><p><h4>Stack references</h4></p><p><li><a href="stack.html">Tech stack — Repository layout</a></li><br><li><a href="stack.html">Tech stack — Frontend (Next.js + COSS)</a></li><br><li><a href="stack.html">Tech stack — Quality</a></li></p><p><h4>Implementation notes</h4></p><p><li>go mod init, cmd/server stub on 127.0.0.1:8080</li><br><li>internal package skeleton with doc.go per package</li><br><li>apps/web: layout, page, globals.css, components.json COSS registry</li><br><li>Root package.json: test, lint, typecheck</li><br><li>VERSION file, .gitignore</li></p><p><h4>Files</h4></p><p><li><code>go.mod</code></li><br><li><code>cmd/server/main.go</code></li><br><li><code>apps/web/</code></li><br><li><code>package.json</code></li><br><li><code>VERSION</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>go build ./cmd/server succeeds</li><br><li class='ac'>go build ./... with internal packages</li><br><li class='ac'>npm run dev starts Next on :3000</li><br><li class='ac'>COSS Button installable</li><br><li class='ac'>npm test runs Vitest smoke</li><br><li class='ac'>golangci-lint run passes</li><br><li class='ac'>Directory layout matches stack.html</li></p><p><h4>Tests</h4></p><p><li><code>go build ./...</code></li><br><li><code>npm test</code></li><br><li><code>npm run lint</code></li></p><p>---</p><p>**Roadmap ID:** E01-01</div>
+            </details>
+          </td>
+          <td><span class="tag">config</span></td>
+          <td>—</td>
+          <td>specs.html#architecture, specs.html#ui, stack.html</td>
+        </tr>
+        <tr data-task-id="E01-02">
+          <td><code>E01-02</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Database schema, migrate-diff, and initial migration</strong>
+            <details class="task-detail">
+              <summary>## Context  Canonical DDL in db/schema.sql. scripts/migrate-diff.mjs uses SQLite sqldiff to generate migrations/000001_init.{up,down}.sql. Never hand-write migrations/*.sql.  ## Spec references  - [§4… <span class="meta">(7 AC · specs.html#schema, specs.html#schema-migrations, stack.html, ../db/schema.sql, schema.html)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>Canonical DDL in db/schema.sql. scripts/migrate-diff.mjs uses SQLite sqldiff to generate migrations/000001_init.{up,down}.sql. Never hand-write migrations/*.sql.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#schema">§4 Data model</a></li><br><li><a href="specs.html#schema-migrations">§4.0 Schema migrations (sqldiff)</a></li></p><p><h4>Stack references</h4></p><p><li><a href="stack.html">Tech stack — Data</a></li></p><p><h4>Schema references</h4></p><p><li><a href="../db/schema.sql">db/schema.sql (canonical)</a></li><br><li><a href="schema.html">schema.html (browser view)</a></li></p><p><h4>Implementation notes</h4></p><p><li>db/schema.sql — all 11 tables from spec §4</li><br><li>scripts/migrate-diff.mjs + scripts/ci/check-migrations-sync.mjs</li><br><li>make migrate-diff name=init</li><br><li>npm run db:check in package.json</li></p><p><h4>Files</h4></p><p><li><code>db/schema.sql</code></li><br><li><code>scripts/migrate-diff.mjs</code></li><br><li><code>migrations/000001_init.up.sql</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>db/schema.sql has all 10 tables: users, sessions, app_settings, integrations</li><br><li class='ac'>ticket_projects, monitored_repos, notification_targets, monitored_repo_notifications</li><br><li class='ac'>poll_runs, poll_run_events</li><br><li class='ac'>migrate-diff generates 000001_init up/down</li><br><li class='ac'>npm run db:check passes</li><br><li class='ac'>PRAGMA foreign_keys in migration</li><br><li class='ac'>integrations.kind CHECK all 8 kinds</li></p><p><h4>Tests</h4></p><p><li><code>make migrate-diff name=init</code></li><br><li><code>npm run db:check</code></li></p><p>---</p><p>**Roadmap ID:** E01-02</div>
+            </details>
+          </td>
+          <td><span class="tag">db</span></td>
+          <td>E01-01</td>
+          <td>specs.html#schema, specs.html#schema-migrations, stack.html, ../db/schema.sql, schema.html</td>
+        </tr>
+        <tr data-task-id="E01-03">
+          <td><code>E01-03</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>sqlc, golang-migrate CLI, and store connection</strong>
+            <details class="task-detail">
+              <summary>## Context  sqlc.yaml points at migrations/; queries/ directory; Open SQLite with foreign_keys ON; driver modernc.org/sqlite (CGO-free per stack.html); migrate-up target.  ## Spec references  - [§4 Da… <span class="meta">(7 AC · specs.html#schema, specs.html#deployment, stack.html)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>sqlc.yaml points at migrations/; queries/ directory; Open SQLite with foreign_keys ON; driver modernc.org/sqlite (CGO-free per stack.html); migrate-up target.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#schema">§4 Data model</a></li><br><li><a href="specs.html#deployment">§10 Deployment</a></li></p><p><h4>Stack references</h4></p><p><li><a href="stack.html">Tech stack — Data</a></li><br><li><a href="stack.html">Tech stack — Backend (Go)</a></li></p><p><h4>Implementation notes</h4></p><p><li>sqlc.yaml — engine sqlite, schema migrations/, queries queries/</li><br><li>Makefile: migrate-diff, migrate-up, migrate-down</li><br><li>internal/store/db.go — Open, MaxOpenConns(1), Ping</li><br><li>migrate_test.go — apply up, verify tables</li></p><p><h4>Files</h4></p><p><li><code>sqlc.yaml</code></li><br><li><code>Makefile</code></li><br><li><code>internal/store/db.go</code></li><br><li><code>internal/store/migrate_test.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>sqlc generate produces compilable Go</li><br><li class='ac'>make migrate-up applies to temp db</li><br><li class='ac'>store opens app.db with foreign keys via modernc.org/sqlite</li><br><li class='ac'>migrate_test passes</li><br><li class='ac'>queries/ directory exists</li><br><li class='ac'>golang-migrate documented in Makefile</li><br><li class='ac'>DSN uses APP_DB_PATH env</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/store/...</code></li><br><li><code>sqlc generate</code></li></p><p>---</p><p>**Roadmap ID:** E01-03</div>
+            </details>
+          </td>
+          <td><span class="tag">db</span></td>
+          <td>E01-02</td>
+          <td>specs.html#schema, specs.html#deployment, stack.html</td>
+        </tr>
+        <tr data-task-id="E01-04">
+          <td><code>E01-04</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Go config loader and environment variables</strong>
+            <details class="task-detail">
+              <summary>## Context  Load SESSION_SECRET, APP_ENCRYPTION_KEY, APP_DB_PATH, GO_INTERNAL_PORT, PORT per specs §9.  ## Spec references  - [§9 Environment variables](specs.html#env) - [§2 Architecture](specs.html#… <span class="meta">(7 AC · specs.html#env, specs.html#architecture, stack.html)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>Load SESSION_SECRET, APP_ENCRYPTION_KEY, APP_DB_PATH, GO_INTERNAL_PORT, PORT per specs §9.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#env">§9 Environment variables</a></li><br><li><a href="specs.html#architecture">§2 Architecture</a></li></p><p><h4>Stack references</h4></p><p><li><a href="stack.html">Tech stack — Backend (Go)</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/config/config.go — Load from env</li><br><li>Validate required: SESSION_SECRET, APP_ENCRYPTION_KEY</li><br><li>Defaults: APP_DB_PATH=/data/app.db, GO_INTERNAL_PORT=8080, PORT=3000</li><br><li>config_test.go</li></p><p><h4>Files</h4></p><p><li><code>internal/config/config.go</code></li><br><li><code>internal/config/config_test.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Missing SESSION_SECRET fails fast</li><br><li class='ac'>APP_DB_PATH default /data/app.db</li><br><li class='ac'>GO_INTERNAL_PORT default 8080</li><br><li class='ac'>Config struct passed to server main</li><br><li class='ac'>Unit tests for defaults</li><br><li class='ac'>APP_PUBLIC_URL optional for Secure cookies</li><br><li class='ac'>BOOTSTRAP_ADMIN_* optional pair</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/config/...</code></li></p><p>---</p><p>**Roadmap ID:** E01-04</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E01-01</td>
+          <td>specs.html#env, specs.html#architecture, stack.html</td>
+        </tr>
+        <tr data-task-id="E01-05">
+          <td><code>E01-05</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Chi HTTP router, middleware, and GET /healthz</strong>
+            <details class="task-detail">
+              <summary>## Context  chi router on 127.0.0.1:GO_INTERNAL_PORT. GET /healthz no auth (container probe). API subrouter /api/v1 scaffold for later epics.  ## Spec references  - [§2 Architecture](specs.html#archit… <span class="meta">(7 AC · specs.html#architecture, specs.html#api, stack.html)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>chi router on 127.0.0.1:GO_INTERNAL_PORT. GET /healthz no auth (container probe). API subrouter /api/v1 scaffold for later epics.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#architecture">§2 Architecture</a></li><br><li><a href="specs.html#api">§7 REST API (Go)</a></li></p><p><h4>Stack references</h4></p><p><li><a href="stack.html">Tech stack — Backend (Go)</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/api/router.go — MountAPI, /api/v1 subrouter</li><br><li>GET /healthz handler</li><br><li>Recovery + request logging middleware</li><br><li>Graceful shutdown on SIGTERM</li><br><li>cmd/server wires router</li></p><p><h4>Files</h4></p><p><li><code>internal/api/router.go</code></li><br><li><code>internal/api/health.go</code></li><br><li><code>cmd/server/main.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>GET /healthz returns 200 JSON</li><br><li class='ac'>Server binds 127.0.0.1 only</li><br><li class='ac'>chi MountAPI exports /api/v1 subrouter</li><br><li class='ac'>Graceful shutdown completes in-flight requests</li><br><li class='ac'>go test ./internal/api/...</li><br><li class='ac'>Router test lists registered paths</li><br><li class='ac'>JSON Content-Type on API subrouter</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/api/...</code></li><br><li><code>curl http://127.0.0.1:8080/healthz</code></li></p><p>---</p><p>**Roadmap ID:** E01-05</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E01-04</td>
+          <td>specs.html#architecture, specs.html#api, stack.html</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="epic" id="E02">
+    <h2><code>E02</code> Authentication &amp; credential encryption <span class="tag">backend</span></h2>
+    <div class="epic-body"><h4>Context</h4></p><p>Go-only auth: scs sessions, bcrypt users, release_ops_session cookie, AES-GCM for integration secrets. POST /api/v1/auth/login, logout, GET /api/v1/auth/session. Middleware protects /api/v1/*. Merges P03+P04.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#auth">§3 Authentication</a></li><br><li><a href="specs.html#api">§7 REST API (Go)</a></li><br><li><a href="specs.html#schema">§4 Data model</a></li></p><p><h4>Stack references</h4></p><p><li><a href="stack.html">Tech stack — Backend (Go)</a></li><br><li><a href="stack.html">Tech stack — Data</a></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Login sets HttpOnly session cookie</li><br><li class='ac'>Protected routes return 401 without session</li><br><li class='ac'>Encrypted payloads never in API responses</li><br><li class='ac'>Bootstrap admin on first start</li></p><p>---</p><p>**Roadmap ID:** E02</div>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Status</th><th>Task</th><th>Domain</th><th>Depends</th><th>Doc Ref</th></tr>
+      </thead>
+      <tbody>
+        <tr data-task-id="E02-01">
+          <td><code>E02-01</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>AES-GCM credential encryption service</strong>
+            <details class="task-detail">
+              <summary>## Context  APP_ENCRYPTION_KEY 64 hex chars → AES-256-GCM. Wire format per §4.8: base64(nonce + ciphertext + tag) with 12-byte random nonce.  ## Spec references  - [§4 Data model](specs.html#schema) -… <span class="meta">(7 AC · specs.html#schema, specs.html#env, stack.html)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>APP_ENCRYPTION_KEY 64 hex chars → AES-256-GCM. Wire format per §4.8: base64(nonce + ciphertext + tag) with 12-byte random nonce.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#schema">§4 Data model</a></li><br><li><a href="specs.html#env">§9 Environment variables</a></li></p><p><h4>Stack references</h4></p><p><li><a href="stack.html">Tech stack — Backend (Go)</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/crypto/aesgcm.go — Encrypt, Decrypt</li><br><li>12-byte random nonce prepended to ciphertext+tag; base64 wire encoding</li><br><li>crypto_test.go with fixed test vector</li></p><p><h4>Files</h4></p><p><li><code>internal/crypto/aesgcm.go</code></li><br><li><code>internal/crypto/crypto_test.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Encrypt/decrypt roundtrip</li><br><li class='ac'>Wrong key fails decrypt</li><br><li class='ac'>64 hex char key validation</li><br><li class='ac'>Wire format base64(nonce+ciphertext+tag) per §4.8</li><br><li class='ac'>Used by store layer for encrypted_payload columns</li><br><li class='ac'>No plaintext secrets logged</li><br><li class='ac'>Tests cover empty and large payloads</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/crypto/...</code></li></p><p>---</p><p>**Roadmap ID:** E02-01</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E01-04</td>
+          <td>specs.html#schema, specs.html#env, stack.html</td>
+        </tr>
+        <tr data-task-id="E02-02">
+          <td><code>E02-02</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Users store, bcrypt, and scs session manager</strong>
+            <details class="task-detail">
+              <summary>## Context  sqlc users queries; alexedwards/scs v2 with SQLite sessions table; bcrypt cost 12.  ## Spec references  - [§3 Authentication](specs.html#auth) - [§4 Data model](specs.html#schema)  ## Sche… <span class="meta">(7 AC · specs.html#auth, specs.html#schema, ../db/schema.sql)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>sqlc users queries; alexedwards/scs v2 with SQLite sessions table; bcrypt cost 12.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#auth">§3 Authentication</a></li><br><li><a href="specs.html#schema">§4 Data model</a></li></p><p><h4>Schema references</h4></p><p><li><a href="../db/schema.sql">db/schema.sql (canonical)</a></li></p><p><h4>Implementation notes</h4></p><p><li>queries/users.sql — CreateUser, GetUserByEmail, CountUsers</li><br><li>internal/api/auth/password.go — HashPassword, ComparePassword</li><br><li>internal/api/auth/session.go — NewSessionManager</li><br><li>Session lifetime 7 days, idx_sessions_expiry</li></p><p><h4>Files</h4></p><p><li><code>queries/users.sql</code></li><br><li><code>internal/api/auth/session.go</code></li><br><li><code>internal/api/auth/password.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>GetUserByEmail returns user row</li><br><li class='ac'>bcrypt hash verifies password</li><br><li class='ac'>Session persists across restart</li><br><li class='ac'>sessions table used by scs store</li><br><li class='ac'>CountUsers for bootstrap guard</li><br><li class='ac'>sqlc generate users models</li><br><li class='ac'>HttpOnly cookie name release_ops_session</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/api/auth/...</code></li></p><p>---</p><p>**Roadmap ID:** E02-02</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E01-03, E02-01</td>
+          <td>specs.html#auth, specs.html#schema, ../db/schema.sql</td>
+        </tr>
+        <tr data-task-id="E02-03">
+          <td><code>E02-03</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Auth HTTP handlers and session middleware</strong>
+            <details class="task-detail">
+              <summary>## Context  POST /api/v1/auth/login, POST /api/v1/auth/logout, GET /api/v1/auth/session. Middleware on /api/v1/* except login and session.  ## Spec references  - [§3 Authentication](specs.html#auth) -… <span class="meta">(7 AC · specs.html#auth, specs.html#api)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>POST /api/v1/auth/login, POST /api/v1/auth/logout, GET /api/v1/auth/session. Middleware on /api/v1/* except login and session.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#auth">§3 Authentication</a></li><br><li><a href="specs.html#api">§7 REST API (Go)</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/api/auth/handlers.go — Login, Logout, Session</li><br><li>internal/api/middleware/auth.go — RequireSession</li><br><li>JSON error envelope per §7</li><br><li>Register on /api/v1 router</li></p><p><h4>Files</h4></p><p><li><code>internal/api/auth/handlers.go</code></li><br><li><code>internal/api/middleware/auth.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>POST /api/v1/auth/login sets cookie on valid credentials</li><br><li class='ac'>POST /api/v1/auth/logout clears session</li><br><li class='ac'>GET /api/v1/auth/session returns user or null</li><br><li class='ac'>Protected route returns 401 without cookie</li><br><li class='ac'>Invalid password returns 401 not 500</li><br><li class='ac'>SameSite=Lax, Path=/, HttpOnly</li><br><li class='ac'>Login rate limit not required MVP</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/api/auth/...</code></li></p><p>---</p><p>**Roadmap ID:** E02-03</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E02-02</td>
+          <td>specs.html#auth, specs.html#api</td>
+        </tr>
+        <tr data-task-id="E02-04">
+          <td><code>E02-04</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Bootstrap admin and seed-admin CLI</strong>
+            <details class="task-detail">
+              <summary>## Context  BOOTSTRAP_ADMIN_EMAIL/PASSWORD env on first start when CountUsers=0; cmd/seed-admin CLI. No POST /api/v1/auth/register and no in-app setup wizard (§3).  ## Spec references  - [§3 Authentic… <span class="meta">(8 AC · specs.html#auth, specs.html#env, specs.html#deployment)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>BOOTSTRAP_ADMIN_EMAIL/PASSWORD env on first start when CountUsers=0; cmd/seed-admin CLI. No POST /api/v1/auth/register and no in-app setup wizard (§3).</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#auth">§3 Authentication</a></li><br><li><a href="specs.html#env">§9 Environment variables</a></li><br><li><a href="specs.html#deployment">§10 Deployment</a></li></p><p><h4>Implementation notes</h4></p><p><li>Bootstrap in server startup before Listen</li><br><li>cmd/seed-admin for manual admin creation</li><br><li>Skip bootstrap when users exist</li></p><p><h4>Files</h4></p><p><li><code>internal/api/auth/bootstrap.go</code></li><br><li><code>cmd/seed-admin/main.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>First boot with env vars creates admin user</li><br><li class='ac'>Second boot does not duplicate user</li><br><li class='ac'>seed-admin CLI creates user interactively</li><br><li class='ac'>Bootstrap skipped when users &gt; 0</li><br><li class='ac'>No auth register endpoint in MVP</li><br><li class='ac'>Invalid email rejected</li><br><li class='ac'>Password hashed with bcrypt</li><br><li class='ac'>Document in getting-started (E11)</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/api/auth/... -run Bootstrap</code></li></p><p>---</p><p>**Roadmap ID:** E02-04</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E02-03</td>
+          <td>specs.html#auth, specs.html#env, specs.html#deployment</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="epic" id="E03">
+    <h2><code>E03</code> Store layer — sqlc repositories <span class="tag">db</span></h2>
+    <div class="epic-body"><h4>Context</h4></p><p>Typed repositories for all domain tables. Merges P05.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#schema">§4 Data model</a></li><br><li><a href="specs.html#domain">§5 Domain logic &amp; Idempotency</a></li></p><p><h4>Stack references</h4></p><p><li><a href="stack.html">Tech stack — Data</a></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>All §4 tables queryable via sqlc</li><br><li class='ac'>Repositories used by API handlers</li><br><li class='ac'>Foreign key relationships respected</li></p><p>---</p><p>**Roadmap ID:** E03</div>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Status</th><th>Task</th><th>Domain</th><th>Depends</th><th>Doc Ref</th></tr>
+      </thead>
+      <tbody>
+        <tr data-task-id="E03-01">
+          <td><code>E03-01</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>sqlc queries for all domain tables</strong>
+            <details class="task-detail">
+              <summary>## Context  queries/*.sql for app_settings, integrations, ticket_projects, monitored_repos, notification_targets, monitored_repo_notifications, poll_runs, poll_run_events.  ## Spec references  - [§4 D… <span class="meta">(7 AC · specs.html#schema, specs.html#ticket-projects, ../db/schema.sql)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>queries/*.sql for app_settings, integrations, ticket_projects, monitored_repos, notification_targets, monitored_repo_notifications, poll_runs, poll_run_events.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#schema">§4 Data model</a></li><br><li><a href="specs.html#ticket-projects">§5.3 Ticket projects &amp; status mapping</a></li></p><p><h4>Schema references</h4></p><p><li><a href="../db/schema.sql">db/schema.sql (canonical)</a></li></p><p><h4>Implementation notes</h4></p><p><li>queries/app_settings.sql, integrations.sql, ticket_projects.sql</li><br><li>queries/monitored_repos.sql, notification_targets.sql, poll_runs.sql</li><br><li>queries/monitored_repo_notifications.sql — replace join rows per repo</li><br><li>CRUD + list enabled + update poll state on repos</li></p><p><h4>Files</h4></p><p><li><code>queries/*.sql</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>sqlc generate compiles all query files</li><br><li class='ac'>Integrations ListByKind query</li><br><li class='ac'>MonitoredRepos ListEnabled with notification target IDs</li><br><li class='ac'>monitored_repo_notifications replace on repo update</li><br><li class='ac'>PollRuns InsertRun, FinishRun, InsertEvent</li><br><li class='ac'>TicketProjects UNIQUE constraint in queries</li><br><li class='ac'>Poll run tickets_superseded counter update</li></p><p><h4>Tests</h4></p><p><li><code>sqlc generate</code></li><br><li><code>go build ./...</code></li></p><p>---</p><p>**Roadmap ID:** E03-01</div>
+            </details>
+          </td>
+          <td><span class="tag">db</span></td>
+          <td>E01-03</td>
+          <td>specs.html#schema, specs.html#ticket-projects, ../db/schema.sql</td>
+        </tr>
+        <tr data-task-id="E03-02">
+          <td><code>E03-02</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Domain repository wrappers with crypto pass-through</strong>
+            <details class="task-detail">
+              <summary>## Context  internal/store/*.go wraps sqlc; encrypt on write, decrypt on read for credential columns.  ## Spec references  - [§4 Data model](specs.html#schema) - [§6 Provider interfaces (Go)](specs.ht… <span class="meta">(7 AC · specs.html#schema, specs.html#providers)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>internal/store/*.go wraps sqlc; encrypt on write, decrypt on read for credential columns.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#schema">§4 Data model</a></li><br><li><a href="specs.html#providers">§6 Provider interfaces (Go)</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/store/settings.go, integrations.go, ticket_projects.go</li><br><li>internal/store/repos.go, notifications.go, poll.go</li><br><li>UUID v4 generation, UTC ISO8601 timestamps</li></p><p><h4>Files</h4></p><p><li><code>internal/store/integrations.go</code></li><br><li><code>internal/store/repos.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Integration Create encrypts encrypted_payload</li><br><li class='ac'>Get never returns decrypted secrets to API layer raw</li><br><li class='ac'>UpdatePollState on monitored_repos</li><br><li class='ac'>Repo Create/Update persists notificationTargetIds join rows</li><br><li class='ac'>Repository interfaces mockable for tests</li><br><li class='ac'>app_settings Get returns id=1</li><br><li class='ac'>Notification targets events_json valid JSON</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/store/...</code></li></p><p>---</p><p>**Roadmap ID:** E03-02</div>
+            </details>
+          </td>
+          <td><span class="tag">db</span></td>
+          <td>E03-01, E02-01</td>
+          <td>specs.html#schema, specs.html#providers</td>
+        </tr>
+        <tr data-task-id="E03-03">
+          <td><code>E03-03</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Seed app_settings and store integration tests</strong>
+            <details class="task-detail">
+              <summary>## Context  app_settings row id=1 with poll_interval_minutes default 360; integration tests against temp SQLite.  ## Spec references  - [§4 Data model](specs.html#schema) - [§7 REST API (Go)](specs.ht… <span class="meta">(7 AC · specs.html#schema, specs.html#api)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>app_settings row id=1 with poll_interval_minutes default 360; integration tests against temp SQLite.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#schema">§4 Data model</a></li><br><li><a href="specs.html#api">§7 REST API (Go)</a></li></p><p><h4>Implementation notes</h4></p><p><li>Seed in migration or store test fixture</li><br><li>store_integration_test.go — full CRUD smoke</li></p><p><h4>Files</h4></p><p><li><code>internal/store/store_integration_test.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>GetAppSettings returns poll_interval_minutes &gt;= 5</li><br><li class='ac'>Integration CRUD roundtrip in test db</li><br><li class='ac'>Ticket project create with json_valid configs</li><br><li class='ac'>Monitored repo UNIQUE(source_kind, project_path) enforced</li><br><li class='ac'>migrate_test still passes</li><br><li class='ac'>Tests use t.TempDir for app.db</li><br><li class='ac'>No test data committed to repo</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/store/...</code></li></p><p>---</p><p>**Roadmap ID:** E03-03</div>
+            </details>
+          </td>
+          <td><span class="tag">db</span></td>
+          <td>E03-02</td>
+          <td>specs.html#schema, specs.html#api</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="epic" id="E04">
+    <h2><code>E04</code> REST API — all /api/v1 handlers <span class="tag">backend</span></h2>
+    <div class="epic-body"><h4>Context</h4></p><p>CRUD handlers for settings, integrations, ticket-projects, repos, notification-targets; status and poll endpoints. Register all routes on chi router. Merges P06–P10, P15.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#api">§7 REST API (Go)</a></li><br><li><a href="specs.html#auth">§3 Authentication</a></li></p><p><h4>Stack references</h4></p><p><li><a href="stack.html">Tech stack — Backend (Go)</a></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>All §7 endpoints implemented</li><br><li class='ac'>Session middleware on protected routes</li><br><li class='ac'>JSON shapes match spec</li></p><p>---</p><p>**Roadmap ID:** E04</div>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Status</th><th>Task</th><th>Domain</th><th>Depends</th><th>Doc Ref</th></tr>
+      </thead>
+      <tbody>
+        <tr data-task-id="E04-01">
+          <td><code>E04-01</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Settings API — GET/PATCH /api/v1/settings</strong>
+            <details class="task-detail">
+              <summary>## Context  poll_interval_minutes min 5; GET returns current; PATCH validates and persists.  ## Spec references  - [§7 REST API (Go)](specs.html#api) - [§4 Data model](specs.html#schema)  ## Implement… <span class="meta">(7 AC · specs.html#api, specs.html#schema)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>poll_interval_minutes min 5; GET returns current; PATCH validates and persists.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#api">§7 REST API (Go)</a></li><br><li><a href="specs.html#schema">§4 Data model</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/api/handlers/settings.go</li><br><li>Register on /api/v1/settings</li></p><p><h4>Files</h4></p><p><li><code>internal/api/handlers/settings.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>GET /api/v1/settings returns pollIntervalMinutes</li><br><li class='ac'>PATCH /api/v1/settings updates value</li><br><li class='ac'>PATCH rejects value &lt; 5</li><br><li class='ac'>Requires valid session</li><br><li class='ac'>Response JSON matches §7 shape</li><br><li class='ac'>updated_at set on patch</li><br><li class='ac'>Handler unit tests with mock store</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/api/handlers/...</code></li></p><p>---</p><p>**Roadmap ID:** E04-01</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E03-02, E02-03</td>
+          <td>specs.html#api, specs.html#schema</td>
+        </tr>
+        <tr data-task-id="E04-02">
+          <td><code>E04-02</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Integrations API — CRUD and test connection</strong>
+            <details class="task-detail">
+              <summary>## Context  GET/POST/PATCH/DELETE /api/v1/integrations; POST .../test validates credentials without persisting.  ## Spec references  - [§7 REST API (Go)](specs.html#api) - [§6 Provider interfaces (Go)… <span class="meta">(7 AC · specs.html#api, specs.html#providers)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>GET/POST/PATCH/DELETE /api/v1/integrations; POST .../test validates credentials without persisting.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#api">§7 REST API (Go)</a></li><br><li><a href="specs.html#providers">§6 Provider interfaces (Go)</a></li></p><p><h4>Implementation notes</h4></p><p><li>handlers/integrations.go — full CRUD</li><br><li>TestConnection calls provider ping</li><br><li>Never return encrypted_payload in JSON</li></p><p><h4>Files</h4></p><p><li><code>internal/api/handlers/integrations.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>GET /api/v1/integrations lists without secrets</li><br><li class='ac'>List items include hasSecret boolean per §7.3</li><br><li class='ac'>POST creates integration with encrypted token</li><br><li class='ac'>PATCH updates name/base_url only if token omitted</li><br><li class='ac'>DELETE returns 409 when referenced by repos or ticket projects</li><br><li class='ac'>POST test connection returns success/error</li><br><li class='ac'>All 8 integration kinds accepted</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/api/handlers/...</code></li></p><p>---</p><p>**Roadmap ID:** E04-02</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E03-02, E02-03</td>
+          <td>specs.html#api, specs.html#providers</td>
+        </tr>
+        <tr data-task-id="E04-03">
+          <td><code>E04-03</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Ticket projects API — full CRUD</strong>
+            <details class="task-detail">
+              <summary>## Context  GET/POST/PATCH/DELETE /api/v1/ticket-projects; create_config and status_mapping JSON.  ## Spec references  - [§7 REST API (Go)](specs.html#api) - [§5.3 Ticket projects &amp; status mapping](sp… <span class="meta">(7 AC · specs.html#api, specs.html#ticket-projects)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>GET/POST/PATCH/DELETE /api/v1/ticket-projects; create_config and status_mapping JSON.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#api">§7 REST API (Go)</a></li><br><li><a href="specs.html#ticket-projects">§5.3 Ticket projects &amp; status mapping</a></li></p><p><h4>Implementation notes</h4></p><p><li>handlers/ticket_projects.go</li></p><p><h4>Files</h4></p><p><li><code>internal/api/handlers/ticket_projects.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>CRUD /api/v1/ticket-projects</li><br><li class='ac'>create_config and status_mapping json_valid</li><br><li class='ac'>on_open_ticket_policy supersede|merge|skip_if_open</li><br><li class='ac'>UNIQUE(integration_id, external_project_id)</li><br><li class='ac'>DELETE returns 409 when referenced by monitored repos</li><br><li class='ac'>List filtered by integration_id</li><br><li class='ac'>Handler tests with fixtures</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/api/handlers/...</code></li></p><p>---</p><p>**Roadmap ID:** E04-03</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E04-02</td>
+          <td>specs.html#api, specs.html#ticket-projects</td>
+        </tr>
+        <tr data-task-id="E04-04">
+          <td><code>E04-04</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Monitored repos API — full CRUD</strong>
+            <details class="task-detail">
+              <summary>## Context  GET/POST/PATCH/DELETE /api/v1/repos; source_kind, project_path, ticket_project_id; sourceIntegrationId required for gitlab/gitea/forgejo; notificationTargetIds optional array persisted via… <span class="meta">(7 AC · specs.html#api, specs.html#domain)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>GET/POST/PATCH/DELETE /api/v1/repos; source_kind, project_path, ticket_project_id; sourceIntegrationId required for gitlab/gitea/forgejo; notificationTargetIds optional array persisted via monitored_repo_notifications join.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#api">§7 REST API (Go)</a></li><br><li><a href="specs.html#domain">§5 Domain logic &amp; Idempotency</a></li></p><p><h4>Implementation notes</h4></p><p><li>handlers/repos.go</li></p><p><h4>Files</h4></p><p><li><code>internal/api/handlers/repos.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>CRUD /api/v1/repos</li><br><li class='ac'>POST/PATCH accept notificationTargetIds array</li><br><li class='ac'>sourceIntegrationId required for self-hosted source kinds</li><br><li class='ac'>UNIQUE(source_kind, project_path)</li><br><li class='ac'>enabled flag 0/1</li><br><li class='ac'>ticket_project_id FK required</li><br><li class='ac'>open_ticket fields read-only from API</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/api/handlers/...</code></li></p><p>---</p><p>**Roadmap ID:** E04-04</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E04-03</td>
+          <td>specs.html#api, specs.html#domain</td>
+        </tr>
+        <tr data-task-id="E04-05">
+          <td><code>E04-05</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Notification targets API — CRUD and test</strong>
+            <details class="task-detail">
+              <summary>## Context  GET/POST/PATCH/DELETE /api/v1/notification-targets; POST test sends Shoutrrr ping.  ## Spec references  - [§7 REST API (Go)](specs.html#api) - [§5.5 Notifications (Shoutrrr)](specs.html#no… <span class="meta">(7 AC · specs.html#api, specs.html#notifications)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>GET/POST/PATCH/DELETE /api/v1/notification-targets; POST test sends Shoutrrr ping.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#api">§7 REST API (Go)</a></li><br><li><a href="specs.html#notifications">§5.5 Notifications (Shoutrrr)</a></li></p><p><h4>Implementation notes</h4></p><p><li>handlers/notifications.go</li></p><p><h4>Files</h4></p><p><li><code>internal/api/handlers/notifications.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>CRUD /api/v1/notification-targets</li><br><li class='ac'>shoutrrr_url never returned after create</li><br><li class='ac'>events_json default create,error,supersede</li><br><li class='ac'>POST test notification async-safe</li><br><li class='ac'>enabled toggle</li><br><li class='ac'>monitored_repo_notifications routing optional</li><br><li class='ac'>JSON events array validated</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/api/handlers/...</code></li></p><p>---</p><p>**Roadmap ID:** E04-05</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E03-02, E02-03</td>
+          <td>specs.html#api, specs.html#notifications</td>
+        </tr>
+        <tr data-task-id="E04-06">
+          <td><code>E04-06</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Status and poll API endpoints</strong>
+            <details class="task-detail">
+              <summary>## Context  GET /api/v1/status returns full §7.1 JSON (repos[], lastRun, isPolling, ticketsSuperseded); POST /api/v1/poll/trigger async 202; GET /api/v1/poll/runs paginated; GET /api/v1/poll/runs/{id}… <span class="meta">(7 AC · specs.html#api, specs.html#domain)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>GET /api/v1/status returns full §7.1 JSON (repos[], lastRun, isPolling, ticketsSuperseded); POST /api/v1/poll/trigger async 202; GET /api/v1/poll/runs paginated; GET /api/v1/poll/runs/{id} with events[].</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#api">§7 REST API (Go)</a></li><br><li><a href="specs.html#domain">§5 Domain logic &amp; Idempotency</a></li></p><p><h4>Implementation notes</h4></p><p><li>handlers/status.go</li><br><li>handlers/poll.go</li></p><p><h4>Files</h4></p><p><li><code>internal/api/handlers/poll.go</code></li><br><li><code>internal/api/handlers/status.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>GET /api/v1/status returns repos[] with ticketProjectName</li><br><li class='ac'>GET /api/v1/status includes lastRun and isPolling fields</li><br><li class='ac'>POST /api/v1/poll/trigger returns 202 Accepted async</li><br><li class='ac'>GET /api/v1/poll/runs paginated list default limit 20</li><br><li class='ac'>GET /api/v1/poll/runs/{id} includes events[]</li><br><li class='ac'>Trigger returns 409 if poll already running</li><br><li class='ac'>poll_run_events.action enum values in response</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/api/handlers/...</code></li></p><p>---</p><p>**Roadmap ID:** E04-06</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E03-02, E02-03</td>
+          <td>specs.html#api, specs.html#domain</td>
+        </tr>
+        <tr data-task-id="E04-07">
+          <td><code>E04-07</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Register all API routes and integration test</strong>
+            <details class="task-detail">
+              <summary>## Context  Wire every §7 handler on /api/v1; public auth routes before session middleware; route list test.  ## Spec references  - [§7 REST API (Go)](specs.html#api) - [§3 Authentication](specs.html#… <span class="meta">(7 AC · specs.html#api, specs.html#auth, specs.html#architecture)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>Wire every §7 handler on /api/v1; public auth routes before session middleware; route list test.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#api">§7 REST API (Go)</a></li><br><li><a href="specs.html#auth">§3 Authentication</a></li><br><li><a href="specs.html#architecture">§2 Architecture</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/api/routes.go — RegisterAll(deps)</li><br><li>routes_test.go — compile-time or httptest route inventory</li><br><li>Document route order in comment</li></p><p><h4>Files</h4></p><p><li><code>internal/api/routes.go</code></li><br><li><code>internal/api/routes_test.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>All §7 endpoints registered</li><br><li class='ac'>POST /api/v1/auth/login public</li><br><li class='ac'>GET /api/v1/auth/session public</li><br><li class='ac'>All other /api/v1/* require session</li><br><li class='ac'>No duplicate route mounts</li><br><li class='ac'>routes_test lists expected paths</li><br><li class='ac'>Integration test: login → GET settings 200</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/api/...</code></li></p><p>---</p><p>**Roadmap ID:** E04-07</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E04-01, E04-02, E04-03, E04-04, E04-05, E04-06, E02-03</td>
+          <td>specs.html#api, specs.html#auth, specs.html#architecture</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="epic" id="E05">
+    <h2><code>E05</code> Source providers — GitHub, GitLab, Gitea, Forgejo, Codeberg <span class="tag">backend</span></h2>
+    <div class="epic-body"><h4>Context</h4></p><p>SourceProvider interface; fetch latest release tag per monitored repo. Merges P11.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#providers">§6 Provider interfaces (Go)</a></li><br><li><a href="specs.html#domain">§5 Domain logic &amp; Idempotency</a></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>All five source kinds implemented</li><br><li class='ac'>Mock tests in CI</li></p><p>---</p><p>**Roadmap ID:** E05</div>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Status</th><th>Task</th><th>Domain</th><th>Depends</th><th>Doc Ref</th></tr>
+      </thead>
+      <tbody>
+        <tr data-task-id="E05-01">
+          <td><code>E05-01</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>SourceProvider interface and registry</strong>
+            <details class="task-detail">
+              <summary>## Context  SourceProvider.GetLatestRelease(ctx, repo) → tag, url, publishedAt; registry by source_kind.  ## Spec references  - [§6 Provider interfaces (Go)](specs.html#providers)  ## Implementation n… <span class="meta">(7 AC · specs.html#providers)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>SourceProvider.GetLatestRelease(ctx, repo) → tag, url, publishedAt; registry by source_kind.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#providers">§6 Provider interfaces (Go)</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/providers/source/provider.go</li><br><li>registry.go</li></p><p><h4>Files</h4></p><p><li><code>internal/providers/source/provider.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Interface documented per §6</li><br><li class='ac'>Registry returns provider by kind</li><br><li class='ac'>Unknown kind returns error</li><br><li class='ac'>Context cancellation respected</li><br><li class='ac'>No HTTP in interface consumers</li><br><li class='ac'>Mock provider for tests</li><br><li class='ac'>Package compiles standalone</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/providers/source/...</code></li></p><p>---</p><p>**Roadmap ID:** E05-01</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E04-02</td>
+          <td>specs.html#providers</td>
+        </tr>
+        <tr data-task-id="E05-02">
+          <td><code>E05-02</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>GitHub and Codeberg source providers</strong>
+            <details class="task-detail">
+              <summary>## Context  github source — api.github.com, no base_url. codeberg — codeberg.org API, no base_url.  ## Spec references  - [§6 Provider interfaces (Go)](specs.html#providers)  ## Implementation notes  … <span class="meta">(7 AC · specs.html#providers)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>github source — api.github.com, no base_url. codeberg — codeberg.org API, no base_url.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#providers">§6 Provider interfaces (Go)</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/providers/source/github.go</li><br><li>codeberg.go</li></p><p><h4>Files</h4></p><p><li><code>internal/providers/source/github.go</code></li><br><li><code>internal/providers/source/codeberg.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>GitHub source provider fetches latest release tag</li><br><li class='ac'>Codeberg source provider works</li><br><li class='ac'>Uses integration token from decrypt</li><br><li class='ac'>Handles 404 no releases</li><br><li class='ac'>Rate limit errors surfaced</li><br><li class='ac'>Unit tests with httptest mock</li><br><li class='ac'>project_path owner/repo format</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/providers/source/...</code></li></p><p>---</p><p>**Roadmap ID:** E05-02</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E05-01</td>
+          <td>specs.html#providers</td>
+        </tr>
+        <tr data-task-id="E05-03">
+          <td><code>E05-03</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>GitLab, Gitea, and Forgejo source providers</strong>
+            <details class="task-detail">
+              <summary>## Context  Self-hosted base_url required; GitLab API v4; GiteaCompatibleSource shared client for gitea, forgejo, codeberg (§6) — same API, different default base_url.  ## Spec references  - [§6 Provi… <span class="meta">(7 AC · specs.html#providers)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>Self-hosted base_url required; GitLab API v4; GiteaCompatibleSource shared client for gitea, forgejo, codeberg (§6) — same API, different default base_url.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#providers">§6 Provider interfaces (Go)</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/providers/source/gitlab.go</li><br><li>internal/providers/source/gitea_compatible.go — GiteaCompatibleSource</li><br><li>gitea.go, forgejo.go thin wrappers</li></p><p><h4>Files</h4></p><p><li><code>internal/providers/source/gitlab.go</code></li><br><li><code>internal/providers/source/gitea.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>GitLab source provider with base_url</li><br><li class='ac'>GiteaCompatibleSource used for gitea, forgejo, codeberg</li><br><li class='ac'>base_url trailing slash normalized</li><br><li class='ac'>Invalid base_url errors clearly</li><br><li class='ac'>Mock HTTP tests per provider</li><br><li class='ac'>404 no release not treated as error</li><br><li class='ac'>publishedAt mapped from provider response</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/providers/source/...</code></li></p><p>---</p><p>**Roadmap ID:** E05-03</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E05-01</td>
+          <td>specs.html#providers</td>
+        </tr>
+        <tr data-task-id="E05-04">
+          <td><code>E05-04</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Source provider mock tests for CI</strong>
+            <details class="task-detail">
+              <summary>## Context  go test with mock HTTP for each source kind; required for MVP AC #13. Poll skip uses exact tag string equality (§5.1) — provider tests assert tag extraction only.  ## Spec references  - [§… <span class="meta">(7 AC · specs.html#mvp, specs.html#ci)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>go test with mock HTTP for each source kind; required for MVP AC #13. Poll skip uses exact tag string equality (§5.1) — provider tests assert tag extraction only.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#mvp">§12 MVP Acceptance Criteria</a></li><br><li><a href="specs.html#ci">§11 CI/CD (GitHub Actions)</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/providers/source/*_test.go with httptest</li></p><p><h4>Files</h4></p><p><li><code>internal/providers/source/github_test.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Mock test per source provider kind</li><br><li class='ac'>CI go test ./internal/providers/source/...</li><br><li class='ac'>No live network in unit tests</li><br><li class='ac'>Coverage for error paths</li><br><li class='ac'>Tag fields mapped correctly from provider JSON</li><br><li class='ac'>Empty release list handled</li><br><li class='ac'>Tests run in parallel safe</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/providers/source/...</code></li></p><p>---</p><p>**Roadmap ID:** E05-04</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E05-02, E05-03</td>
+          <td>specs.html#mvp, specs.html#ci</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="epic" id="E06">
+    <h2><code>E06</code> Ticket providers — Phasical, Jira, Linear <span class="tag">backend</span></h2>
+    <div class="epic-body"><h4>Context</h4></p><p>TicketProvider create/update/close; ticket content §5.4 Release: format. Merges P12.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#providers">§6 Provider interfaces (Go)</a></li><br><li><a href="specs.html#ticket-projects">§5.3 Ticket projects &amp; status mapping</a></li><br><li><a href="specs.html#domain">§5 Domain logic &amp; Idempotency</a></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Three ticket providers</li><br><li class='ac'>Status mapping per project</li></p><p>---</p><p>**Roadmap ID:** E06</div>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Status</th><th>Task</th><th>Domain</th><th>Depends</th><th>Doc Ref</th></tr>
+      </thead>
+      <tbody>
+        <tr data-task-id="E06-01">
+          <td><code>E06-01</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>TicketProvider interface, ClassifyStatus, and content builder</strong>
+            <details class="task-detail">
+              <summary>## Context  TicketProvider per §6: CreateTicket, GetTicketStatus, UpdateTicketStatus, AddTicketComment, UpdateTicket (merge). ClassifyStatus(mapping, rawStatus) → open|done|cancelled|unknown. Ticket c… <span class="meta">(7 AC · specs.html#providers, specs.html#domain, specs.html#ticket-projects)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>TicketProvider per §6: CreateTicket, GetTicketStatus, UpdateTicketStatus, AddTicketComment, UpdateTicket (merge). ClassifyStatus(mapping, rawStatus) → open|done|cancelled|unknown. Ticket content §5.4: title Release: {source_kind} {project_path} {tag}; body with URL and publishedAt.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#providers">§6 Provider interfaces (Go)</a></li><br><li><a href="specs.html#domain">§5 Domain logic &amp; Idempotency</a></li><br><li><a href="specs.html#ticket-projects">§5.3 Ticket projects &amp; status mapping</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/providers/ticket/provider.go</li><br><li>internal/providers/ticket/classify.go — ClassifyStatus</li><br><li>content.go — includes publishedAt in markdown body</li></p><p><h4>Files</h4></p><p><li><code>internal/providers/ticket/content.go</code></li><br><li><code>internal/providers/ticket/provider.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>ClassifyStatus maps external status via status_mapping</li><br><li class='ac'>Ticket content §5.4 title format Release:</li><br><li class='ac'>Description includes release URL and publishedAt</li><br><li class='ac'>Interface: CreateTicket, GetTicketStatus, UpdateTicketStatus</li><br><li class='ac'>Interface: AddTicketComment, UpdateTicket for merge policy</li><br><li class='ac'>ClassifyStatus unit tests with mapping fixtures</li><br><li class='ac'>No provider-specific logic in poll engine</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/providers/ticket/...</code></li></p><p>---</p><p>**Roadmap ID:** E06-01</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E04-03</td>
+          <td>specs.html#providers, specs.html#domain, specs.html#ticket-projects</td>
+        </tr>
+        <tr data-task-id="E06-02">
+          <td><code>E06-02</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Phasical and Jira ticket providers</strong>
+            <details class="task-detail">
+              <summary>## Context  Phasical POST {base_url}/task/{projectId}; Jira REST with email+token; GetTicketStatus for live open-ticket check; AddTicketComment for supersede (old tag → new tag, release link).  ## Spe… <span class="meta">(7 AC · specs.html#providers)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>Phasical POST {base_url}/task/{projectId}; Jira REST with email+token; GetTicketStatus for live open-ticket check; AddTicketComment for supersede (old tag → new tag, release link).</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#providers">§6 Provider interfaces (Go)</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/providers/ticket/phasical.go</li><br><li>jira.go</li></p><p><h4>Files</h4></p><p><li><code>internal/providers/ticket/phasical.go</code></li><br><li><code>internal/providers/ticket/jira.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Phasical ticket provider creates task</li><br><li class='ac'>Jira ticket provider creates issue with email auth</li><br><li class='ac'>GetTicketStatus returns provider-native status slug</li><br><li class='ac'>AddTicketComment on supersede with release link</li><br><li class='ac'>Status transitions via status_mapping</li><br><li class='ac'>Mock tests httptest</li><br><li class='ac'>base_url required for both</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/providers/ticket/...</code></li></p><p>---</p><p>**Roadmap ID:** E06-02</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E06-01</td>
+          <td>specs.html#providers</td>
+        </tr>
+        <tr data-task-id="E06-03">
+          <td><code>E06-03</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Linear ticket provider and provider mock tests</strong>
+            <details class="task-detail">
+              <summary>## Context  Linear GraphQL API; status mapping MVP uses stateId strings only (openTypes post-MVP). Mock CI tests for all three ticket providers.  ## Spec references  - [§6 Provider interfaces (Go)](sp… <span class="meta">(7 AC · specs.html#providers, specs.html#mvp)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>Linear GraphQL API; status mapping MVP uses stateId strings only (openTypes post-MVP). Mock CI tests for all three ticket providers.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#providers">§6 Provider interfaces (Go)</a></li><br><li><a href="specs.html#mvp">§12 MVP Acceptance Criteria</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/providers/ticket/linear.go</li><br><li>*_test.go</li></p><p><h4>Files</h4></p><p><li><code>internal/providers/ticket/linear.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Linear ticket provider creates issue</li><br><li class='ac'>team id from external_project_id</li><br><li class='ac'>ClassifyStatus with Linear stateId mapping</li><br><li class='ac'>Mock test per ticket provider</li><br><li class='ac'>CI runs provider tests</li><br><li class='ac'>supersede closes prior ticket with comment</li><br><li class='ac'>merge policy updates existing via UpdateTicket</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/providers/ticket/...</code></li></p><p>---</p><p>**Roadmap ID:** E06-03</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E06-01</td>
+          <td>specs.html#providers, specs.html#mvp</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="epic" id="E07">
+    <h2><code>E07</code> Poll engine, scheduler &amp; Shoutrrr notifications <span class="tag">backend</span></h2>
+    <div class="epic-body"><h4>Context</h4></p><p>Poll decision engine: baseline, skip, create, supersede, merge, skip_if_open. Cron scheduler; poll_runs/events persistence; Shoutrrr on create/error/supersede. Merges P13+P14.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#domain">§5 Domain logic &amp; Idempotency</a></li><br><li><a href="specs.html#notifications">§5.5 Notifications (Shoutrrr)</a></li><br><li><a href="specs.html#api">§7 REST API (Go)</a></li></p><p><h4>Stack references</h4></p><p><li><a href="stack.html">Tech stack — Backend (Go)</a></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Scheduled poll respects poll_interval_minutes</li><br><li class='ac'>Manual POST /api/v1/poll/trigger works</li><br><li class='ac'>Notifications on configured events</li></p><p>---</p><p>**Roadmap ID:** E07</div>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Status</th><th>Task</th><th>Domain</th><th>Depends</th><th>Doc Ref</th></tr>
+      </thead>
+      <tbody>
+        <tr data-task-id="E07-01">
+          <td><code>E07-01</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Poll decision engine and open-ticket policies</strong>
+            <details class="task-detail">
+              <summary>## Context  Compare last_known_tag vs remote using exact string equality (§5.1); baseline on first sight; skip when tags match; on new tag: live GetTicketStatus + ClassifyStatus per §5.2; create/super… <span class="meta">(7 AC · specs.html#domain, specs.html#ticket-projects)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>Compare last_known_tag vs remote using exact string equality (§5.1); baseline on first sight; skip when tags match; on new tag: live GetTicketStatus + ClassifyStatus per §5.2; create/supersede/merge/skip_if_open per on_open_ticket_policy; supersede adds comment.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#domain">§5 Domain logic &amp; Idempotency</a></li><br><li><a href="specs.html#ticket-projects">§5.3 Ticket projects &amp; status mapping</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/poll/engine.go — EvaluateRepo</li><br><li>Actions: baseline, skip, create, supersede, merge, skip_open, error</li><br><li>Live ticket status via TicketProvider.GetTicketStatus + ClassifyStatus</li><br><li>Update monitored_repos poll state</li></p><p><h4>Files</h4></p><p><li><code>internal/poll/engine.go</code></li><br><li><code>internal/poll/engine_test.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>baseline poll action on first poll</li><br><li class='ac'>skip poll when tag string equals last_known_tag</li><br><li class='ac'>create ticket on new release when no open ticket</li><br><li class='ac'>Live GetTicketStatus before applying open-ticket policy</li><br><li class='ac'>supersede: old ticket status + comment, new ticket created</li><br><li class='ac'>merge policy updates existing ticket via UpdateTicket</li><br><li class='ac'>skip_if_open policy skips duplicate</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/poll/...</code></li></p><p>---</p><p>**Roadmap ID:** E07-01</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E06-01, E05-01</td>
+          <td>specs.html#domain, specs.html#ticket-projects</td>
+        </tr>
+        <tr data-task-id="E07-02">
+          <td><code>E07-02</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Poll scheduler and run orchestration</strong>
+            <details class="task-detail">
+              <summary>## Context  robfig/cron scheduler reading poll_interval_minutes from app_settings; POST /api/v1/poll/trigger manual run.  ## Spec references  - [§5 Domain logic &amp; Idempotency](specs.html#domain) - [§7… <span class="meta">(7 AC · specs.html#domain, specs.html#api, specs.html#deployment)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>robfig/cron scheduler reading poll_interval_minutes from app_settings; POST /api/v1/poll/trigger manual run.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#domain">§5 Domain logic &amp; Idempotency</a></li><br><li><a href="specs.html#api">§7 REST API (Go)</a></li><br><li><a href="specs.html#deployment">§10 Deployment</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/poll/scheduler.go</li><br><li>RunAll: iterate enabled repos, call engine</li><br><li>Wire trigger handler to scheduler</li></p><p><h4>Files</h4></p><p><li><code>internal/poll/scheduler.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Scheduler uses robfig/cron from poll_interval_minutes</li><br><li class='ac'>Manual poll via POST /api/v1/poll/trigger</li><br><li class='ac'>Single poll run at a time (mutex)</li><br><li class='ac'>poll_runs row per execution</li><br><li class='ac'>repos_checked counter incremented</li><br><li class='ac'>Cron respects min 5 minute interval</li><br><li class='ac'>Graceful stop on shutdown</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/poll/...</code></li></p><p>---</p><p>**Roadmap ID:** E07-02</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E07-01, E04-06</td>
+          <td>specs.html#domain, specs.html#api, specs.html#deployment</td>
+        </tr>
+        <tr data-task-id="E07-03">
+          <td><code>E07-03</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Poll run events and persistence</strong>
+            <details class="task-detail">
+              <summary>## Context  poll_runs and poll_run_events tables; GET /api/v1/poll/runs and /poll/runs/{id} data source.  ## Spec references  - [§4 Data model](specs.html#schema) - [§7 REST API (Go)](specs.html#api) … <span class="meta">(7 AC · specs.html#schema, specs.html#api, ../db/schema.sql)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>poll_runs and poll_run_events tables; GET /api/v1/poll/runs and /poll/runs/{id} data source.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#schema">§4 Data model</a></li><br><li><a href="specs.html#api">§7 REST API (Go)</a></li></p><p><h4>Schema references</h4></p><p><li><a href="../db/schema.sql">db/schema.sql (canonical)</a></li></p><p><h4>Implementation notes</h4></p><p><li>Insert poll_run on start, finish on complete</li><br><li>poll_run_events per repo action</li><br><li>errors_json array on failed runs</li></p><p><h4>Files</h4></p><p><li><code>internal/poll/run.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>poll_run_events.action enum values persisted</li><br><li class='ac'>GET /api/v1/poll/runs returns list</li><br><li class='ac'>GET /api/v1/poll/runs/{id} includes events</li><br><li class='ac'>status running|success|partial|failed</li><br><li class='ac'>tickets_created counter accurate</li><br><li class='ac'>tickets_superseded counter incremented on supersede</li><br><li class='ac'>errors_json array on partial/failed runs</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/poll/...</code></li></p><p>---</p><p>**Roadmap ID:** E07-03</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E07-02, E03-02</td>
+          <td>specs.html#schema, specs.html#api, ../db/schema.sql</td>
+        </tr>
+        <tr data-task-id="E07-04">
+          <td><code>E07-04</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Shoutrrr notification dispatcher</strong>
+            <details class="task-detail">
+              <summary>## Context  github.com/containrrr/shoutrrr; events create, error, supersede; per-repo routing.  ## Spec references  - [§5.5 Notifications (Shoutrrr)](specs.html#notifications) - [§5 Domain logic &amp; Ide… <span class="meta">(7 AC · specs.html#notifications, specs.html#domain)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>github.com/containrrr/shoutrrr; events create, error, supersede; per-repo routing.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#notifications">§5.5 Notifications (Shoutrrr)</a></li><br><li><a href="specs.html#domain">§5 Domain logic &amp; Idempotency</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/poll/notify.go</li><br><li>Resolve targets: global enabled + repo overrides</li><br><li>Decrypt shoutrrr_url at send time</li></p><p><h4>Files</h4></p><p><li><code>internal/poll/notify.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Shoutrrr URL schemes supported</li><br><li class='ac'>Notification on create event</li><br><li class='ac'>Notification on poll error</li><br><li class='ac'>Notification on supersede</li><br><li class='ac'>events_json filters delivery</li><br><li class='ac'>Failed notify does not fail poll</li><br><li class='ac'>No URL in logs</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/poll/...</code></li></p><p>---</p><p>**Roadmap ID:** E07-04</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E07-01, E03-02</td>
+          <td>specs.html#notifications, specs.html#domain</td>
+        </tr>
+        <tr data-task-id="E07-05">
+          <td><code>E07-05</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>End-to-end poll integration test</strong>
+            <details class="task-detail">
+              <summary>## Context  Integration test: baseline → new tag → create ticket → supersede; mock providers.  ## Spec references  - [§12 MVP Acceptance Criteria](specs.html#mvp) - [§5 Domain logic &amp; Idempotency](spe… <span class="meta">(7 AC · specs.html#mvp, specs.html#domain)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>Integration test: baseline → new tag → create ticket → supersede; mock providers.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#mvp">§12 MVP Acceptance Criteria</a></li><br><li><a href="specs.html#domain">§5 Domain logic &amp; Idempotency</a></li></p><p><h4>Implementation notes</h4></p><p><li>internal/poll/integration_test.go</li></p><p><h4>Files</h4></p><p><li><code>internal/poll/integration_test.go</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Baseline then create flow in test</li><br><li class='ac'>Mock source returns sequential tags</li><br><li class='ac'>Mock ticket provider records creates</li><br><li class='ac'>poll_run_events assert create action</li><br><li class='ac'>supersede policy test case</li><br><li class='ac'>CI runs go test ./internal/poll/...</li><br><li class='ac'>No flaky timing in test</li></p><p><h4>Tests</h4></p><p><li><code>go test ./internal/poll/...</code></li></p><p>---</p><p>**Roadmap ID:** E07-05</div>
+            </details>
+          </td>
+          <td><span class="tag">backend</span></td>
+          <td>E07-03, E07-04, E06-03</td>
+          <td>specs.html#mvp, specs.html#domain</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="epic" id="E08">
+    <h2><code>E08</code> Web platform — proxy, hooks, shell &amp; i18n <span class="tag">web</span></h2>
+    <div class="epic-body"><h4>Context</h4></p><p>Next.js /api/go proxy, React Query hooks for all §8.4 endpoints, app shell with sidebar/logout, next-intl + ESLint i18n. Merges P16–P18, P17, P00 i18n.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#ui">§8 Web UI &amp; COSS Particles</a></li><br><li><a href="specs.html#i18n">§8.5 Internationalization (i18n)</a></li><br><li><a href="specs.html#api">§7 REST API (Go)</a></li></p><p><h4>Stack references</h4></p><p><li><a href="stack.html">Tech stack — Frontend (Next.js + COSS)</a></li><br><li><a href="stack.html">Tech stack — Repository layout</a></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>All API calls via /api/go/api/v1</li><br><li class='ac'>Zero hardcoded UI strings</li><br><li class='ac'>Sidebar nav matches §8.1</li></p><p>---</p><p>**Roadmap ID:** E08</div>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Status</th><th>Task</th><th>Domain</th><th>Depends</th><th>Doc Ref</th></tr>
+      </thead>
+      <tbody>
+        <tr data-task-id="E08-01">
+          <td><code>E08-01</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>next-intl setup and ESLint i18n enforcement</strong>
+            <details class="task-detail">
+              <summary>## Context  apps/web/messages/en.json; useTranslations; eslint-plugin-i18next no-literal-string.  ## Spec references  - [§8.5 Internationalization (i18n)](specs.html#i18n) - [§11 CI/CD (GitHub Actions… <span class="meta">(7 AC · specs.html#i18n, specs.html#ci, stack.html)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>apps/web/messages/en.json; useTranslations; eslint-plugin-i18next no-literal-string.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#i18n">§8.5 Internationalization (i18n)</a></li><br><li><a href="specs.html#ci">§11 CI/CD (GitHub Actions)</a></li></p><p><h4>Stack references</h4></p><p><li><a href="stack.html">Tech stack — Frontend (Next.js + COSS)</a></li><br><li><a href="stack.html">Tech stack — Quality</a></li></p><p><h4>Implementation notes</h4></p><p><li>next-intl App Router provider</li><br><li>messages/en.json namespaces: common, auth, dashboard, repos, integrations, ticket-projects, notifications, settings</li><br><li>eslint-plugin-i18next in eslint.config.mjs</li></p><p><h4>Files</h4></p><p><li><code>apps/web/messages/en.json</code></li><br><li><code>apps/web/i18n/request.ts</code></li><br><li><code>apps/web/eslint.config.mjs</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>next-intl installed and configured</li><br><li class='ac'>messages/en.json with namespaces: common, auth, dashboard, repos</li><br><li class='ac'>messages/en.json includes integrations, ticket-projects, notifications, settings</li><br><li class='ac'>eslint-plugin-i18next configured</li><br><li class='ac'>i18next/no-literal-string error on literals</li><br><li class='ac'>npm run lint passes on scaffold</li><br><li class='ac'>Document in .cursor/rules/10-i18n.mdc</li></p><p><h4>Tests</h4></p><p><li><code>npm run lint</code></li></p><p>---</p><p>**Roadmap ID:** E08-01</div>
+            </details>
+          </td>
+          <td><span class="tag">web</span></td>
+          <td>E01-01</td>
+          <td>specs.html#i18n, specs.html#ci, stack.html</td>
+        </tr>
+        <tr data-task-id="E08-02">
+          <td><code>E08-02</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Go API proxy and fetch client</strong>
+            <details class="task-detail">
+              <summary>## Context  apps/web/app/api/go/[...path]/route.ts forwards to Go; credentials include; cookie relay.  ## Spec references  - [§8 Web UI &amp; COSS Particles](specs.html#ui) - [§3 Authentication](specs.htm… <span class="meta">(7 AC · specs.html#ui, specs.html#auth, specs.html#architecture)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>apps/web/app/api/go/[...path]/route.ts forwards to Go; credentials include; cookie relay.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#ui">§8 Web UI &amp; COSS Particles</a></li><br><li><a href="specs.html#auth">§3 Authentication</a></li><br><li><a href="specs.html#architecture">§2 Architecture</a></li></p><p><h4>Implementation notes</h4></p><p><li>Catch-all proxy /api/go/* → GO_API_URL</li><br><li>lib/api/client.ts — prefix /api/go/api/v1</li><br><li>route.test.ts with mock upstream</li></p><p><h4>Files</h4></p><p><li><code>apps/web/app/api/go/[...path]/route.ts</code></li><br><li><code>apps/web/lib/api/client.ts</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>/api/go proxy forwards session cookie</li><br><li class='ac'>POST /api/go/api/v1/auth/login works</li><br><li class='ac'>Error envelope parsed from Go</li><br><li class='ac'>Proxy test with undici MockAgent</li><br><li class='ac'>Methods GET POST PATCH DELETE forwarded</li><br><li class='ac'>Content-Type application/json set</li><br><li class='ac'>Same-origin requests from browser</li></p><p><h4>Tests</h4></p><p><li><code>npm test -- proxy</code></li></p><p>---</p><p>**Roadmap ID:** E08-02</div>
+            </details>
+          </td>
+          <td><span class="tag">web</span></td>
+          <td>E01-01</td>
+          <td>specs.html#ui, specs.html#auth, specs.html#architecture</td>
+        </tr>
+        <tr data-task-id="E08-03">
+          <td><code>E08-03</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>React Query hooks for all API endpoints</strong>
+            <details class="task-detail">
+              <summary>## Context  useSession, useStatus, useRepos, useIntegrations, useTicketProjects, useNotificationTargets, useSettings, usePollRuns, usePollRun, useTriggerPoll per §8.4.  ## Spec references  - [§8 Web U… <span class="meta">(7 AC · specs.html#ui, specs.html#api)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>useSession, useStatus, useRepos, useIntegrations, useTicketProjects, useNotificationTargets, useSettings, usePollRuns, usePollRun, useTriggerPoll per §8.4.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#ui">§8 Web UI &amp; COSS Particles</a></li><br><li><a href="specs.html#api">§7 REST API (Go)</a></li></p><p><h4>Implementation notes</h4></p><p><li>apps/web/lib/hooks/use-session.ts, use-status.ts, use-repos.ts</li><br><li>use-integrations.ts, use-ticket-projects.ts, use-notifications.ts</li><br><li>use-settings.ts, use-poll.ts</li></p><p><h4>Files</h4></p><p><li><code>apps/web/lib/hooks/</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>useSession fetches GET /api/v1/auth/session</li><br><li class='ac'>useStatus fetches GET /api/v1/status</li><br><li class='ac'>useRepos CRUD mutations</li><br><li class='ac'>useIntegrations includes test mutation</li><br><li class='ac'>usePollRuns fetches paginated run list</li><br><li class='ac'>usePollRun fetches single run with events[]</li><br><li class='ac'>useTriggerPoll POST /api/v1/poll/trigger</li></p><p><h4>Tests</h4></p><p><li><code>npm test -- hooks</code></li></p><p>---</p><p>**Roadmap ID:** E08-03</div>
+            </details>
+          </td>
+          <td><span class="tag">web</span></td>
+          <td>E08-02, E04-07</td>
+          <td>specs.html#ui, specs.html#api</td>
+        </tr>
+        <tr data-task-id="E08-04">
+          <td><code>E08-04</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>App shell, sidebar navigation, and logout</strong>
+            <details class="task-detail">
+              <summary>## Context  COSS app shell per §8.1: SidebarProvider, Frame (p-frame-3), Breadcrumb (p-breadcrumb-3), global Toaster (p-toast-2) and Spinner (p-spinner-1) in root layout; sidebar links /, /repos, /int… <span class="meta">(7 AC · specs.html#ui, specs.html#auth)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>COSS app shell per §8.1: SidebarProvider, Frame (p-frame-3), Breadcrumb (p-breadcrumb-3), global Toaster (p-toast-2) and Spinner (p-spinner-1) in root layout; sidebar links /, /repos, /integrations, /ticket-projects, /notifications, /settings; logout POST /api/v1/auth/logout; required sidebar logout control.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#ui">§8 Web UI &amp; COSS Particles</a></li><br><li><a href="specs.html#auth">§3 Authentication</a></li></p><p><h4>Implementation notes</h4></p><p><li>app/(authenticated)/layout.tsx with SidebarProvider + AppFrame</li><br><li>components/app-frame.tsx — p-frame-3, p-breadcrumb-3</li><br><li>root layout mounts &lt;Toaster /&gt; (p-toast-2) and Spinner (p-spinner-1)</li><br><li>components/app-sidebar.tsx — next/link nav</li><br><li>Logout button calls auth logout</li></p><p><h4>Files</h4></p><p><li><code>apps/web/components/app-sidebar.tsx</code></li><br><li><code>apps/web/app/(authenticated)/layout.tsx</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Sidebar links match §8.1 routes</li><br><li class='ac'>Frame wraps page content with breadcrumb slot (p-frame-3)</li><br><li class='ac'>Breadcrumb home icon per p-breadcrumb-3</li><br><li class='ac'>Toaster mounted once in root layout for mutation errors</li><br><li class='ac'>Spinner for async loading states</li><br><li class='ac'>logout UI control in sidebar</li><br><li class='ac'>All nav labels use t() keys</li></p><p><h4>Tests</h4></p><p><li><code>npm test -- sidebar</code></li></p><p>---</p><p>**Roadmap ID:** E08-04</div>
+            </details>
+          </td>
+          <td><span class="tag">web</span></td>
+          <td>E08-03, E08-01</td>
+          <td>specs.html#ui, specs.html#auth</td>
+        </tr>
+        <tr data-task-id="E08-05">
+          <td><code>E08-05</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Authenticated routing and Next.js middleware</strong>
+            <details class="task-detail">
+              <summary>## Context  middleware.ts redirects unauthenticated users to /login; public /login route.  ## Spec references  - [§3 Authentication](specs.html#auth) - [§8 Web UI &amp; COSS Particles](specs.html#ui)  ## … <span class="meta">(7 AC · specs.html#auth, specs.html#ui)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>middleware.ts redirects unauthenticated users to /login; public /login route.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#auth">§3 Authentication</a></li><br><li><a href="specs.html#ui">§8 Web UI &amp; COSS Particles</a></li></p><p><h4>Implementation notes</h4></p><p><li>apps/web/middleware.ts</li><br><li>app/login/page.tsx placeholder shell</li><br><li>app/(authenticated)/ route group</li></p><p><h4>Files</h4></p><p><li><code>apps/web/middleware.ts</code></li><br><li><code>apps/web/app/login/page.tsx</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>/login accessible without session</li><br><li class='ac'>Protected pages redirect to /login</li><br><li class='ac'>GET /api/go/api/v1/auth/session check in middleware</li><br><li class='ac'>Static assets excluded from middleware</li><br><li class='ac'>Authenticated layout wraps dashboard pages</li><br><li class='ac'>matcher config correct</li><br><li class='ac'>No flash of protected content</li></p><p><h4>Tests</h4></p><p><li><code>npm test</code></li></p><p>---</p><p>**Roadmap ID:** E08-05</div>
+            </details>
+          </td>
+          <td><span class="tag">web</span></td>
+          <td>E08-04</td>
+          <td>specs.html#auth, specs.html#ui</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="epic" id="E09">
+    <h2><code>E09</code> Web config UI — login and settings pages <span class="tag">web</span></h2>
+    <div class="epic-body"><h4>Context</h4></p><p>COSS UI for /login, /integrations, /ticket-projects, /repos, /notifications, /settings. Merges P19,P21–P25.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#ui">§8 Web UI &amp; COSS Particles</a></li></p><p><h4>Stack references</h4></p><p><li><a href="stack.html">Tech stack — Frontend (Next.js + COSS)</a></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>All §8.3 pages implemented</li><br><li class='ac'>i18n keys only</li><br><li class='ac'>CRUD via hooks</li></p><p>---</p><p>**Roadmap ID:** E09</div>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Status</th><th>Task</th><th>Domain</th><th>Depends</th><th>Doc Ref</th></tr>
+      </thead>
+      <tbody>
+        <tr data-task-id="E09-01">
+          <td><code>E09-01</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Login page with email/password form</strong>
+            <details class="task-detail">
+              <summary>## Context  /login page per §8.3: p-card-1 centered container, p-field-2 email/password, p-button-1 submit; p-alert-7 on login error; POST /api/go/api/v1/auth/login; redirect to / on success.  ## Spec… <span class="meta">(7 AC · specs.html#ui, specs.html#auth)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>/login page per §8.3: p-card-1 centered container, p-field-2 email/password, p-button-1 submit; p-alert-7 on login error; POST /api/go/api/v1/auth/login; redirect to / on success.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#ui">§8 Web UI &amp; COSS Particles</a></li><br><li><a href="specs.html#auth">§3 Authentication</a></li></p><p><h4>Implementation notes</h4></p><p><li>app/login/page.tsx — p-card-1, p-field-2, p-button-1, p-alert-7</li></p><p><h4>Files</h4></p><p><li><code>apps/web/app/login/page.tsx</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>/login page renders centered p-card-1 form</li><br><li class='ac'>Email and password fields i18n via p-field-2</li><br><li class='ac'>Submit calls login mutation</li><br><li class='ac'>Invalid credentials show p-alert-7 error (not toast only)</li><br><li class='ac'>Redirect to / on success</li><br><li class='ac'>Already logged in redirects away</li><br><li class='ac'>Accessible labels and focus management</li></p><p><h4>Tests</h4></p><p><li><code>npm test -- login</code></li></p><p>---</p><p>**Roadmap ID:** E09-01</div>
+            </details>
+          </td>
+          <td><span class="tag">web</span></td>
+          <td>E08-05, E08-03</td>
+          <td>specs.html#ui, specs.html#auth</td>
+        </tr>
+        <tr data-task-id="E09-02">
+          <td><code>E09-02</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Integrations page — list, drawer CRUD, test connection</strong>
+            <details class="task-detail">
+              <summary>## Context  /integrations — p-table-2, p-drawer-10; all 8 kinds; Jira email field (p-field-2); hasSecret indicator; test connection p-toast-5 async feedback.  ## Spec references  - [§8 Web UI &amp; COSS P… <span class="meta">(7 AC · specs.html#ui, specs.html#providers)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>/integrations — p-table-2, p-drawer-10; all 8 kinds; Jira email field (p-field-2); hasSecret indicator; test connection p-toast-5 async feedback.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#ui">§8 Web UI &amp; COSS Particles</a></li><br><li><a href="specs.html#providers">§6 Provider interfaces (Go)</a></li></p><p><h4>Implementation notes</h4></p><p><li>app/(authenticated)/integrations/page.tsx</li></p><p><h4>Files</h4></p><p><li><code>apps/web/app/(authenticated)/integrations/page.tsx</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>/integrations page lists integrations</li><br><li class='ac'>Create/edit drawer per kind with base_url when required</li><br><li class='ac'>Jira kind shows email field (p-field-2)</li><br><li class='ac'>hasSecret shown; token password field never re-displayed</li><br><li class='ac'>Test connection button with p-toast-5 async feedback</li><br><li class='ac'>Delete confirmation i18n</li><br><li class='ac'>useIntegrations hook wired</li></p><p><h4>Tests</h4></p><p><li><code>npm test -- integrations</code></li></p><p>---</p><p>**Roadmap ID:** E09-02</div>
+            </details>
+          </td>
+          <td><span class="tag">web</span></td>
+          <td>E09-01, E08-03</td>
+          <td>specs.html#ui, specs.html#providers</td>
+        </tr>
+        <tr data-task-id="E09-03">
+          <td><code>E09-03</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Ticket projects page — status mapping and policies</strong>
+            <details class="task-detail">
+              <summary>## Context  /ticket-projects — create_config tabs, status_mapping arrays, on_open_ticket_policy select.  ## Spec references  - [§8 Web UI &amp; COSS Particles](specs.html#ui) - [§5.3 Ticket projects &amp; sta… <span class="meta">(7 AC · specs.html#ui, specs.html#ticket-projects)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>/ticket-projects — create_config tabs, status_mapping arrays, on_open_ticket_policy select.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#ui">§8 Web UI &amp; COSS Particles</a></li><br><li><a href="specs.html#ticket-projects">§5.3 Ticket projects &amp; status mapping</a></li></p><p><h4>Implementation notes</h4></p><p><li>app/(authenticated)/ticket-projects/page.tsx</li></p><p><h4>Files</h4></p><p><li><code>apps/web/app/(authenticated)/ticket-projects/page.tsx</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>/ticket-projects page CRUD</li><br><li class='ac'>Integration select ticket kinds only</li><br><li class='ac'>on_open_ticket_policy supersede|merge|skip_if_open</li><br><li class='ac'>status_mapping per open/done/cancelled</li><br><li class='ac'>create_config subform per provider</li><br><li class='ac'>useTicketProjects hook</li><br><li class='ac'>JSON validation errors shown</li></p><p><h4>Tests</h4></p><p><li><code>npm test</code></li></p><p>---</p><p>**Roadmap ID:** E09-03</div>
+            </details>
+          </td>
+          <td><span class="tag">web</span></td>
+          <td>E09-02</td>
+          <td>specs.html#ui, specs.html#ticket-projects</td>
+        </tr>
+        <tr data-task-id="E09-04">
+          <td><code>E09-04</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Monitored repos page</strong>
+            <details class="task-detail">
+              <summary>## Context  /repos per §8.3 — p-table-3 list, p-dialog-1 add/edit, p-select-1 for source/ticket project; p-checkbox-group-1 optional notification targets per monitored_repo_notifications; p-switch-1 e… <span class="meta">(7 AC · specs.html#ui, specs.html#domain)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>/repos per §8.3 — p-table-3 list, p-dialog-1 add/edit, p-select-1 for source/ticket project; p-checkbox-group-1 optional notification targets per monitored_repo_notifications; p-switch-1 enabled.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#ui">§8 Web UI &amp; COSS Particles</a></li><br><li><a href="specs.html#domain">§5 Domain logic &amp; Idempotency</a></li></p><p><h4>Implementation notes</h4></p><p><li>app/(authenticated)/repos/page.tsx</li></p><p><h4>Files</h4></p><p><li><code>apps/web/app/(authenticated)/repos/page.tsx</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>/repos page lists monitored repos (p-table-3, no bulk checkboxes in MVP)</li><br><li class='ac'>Add/edit dialog with source_kind and ticket_project selects</li><br><li class='ac'>sourceIntegrationId select for gitlab/gitea/forgejo</li><br><li class='ac'>Optional notification targets checkbox group per repo</li><br><li class='ac'>enabled toggle (p-switch-1) and p-alert-dialog-1 delete confirm</li><br><li class='ac'>Shows last_polled_at and last_error</li><br><li class='ac'>useRepos hook; empty state i18n</li></p><p><h4>Tests</h4></p><p><li><code>npm test</code></li></p><p>---</p><p>**Roadmap ID:** E09-04</div>
+            </details>
+          </td>
+          <td><span class="tag">web</span></td>
+          <td>E09-03</td>
+          <td>specs.html#ui, specs.html#domain</td>
+        </tr>
+        <tr data-task-id="E09-05">
+          <td><code>E09-05</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Notifications page</strong>
+            <details class="task-detail">
+              <summary>## Context  /notifications — Shoutrrr URL, events checkboxes, test notification.  ## Spec references  - [§8 Web UI &amp; COSS Particles](specs.html#ui) - [§5.5 Notifications (Shoutrrr)](specs.html#notific… <span class="meta">(7 AC · specs.html#ui, specs.html#notifications)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>/notifications — Shoutrrr URL, events checkboxes, test notification.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#ui">§8 Web UI &amp; COSS Particles</a></li><br><li><a href="specs.html#notifications">§5.5 Notifications (Shoutrrr)</a></li></p><p><h4>Implementation notes</h4></p><p><li>app/(authenticated)/notifications/page.tsx</li></p><p><h4>Files</h4></p><p><li><code>apps/web/app/(authenticated)/notifications/page.tsx</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>/notifications page CRUD</li><br><li class='ac'>Shoutrrr URL password input</li><br><li class='ac'>events_json checkbox group create,error,supersede</li><br><li class='ac'>Test notification button</li><br><li class='ac'>useNotificationTargets hook</li><br><li class='ac'>enabled toggle</li><br><li class='ac'>Never show stored URL after save</li></p><p><h4>Tests</h4></p><p><li><code>npm test</code></li></p><p>---</p><p>**Roadmap ID:** E09-05</div>
+            </details>
+          </td>
+          <td><span class="tag">web</span></td>
+          <td>E09-01, E08-03</td>
+          <td>specs.html#ui, specs.html#notifications</td>
+        </tr>
+        <tr data-task-id="E09-06">
+          <td><code>E09-06</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Settings page — poll interval</strong>
+            <details class="task-detail">
+              <summary>## Context  /settings — p-number-field poll_interval_minutes min 5; PATCH /api/v1/settings.  ## Spec references  - [§8 Web UI &amp; COSS Particles](specs.html#ui) - [§7 REST API (Go)](specs.html#api)  ## … <span class="meta">(7 AC · specs.html#ui, specs.html#api)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>/settings — p-number-field poll_interval_minutes min 5; PATCH /api/v1/settings.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#ui">§8 Web UI &amp; COSS Particles</a></li><br><li><a href="specs.html#api">§7 REST API (Go)</a></li></p><p><h4>Implementation notes</h4></p><p><li>app/(authenticated)/settings/page.tsx</li></p><p><h4>Files</h4></p><p><li><code>apps/web/app/(authenticated)/settings/page.tsx</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>/settings page shows poll interval</li><br><li class='ac'>Min 5 minutes validation</li><br><li class='ac'>Save calls PATCH /api/v1/settings</li><br><li class='ac'>Success alert i18n</li><br><li class='ac'>useSettings hook</li><br><li class='ac'>Loading and error states</li><br><li class='ac'>p-card-8 layout per spec particles</li></p><p><h4>Tests</h4></p><p><li><code>npm test</code></li></p><p>---</p><p>**Roadmap ID:** E09-06</div>
+            </details>
+          </td>
+          <td><span class="tag">web</span></td>
+          <td>E09-01, E08-03</td>
+          <td>specs.html#ui, specs.html#api</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="epic" id="E10">
+    <h2><code>E10</code> Dashboard — status, manual poll &amp; run history <span class="tag">web</span></h2>
+    <div class="epic-body"><h4>Context</h4></p><p>Dashboard / with status card, manual poll button, poll run history UI. Merges P20.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#ui">§8 Web UI &amp; COSS Particles</a></li><br><li><a href="specs.html#mvp">§12 MVP Acceptance Criteria</a></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>AC #14 operational visibility</li><br><li class='ac'>Manual poll from UI</li></p><p>---</p><p>**Roadmap ID:** E10</div>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Status</th><th>Task</th><th>Domain</th><th>Depends</th><th>Doc Ref</th></tr>
+      </thead>
+      <tbody>
+        <tr data-task-id="E10-01">
+          <td><code>E10-01</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Dashboard status card, repo table, and manual poll</strong>
+            <details class="task-detail">
+              <summary>## Context  GET /api/v1/status display; repo status subset table (p-table-4); error alert (p-alert-6) from last run; POST /api/v1/poll/trigger button; useStatus, useRepos, useTriggerPoll.  ## Spec ref… <span class="meta">(7 AC · specs.html#ui, specs.html#api, specs.html#mvp)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>GET /api/v1/status display; repo status subset table (p-table-4); error alert (p-alert-6) from last run; POST /api/v1/poll/trigger button; useStatus, useRepos, useTriggerPoll.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#ui">§8 Web UI &amp; COSS Particles</a></li><br><li><a href="specs.html#api">§7 REST API (Go)</a></li><br><li><a href="specs.html#mvp">§12 MVP Acceptance Criteria</a></li></p><p><h4>Implementation notes</h4></p><p><li>app/(authenticated)/page.tsx</li><br><li>components/dashboard/status-card.tsx — p-card-10, p-badge-5</li><br><li>components/dashboard/repo-status-table.tsx — p-table-4 TanStack sort+pagination</li><br><li>components/dashboard/last-run-errors.tsx — p-alert-6 when errors_json present</li></p><p><h4>Files</h4></p><p><li><code>apps/web/app/(authenticated)/page.tsx</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Dashboard / shows system status card</li><br><li class='ac'>Repo status table (subset) with source, path, last tag, open ticket</li><br><li class='ac'>Error alert when last poll run has errors</li><br><li class='ac'>Manual poll button triggers POST /api/v1/poll/trigger</li><br><li class='ac'>Empty state p-empty-1 CTA links to /repos</li><br><li class='ac'>Loading state during poll with Spinner</li><br><li class='ac'>All dashboard strings use t() keys</li></p><p><h4>Tests</h4></p><p><li><code>npm test -- dashboard</code></li></p><p>---</p><p>**Roadmap ID:** E10-01</div>
+            </details>
+          </td>
+          <td><span class="tag">web</span></td>
+          <td>E09-01, E08-03</td>
+          <td>specs.html#ui, specs.html#api, specs.html#mvp</td>
+        </tr>
+        <tr data-task-id="E10-02">
+          <td><code>E10-02</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Poll run history table and run detail drawer</strong>
+            <details class="task-detail">
+              <summary>## Context  GET /api/v1/poll/runs table; row click GET /api/v1/poll/runs/{id} drawer with events; usePollRuns, usePollRun hooks.  ## Spec references  - [§8 Web UI &amp; COSS Particles](specs.html#ui) - [§… <span class="meta">(7 AC · specs.html#ui, specs.html#api, specs.html#domain)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>GET /api/v1/poll/runs table; row click GET /api/v1/poll/runs/{id} drawer with events; usePollRuns, usePollRun hooks.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#ui">§8 Web UI &amp; COSS Particles</a></li><br><li><a href="specs.html#api">§7 REST API (Go)</a></li><br><li><a href="specs.html#domain">§5 Domain logic &amp; Idempotency</a></li></p><p><h4>Implementation notes</h4></p><p><li>components/dashboard/poll-run-history.tsx</li></p><p><h4>Files</h4></p><p><li><code>apps/web/components/dashboard/poll-run-history.tsx</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Poll run history UI consumes GET poll/runs</li><br><li class='ac'>Table data from GET /api/v1/poll/runs via usePollRuns</li><br><li class='ac'>Row opens drawer with usePollRun(id)</li><br><li class='ac'>Events show action enum labels i18n</li><br><li class='ac'>Status badges running|success|partial|failed</li><br><li class='ac'>Pagination or limit</li><br><li class='ac'>Empty state when no runs</li></p><p><h4>Tests</h4></p><p><li><code>npm test</code></li></p><p>---</p><p>**Roadmap ID:** E10-02</div>
+            </details>
+          </td>
+          <td><span class="tag">web</span></td>
+          <td>E10-01, E08-03</td>
+          <td>specs.html#ui, specs.html#api, specs.html#domain</td>
+        </tr>
+        <tr data-task-id="E10-03">
+          <td><code>E10-03</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Dashboard page integration and smoke tests</strong>
+            <details class="task-detail">
+              <summary>## Context  Vitest/RTL smoke for dashboard; docker compose manual poll AC #14.  ## Spec references  - [§12 MVP Acceptance Criteria](specs.html#mvp) - [§11 CI/CD (GitHub Actions)](specs.html#ci)  ## Im… <span class="meta">(7 AC · specs.html#mvp, specs.html#ci)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>Vitest/RTL smoke for dashboard; docker compose manual poll AC #14.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#mvp">§12 MVP Acceptance Criteria</a></li><br><li><a href="specs.html#ci">§11 CI/CD (GitHub Actions)</a></li></p><p><h4>Implementation notes</h4></p><p><li>dashboard page tests</li></p><p><h4>Files</h4></p><p><li><code>apps/web/app/(authenticated)/page.test.tsx</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Dashboard renders status + history</li><br><li class='ac'>Manual poll flow tested mock API</li><br><li class='ac'>All dashboard copy uses t()</li><br><li class='ac'>npm test passes</li><br><li class='ac'>No hardcoded English in dashboard</li><br><li class='ac'>Links to config pages from empty states</li><br><li class='ac'>Responsive layout mobile</li></p><p><h4>Tests</h4></p><p><li><code>npm test</code></li></p><p>---</p><p>**Roadmap ID:** E10-03</div>
+            </details>
+          </td>
+          <td><span class="tag">web</span></td>
+          <td>E10-02</td>
+          <td>specs.html#mvp, specs.html#ci</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="epic" id="E11">
+    <h2><code>E11</code> Ship — Docker, CI/CD &amp; MVP verification <span class="tag">ci</span></h2>
+    <div class="epic-body"><h4>Context</h4></p><p>Dockerfile, compose, GitHub Actions §11, GHCR, MVP checklist. Merges P26+P27+P28.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#deployment">§10 Deployment</a></li><br><li><a href="specs.html#ci">§11 CI/CD (GitHub Actions)</a></li><br><li><a href="specs.html#mvp">§12 MVP Acceptance Criteria</a></li></p><p><h4>Stack references</h4></p><p><li><a href="stack.html">Tech stack — CI/CD</a></li><br><li><a href="stack.html">Tech stack — Deployment</a></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>docker compose up works</li><br><li class='ac'>CI workflows per §11.2</li><br><li class='ac'>All 15 MVP AC documented</li></p><p>---</p><p>**Roadmap ID:** E11</div>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Status</th><th>Task</th><th>Domain</th><th>Depends</th><th>Doc Ref</th></tr>
+      </thead>
+      <tbody>
+        <tr data-task-id="E11-01">
+          <td><code>E11-01</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>Multi-stage Dockerfile and entrypoint</strong>
+            <details class="task-detail">
+              <summary>## Context  Next standalone + Go binary; docker/entrypoint.sh: migrate up → Go background → Next foreground; single image. Non-root user when feasible.  ## Spec references  - [§10 Deployment](specs.ht… <span class="meta">(7 AC · specs.html#deployment, specs.html#schema-migrations)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>Next standalone + Go binary; docker/entrypoint.sh: migrate up → Go background → Next foreground; single image. Non-root user when feasible.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#deployment">§10 Deployment</a></li><br><li><a href="specs.html#schema-migrations">§4.0 Schema migrations (sqldiff)</a></li></p><p><h4>Implementation notes</h4></p><p><li>Dockerfile multi-stage</li><br><li>docker/entrypoint.sh — golang-migrate up, start Go, start Next</li><br><li>next.config standalone output</li></p><p><h4>Files</h4></p><p><li><code>Dockerfile</code></li><br><li><code>docker/entrypoint.sh</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>Dockerfile builds successfully</li><br><li class='ac'>Single image release-ops</li><br><li class='ac'>Entrypoint runs migrate up then Go then Next</li><br><li class='ac'>Go on 127.0.0.1:8080 inside container</li><br><li class='ac'>Next on :3000 public</li><br><li class='ac'>VERSION not baked as secret</li><br><li class='ac'>Non-root user if feasible</li></p><p><h4>Tests</h4></p><p><li><code>docker build -t release-ops .</code></li></p><p>---</p><p>**Roadmap ID:** E11-01</div>
+            </details>
+          </td>
+          <td><span class="tag">ci</span></td>
+          <td>E01, E07</td>
+          <td>specs.html#deployment, specs.html#schema-migrations</td>
+        </tr>
+        <tr data-task-id="E11-02">
+          <td><code>E11-02</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>docker-compose.yml single service</strong>
+            <details class="task-detail">
+              <summary>## Context  One service release-ops; volume /data; port 3000; env from example.  ## Spec references  - [§10 Deployment](specs.html#deployment) - [§12 MVP Acceptance Criteria](specs.html#mvp)  ## Imple… <span class="meta">(7 AC · specs.html#deployment, specs.html#mvp)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>One service release-ops; volume /data; port 3000; env from example.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#deployment">§10 Deployment</a></li><br><li><a href="specs.html#mvp">§12 MVP Acceptance Criteria</a></li></p><p><h4>Implementation notes</h4></p><p><li>docker-compose.yml</li><br><li>.env.example</li></p><p><h4>Files</h4></p><p><li><code>docker-compose.yml</code></li><br><li><code>.env.example</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>docker-compose single service release-ops</li><br><li class='ac'>Volume release-ops-data:/data</li><br><li class='ac'>Port 3000:3000</li><br><li class='ac'>SESSION_SECRET and APP_ENCRYPTION_KEY documented</li><br><li class='ac'>Health via GET /api/go/healthz or proxy</li><br><li class='ac'>docker compose up --build works</li><br><li class='ac'>AC #14 docker compose dashboard</li></p><p><h4>Tests</h4></p><p><li><code>docker compose config</code></li></p><p>---</p><p>**Roadmap ID:** E11-02</div>
+            </details>
+          </td>
+          <td><span class="tag">ci</span></td>
+          <td>E11-01</td>
+          <td>specs.html#deployment, specs.html#mvp</td>
+        </tr>
+        <tr data-task-id="E11-03">
+          <td><code>E11-03</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>GitHub Actions CI workflows</strong>
+            <details class="task-detail">
+              <summary>## Context  pr.yml, dev.yml, main.yml, release.yml, reusable ci.yml per §11.2.  ## Spec references  - [§11 CI/CD (GitHub Actions)](specs.html#ci) - [§12 MVP Acceptance Criteria](specs.html#mvp)  ## Im… <span class="meta">(7 AC · specs.html#ci, specs.html#mvp)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>pr.yml, dev.yml, main.yml, release.yml, reusable ci.yml per §11.2.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#ci">§11 CI/CD (GitHub Actions)</a></li><br><li><a href="specs.html#mvp">§12 MVP Acceptance Criteria</a></li></p><p><h4>Implementation notes</h4></p><p><li>.github/workflows/ci.yml — go lint/test/build, web lint/test/typecheck/build</li><br><li>.github/workflows/pr.yml, dev.yml, main.yml, release.yml</li></p><p><h4>Files</h4></p><p><li><code>.github/workflows/ci.yml</code></li><br><li><code>.github/workflows/pr.yml</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>.github/workflows per §11.2 present</li><br><li class='ac'>Reusable workflows workflow_call only</li><br><li class='ac'>concurrency cancel-in-progress on PR/dev/main</li><br><li class='ac'>Parallel go and web jobs</li><br><li class='ac'>PR blocked on CI failure</li><br><li class='ac'>go test ./... in CI</li><br><li class='ac'>npm test and npm run typecheck in CI</li></p><p><h4>Tests</h4></p><p><li><code>actionlint if available</code></li></p><p>---</p><p>**Roadmap ID:** E11-03</div>
+            </details>
+          </td>
+          <td><span class="tag">ci</span></td>
+          <td>E01</td>
+          <td>specs.html#ci, specs.html#mvp</td>
+        </tr>
+        <tr data-task-id="E11-04">
+          <td><code>E11-04</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>GHCR image push and prepare-release</strong>
+            <details class="task-detail">
+              <summary>## Context  dev push nightly+sha; release published latest+version; prepare-release on VERSION bump.  ## Spec references  - [§11 CI/CD (GitHub Actions)](specs.html#ci) - [§10 Deployment](specs.html#de… <span class="meta">(7 AC · specs.html#ci, specs.html#deployment)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>dev push nightly+sha; release published latest+version; prepare-release on VERSION bump.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#ci">§11 CI/CD (GitHub Actions)</a></li><br><li><a href="specs.html#deployment">§10 Deployment</a></li></p><p><h4>Implementation notes</h4></p><p><li>build-and-push-image.yml reusable</li><br><li>prepare-release.yml + scripts/ci/create-draft-release.mjs</li><br><li>dev.yml chains ci → push-image</li></p><p><h4>Files</h4></p><p><li><code>.github/workflows/build-and-push-image.yml</code></li><br><li><code>scripts/ci/create-draft-release.mjs</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>dev push produces nightly image after CI</li><br><li class='ac'>Published release pushes latest + version tag</li><br><li class='ac'>main push runs prepare-release on VERSION bump</li><br><li class='ac'>create-draft-release script semver compare</li><br><li class='ac'>GHCR auth via GITHUB_TOKEN</li><br><li class='ac'>Docker buildcache ghcr.io/{owner}/release-ops:buildcache</li><br><li class='ac'>No image build on main without release</li></p><p><h4>Tests</h4></p><p><li><code>node scripts/ci/create-draft-release.mjs --dry-run</code></li></p><p>---</p><p>**Roadmap ID:** E11-04</div>
+            </details>
+          </td>
+          <td><span class="tag">ci</span></td>
+          <td>E11-03</td>
+          <td>specs.html#ci, specs.html#deployment</td>
+        </tr>
+        <tr data-task-id="E11-05">
+          <td><code>E11-05</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>CI policy gates — db:check and i18n lint</strong>
+            <details class="task-detail">
+              <summary>## Context  ci.yml db-migrations job npm run db:check; web-lint enforces i18next rule.  ## Spec references  - [§11 CI/CD (GitHub Actions)](specs.html#ci) - [§8.5 Internationalization (i18n)](specs.htm… <span class="meta">(7 AC · specs.html#ci, specs.html#i18n, specs.html#schema-migrations)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>ci.yml db-migrations job npm run db:check; web-lint enforces i18next rule.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#ci">§11 CI/CD (GitHub Actions)</a></li><br><li><a href="specs.html#i18n">§8.5 Internationalization (i18n)</a></li><br><li><a href="specs.html#schema-migrations">§4.0 Schema migrations (sqldiff)</a></li></p><p><h4>Implementation notes</h4></p><p><li>db-migrations job in ci.yml</li><br><li>sqlite3 in CI for sqldiff</li><br><li>Root package.json db:check script</li></p><p><h4>Files</h4></p><p><li><code>.github/workflows/ci.yml</code></li><br><li><code>package.json</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>db:check in CI workflow</li><br><li class='ac'>CI fails when db/schema.sql drifts</li><br><li class='ac'>web-lint fails on hardcoded JSX string</li><br><li class='ac'>Policy gates on PR and dev push</li><br><li class='ac'>sqlite3 available in runner</li><br><li class='ac'>npm run db:check documented</li><br><li class='ac'>No Atlas in pipeline</li></p><p><h4>Tests</h4></p><p><li><code>npm run db:check</code></li></p><p>---</p><p>**Roadmap ID:** E11-05</div>
+            </details>
+          </td>
+          <td><span class="tag">ci</span></td>
+          <td>E11-03, E01-02, E08-01</td>
+          <td>specs.html#ci, specs.html#i18n, specs.html#schema-migrations</td>
+        </tr>
+        <tr data-task-id="E11-06">
+          <td><code>E11-06</code></td>
+          <td class="cb">- [ ]</td>
+          <td>
+            <strong>MVP checklist, getting-started docs, and sign-off</strong>
+            <details class="task-detail">
+              <summary>## Context  docs/mvp-checklist.md maps AC #1–15; docs/getting-started.md operator guide including docker compose up and docker exec seed-admin for manual admin creation.  ## Spec references  - [§12 MV… <span class="meta">(7 AC · specs.html#mvp, specs.html#deployment, specs.html#env)</span></summary>
+              <div class="desc-body"><h4>Context</h4></p><p>docs/mvp-checklist.md maps AC #1–15; docs/getting-started.md operator guide including docker compose up and docker exec seed-admin for manual admin creation.</p><p><h4>Spec references</h4></p><p><li><a href="specs.html#mvp">§12 MVP Acceptance Criteria</a></li><br><li><a href="specs.html#deployment">§10 Deployment</a></li><br><li><a href="specs.html#env">§9 Environment variables</a></li></p><p><h4>Implementation notes</h4></p><p><li>docs/mvp-checklist.md</li><br><li>docs/getting-started.md</li><br><li>Provider mock tests verified in CI</li></p><p><h4>Files</h4></p><p><li><code>docs/mvp-checklist.md</code></li><br><li><code>docs/getting-started.md</code></li></p><p><h4>Acceptance criteria</h4></p><p><li class='ac'>mvp-checklist.md covers all 15 AC</li><br><li class='ac'>getting-started.md docker compose up</li><br><li class='ac'>Documents required env vars §9</li><br><li class='ac'>Documents docker exec seed-admin CLI usage</li><br><li class='ac'>Mock provider tests in CI AC #13</li><br><li class='ac'>Manual poll + dashboard AC #14</li><br><li class='ac'>GitHub Actions workflows AC #15</li></p><p><h4>Tests</h4></p><p><li><code>npm test</code></li><br><li><code>go test ./...</code></li></p><p>---</p><p>**Roadmap ID:** E11-06</div>
+            </details>
+          </td>
+          <td><span class="tag">docs</span></td>
+          <td>E11-02, E11-04, E07-05</td>
+          <td>specs.html#mvp, specs.html#deployment, specs.html#env</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <p class="docnav"><a href="index.html">Docs</a> · <a href="specs.html">Spec</a> · <a href="roadmap.json">JSON</a></p>
+</div>
+</body>
+</html>

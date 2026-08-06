@@ -1,0 +1,57 @@
+---
+description: Web UI strings — next-intl only; zero hardcoded user-facing copy
+globs: apps/web/**/*
+alwaysApply: false
+---
+
+# Internationalization (web)
+
+## Rule
+
+**No hardcoded user-facing strings** in `apps/web/` — labels, buttons, headings, errors, toasts, empty states, table headers, aria-labels, placeholders.
+
+All copy lives in locale message files and is rendered via **next-intl**.
+
+## Required pattern
+
+```tsx
+import { useTranslations } from "next-intl";
+
+export function Example() {
+  const t = useTranslations("repos");
+  return <h1>{t("title")}</h1>;
+}
+```
+
+Server components: `getTranslations` from `next-intl/server`.
+
+## Message files
+
+| Path | Purpose |
+|------|---------|
+| `apps/web/messages/en.json` | English (MVP default locale) |
+| `apps/web/messages/<locale>.json` | Additional locales when added |
+
+Key naming: `feature.element` — e.g. `dashboard.runPoll`, `integrations.testConnection`.
+
+## Allowed literals (not i18n violations)
+
+- CSS class names, `data-testid`, route paths (`/repos`)
+- Technical IDs from API (`sourceKind`, UUIDs)
+- `aria-hidden` decorative symbols with no semantic meaning
+- Log/debug strings in non-UI code
+
+## Forbidden
+
+- JSX text nodes with English copy: `<Button>Save</Button>`
+- `title="Delete integration"` on components
+- `toast("Settings saved")` — use `t("settings.saved")`
+- Duplicating the same string in multiple files without a message key
+
+## CI
+
+`npm run lint` must include i18n literal-string check (`eslint-plugin-i18next`). Failures block commit.
+
+## Spec
+
+See `docs/specs.html#i18n`.

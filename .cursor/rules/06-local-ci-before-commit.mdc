@@ -10,8 +10,11 @@ alwaysApply: true
 Single-package Node repo — run project scripts for affected work:
 
 ```bash
-npm test && npm run lint
+npm test && npm run lint && npm run db:check
 ```
+
+- `apps/web/**`: lint includes **i18n** (`eslint-plugin-i18next` — no literal UI strings)
+- `db/schema.sql` or `migrations/**`: run **`npm run db:check`** (sqldiff drift vs `db/schema.sql`)
 
 - `docs/**` only: skip test/lint until `package.json` exists; validate edits match linked phase doc
 - `src/**`, `drizzle/**`, config files: run full scoped gate above
@@ -24,7 +27,7 @@ On failure → `blocked`; no commit.
 When the user **explicitly asks to push**:
 
 ```bash
-npm test && npm run lint && npm run typecheck
+npm test && npm run lint && npm run typecheck && npm run db:check
 ```
 
 Sub-agents must **not** run the full gate during routine task execution unless push is requested.

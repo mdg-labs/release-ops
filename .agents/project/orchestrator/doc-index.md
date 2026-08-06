@@ -8,10 +8,10 @@
 | --------- | ---- | ------ |
 | `docs` | `docs/index.html` | Doc hub, MVP summary |
 | `spec` | `docs/specs.html` | MVP contract, APIs, UI, providers, CI/CD (§11), domain logic |
-| `schema` | `docs/schema.sql` | SQLite app.db schema (source file) |
+| `schema` | `db/schema.sql` | SQLite app.db schema (canonical DDL) |
 | `schema-html` | `docs/schema.html` | Schema browser view (local preview) |
 | `stack` | `docs/stack.html` | Go, Next.js, COSS, Go session auth, Docker |
-| `roadmap` | `docs/roadmap.html` | Implementation phases (not created yet) |
+| `roadmap` | `docs/roadmap.html` | Implementation phases — 11 epics, 51 leaves; machine source: `docs/roadmap.json`; audit: `node scripts/audit-roadmap-spec.mjs` |
 
 ## Verification commands (when scaffold exists)
 
@@ -29,7 +29,8 @@ Map committed paths per `.cursor/rules/06-local-ci-before-commit.mdc`.
 
 | Gate | Blocks |
 | ---- | ------ |
-| `db-migrations` | Schema changes only via `migrations/` (golang-migrate) |
+| `db-migrations` | Schema changes: edit `db/schema.sql` → `make migrate-diff` only; CI `npm run db:check` |
+| `i18n` | No hardcoded UI strings in `apps/web/` — next-intl keys only; ESLint `i18next/no-literal-string` |
 
 ## Hot files (never parallelize)
 

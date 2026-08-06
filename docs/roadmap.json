@@ -1,0 +1,1960 @@
+{
+  "version": 2,
+  "format": "phasical-intake-v2",
+  "generated": "2026-08-06",
+  "spec_ref": "docs/specs.html v2.7",
+  "project": "release-ops",
+  "integration_branch": "dev",
+  "tasks": [
+    {
+      "id": "E01",
+      "type": "epic",
+      "title": "Foundation — scaffold, database & Go server",
+      "domain": "config",
+      "priority": "high",
+      "depends_on": [],
+      "doc_ref": [
+        "specs.html#architecture",
+        "specs.html#schema",
+        "specs.html#schema-migrations",
+        "specs.html#deployment",
+        "specs.html#env",
+        "stack.html"
+      ],
+      "description": "## Context\n\nMonorepo skeleton (Go + Next.js), db/schema.sql with sqldiff migrations, sqlc scaffold, and runnable Go server with config, chi router, GET /healthz, SQLite + golang-migrate. Merges former P00, P01, P02.\n\n## Spec references\n\n- [§2 Architecture](specs.html#architecture)\n- [§4 Data model](specs.html#schema)\n- [§4.0 Schema migrations (sqldiff)](specs.html#schema-migrations)\n- [§10 Deployment](specs.html#deployment)\n- [§9 Environment variables](specs.html#env)\n\n## Stack references\n\n- [Tech stack — Repository layout](stack.html)\n- [Tech stack — Backend (Go)](stack.html)\n- [Tech stack — Data](stack.html)\n- [Tech stack — Quality](stack.html)\n\n## Implementation notes\n\n- go.mod, cmd/server, internal/* placeholders, apps/web Next 15 + COSS\n- db/schema.sql → make migrate-diff name=init, npm run db:check\n- sqlc.yaml, Makefile migrate-up/down/diff\n- internal/config, chi router, GET /healthz, modernc sqlite\n\n## Acceptance criteria\n\n- [ ] go build ./cmd/server and npm run lint pass\n- [ ] npm run db:check passes after initial migration\n- [ ] migrate-up applies to fresh app.db\n- [ ] GET /healthz returns 200\n- [ ] Layout matches stack.html\n\n---\n\n**Roadmap ID:** E01",
+      "lane": "S"
+    },
+    {
+      "id": "E01-01",
+      "type": "leaf",
+      "parent": "E01",
+      "title": "Scaffold Go module, internal packages, and Next.js COSS web",
+      "domain": "config",
+      "priority": "medium",
+      "depends_on": [],
+      "doc_ref": [
+        "specs.html#architecture",
+        "specs.html#ui",
+        "stack.html"
+      ],
+      "description": "## Context\n\nRepository layout per stack.html: cmd/server, internal/{api,config,store,crypto,poll,providers}, apps/web with Next.js 15 App Router, Tailwind v4, COSS components.json, root package.json scripts.\n\n## Spec references\n\n- [§2 Architecture](specs.html#architecture)\n- [§8 Web UI & COSS Particles](specs.html#ui)\n\n## Stack references\n\n- [Tech stack — Repository layout](stack.html)\n- [Tech stack — Frontend (Next.js + COSS)](stack.html)\n- [Tech stack — Quality](stack.html)\n\n## Implementation notes\n\n- go mod init, cmd/server stub on 127.0.0.1:8080\n- internal package skeleton with doc.go per package\n- apps/web: layout, page, globals.css, components.json COSS registry\n- Root package.json: test, lint, typecheck\n- VERSION file, .gitignore\n\n## Files\n\n- `go.mod`\n- `cmd/server/main.go`\n- `apps/web/`\n- `package.json`\n- `VERSION`\n\n## Acceptance criteria\n\n- [ ] go build ./cmd/server succeeds\n- [ ] go build ./... with internal packages\n- [ ] npm run dev starts Next on :3000\n- [ ] COSS Button installable\n- [ ] npm test runs Vitest smoke\n- [ ] golangci-lint run passes\n- [ ] Directory layout matches stack.html\n\n## Tests\n\n- `go build ./...`\n- `npm test`\n- `npm run lint`\n\n---\n\n**Roadmap ID:** E01-01",
+      "acceptance_criteria": [
+        "go build ./cmd/server succeeds",
+        "go build ./... with internal packages",
+        "npm run dev starts Next on :3000",
+        "COSS Button installable",
+        "npm test runs Vitest smoke",
+        "golangci-lint run passes",
+        "Directory layout matches stack.html"
+      ],
+      "files": [
+        "go.mod",
+        "cmd/server/main.go",
+        "apps/web/",
+        "package.json",
+        "VERSION"
+      ],
+      "tests": [
+        "go build ./...",
+        "npm test",
+        "npm run lint"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E01-02",
+      "type": "leaf",
+      "parent": "E01",
+      "title": "Database schema, migrate-diff, and initial migration",
+      "domain": "db",
+      "priority": "medium",
+      "depends_on": [
+        "E01-01"
+      ],
+      "doc_ref": [
+        "specs.html#schema",
+        "specs.html#schema-migrations",
+        "stack.html",
+        "../db/schema.sql",
+        "schema.html"
+      ],
+      "description": "## Context\n\nCanonical DDL in db/schema.sql. scripts/migrate-diff.mjs uses SQLite sqldiff to generate migrations/000001_init.{up,down}.sql. Never hand-write migrations/*.sql.\n\n## Spec references\n\n- [§4 Data model](specs.html#schema)\n- [§4.0 Schema migrations (sqldiff)](specs.html#schema-migrations)\n\n## Stack references\n\n- [Tech stack — Data](stack.html)\n\n## Schema references\n\n- [db/schema.sql (canonical)](../db/schema.sql)\n- [schema.html (browser view)](schema.html)\n\n## Implementation notes\n\n- db/schema.sql — all 11 tables from spec §4\n- scripts/migrate-diff.mjs + scripts/ci/check-migrations-sync.mjs\n- make migrate-diff name=init\n- npm run db:check in package.json\n\n## Files\n\n- `db/schema.sql`\n- `scripts/migrate-diff.mjs`\n- `migrations/000001_init.up.sql`\n\n## Acceptance criteria\n\n- [ ] db/schema.sql has all 10 tables: users, sessions, app_settings, integrations\n- [ ] ticket_projects, monitored_repos, notification_targets, monitored_repo_notifications\n- [ ] poll_runs, poll_run_events\n- [ ] migrate-diff generates 000001_init up/down\n- [ ] npm run db:check passes\n- [ ] PRAGMA foreign_keys in migration\n- [ ] integrations.kind CHECK all 8 kinds\n\n## Tests\n\n- `make migrate-diff name=init`\n- `npm run db:check`\n\n---\n\n**Roadmap ID:** E01-02",
+      "acceptance_criteria": [
+        "db/schema.sql has all 10 tables: users, sessions, app_settings, integrations",
+        "ticket_projects, monitored_repos, notification_targets, monitored_repo_notifications",
+        "poll_runs, poll_run_events",
+        "migrate-diff generates 000001_init up/down",
+        "npm run db:check passes",
+        "PRAGMA foreign_keys in migration",
+        "integrations.kind CHECK all 8 kinds"
+      ],
+      "files": [
+        "db/schema.sql",
+        "scripts/migrate-diff.mjs",
+        "migrations/000001_init.up.sql"
+      ],
+      "tests": [
+        "make migrate-diff name=init",
+        "npm run db:check"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E01-03",
+      "type": "leaf",
+      "parent": "E01",
+      "title": "sqlc, golang-migrate CLI, and store connection",
+      "domain": "db",
+      "priority": "medium",
+      "depends_on": [
+        "E01-02"
+      ],
+      "doc_ref": [
+        "specs.html#schema",
+        "specs.html#deployment",
+        "stack.html"
+      ],
+      "description": "## Context\n\nsqlc.yaml points at migrations/; queries/ directory; Open SQLite with foreign_keys ON; driver modernc.org/sqlite (CGO-free per stack.html); migrate-up target.\n\n## Spec references\n\n- [§4 Data model](specs.html#schema)\n- [§10 Deployment](specs.html#deployment)\n\n## Stack references\n\n- [Tech stack — Data](stack.html)\n- [Tech stack — Backend (Go)](stack.html)\n\n## Implementation notes\n\n- sqlc.yaml — engine sqlite, schema migrations/, queries queries/\n- Makefile: migrate-diff, migrate-up, migrate-down\n- internal/store/db.go — Open, MaxOpenConns(1), Ping\n- migrate_test.go — apply up, verify tables\n\n## Files\n\n- `sqlc.yaml`\n- `Makefile`\n- `internal/store/db.go`\n- `internal/store/migrate_test.go`\n\n## Acceptance criteria\n\n- [ ] sqlc generate produces compilable Go\n- [ ] make migrate-up applies to temp db\n- [ ] store opens app.db with foreign keys via modernc.org/sqlite\n- [ ] migrate_test passes\n- [ ] queries/ directory exists\n- [ ] golang-migrate documented in Makefile\n- [ ] DSN uses APP_DB_PATH env\n\n## Tests\n\n- `go test ./internal/store/...`\n- `sqlc generate`\n\n---\n\n**Roadmap ID:** E01-03",
+      "acceptance_criteria": [
+        "sqlc generate produces compilable Go",
+        "make migrate-up applies to temp db",
+        "store opens app.db with foreign keys via modernc.org/sqlite",
+        "migrate_test passes",
+        "queries/ directory exists",
+        "golang-migrate documented in Makefile",
+        "DSN uses APP_DB_PATH env"
+      ],
+      "files": [
+        "sqlc.yaml",
+        "Makefile",
+        "internal/store/db.go",
+        "internal/store/migrate_test.go"
+      ],
+      "tests": [
+        "go test ./internal/store/...",
+        "sqlc generate"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E01-04",
+      "type": "leaf",
+      "parent": "E01",
+      "title": "Go config loader and environment variables",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E01-01"
+      ],
+      "doc_ref": [
+        "specs.html#env",
+        "specs.html#architecture",
+        "stack.html"
+      ],
+      "description": "## Context\n\nLoad SESSION_SECRET, APP_ENCRYPTION_KEY, APP_DB_PATH, GO_INTERNAL_PORT, PORT per specs §9.\n\n## Spec references\n\n- [§9 Environment variables](specs.html#env)\n- [§2 Architecture](specs.html#architecture)\n\n## Stack references\n\n- [Tech stack — Backend (Go)](stack.html)\n\n## Implementation notes\n\n- internal/config/config.go — Load from env\n- Validate required: SESSION_SECRET, APP_ENCRYPTION_KEY\n- Defaults: APP_DB_PATH=/data/app.db, GO_INTERNAL_PORT=8080, PORT=3000\n- config_test.go\n\n## Files\n\n- `internal/config/config.go`\n- `internal/config/config_test.go`\n\n## Acceptance criteria\n\n- [ ] Missing SESSION_SECRET fails fast\n- [ ] APP_DB_PATH default /data/app.db\n- [ ] GO_INTERNAL_PORT default 8080\n- [ ] Config struct passed to server main\n- [ ] Unit tests for defaults\n- [ ] APP_PUBLIC_URL optional for Secure cookies\n- [ ] BOOTSTRAP_ADMIN_* optional pair\n\n## Tests\n\n- `go test ./internal/config/...`\n\n---\n\n**Roadmap ID:** E01-04",
+      "acceptance_criteria": [
+        "Missing SESSION_SECRET fails fast",
+        "APP_DB_PATH default /data/app.db",
+        "GO_INTERNAL_PORT default 8080",
+        "Config struct passed to server main",
+        "Unit tests for defaults",
+        "APP_PUBLIC_URL optional for Secure cookies",
+        "BOOTSTRAP_ADMIN_* optional pair"
+      ],
+      "files": [
+        "internal/config/config.go",
+        "internal/config/config_test.go"
+      ],
+      "tests": [
+        "go test ./internal/config/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E01-05",
+      "type": "leaf",
+      "parent": "E01",
+      "title": "Chi HTTP router, middleware, and GET /healthz",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E01-04"
+      ],
+      "doc_ref": [
+        "specs.html#architecture",
+        "specs.html#api",
+        "stack.html"
+      ],
+      "description": "## Context\n\nchi router on 127.0.0.1:GO_INTERNAL_PORT. GET /healthz no auth (container probe). API subrouter /api/v1 scaffold for later epics.\n\n## Spec references\n\n- [§2 Architecture](specs.html#architecture)\n- [§7 REST API (Go)](specs.html#api)\n\n## Stack references\n\n- [Tech stack — Backend (Go)](stack.html)\n\n## Implementation notes\n\n- internal/api/router.go — MountAPI, /api/v1 subrouter\n- GET /healthz handler\n- Recovery + request logging middleware\n- Graceful shutdown on SIGTERM\n- cmd/server wires router\n\n## Files\n\n- `internal/api/router.go`\n- `internal/api/health.go`\n- `cmd/server/main.go`\n\n## Acceptance criteria\n\n- [ ] GET /healthz returns 200 JSON\n- [ ] Server binds 127.0.0.1 only\n- [ ] chi MountAPI exports /api/v1 subrouter\n- [ ] Graceful shutdown completes in-flight requests\n- [ ] go test ./internal/api/...\n- [ ] Router test lists registered paths\n- [ ] JSON Content-Type on API subrouter\n\n## Tests\n\n- `go test ./internal/api/...`\n- `curl http://127.0.0.1:8080/healthz`\n\n---\n\n**Roadmap ID:** E01-05",
+      "acceptance_criteria": [
+        "GET /healthz returns 200 JSON",
+        "Server binds 127.0.0.1 only",
+        "chi MountAPI exports /api/v1 subrouter",
+        "Graceful shutdown completes in-flight requests",
+        "go test ./internal/api/...",
+        "Router test lists registered paths",
+        "JSON Content-Type on API subrouter"
+      ],
+      "files": [
+        "internal/api/router.go",
+        "internal/api/health.go",
+        "cmd/server/main.go"
+      ],
+      "tests": [
+        "go test ./internal/api/...",
+        "curl http://127.0.0.1:8080/healthz"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E02",
+      "type": "epic",
+      "title": "Authentication & credential encryption",
+      "domain": "backend",
+      "priority": "high",
+      "depends_on": [
+        "E01"
+      ],
+      "doc_ref": [
+        "specs.html#auth",
+        "specs.html#api",
+        "specs.html#schema",
+        "stack.html"
+      ],
+      "description": "## Context\n\nGo-only auth: scs sessions, bcrypt users, release_ops_session cookie, AES-GCM for integration secrets. POST /api/v1/auth/login, logout, GET /api/v1/auth/session. Middleware protects /api/v1/*. Merges P03+P04.\n\n## Spec references\n\n- [§3 Authentication](specs.html#auth)\n- [§7 REST API (Go)](specs.html#api)\n- [§4 Data model](specs.html#schema)\n\n## Stack references\n\n- [Tech stack — Backend (Go)](stack.html)\n- [Tech stack — Data](stack.html)\n\n## Acceptance criteria\n\n- [ ] Login sets HttpOnly session cookie\n- [ ] Protected routes return 401 without session\n- [ ] Encrypted payloads never in API responses\n- [ ] Bootstrap admin on first start\n\n---\n\n**Roadmap ID:** E02",
+      "lane": "S"
+    },
+    {
+      "id": "E02-01",
+      "type": "leaf",
+      "parent": "E02",
+      "title": "AES-GCM credential encryption service",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E01-04"
+      ],
+      "doc_ref": [
+        "specs.html#schema",
+        "specs.html#env",
+        "stack.html"
+      ],
+      "description": "## Context\n\nAPP_ENCRYPTION_KEY 64 hex chars → AES-256-GCM. Wire format per §4.8: base64(nonce + ciphertext + tag) with 12-byte random nonce.\n\n## Spec references\n\n- [§4 Data model](specs.html#schema)\n- [§9 Environment variables](specs.html#env)\n\n## Stack references\n\n- [Tech stack — Backend (Go)](stack.html)\n\n## Implementation notes\n\n- internal/crypto/aesgcm.go — Encrypt, Decrypt\n- 12-byte random nonce prepended to ciphertext+tag; base64 wire encoding\n- crypto_test.go with fixed test vector\n\n## Files\n\n- `internal/crypto/aesgcm.go`\n- `internal/crypto/crypto_test.go`\n\n## Acceptance criteria\n\n- [ ] Encrypt/decrypt roundtrip\n- [ ] Wrong key fails decrypt\n- [ ] 64 hex char key validation\n- [ ] Wire format base64(nonce+ciphertext+tag) per §4.8\n- [ ] Used by store layer for encrypted_payload columns\n- [ ] No plaintext secrets logged\n- [ ] Tests cover empty and large payloads\n\n## Tests\n\n- `go test ./internal/crypto/...`\n\n---\n\n**Roadmap ID:** E02-01",
+      "acceptance_criteria": [
+        "Encrypt/decrypt roundtrip",
+        "Wrong key fails decrypt",
+        "64 hex char key validation",
+        "Wire format base64(nonce+ciphertext+tag) per §4.8",
+        "Used by store layer for encrypted_payload columns",
+        "No plaintext secrets logged",
+        "Tests cover empty and large payloads"
+      ],
+      "files": [
+        "internal/crypto/aesgcm.go",
+        "internal/crypto/crypto_test.go"
+      ],
+      "tests": [
+        "go test ./internal/crypto/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E02-02",
+      "type": "leaf",
+      "parent": "E02",
+      "title": "Users store, bcrypt, and scs session manager",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E01-03",
+        "E02-01"
+      ],
+      "doc_ref": [
+        "specs.html#auth",
+        "specs.html#schema",
+        "../db/schema.sql"
+      ],
+      "description": "## Context\n\nsqlc users queries; alexedwards/scs v2 with SQLite sessions table; bcrypt cost 12.\n\n## Spec references\n\n- [§3 Authentication](specs.html#auth)\n- [§4 Data model](specs.html#schema)\n\n## Schema references\n\n- [db/schema.sql (canonical)](../db/schema.sql)\n\n## Implementation notes\n\n- queries/users.sql — CreateUser, GetUserByEmail, CountUsers\n- internal/api/auth/password.go — HashPassword, ComparePassword\n- internal/api/auth/session.go — NewSessionManager\n- Session lifetime 7 days, idx_sessions_expiry\n\n## Files\n\n- `queries/users.sql`\n- `internal/api/auth/session.go`\n- `internal/api/auth/password.go`\n\n## Acceptance criteria\n\n- [ ] GetUserByEmail returns user row\n- [ ] bcrypt hash verifies password\n- [ ] Session persists across restart\n- [ ] sessions table used by scs store\n- [ ] CountUsers for bootstrap guard\n- [ ] sqlc generate users models\n- [ ] HttpOnly cookie name release_ops_session\n\n## Tests\n\n- `go test ./internal/api/auth/...`\n\n---\n\n**Roadmap ID:** E02-02",
+      "acceptance_criteria": [
+        "GetUserByEmail returns user row",
+        "bcrypt hash verifies password",
+        "Session persists across restart",
+        "sessions table used by scs store",
+        "CountUsers for bootstrap guard",
+        "sqlc generate users models",
+        "HttpOnly cookie name release_ops_session"
+      ],
+      "files": [
+        "queries/users.sql",
+        "internal/api/auth/session.go",
+        "internal/api/auth/password.go"
+      ],
+      "tests": [
+        "go test ./internal/api/auth/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E02-03",
+      "type": "leaf",
+      "parent": "E02",
+      "title": "Auth HTTP handlers and session middleware",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E02-02"
+      ],
+      "doc_ref": [
+        "specs.html#auth",
+        "specs.html#api"
+      ],
+      "description": "## Context\n\nPOST /api/v1/auth/login, POST /api/v1/auth/logout, GET /api/v1/auth/session. Middleware on /api/v1/* except login and session.\n\n## Spec references\n\n- [§3 Authentication](specs.html#auth)\n- [§7 REST API (Go)](specs.html#api)\n\n## Implementation notes\n\n- internal/api/auth/handlers.go — Login, Logout, Session\n- internal/api/middleware/auth.go — RequireSession\n- JSON error envelope per §7\n- Register on /api/v1 router\n\n## Files\n\n- `internal/api/auth/handlers.go`\n- `internal/api/middleware/auth.go`\n\n## Acceptance criteria\n\n- [ ] POST /api/v1/auth/login sets cookie on valid credentials\n- [ ] POST /api/v1/auth/logout clears session\n- [ ] GET /api/v1/auth/session returns user or null\n- [ ] Protected route returns 401 without cookie\n- [ ] Invalid password returns 401 not 500\n- [ ] SameSite=Lax, Path=/, HttpOnly\n- [ ] Login rate limit not required MVP\n\n## Tests\n\n- `go test ./internal/api/auth/...`\n\n---\n\n**Roadmap ID:** E02-03",
+      "acceptance_criteria": [
+        "POST /api/v1/auth/login sets cookie on valid credentials",
+        "POST /api/v1/auth/logout clears session",
+        "GET /api/v1/auth/session returns user or null",
+        "Protected route returns 401 without cookie",
+        "Invalid password returns 401 not 500",
+        "SameSite=Lax, Path=/, HttpOnly",
+        "Login rate limit not required MVP"
+      ],
+      "files": [
+        "internal/api/auth/handlers.go",
+        "internal/api/middleware/auth.go"
+      ],
+      "tests": [
+        "go test ./internal/api/auth/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E02-04",
+      "type": "leaf",
+      "parent": "E02",
+      "title": "Bootstrap admin and seed-admin CLI",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E02-03"
+      ],
+      "doc_ref": [
+        "specs.html#auth",
+        "specs.html#env",
+        "specs.html#deployment"
+      ],
+      "description": "## Context\n\nBOOTSTRAP_ADMIN_EMAIL/PASSWORD env on first start when CountUsers=0; cmd/seed-admin CLI. No POST /api/v1/auth/register and no in-app setup wizard (§3).\n\n## Spec references\n\n- [§3 Authentication](specs.html#auth)\n- [§9 Environment variables](specs.html#env)\n- [§10 Deployment](specs.html#deployment)\n\n## Implementation notes\n\n- Bootstrap in server startup before Listen\n- cmd/seed-admin for manual admin creation\n- Skip bootstrap when users exist\n\n## Files\n\n- `internal/api/auth/bootstrap.go`\n- `cmd/seed-admin/main.go`\n\n## Acceptance criteria\n\n- [ ] First boot with env vars creates admin user\n- [ ] Second boot does not duplicate user\n- [ ] seed-admin CLI creates user interactively\n- [ ] Bootstrap skipped when users > 0\n- [ ] No auth register endpoint in MVP\n- [ ] Invalid email rejected\n- [ ] Password hashed with bcrypt\n- [ ] Document in getting-started (E11)\n\n## Tests\n\n- `go test ./internal/api/auth/... -run Bootstrap`\n\n---\n\n**Roadmap ID:** E02-04",
+      "acceptance_criteria": [
+        "First boot with env vars creates admin user",
+        "Second boot does not duplicate user",
+        "seed-admin CLI creates user interactively",
+        "Bootstrap skipped when users > 0",
+        "No auth register endpoint in MVP",
+        "Invalid email rejected",
+        "Password hashed with bcrypt",
+        "Document in getting-started (E11)"
+      ],
+      "files": [
+        "internal/api/auth/bootstrap.go",
+        "cmd/seed-admin/main.go"
+      ],
+      "tests": [
+        "go test ./internal/api/auth/... -run Bootstrap"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E03",
+      "type": "epic",
+      "title": "Store layer — sqlc repositories",
+      "domain": "db",
+      "priority": "high",
+      "depends_on": [
+        "E01",
+        "E02"
+      ],
+      "doc_ref": [
+        "specs.html#schema",
+        "specs.html#domain",
+        "stack.html"
+      ],
+      "description": "## Context\n\nTyped repositories for all domain tables. Merges P05.\n\n## Spec references\n\n- [§4 Data model](specs.html#schema)\n- [§5 Domain logic & Idempotency](specs.html#domain)\n\n## Stack references\n\n- [Tech stack — Data](stack.html)\n\n## Acceptance criteria\n\n- [ ] All §4 tables queryable via sqlc\n- [ ] Repositories used by API handlers\n- [ ] Foreign key relationships respected\n\n---\n\n**Roadmap ID:** E03",
+      "lane": "S"
+    },
+    {
+      "id": "E03-01",
+      "type": "leaf",
+      "parent": "E03",
+      "title": "sqlc queries for all domain tables",
+      "domain": "db",
+      "priority": "medium",
+      "depends_on": [
+        "E01-03"
+      ],
+      "doc_ref": [
+        "specs.html#schema",
+        "specs.html#ticket-projects",
+        "../db/schema.sql"
+      ],
+      "description": "## Context\n\nqueries/*.sql for app_settings, integrations, ticket_projects, monitored_repos, notification_targets, monitored_repo_notifications, poll_runs, poll_run_events.\n\n## Spec references\n\n- [§4 Data model](specs.html#schema)\n- [§5.3 Ticket projects & status mapping](specs.html#ticket-projects)\n\n## Schema references\n\n- [db/schema.sql (canonical)](../db/schema.sql)\n\n## Implementation notes\n\n- queries/app_settings.sql, integrations.sql, ticket_projects.sql\n- queries/monitored_repos.sql, notification_targets.sql, poll_runs.sql\n- queries/monitored_repo_notifications.sql — replace join rows per repo\n- CRUD + list enabled + update poll state on repos\n\n## Files\n\n- `queries/*.sql`\n\n## Acceptance criteria\n\n- [ ] sqlc generate compiles all query files\n- [ ] Integrations ListByKind query\n- [ ] MonitoredRepos ListEnabled with notification target IDs\n- [ ] monitored_repo_notifications replace on repo update\n- [ ] PollRuns InsertRun, FinishRun, InsertEvent\n- [ ] TicketProjects UNIQUE constraint in queries\n- [ ] Poll run tickets_superseded counter update\n\n## Tests\n\n- `sqlc generate`\n- `go build ./...`\n\n---\n\n**Roadmap ID:** E03-01",
+      "acceptance_criteria": [
+        "sqlc generate compiles all query files",
+        "Integrations ListByKind query",
+        "MonitoredRepos ListEnabled with notification target IDs",
+        "monitored_repo_notifications replace on repo update",
+        "PollRuns InsertRun, FinishRun, InsertEvent",
+        "TicketProjects UNIQUE constraint in queries",
+        "Poll run tickets_superseded counter update"
+      ],
+      "files": [
+        "queries/*.sql"
+      ],
+      "tests": [
+        "sqlc generate",
+        "go build ./..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E03-02",
+      "type": "leaf",
+      "parent": "E03",
+      "title": "Domain repository wrappers with crypto pass-through",
+      "domain": "db",
+      "priority": "medium",
+      "depends_on": [
+        "E03-01",
+        "E02-01"
+      ],
+      "doc_ref": [
+        "specs.html#schema",
+        "specs.html#providers"
+      ],
+      "description": "## Context\n\ninternal/store/*.go wraps sqlc; encrypt on write, decrypt on read for credential columns.\n\n## Spec references\n\n- [§4 Data model](specs.html#schema)\n- [§6 Provider interfaces (Go)](specs.html#providers)\n\n## Implementation notes\n\n- internal/store/settings.go, integrations.go, ticket_projects.go\n- internal/store/repos.go, notifications.go, poll.go\n- UUID v4 generation, UTC ISO8601 timestamps\n\n## Files\n\n- `internal/store/integrations.go`\n- `internal/store/repos.go`\n\n## Acceptance criteria\n\n- [ ] Integration Create encrypts encrypted_payload\n- [ ] Get never returns decrypted secrets to API layer raw\n- [ ] UpdatePollState on monitored_repos\n- [ ] Repo Create/Update persists notificationTargetIds join rows\n- [ ] Repository interfaces mockable for tests\n- [ ] app_settings Get returns id=1\n- [ ] Notification targets events_json valid JSON\n\n## Tests\n\n- `go test ./internal/store/...`\n\n---\n\n**Roadmap ID:** E03-02",
+      "acceptance_criteria": [
+        "Integration Create encrypts encrypted_payload",
+        "Get never returns decrypted secrets to API layer raw",
+        "UpdatePollState on monitored_repos",
+        "Repo Create/Update persists notificationTargetIds join rows",
+        "Repository interfaces mockable for tests",
+        "app_settings Get returns id=1",
+        "Notification targets events_json valid JSON"
+      ],
+      "files": [
+        "internal/store/integrations.go",
+        "internal/store/repos.go"
+      ],
+      "tests": [
+        "go test ./internal/store/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E03-03",
+      "type": "leaf",
+      "parent": "E03",
+      "title": "Seed app_settings and store integration tests",
+      "domain": "db",
+      "priority": "medium",
+      "depends_on": [
+        "E03-02"
+      ],
+      "doc_ref": [
+        "specs.html#schema",
+        "specs.html#api"
+      ],
+      "description": "## Context\n\napp_settings row id=1 with poll_interval_minutes default 360; integration tests against temp SQLite.\n\n## Spec references\n\n- [§4 Data model](specs.html#schema)\n- [§7 REST API (Go)](specs.html#api)\n\n## Implementation notes\n\n- Seed in migration or store test fixture\n- store_integration_test.go — full CRUD smoke\n\n## Files\n\n- `internal/store/store_integration_test.go`\n\n## Acceptance criteria\n\n- [ ] GetAppSettings returns poll_interval_minutes >= 5\n- [ ] Integration CRUD roundtrip in test db\n- [ ] Ticket project create with json_valid configs\n- [ ] Monitored repo UNIQUE(source_kind, project_path) enforced\n- [ ] migrate_test still passes\n- [ ] Tests use t.TempDir for app.db\n- [ ] No test data committed to repo\n\n## Tests\n\n- `go test ./internal/store/...`\n\n---\n\n**Roadmap ID:** E03-03",
+      "acceptance_criteria": [
+        "GetAppSettings returns poll_interval_minutes >= 5",
+        "Integration CRUD roundtrip in test db",
+        "Ticket project create with json_valid configs",
+        "Monitored repo UNIQUE(source_kind, project_path) enforced",
+        "migrate_test still passes",
+        "Tests use t.TempDir for app.db",
+        "No test data committed to repo"
+      ],
+      "files": [
+        "internal/store/store_integration_test.go"
+      ],
+      "tests": [
+        "go test ./internal/store/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E04",
+      "type": "epic",
+      "title": "REST API — all /api/v1 handlers",
+      "domain": "backend",
+      "priority": "high",
+      "depends_on": [
+        "E02",
+        "E03"
+      ],
+      "doc_ref": [
+        "specs.html#api",
+        "specs.html#auth",
+        "stack.html"
+      ],
+      "description": "## Context\n\nCRUD handlers for settings, integrations, ticket-projects, repos, notification-targets; status and poll endpoints. Register all routes on chi router. Merges P06–P10, P15.\n\n## Spec references\n\n- [§7 REST API (Go)](specs.html#api)\n- [§3 Authentication](specs.html#auth)\n\n## Stack references\n\n- [Tech stack — Backend (Go)](stack.html)\n\n## Acceptance criteria\n\n- [ ] All §7 endpoints implemented\n- [ ] Session middleware on protected routes\n- [ ] JSON shapes match spec\n\n---\n\n**Roadmap ID:** E04",
+      "lane": "S"
+    },
+    {
+      "id": "E04-01",
+      "type": "leaf",
+      "parent": "E04",
+      "title": "Settings API — GET/PATCH /api/v1/settings",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E03-02",
+        "E02-03"
+      ],
+      "doc_ref": [
+        "specs.html#api",
+        "specs.html#schema"
+      ],
+      "description": "## Context\n\npoll_interval_minutes min 5; GET returns current; PATCH validates and persists.\n\n## Spec references\n\n- [§7 REST API (Go)](specs.html#api)\n- [§4 Data model](specs.html#schema)\n\n## Implementation notes\n\n- internal/api/handlers/settings.go\n- Register on /api/v1/settings\n\n## Files\n\n- `internal/api/handlers/settings.go`\n\n## Acceptance criteria\n\n- [ ] GET /api/v1/settings returns pollIntervalMinutes\n- [ ] PATCH /api/v1/settings updates value\n- [ ] PATCH rejects value < 5\n- [ ] Requires valid session\n- [ ] Response JSON matches §7 shape\n- [ ] updated_at set on patch\n- [ ] Handler unit tests with mock store\n\n## Tests\n\n- `go test ./internal/api/handlers/...`\n\n---\n\n**Roadmap ID:** E04-01",
+      "acceptance_criteria": [
+        "GET /api/v1/settings returns pollIntervalMinutes",
+        "PATCH /api/v1/settings updates value",
+        "PATCH rejects value < 5",
+        "Requires valid session",
+        "Response JSON matches §7 shape",
+        "updated_at set on patch",
+        "Handler unit tests with mock store"
+      ],
+      "files": [
+        "internal/api/handlers/settings.go"
+      ],
+      "tests": [
+        "go test ./internal/api/handlers/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E04-02",
+      "type": "leaf",
+      "parent": "E04",
+      "title": "Integrations API — CRUD and test connection",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E03-02",
+        "E02-03"
+      ],
+      "doc_ref": [
+        "specs.html#api",
+        "specs.html#providers"
+      ],
+      "description": "## Context\n\nGET/POST/PATCH/DELETE /api/v1/integrations; POST .../test validates credentials without persisting.\n\n## Spec references\n\n- [§7 REST API (Go)](specs.html#api)\n- [§6 Provider interfaces (Go)](specs.html#providers)\n\n## Implementation notes\n\n- handlers/integrations.go — full CRUD\n- TestConnection calls provider ping\n- Never return encrypted_payload in JSON\n\n## Files\n\n- `internal/api/handlers/integrations.go`\n\n## Acceptance criteria\n\n- [ ] GET /api/v1/integrations lists without secrets\n- [ ] List items include hasSecret boolean per §7.3\n- [ ] POST creates integration with encrypted token\n- [ ] PATCH updates name/base_url only if token omitted\n- [ ] DELETE returns 409 when referenced by repos or ticket projects\n- [ ] POST test connection returns success/error\n- [ ] All 8 integration kinds accepted\n\n## Tests\n\n- `go test ./internal/api/handlers/...`\n\n---\n\n**Roadmap ID:** E04-02",
+      "acceptance_criteria": [
+        "GET /api/v1/integrations lists without secrets",
+        "List items include hasSecret boolean per §7.3",
+        "POST creates integration with encrypted token",
+        "PATCH updates name/base_url only if token omitted",
+        "DELETE returns 409 when referenced by repos or ticket projects",
+        "POST test connection returns success/error",
+        "All 8 integration kinds accepted"
+      ],
+      "files": [
+        "internal/api/handlers/integrations.go"
+      ],
+      "tests": [
+        "go test ./internal/api/handlers/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E04-03",
+      "type": "leaf",
+      "parent": "E04",
+      "title": "Ticket projects API — full CRUD",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E04-02"
+      ],
+      "doc_ref": [
+        "specs.html#api",
+        "specs.html#ticket-projects"
+      ],
+      "description": "## Context\n\nGET/POST/PATCH/DELETE /api/v1/ticket-projects; create_config and status_mapping JSON.\n\n## Spec references\n\n- [§7 REST API (Go)](specs.html#api)\n- [§5.3 Ticket projects & status mapping](specs.html#ticket-projects)\n\n## Implementation notes\n\n- handlers/ticket_projects.go\n\n## Files\n\n- `internal/api/handlers/ticket_projects.go`\n\n## Acceptance criteria\n\n- [ ] CRUD /api/v1/ticket-projects\n- [ ] create_config and status_mapping json_valid\n- [ ] on_open_ticket_policy supersede|merge|skip_if_open\n- [ ] UNIQUE(integration_id, external_project_id)\n- [ ] DELETE returns 409 when referenced by monitored repos\n- [ ] List filtered by integration_id\n- [ ] Handler tests with fixtures\n\n## Tests\n\n- `go test ./internal/api/handlers/...`\n\n---\n\n**Roadmap ID:** E04-03",
+      "acceptance_criteria": [
+        "CRUD /api/v1/ticket-projects",
+        "create_config and status_mapping json_valid",
+        "on_open_ticket_policy supersede|merge|skip_if_open",
+        "UNIQUE(integration_id, external_project_id)",
+        "DELETE returns 409 when referenced by monitored repos",
+        "List filtered by integration_id",
+        "Handler tests with fixtures"
+      ],
+      "files": [
+        "internal/api/handlers/ticket_projects.go"
+      ],
+      "tests": [
+        "go test ./internal/api/handlers/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E04-04",
+      "type": "leaf",
+      "parent": "E04",
+      "title": "Monitored repos API — full CRUD",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E04-03"
+      ],
+      "doc_ref": [
+        "specs.html#api",
+        "specs.html#domain"
+      ],
+      "description": "## Context\n\nGET/POST/PATCH/DELETE /api/v1/repos; source_kind, project_path, ticket_project_id; sourceIntegrationId required for gitlab/gitea/forgejo; notificationTargetIds optional array persisted via monitored_repo_notifications join.\n\n## Spec references\n\n- [§7 REST API (Go)](specs.html#api)\n- [§5 Domain logic & Idempotency](specs.html#domain)\n\n## Implementation notes\n\n- handlers/repos.go\n\n## Files\n\n- `internal/api/handlers/repos.go`\n\n## Acceptance criteria\n\n- [ ] CRUD /api/v1/repos\n- [ ] POST/PATCH accept notificationTargetIds array\n- [ ] sourceIntegrationId required for self-hosted source kinds\n- [ ] UNIQUE(source_kind, project_path)\n- [ ] enabled flag 0/1\n- [ ] ticket_project_id FK required\n- [ ] open_ticket fields read-only from API\n\n## Tests\n\n- `go test ./internal/api/handlers/...`\n\n---\n\n**Roadmap ID:** E04-04",
+      "acceptance_criteria": [
+        "CRUD /api/v1/repos",
+        "POST/PATCH accept notificationTargetIds array",
+        "sourceIntegrationId required for self-hosted source kinds",
+        "UNIQUE(source_kind, project_path)",
+        "enabled flag 0/1",
+        "ticket_project_id FK required",
+        "open_ticket fields read-only from API"
+      ],
+      "files": [
+        "internal/api/handlers/repos.go"
+      ],
+      "tests": [
+        "go test ./internal/api/handlers/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E04-05",
+      "type": "leaf",
+      "parent": "E04",
+      "title": "Notification targets API — CRUD and test",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E03-02",
+        "E02-03"
+      ],
+      "doc_ref": [
+        "specs.html#api",
+        "specs.html#notifications"
+      ],
+      "description": "## Context\n\nGET/POST/PATCH/DELETE /api/v1/notification-targets; POST test sends Shoutrrr ping.\n\n## Spec references\n\n- [§7 REST API (Go)](specs.html#api)\n- [§5.5 Notifications (Shoutrrr)](specs.html#notifications)\n\n## Implementation notes\n\n- handlers/notifications.go\n\n## Files\n\n- `internal/api/handlers/notifications.go`\n\n## Acceptance criteria\n\n- [ ] CRUD /api/v1/notification-targets\n- [ ] shoutrrr_url never returned after create\n- [ ] events_json default create,error,supersede\n- [ ] POST test notification async-safe\n- [ ] enabled toggle\n- [ ] monitored_repo_notifications routing optional\n- [ ] JSON events array validated\n\n## Tests\n\n- `go test ./internal/api/handlers/...`\n\n---\n\n**Roadmap ID:** E04-05",
+      "acceptance_criteria": [
+        "CRUD /api/v1/notification-targets",
+        "shoutrrr_url never returned after create",
+        "events_json default create,error,supersede",
+        "POST test notification async-safe",
+        "enabled toggle",
+        "monitored_repo_notifications routing optional",
+        "JSON events array validated"
+      ],
+      "files": [
+        "internal/api/handlers/notifications.go"
+      ],
+      "tests": [
+        "go test ./internal/api/handlers/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E04-06",
+      "type": "leaf",
+      "parent": "E04",
+      "title": "Status and poll API endpoints",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E03-02",
+        "E02-03"
+      ],
+      "doc_ref": [
+        "specs.html#api",
+        "specs.html#domain"
+      ],
+      "description": "## Context\n\nGET /api/v1/status returns full §7.1 JSON (repos[], lastRun, isPolling, ticketsSuperseded); POST /api/v1/poll/trigger async 202; GET /api/v1/poll/runs paginated; GET /api/v1/poll/runs/{id} with events[].\n\n## Spec references\n\n- [§7 REST API (Go)](specs.html#api)\n- [§5 Domain logic & Idempotency](specs.html#domain)\n\n## Implementation notes\n\n- handlers/status.go\n- handlers/poll.go\n\n## Files\n\n- `internal/api/handlers/poll.go`\n- `internal/api/handlers/status.go`\n\n## Acceptance criteria\n\n- [ ] GET /api/v1/status returns repos[] with ticketProjectName\n- [ ] GET /api/v1/status includes lastRun and isPolling fields\n- [ ] POST /api/v1/poll/trigger returns 202 Accepted async\n- [ ] GET /api/v1/poll/runs paginated list default limit 20\n- [ ] GET /api/v1/poll/runs/{id} includes events[]\n- [ ] Trigger returns 409 if poll already running\n- [ ] poll_run_events.action enum values in response\n\n## Tests\n\n- `go test ./internal/api/handlers/...`\n\n---\n\n**Roadmap ID:** E04-06",
+      "acceptance_criteria": [
+        "GET /api/v1/status returns repos[] with ticketProjectName",
+        "GET /api/v1/status includes lastRun and isPolling fields",
+        "POST /api/v1/poll/trigger returns 202 Accepted async",
+        "GET /api/v1/poll/runs paginated list default limit 20",
+        "GET /api/v1/poll/runs/{id} includes events[]",
+        "Trigger returns 409 if poll already running",
+        "poll_run_events.action enum values in response"
+      ],
+      "files": [
+        "internal/api/handlers/poll.go",
+        "internal/api/handlers/status.go"
+      ],
+      "tests": [
+        "go test ./internal/api/handlers/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E04-07",
+      "type": "leaf",
+      "parent": "E04",
+      "title": "Register all API routes and integration test",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E04-01",
+        "E04-02",
+        "E04-03",
+        "E04-04",
+        "E04-05",
+        "E04-06",
+        "E02-03"
+      ],
+      "doc_ref": [
+        "specs.html#api",
+        "specs.html#auth",
+        "specs.html#architecture"
+      ],
+      "description": "## Context\n\nWire every §7 handler on /api/v1; public auth routes before session middleware; route list test.\n\n## Spec references\n\n- [§7 REST API (Go)](specs.html#api)\n- [§3 Authentication](specs.html#auth)\n- [§2 Architecture](specs.html#architecture)\n\n## Implementation notes\n\n- internal/api/routes.go — RegisterAll(deps)\n- routes_test.go — compile-time or httptest route inventory\n- Document route order in comment\n\n## Files\n\n- `internal/api/routes.go`\n- `internal/api/routes_test.go`\n\n## Acceptance criteria\n\n- [ ] All §7 endpoints registered\n- [ ] POST /api/v1/auth/login public\n- [ ] GET /api/v1/auth/session public\n- [ ] All other /api/v1/* require session\n- [ ] No duplicate route mounts\n- [ ] routes_test lists expected paths\n- [ ] Integration test: login → GET settings 200\n\n## Tests\n\n- `go test ./internal/api/...`\n\n---\n\n**Roadmap ID:** E04-07",
+      "acceptance_criteria": [
+        "All §7 endpoints registered",
+        "POST /api/v1/auth/login public",
+        "GET /api/v1/auth/session public",
+        "All other /api/v1/* require session",
+        "No duplicate route mounts",
+        "routes_test lists expected paths",
+        "Integration test: login → GET settings 200"
+      ],
+      "files": [
+        "internal/api/routes.go",
+        "internal/api/routes_test.go"
+      ],
+      "tests": [
+        "go test ./internal/api/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E05",
+      "type": "epic",
+      "title": "Source providers — GitHub, GitLab, Gitea, Forgejo, Codeberg",
+      "domain": "backend",
+      "priority": "high",
+      "depends_on": [
+        "E04"
+      ],
+      "doc_ref": [
+        "specs.html#providers",
+        "specs.html#domain"
+      ],
+      "description": "## Context\n\nSourceProvider interface; fetch latest release tag per monitored repo. Merges P11.\n\n## Spec references\n\n- [§6 Provider interfaces (Go)](specs.html#providers)\n- [§5 Domain logic & Idempotency](specs.html#domain)\n\n## Acceptance criteria\n\n- [ ] All five source kinds implemented\n- [ ] Mock tests in CI\n\n---\n\n**Roadmap ID:** E05",
+      "lane": "S"
+    },
+    {
+      "id": "E05-01",
+      "type": "leaf",
+      "parent": "E05",
+      "title": "SourceProvider interface and registry",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E04-02"
+      ],
+      "doc_ref": [
+        "specs.html#providers"
+      ],
+      "description": "## Context\n\nSourceProvider.GetLatestRelease(ctx, repo) → tag, url, publishedAt; registry by source_kind.\n\n## Spec references\n\n- [§6 Provider interfaces (Go)](specs.html#providers)\n\n## Implementation notes\n\n- internal/providers/source/provider.go\n- registry.go\n\n## Files\n\n- `internal/providers/source/provider.go`\n\n## Acceptance criteria\n\n- [ ] Interface documented per §6\n- [ ] Registry returns provider by kind\n- [ ] Unknown kind returns error\n- [ ] Context cancellation respected\n- [ ] No HTTP in interface consumers\n- [ ] Mock provider for tests\n- [ ] Package compiles standalone\n\n## Tests\n\n- `go test ./internal/providers/source/...`\n\n---\n\n**Roadmap ID:** E05-01",
+      "acceptance_criteria": [
+        "Interface documented per §6",
+        "Registry returns provider by kind",
+        "Unknown kind returns error",
+        "Context cancellation respected",
+        "No HTTP in interface consumers",
+        "Mock provider for tests",
+        "Package compiles standalone"
+      ],
+      "files": [
+        "internal/providers/source/provider.go"
+      ],
+      "tests": [
+        "go test ./internal/providers/source/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E05-02",
+      "type": "leaf",
+      "parent": "E05",
+      "title": "GitHub and Codeberg source providers",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E05-01"
+      ],
+      "doc_ref": [
+        "specs.html#providers"
+      ],
+      "description": "## Context\n\ngithub source — api.github.com, no base_url. codeberg — codeberg.org API, no base_url.\n\n## Spec references\n\n- [§6 Provider interfaces (Go)](specs.html#providers)\n\n## Implementation notes\n\n- internal/providers/source/github.go\n- codeberg.go\n\n## Files\n\n- `internal/providers/source/github.go`\n- `internal/providers/source/codeberg.go`\n\n## Acceptance criteria\n\n- [ ] GitHub source provider fetches latest release tag\n- [ ] Codeberg source provider works\n- [ ] Uses integration token from decrypt\n- [ ] Handles 404 no releases\n- [ ] Rate limit errors surfaced\n- [ ] Unit tests with httptest mock\n- [ ] project_path owner/repo format\n\n## Tests\n\n- `go test ./internal/providers/source/...`\n\n---\n\n**Roadmap ID:** E05-02",
+      "acceptance_criteria": [
+        "GitHub source provider fetches latest release tag",
+        "Codeberg source provider works",
+        "Uses integration token from decrypt",
+        "Handles 404 no releases",
+        "Rate limit errors surfaced",
+        "Unit tests with httptest mock",
+        "project_path owner/repo format"
+      ],
+      "files": [
+        "internal/providers/source/github.go",
+        "internal/providers/source/codeberg.go"
+      ],
+      "tests": [
+        "go test ./internal/providers/source/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E05-03",
+      "type": "leaf",
+      "parent": "E05",
+      "title": "GitLab, Gitea, and Forgejo source providers",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E05-01"
+      ],
+      "doc_ref": [
+        "specs.html#providers"
+      ],
+      "description": "## Context\n\nSelf-hosted base_url required; GitLab API v4; GiteaCompatibleSource shared client for gitea, forgejo, codeberg (§6) — same API, different default base_url.\n\n## Spec references\n\n- [§6 Provider interfaces (Go)](specs.html#providers)\n\n## Implementation notes\n\n- internal/providers/source/gitlab.go\n- internal/providers/source/gitea_compatible.go — GiteaCompatibleSource\n- gitea.go, forgejo.go thin wrappers\n\n## Files\n\n- `internal/providers/source/gitlab.go`\n- `internal/providers/source/gitea.go`\n\n## Acceptance criteria\n\n- [ ] GitLab source provider with base_url\n- [ ] GiteaCompatibleSource used for gitea, forgejo, codeberg\n- [ ] base_url trailing slash normalized\n- [ ] Invalid base_url errors clearly\n- [ ] Mock HTTP tests per provider\n- [ ] 404 no release not treated as error\n- [ ] publishedAt mapped from provider response\n\n## Tests\n\n- `go test ./internal/providers/source/...`\n\n---\n\n**Roadmap ID:** E05-03",
+      "acceptance_criteria": [
+        "GitLab source provider with base_url",
+        "GiteaCompatibleSource used for gitea, forgejo, codeberg",
+        "base_url trailing slash normalized",
+        "Invalid base_url errors clearly",
+        "Mock HTTP tests per provider",
+        "404 no release not treated as error",
+        "publishedAt mapped from provider response"
+      ],
+      "files": [
+        "internal/providers/source/gitlab.go",
+        "internal/providers/source/gitea.go"
+      ],
+      "tests": [
+        "go test ./internal/providers/source/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E05-04",
+      "type": "leaf",
+      "parent": "E05",
+      "title": "Source provider mock tests for CI",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E05-02",
+        "E05-03"
+      ],
+      "doc_ref": [
+        "specs.html#mvp",
+        "specs.html#ci"
+      ],
+      "description": "## Context\n\ngo test with mock HTTP for each source kind; required for MVP AC #13. Poll skip uses exact tag string equality (§5.1) — provider tests assert tag extraction only.\n\n## Spec references\n\n- [§12 MVP Acceptance Criteria](specs.html#mvp)\n- [§11 CI/CD (GitHub Actions)](specs.html#ci)\n\n## Implementation notes\n\n- internal/providers/source/*_test.go with httptest\n\n## Files\n\n- `internal/providers/source/github_test.go`\n\n## Acceptance criteria\n\n- [ ] Mock test per source provider kind\n- [ ] CI go test ./internal/providers/source/...\n- [ ] No live network in unit tests\n- [ ] Coverage for error paths\n- [ ] Tag fields mapped correctly from provider JSON\n- [ ] Empty release list handled\n- [ ] Tests run in parallel safe\n\n## Tests\n\n- `go test ./internal/providers/source/...`\n\n---\n\n**Roadmap ID:** E05-04",
+      "acceptance_criteria": [
+        "Mock test per source provider kind",
+        "CI go test ./internal/providers/source/...",
+        "No live network in unit tests",
+        "Coverage for error paths",
+        "Tag fields mapped correctly from provider JSON",
+        "Empty release list handled",
+        "Tests run in parallel safe"
+      ],
+      "files": [
+        "internal/providers/source/github_test.go"
+      ],
+      "tests": [
+        "go test ./internal/providers/source/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E06",
+      "type": "epic",
+      "title": "Ticket providers — Phasical, Jira, Linear",
+      "domain": "backend",
+      "priority": "high",
+      "depends_on": [
+        "E04",
+        "E05"
+      ],
+      "doc_ref": [
+        "specs.html#providers",
+        "specs.html#ticket-projects",
+        "specs.html#domain"
+      ],
+      "description": "## Context\n\nTicketProvider create/update/close; ticket content §5.4 Release: format. Merges P12.\n\n## Spec references\n\n- [§6 Provider interfaces (Go)](specs.html#providers)\n- [§5.3 Ticket projects & status mapping](specs.html#ticket-projects)\n- [§5 Domain logic & Idempotency](specs.html#domain)\n\n## Acceptance criteria\n\n- [ ] Three ticket providers\n- [ ] Status mapping per project\n\n---\n\n**Roadmap ID:** E06",
+      "lane": "S"
+    },
+    {
+      "id": "E06-01",
+      "type": "leaf",
+      "parent": "E06",
+      "title": "TicketProvider interface, ClassifyStatus, and content builder",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E04-03"
+      ],
+      "doc_ref": [
+        "specs.html#providers",
+        "specs.html#domain",
+        "specs.html#ticket-projects"
+      ],
+      "description": "## Context\n\nTicketProvider per §6: CreateTicket, GetTicketStatus, UpdateTicketStatus, AddTicketComment, UpdateTicket (merge). ClassifyStatus(mapping, rawStatus) → open|done|cancelled|unknown. Ticket content §5.4: title Release: {source_kind} {project_path} {tag}; body with URL and publishedAt.\n\n## Spec references\n\n- [§6 Provider interfaces (Go)](specs.html#providers)\n- [§5 Domain logic & Idempotency](specs.html#domain)\n- [§5.3 Ticket projects & status mapping](specs.html#ticket-projects)\n\n## Implementation notes\n\n- internal/providers/ticket/provider.go\n- internal/providers/ticket/classify.go — ClassifyStatus\n- content.go — includes publishedAt in markdown body\n\n## Files\n\n- `internal/providers/ticket/content.go`\n- `internal/providers/ticket/provider.go`\n\n## Acceptance criteria\n\n- [ ] ClassifyStatus maps external status via status_mapping\n- [ ] Ticket content §5.4 title format Release:\n- [ ] Description includes release URL and publishedAt\n- [ ] Interface: CreateTicket, GetTicketStatus, UpdateTicketStatus\n- [ ] Interface: AddTicketComment, UpdateTicket for merge policy\n- [ ] ClassifyStatus unit tests with mapping fixtures\n- [ ] No provider-specific logic in poll engine\n\n## Tests\n\n- `go test ./internal/providers/ticket/...`\n\n---\n\n**Roadmap ID:** E06-01",
+      "acceptance_criteria": [
+        "ClassifyStatus maps external status via status_mapping",
+        "Ticket content §5.4 title format Release:",
+        "Description includes release URL and publishedAt",
+        "Interface: CreateTicket, GetTicketStatus, UpdateTicketStatus",
+        "Interface: AddTicketComment, UpdateTicket for merge policy",
+        "ClassifyStatus unit tests with mapping fixtures",
+        "No provider-specific logic in poll engine"
+      ],
+      "files": [
+        "internal/providers/ticket/content.go",
+        "internal/providers/ticket/provider.go"
+      ],
+      "tests": [
+        "go test ./internal/providers/ticket/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E06-02",
+      "type": "leaf",
+      "parent": "E06",
+      "title": "Phasical and Jira ticket providers",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E06-01"
+      ],
+      "doc_ref": [
+        "specs.html#providers"
+      ],
+      "description": "## Context\n\nPhasical POST {base_url}/task/{projectId}; Jira REST with email+token; GetTicketStatus for live open-ticket check; AddTicketComment for supersede (old tag → new tag, release link).\n\n## Spec references\n\n- [§6 Provider interfaces (Go)](specs.html#providers)\n\n## Implementation notes\n\n- internal/providers/ticket/phasical.go\n- jira.go\n\n## Files\n\n- `internal/providers/ticket/phasical.go`\n- `internal/providers/ticket/jira.go`\n\n## Acceptance criteria\n\n- [ ] Phasical ticket provider creates task\n- [ ] Jira ticket provider creates issue with email auth\n- [ ] GetTicketStatus returns provider-native status slug\n- [ ] AddTicketComment on supersede with release link\n- [ ] Status transitions via status_mapping\n- [ ] Mock tests httptest\n- [ ] base_url required for both\n\n## Tests\n\n- `go test ./internal/providers/ticket/...`\n\n---\n\n**Roadmap ID:** E06-02",
+      "acceptance_criteria": [
+        "Phasical ticket provider creates task",
+        "Jira ticket provider creates issue with email auth",
+        "GetTicketStatus returns provider-native status slug",
+        "AddTicketComment on supersede with release link",
+        "Status transitions via status_mapping",
+        "Mock tests httptest",
+        "base_url required for both"
+      ],
+      "files": [
+        "internal/providers/ticket/phasical.go",
+        "internal/providers/ticket/jira.go"
+      ],
+      "tests": [
+        "go test ./internal/providers/ticket/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E06-03",
+      "type": "leaf",
+      "parent": "E06",
+      "title": "Linear ticket provider and provider mock tests",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E06-01"
+      ],
+      "doc_ref": [
+        "specs.html#providers",
+        "specs.html#mvp"
+      ],
+      "description": "## Context\n\nLinear GraphQL API; status mapping MVP uses stateId strings only (openTypes post-MVP). Mock CI tests for all three ticket providers.\n\n## Spec references\n\n- [§6 Provider interfaces (Go)](specs.html#providers)\n- [§12 MVP Acceptance Criteria](specs.html#mvp)\n\n## Implementation notes\n\n- internal/providers/ticket/linear.go\n- *_test.go\n\n## Files\n\n- `internal/providers/ticket/linear.go`\n\n## Acceptance criteria\n\n- [ ] Linear ticket provider creates issue\n- [ ] team id from external_project_id\n- [ ] ClassifyStatus with Linear stateId mapping\n- [ ] Mock test per ticket provider\n- [ ] CI runs provider tests\n- [ ] supersede closes prior ticket with comment\n- [ ] merge policy updates existing via UpdateTicket\n\n## Tests\n\n- `go test ./internal/providers/ticket/...`\n\n---\n\n**Roadmap ID:** E06-03",
+      "acceptance_criteria": [
+        "Linear ticket provider creates issue",
+        "team id from external_project_id",
+        "ClassifyStatus with Linear stateId mapping",
+        "Mock test per ticket provider",
+        "CI runs provider tests",
+        "supersede closes prior ticket with comment",
+        "merge policy updates existing via UpdateTicket"
+      ],
+      "files": [
+        "internal/providers/ticket/linear.go"
+      ],
+      "tests": [
+        "go test ./internal/providers/ticket/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E07",
+      "type": "epic",
+      "title": "Poll engine, scheduler & Shoutrrr notifications",
+      "domain": "backend",
+      "priority": "high",
+      "depends_on": [
+        "E05",
+        "E06",
+        "E04"
+      ],
+      "doc_ref": [
+        "specs.html#domain",
+        "specs.html#notifications",
+        "specs.html#api",
+        "stack.html"
+      ],
+      "description": "## Context\n\nPoll decision engine: baseline, skip, create, supersede, merge, skip_if_open. Cron scheduler; poll_runs/events persistence; Shoutrrr on create/error/supersede. Merges P13+P14.\n\n## Spec references\n\n- [§5 Domain logic & Idempotency](specs.html#domain)\n- [§5.5 Notifications (Shoutrrr)](specs.html#notifications)\n- [§7 REST API (Go)](specs.html#api)\n\n## Stack references\n\n- [Tech stack — Backend (Go)](stack.html)\n\n## Acceptance criteria\n\n- [ ] Scheduled poll respects poll_interval_minutes\n- [ ] Manual POST /api/v1/poll/trigger works\n- [ ] Notifications on configured events\n\n---\n\n**Roadmap ID:** E07",
+      "lane": "S"
+    },
+    {
+      "id": "E07-01",
+      "type": "leaf",
+      "parent": "E07",
+      "title": "Poll decision engine and open-ticket policies",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E06-01",
+        "E05-01"
+      ],
+      "doc_ref": [
+        "specs.html#domain",
+        "specs.html#ticket-projects"
+      ],
+      "description": "## Context\n\nCompare last_known_tag vs remote using exact string equality (§5.1); baseline on first sight; skip when tags match; on new tag: live GetTicketStatus + ClassifyStatus per §5.2; create/supersede/merge/skip_if_open per on_open_ticket_policy; supersede adds comment.\n\n## Spec references\n\n- [§5 Domain logic & Idempotency](specs.html#domain)\n- [§5.3 Ticket projects & status mapping](specs.html#ticket-projects)\n\n## Implementation notes\n\n- internal/poll/engine.go — EvaluateRepo\n- Actions: baseline, skip, create, supersede, merge, skip_open, error\n- Live ticket status via TicketProvider.GetTicketStatus + ClassifyStatus\n- Update monitored_repos poll state\n\n## Files\n\n- `internal/poll/engine.go`\n- `internal/poll/engine_test.go`\n\n## Acceptance criteria\n\n- [ ] baseline poll action on first poll\n- [ ] skip poll when tag string equals last_known_tag\n- [ ] create ticket on new release when no open ticket\n- [ ] Live GetTicketStatus before applying open-ticket policy\n- [ ] supersede: old ticket status + comment, new ticket created\n- [ ] merge policy updates existing ticket via UpdateTicket\n- [ ] skip_if_open policy skips duplicate\n\n## Tests\n\n- `go test ./internal/poll/...`\n\n---\n\n**Roadmap ID:** E07-01",
+      "acceptance_criteria": [
+        "baseline poll action on first poll",
+        "skip poll when tag string equals last_known_tag",
+        "create ticket on new release when no open ticket",
+        "Live GetTicketStatus before applying open-ticket policy",
+        "supersede: old ticket status + comment, new ticket created",
+        "merge policy updates existing ticket via UpdateTicket",
+        "skip_if_open policy skips duplicate"
+      ],
+      "files": [
+        "internal/poll/engine.go",
+        "internal/poll/engine_test.go"
+      ],
+      "tests": [
+        "go test ./internal/poll/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E07-02",
+      "type": "leaf",
+      "parent": "E07",
+      "title": "Poll scheduler and run orchestration",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E07-01",
+        "E04-06"
+      ],
+      "doc_ref": [
+        "specs.html#domain",
+        "specs.html#api",
+        "specs.html#deployment"
+      ],
+      "description": "## Context\n\nrobfig/cron scheduler reading poll_interval_minutes from app_settings; POST /api/v1/poll/trigger manual run.\n\n## Spec references\n\n- [§5 Domain logic & Idempotency](specs.html#domain)\n- [§7 REST API (Go)](specs.html#api)\n- [§10 Deployment](specs.html#deployment)\n\n## Implementation notes\n\n- internal/poll/scheduler.go\n- RunAll: iterate enabled repos, call engine\n- Wire trigger handler to scheduler\n\n## Files\n\n- `internal/poll/scheduler.go`\n\n## Acceptance criteria\n\n- [ ] Scheduler uses robfig/cron from poll_interval_minutes\n- [ ] Manual poll via POST /api/v1/poll/trigger\n- [ ] Single poll run at a time (mutex)\n- [ ] poll_runs row per execution\n- [ ] repos_checked counter incremented\n- [ ] Cron respects min 5 minute interval\n- [ ] Graceful stop on shutdown\n\n## Tests\n\n- `go test ./internal/poll/...`\n\n---\n\n**Roadmap ID:** E07-02",
+      "acceptance_criteria": [
+        "Scheduler uses robfig/cron from poll_interval_minutes",
+        "Manual poll via POST /api/v1/poll/trigger",
+        "Single poll run at a time (mutex)",
+        "poll_runs row per execution",
+        "repos_checked counter incremented",
+        "Cron respects min 5 minute interval",
+        "Graceful stop on shutdown"
+      ],
+      "files": [
+        "internal/poll/scheduler.go"
+      ],
+      "tests": [
+        "go test ./internal/poll/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E07-03",
+      "type": "leaf",
+      "parent": "E07",
+      "title": "Poll run events and persistence",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E07-02",
+        "E03-02"
+      ],
+      "doc_ref": [
+        "specs.html#schema",
+        "specs.html#api",
+        "../db/schema.sql"
+      ],
+      "description": "## Context\n\npoll_runs and poll_run_events tables; GET /api/v1/poll/runs and /poll/runs/{id} data source.\n\n## Spec references\n\n- [§4 Data model](specs.html#schema)\n- [§7 REST API (Go)](specs.html#api)\n\n## Schema references\n\n- [db/schema.sql (canonical)](../db/schema.sql)\n\n## Implementation notes\n\n- Insert poll_run on start, finish on complete\n- poll_run_events per repo action\n- errors_json array on failed runs\n\n## Files\n\n- `internal/poll/run.go`\n\n## Acceptance criteria\n\n- [ ] poll_run_events.action enum values persisted\n- [ ] GET /api/v1/poll/runs returns list\n- [ ] GET /api/v1/poll/runs/{id} includes events\n- [ ] status running|success|partial|failed\n- [ ] tickets_created counter accurate\n- [ ] tickets_superseded counter incremented on supersede\n- [ ] errors_json array on partial/failed runs\n\n## Tests\n\n- `go test ./internal/poll/...`\n\n---\n\n**Roadmap ID:** E07-03",
+      "acceptance_criteria": [
+        "poll_run_events.action enum values persisted",
+        "GET /api/v1/poll/runs returns list",
+        "GET /api/v1/poll/runs/{id} includes events",
+        "status running|success|partial|failed",
+        "tickets_created counter accurate",
+        "tickets_superseded counter incremented on supersede",
+        "errors_json array on partial/failed runs"
+      ],
+      "files": [
+        "internal/poll/run.go"
+      ],
+      "tests": [
+        "go test ./internal/poll/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E07-04",
+      "type": "leaf",
+      "parent": "E07",
+      "title": "Shoutrrr notification dispatcher",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E07-01",
+        "E03-02"
+      ],
+      "doc_ref": [
+        "specs.html#notifications",
+        "specs.html#domain"
+      ],
+      "description": "## Context\n\ngithub.com/containrrr/shoutrrr; events create, error, supersede; per-repo routing.\n\n## Spec references\n\n- [§5.5 Notifications (Shoutrrr)](specs.html#notifications)\n- [§5 Domain logic & Idempotency](specs.html#domain)\n\n## Implementation notes\n\n- internal/poll/notify.go\n- Resolve targets: global enabled + repo overrides\n- Decrypt shoutrrr_url at send time\n\n## Files\n\n- `internal/poll/notify.go`\n\n## Acceptance criteria\n\n- [ ] Shoutrrr URL schemes supported\n- [ ] Notification on create event\n- [ ] Notification on poll error\n- [ ] Notification on supersede\n- [ ] events_json filters delivery\n- [ ] Failed notify does not fail poll\n- [ ] No URL in logs\n\n## Tests\n\n- `go test ./internal/poll/...`\n\n---\n\n**Roadmap ID:** E07-04",
+      "acceptance_criteria": [
+        "Shoutrrr URL schemes supported",
+        "Notification on create event",
+        "Notification on poll error",
+        "Notification on supersede",
+        "events_json filters delivery",
+        "Failed notify does not fail poll",
+        "No URL in logs"
+      ],
+      "files": [
+        "internal/poll/notify.go"
+      ],
+      "tests": [
+        "go test ./internal/poll/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E07-05",
+      "type": "leaf",
+      "parent": "E07",
+      "title": "End-to-end poll integration test",
+      "domain": "backend",
+      "priority": "medium",
+      "depends_on": [
+        "E07-03",
+        "E07-04",
+        "E06-03"
+      ],
+      "doc_ref": [
+        "specs.html#mvp",
+        "specs.html#domain"
+      ],
+      "description": "## Context\n\nIntegration test: baseline → new tag → create ticket → supersede; mock providers.\n\n## Spec references\n\n- [§12 MVP Acceptance Criteria](specs.html#mvp)\n- [§5 Domain logic & Idempotency](specs.html#domain)\n\n## Implementation notes\n\n- internal/poll/integration_test.go\n\n## Files\n\n- `internal/poll/integration_test.go`\n\n## Acceptance criteria\n\n- [ ] Baseline then create flow in test\n- [ ] Mock source returns sequential tags\n- [ ] Mock ticket provider records creates\n- [ ] poll_run_events assert create action\n- [ ] supersede policy test case\n- [ ] CI runs go test ./internal/poll/...\n- [ ] No flaky timing in test\n\n## Tests\n\n- `go test ./internal/poll/...`\n\n---\n\n**Roadmap ID:** E07-05",
+      "acceptance_criteria": [
+        "Baseline then create flow in test",
+        "Mock source returns sequential tags",
+        "Mock ticket provider records creates",
+        "poll_run_events assert create action",
+        "supersede policy test case",
+        "CI runs go test ./internal/poll/...",
+        "No flaky timing in test"
+      ],
+      "files": [
+        "internal/poll/integration_test.go"
+      ],
+      "tests": [
+        "go test ./internal/poll/..."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E08",
+      "type": "epic",
+      "title": "Web platform — proxy, hooks, shell & i18n",
+      "domain": "web",
+      "priority": "high",
+      "depends_on": [
+        "E01",
+        "E04"
+      ],
+      "doc_ref": [
+        "specs.html#ui",
+        "specs.html#i18n",
+        "specs.html#api",
+        "stack.html"
+      ],
+      "description": "## Context\n\nNext.js /api/go proxy, React Query hooks for all §8.4 endpoints, app shell with sidebar/logout, next-intl + ESLint i18n. Merges P16–P18, P17, P00 i18n.\n\n## Spec references\n\n- [§8 Web UI & COSS Particles](specs.html#ui)\n- [§8.5 Internationalization (i18n)](specs.html#i18n)\n- [§7 REST API (Go)](specs.html#api)\n\n## Stack references\n\n- [Tech stack — Frontend (Next.js + COSS)](stack.html)\n- [Tech stack — Repository layout](stack.html)\n\n## Acceptance criteria\n\n- [ ] All API calls via /api/go/api/v1\n- [ ] Zero hardcoded UI strings\n- [ ] Sidebar nav matches §8.1\n\n---\n\n**Roadmap ID:** E08",
+      "lane": "S"
+    },
+    {
+      "id": "E08-01",
+      "type": "leaf",
+      "parent": "E08",
+      "title": "next-intl setup and ESLint i18n enforcement",
+      "domain": "web",
+      "priority": "medium",
+      "depends_on": [
+        "E01-01"
+      ],
+      "doc_ref": [
+        "specs.html#i18n",
+        "specs.html#ci",
+        "stack.html"
+      ],
+      "description": "## Context\n\napps/web/messages/en.json; useTranslations; eslint-plugin-i18next no-literal-string.\n\n## Spec references\n\n- [§8.5 Internationalization (i18n)](specs.html#i18n)\n- [§11 CI/CD (GitHub Actions)](specs.html#ci)\n\n## Stack references\n\n- [Tech stack — Frontend (Next.js + COSS)](stack.html)\n- [Tech stack — Quality](stack.html)\n\n## Implementation notes\n\n- next-intl App Router provider\n- messages/en.json namespaces: common, auth, dashboard, repos, integrations, ticket-projects, notifications, settings\n- eslint-plugin-i18next in eslint.config.mjs\n\n## Files\n\n- `apps/web/messages/en.json`\n- `apps/web/i18n/request.ts`\n- `apps/web/eslint.config.mjs`\n\n## Acceptance criteria\n\n- [ ] next-intl installed and configured\n- [ ] messages/en.json with namespaces: common, auth, dashboard, repos\n- [ ] messages/en.json includes integrations, ticket-projects, notifications, settings\n- [ ] eslint-plugin-i18next configured\n- [ ] i18next/no-literal-string error on literals\n- [ ] npm run lint passes on scaffold\n- [ ] Document in .cursor/rules/10-i18n.mdc\n\n## Tests\n\n- `npm run lint`\n\n---\n\n**Roadmap ID:** E08-01",
+      "acceptance_criteria": [
+        "next-intl installed and configured",
+        "messages/en.json with namespaces: common, auth, dashboard, repos",
+        "messages/en.json includes integrations, ticket-projects, notifications, settings",
+        "eslint-plugin-i18next configured",
+        "i18next/no-literal-string error on literals",
+        "npm run lint passes on scaffold",
+        "Document in .cursor/rules/10-i18n.mdc"
+      ],
+      "files": [
+        "apps/web/messages/en.json",
+        "apps/web/i18n/request.ts",
+        "apps/web/eslint.config.mjs"
+      ],
+      "tests": [
+        "npm run lint"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E08-02",
+      "type": "leaf",
+      "parent": "E08",
+      "title": "Go API proxy and fetch client",
+      "domain": "web",
+      "priority": "medium",
+      "depends_on": [
+        "E01-01"
+      ],
+      "doc_ref": [
+        "specs.html#ui",
+        "specs.html#auth",
+        "specs.html#architecture"
+      ],
+      "description": "## Context\n\napps/web/app/api/go/[...path]/route.ts forwards to Go; credentials include; cookie relay.\n\n## Spec references\n\n- [§8 Web UI & COSS Particles](specs.html#ui)\n- [§3 Authentication](specs.html#auth)\n- [§2 Architecture](specs.html#architecture)\n\n## Implementation notes\n\n- Catch-all proxy /api/go/* → GO_API_URL\n- lib/api/client.ts — prefix /api/go/api/v1\n- route.test.ts with mock upstream\n\n## Files\n\n- `apps/web/app/api/go/[...path]/route.ts`\n- `apps/web/lib/api/client.ts`\n\n## Acceptance criteria\n\n- [ ] /api/go proxy forwards session cookie\n- [ ] POST /api/go/api/v1/auth/login works\n- [ ] Error envelope parsed from Go\n- [ ] Proxy test with undici MockAgent\n- [ ] Methods GET POST PATCH DELETE forwarded\n- [ ] Content-Type application/json set\n- [ ] Same-origin requests from browser\n\n## Tests\n\n- `npm test -- proxy`\n\n---\n\n**Roadmap ID:** E08-02",
+      "acceptance_criteria": [
+        "/api/go proxy forwards session cookie",
+        "POST /api/go/api/v1/auth/login works",
+        "Error envelope parsed from Go",
+        "Proxy test with undici MockAgent",
+        "Methods GET POST PATCH DELETE forwarded",
+        "Content-Type application/json set",
+        "Same-origin requests from browser"
+      ],
+      "files": [
+        "apps/web/app/api/go/[...path]/route.ts",
+        "apps/web/lib/api/client.ts"
+      ],
+      "tests": [
+        "npm test -- proxy"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E08-03",
+      "type": "leaf",
+      "parent": "E08",
+      "title": "React Query hooks for all API endpoints",
+      "domain": "web",
+      "priority": "medium",
+      "depends_on": [
+        "E08-02",
+        "E04-07"
+      ],
+      "doc_ref": [
+        "specs.html#ui",
+        "specs.html#api"
+      ],
+      "description": "## Context\n\nuseSession, useStatus, useRepos, useIntegrations, useTicketProjects, useNotificationTargets, useSettings, usePollRuns, usePollRun, useTriggerPoll per §8.4.\n\n## Spec references\n\n- [§8 Web UI & COSS Particles](specs.html#ui)\n- [§7 REST API (Go)](specs.html#api)\n\n## Implementation notes\n\n- apps/web/lib/hooks/use-session.ts, use-status.ts, use-repos.ts\n- use-integrations.ts, use-ticket-projects.ts, use-notifications.ts\n- use-settings.ts, use-poll.ts\n\n## Files\n\n- `apps/web/lib/hooks/`\n\n## Acceptance criteria\n\n- [ ] useSession fetches GET /api/v1/auth/session\n- [ ] useStatus fetches GET /api/v1/status\n- [ ] useRepos CRUD mutations\n- [ ] useIntegrations includes test mutation\n- [ ] usePollRuns fetches paginated run list\n- [ ] usePollRun fetches single run with events[]\n- [ ] useTriggerPoll POST /api/v1/poll/trigger\n\n## Tests\n\n- `npm test -- hooks`\n\n---\n\n**Roadmap ID:** E08-03",
+      "acceptance_criteria": [
+        "useSession fetches GET /api/v1/auth/session",
+        "useStatus fetches GET /api/v1/status",
+        "useRepos CRUD mutations",
+        "useIntegrations includes test mutation",
+        "usePollRuns fetches paginated run list",
+        "usePollRun fetches single run with events[]",
+        "useTriggerPoll POST /api/v1/poll/trigger"
+      ],
+      "files": [
+        "apps/web/lib/hooks/"
+      ],
+      "tests": [
+        "npm test -- hooks"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E08-04",
+      "type": "leaf",
+      "parent": "E08",
+      "title": "App shell, sidebar navigation, and logout",
+      "domain": "web",
+      "priority": "medium",
+      "depends_on": [
+        "E08-03",
+        "E08-01"
+      ],
+      "doc_ref": [
+        "specs.html#ui",
+        "specs.html#auth"
+      ],
+      "description": "## Context\n\nCOSS app shell per §8.1: SidebarProvider, Frame (p-frame-3), Breadcrumb (p-breadcrumb-3), global Toaster (p-toast-2) and Spinner (p-spinner-1) in root layout; sidebar links /, /repos, /integrations, /ticket-projects, /notifications, /settings; logout POST /api/v1/auth/logout; required sidebar logout control.\n\n## Spec references\n\n- [§8 Web UI & COSS Particles](specs.html#ui)\n- [§3 Authentication](specs.html#auth)\n\n## Implementation notes\n\n- app/(authenticated)/layout.tsx with SidebarProvider + AppFrame\n- components/app-frame.tsx — p-frame-3, p-breadcrumb-3\n- root layout mounts <Toaster /> (p-toast-2) and Spinner (p-spinner-1)\n- components/app-sidebar.tsx — next/link nav\n- Logout button calls auth logout\n\n## Files\n\n- `apps/web/components/app-sidebar.tsx`\n- `apps/web/app/(authenticated)/layout.tsx`\n\n## Acceptance criteria\n\n- [ ] Sidebar links match §8.1 routes\n- [ ] Frame wraps page content with breadcrumb slot (p-frame-3)\n- [ ] Breadcrumb home icon per p-breadcrumb-3\n- [ ] Toaster mounted once in root layout for mutation errors\n- [ ] Spinner for async loading states\n- [ ] logout UI control in sidebar\n- [ ] All nav labels use t() keys\n\n## Tests\n\n- `npm test -- sidebar`\n\n---\n\n**Roadmap ID:** E08-04",
+      "acceptance_criteria": [
+        "Sidebar links match §8.1 routes",
+        "Frame wraps page content with breadcrumb slot (p-frame-3)",
+        "Breadcrumb home icon per p-breadcrumb-3",
+        "Toaster mounted once in root layout for mutation errors",
+        "Spinner for async loading states",
+        "logout UI control in sidebar",
+        "All nav labels use t() keys"
+      ],
+      "files": [
+        "apps/web/components/app-sidebar.tsx",
+        "apps/web/app/(authenticated)/layout.tsx"
+      ],
+      "tests": [
+        "npm test -- sidebar"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E08-05",
+      "type": "leaf",
+      "parent": "E08",
+      "title": "Authenticated routing and Next.js middleware",
+      "domain": "web",
+      "priority": "medium",
+      "depends_on": [
+        "E08-04"
+      ],
+      "doc_ref": [
+        "specs.html#auth",
+        "specs.html#ui"
+      ],
+      "description": "## Context\n\nmiddleware.ts redirects unauthenticated users to /login; public /login route.\n\n## Spec references\n\n- [§3 Authentication](specs.html#auth)\n- [§8 Web UI & COSS Particles](specs.html#ui)\n\n## Implementation notes\n\n- apps/web/middleware.ts\n- app/login/page.tsx placeholder shell\n- app/(authenticated)/ route group\n\n## Files\n\n- `apps/web/middleware.ts`\n- `apps/web/app/login/page.tsx`\n\n## Acceptance criteria\n\n- [ ] /login accessible without session\n- [ ] Protected pages redirect to /login\n- [ ] GET /api/go/api/v1/auth/session check in middleware\n- [ ] Static assets excluded from middleware\n- [ ] Authenticated layout wraps dashboard pages\n- [ ] matcher config correct\n- [ ] No flash of protected content\n\n## Tests\n\n- `npm test`\n\n---\n\n**Roadmap ID:** E08-05",
+      "acceptance_criteria": [
+        "/login accessible without session",
+        "Protected pages redirect to /login",
+        "GET /api/go/api/v1/auth/session check in middleware",
+        "Static assets excluded from middleware",
+        "Authenticated layout wraps dashboard pages",
+        "matcher config correct",
+        "No flash of protected content"
+      ],
+      "files": [
+        "apps/web/middleware.ts",
+        "apps/web/app/login/page.tsx"
+      ],
+      "tests": [
+        "npm test"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E09",
+      "type": "epic",
+      "title": "Web config UI — login and settings pages",
+      "domain": "web",
+      "priority": "high",
+      "depends_on": [
+        "E08",
+        "E04"
+      ],
+      "doc_ref": [
+        "specs.html#ui",
+        "stack.html"
+      ],
+      "description": "## Context\n\nCOSS UI for /login, /integrations, /ticket-projects, /repos, /notifications, /settings. Merges P19,P21–P25.\n\n## Spec references\n\n- [§8 Web UI & COSS Particles](specs.html#ui)\n\n## Stack references\n\n- [Tech stack — Frontend (Next.js + COSS)](stack.html)\n\n## Acceptance criteria\n\n- [ ] All §8.3 pages implemented\n- [ ] i18n keys only\n- [ ] CRUD via hooks\n\n---\n\n**Roadmap ID:** E09",
+      "lane": "S"
+    },
+    {
+      "id": "E09-01",
+      "type": "leaf",
+      "parent": "E09",
+      "title": "Login page with email/password form",
+      "domain": "web",
+      "priority": "medium",
+      "depends_on": [
+        "E08-05",
+        "E08-03"
+      ],
+      "doc_ref": [
+        "specs.html#ui",
+        "specs.html#auth"
+      ],
+      "description": "## Context\n\n/login page per §8.3: p-card-1 centered container, p-field-2 email/password, p-button-1 submit; p-alert-7 on login error; POST /api/go/api/v1/auth/login; redirect to / on success.\n\n## Spec references\n\n- [§8 Web UI & COSS Particles](specs.html#ui)\n- [§3 Authentication](specs.html#auth)\n\n## Implementation notes\n\n- app/login/page.tsx — p-card-1, p-field-2, p-button-1, p-alert-7\n\n## Files\n\n- `apps/web/app/login/page.tsx`\n\n## Acceptance criteria\n\n- [ ] /login page renders centered p-card-1 form\n- [ ] Email and password fields i18n via p-field-2\n- [ ] Submit calls login mutation\n- [ ] Invalid credentials show p-alert-7 error (not toast only)\n- [ ] Redirect to / on success\n- [ ] Already logged in redirects away\n- [ ] Accessible labels and focus management\n\n## Tests\n\n- `npm test -- login`\n\n---\n\n**Roadmap ID:** E09-01",
+      "acceptance_criteria": [
+        "/login page renders centered p-card-1 form",
+        "Email and password fields i18n via p-field-2",
+        "Submit calls login mutation",
+        "Invalid credentials show p-alert-7 error (not toast only)",
+        "Redirect to / on success",
+        "Already logged in redirects away",
+        "Accessible labels and focus management"
+      ],
+      "files": [
+        "apps/web/app/login/page.tsx"
+      ],
+      "tests": [
+        "npm test -- login"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E09-02",
+      "type": "leaf",
+      "parent": "E09",
+      "title": "Integrations page — list, drawer CRUD, test connection",
+      "domain": "web",
+      "priority": "medium",
+      "depends_on": [
+        "E09-01",
+        "E08-03"
+      ],
+      "doc_ref": [
+        "specs.html#ui",
+        "specs.html#providers"
+      ],
+      "description": "## Context\n\n/integrations — p-table-2, p-drawer-10; all 8 kinds; Jira email field (p-field-2); hasSecret indicator; test connection p-toast-5 async feedback.\n\n## Spec references\n\n- [§8 Web UI & COSS Particles](specs.html#ui)\n- [§6 Provider interfaces (Go)](specs.html#providers)\n\n## Implementation notes\n\n- app/(authenticated)/integrations/page.tsx\n\n## Files\n\n- `apps/web/app/(authenticated)/integrations/page.tsx`\n\n## Acceptance criteria\n\n- [ ] /integrations page lists integrations\n- [ ] Create/edit drawer per kind with base_url when required\n- [ ] Jira kind shows email field (p-field-2)\n- [ ] hasSecret shown; token password field never re-displayed\n- [ ] Test connection button with p-toast-5 async feedback\n- [ ] Delete confirmation i18n\n- [ ] useIntegrations hook wired\n\n## Tests\n\n- `npm test -- integrations`\n\n---\n\n**Roadmap ID:** E09-02",
+      "acceptance_criteria": [
+        "/integrations page lists integrations",
+        "Create/edit drawer per kind with base_url when required",
+        "Jira kind shows email field (p-field-2)",
+        "hasSecret shown; token password field never re-displayed",
+        "Test connection button with p-toast-5 async feedback",
+        "Delete confirmation i18n",
+        "useIntegrations hook wired"
+      ],
+      "files": [
+        "apps/web/app/(authenticated)/integrations/page.tsx"
+      ],
+      "tests": [
+        "npm test -- integrations"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E09-03",
+      "type": "leaf",
+      "parent": "E09",
+      "title": "Ticket projects page — status mapping and policies",
+      "domain": "web",
+      "priority": "medium",
+      "depends_on": [
+        "E09-02"
+      ],
+      "doc_ref": [
+        "specs.html#ui",
+        "specs.html#ticket-projects"
+      ],
+      "description": "## Context\n\n/ticket-projects — create_config tabs, status_mapping arrays, on_open_ticket_policy select.\n\n## Spec references\n\n- [§8 Web UI & COSS Particles](specs.html#ui)\n- [§5.3 Ticket projects & status mapping](specs.html#ticket-projects)\n\n## Implementation notes\n\n- app/(authenticated)/ticket-projects/page.tsx\n\n## Files\n\n- `apps/web/app/(authenticated)/ticket-projects/page.tsx`\n\n## Acceptance criteria\n\n- [ ] /ticket-projects page CRUD\n- [ ] Integration select ticket kinds only\n- [ ] on_open_ticket_policy supersede|merge|skip_if_open\n- [ ] status_mapping per open/done/cancelled\n- [ ] create_config subform per provider\n- [ ] useTicketProjects hook\n- [ ] JSON validation errors shown\n\n## Tests\n\n- `npm test`\n\n---\n\n**Roadmap ID:** E09-03",
+      "acceptance_criteria": [
+        "/ticket-projects page CRUD",
+        "Integration select ticket kinds only",
+        "on_open_ticket_policy supersede|merge|skip_if_open",
+        "status_mapping per open/done/cancelled",
+        "create_config subform per provider",
+        "useTicketProjects hook",
+        "JSON validation errors shown"
+      ],
+      "files": [
+        "apps/web/app/(authenticated)/ticket-projects/page.tsx"
+      ],
+      "tests": [
+        "npm test"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E09-04",
+      "type": "leaf",
+      "parent": "E09",
+      "title": "Monitored repos page",
+      "domain": "web",
+      "priority": "medium",
+      "depends_on": [
+        "E09-03"
+      ],
+      "doc_ref": [
+        "specs.html#ui",
+        "specs.html#domain"
+      ],
+      "description": "## Context\n\n/repos per §8.3 — p-table-3 list, p-dialog-1 add/edit, p-select-1 for source/ticket project; p-checkbox-group-1 optional notification targets per monitored_repo_notifications; p-switch-1 enabled.\n\n## Spec references\n\n- [§8 Web UI & COSS Particles](specs.html#ui)\n- [§5 Domain logic & Idempotency](specs.html#domain)\n\n## Implementation notes\n\n- app/(authenticated)/repos/page.tsx\n\n## Files\n\n- `apps/web/app/(authenticated)/repos/page.tsx`\n\n## Acceptance criteria\n\n- [ ] /repos page lists monitored repos (p-table-3, no bulk checkboxes in MVP)\n- [ ] Add/edit dialog with source_kind and ticket_project selects\n- [ ] sourceIntegrationId select for gitlab/gitea/forgejo\n- [ ] Optional notification targets checkbox group per repo\n- [ ] enabled toggle (p-switch-1) and p-alert-dialog-1 delete confirm\n- [ ] Shows last_polled_at and last_error\n- [ ] useRepos hook; empty state i18n\n\n## Tests\n\n- `npm test`\n\n---\n\n**Roadmap ID:** E09-04",
+      "acceptance_criteria": [
+        "/repos page lists monitored repos (p-table-3, no bulk checkboxes in MVP)",
+        "Add/edit dialog with source_kind and ticket_project selects",
+        "sourceIntegrationId select for gitlab/gitea/forgejo",
+        "Optional notification targets checkbox group per repo",
+        "enabled toggle (p-switch-1) and p-alert-dialog-1 delete confirm",
+        "Shows last_polled_at and last_error",
+        "useRepos hook; empty state i18n"
+      ],
+      "files": [
+        "apps/web/app/(authenticated)/repos/page.tsx"
+      ],
+      "tests": [
+        "npm test"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E09-05",
+      "type": "leaf",
+      "parent": "E09",
+      "title": "Notifications page",
+      "domain": "web",
+      "priority": "medium",
+      "depends_on": [
+        "E09-01",
+        "E08-03"
+      ],
+      "doc_ref": [
+        "specs.html#ui",
+        "specs.html#notifications"
+      ],
+      "description": "## Context\n\n/notifications — Shoutrrr URL, events checkboxes, test notification.\n\n## Spec references\n\n- [§8 Web UI & COSS Particles](specs.html#ui)\n- [§5.5 Notifications (Shoutrrr)](specs.html#notifications)\n\n## Implementation notes\n\n- app/(authenticated)/notifications/page.tsx\n\n## Files\n\n- `apps/web/app/(authenticated)/notifications/page.tsx`\n\n## Acceptance criteria\n\n- [ ] /notifications page CRUD\n- [ ] Shoutrrr URL password input\n- [ ] events_json checkbox group create,error,supersede\n- [ ] Test notification button\n- [ ] useNotificationTargets hook\n- [ ] enabled toggle\n- [ ] Never show stored URL after save\n\n## Tests\n\n- `npm test`\n\n---\n\n**Roadmap ID:** E09-05",
+      "acceptance_criteria": [
+        "/notifications page CRUD",
+        "Shoutrrr URL password input",
+        "events_json checkbox group create,error,supersede",
+        "Test notification button",
+        "useNotificationTargets hook",
+        "enabled toggle",
+        "Never show stored URL after save"
+      ],
+      "files": [
+        "apps/web/app/(authenticated)/notifications/page.tsx"
+      ],
+      "tests": [
+        "npm test"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E09-06",
+      "type": "leaf",
+      "parent": "E09",
+      "title": "Settings page — poll interval",
+      "domain": "web",
+      "priority": "medium",
+      "depends_on": [
+        "E09-01",
+        "E08-03"
+      ],
+      "doc_ref": [
+        "specs.html#ui",
+        "specs.html#api"
+      ],
+      "description": "## Context\n\n/settings — p-number-field poll_interval_minutes min 5; PATCH /api/v1/settings.\n\n## Spec references\n\n- [§8 Web UI & COSS Particles](specs.html#ui)\n- [§7 REST API (Go)](specs.html#api)\n\n## Implementation notes\n\n- app/(authenticated)/settings/page.tsx\n\n## Files\n\n- `apps/web/app/(authenticated)/settings/page.tsx`\n\n## Acceptance criteria\n\n- [ ] /settings page shows poll interval\n- [ ] Min 5 minutes validation\n- [ ] Save calls PATCH /api/v1/settings\n- [ ] Success alert i18n\n- [ ] useSettings hook\n- [ ] Loading and error states\n- [ ] p-card-8 layout per spec particles\n\n## Tests\n\n- `npm test`\n\n---\n\n**Roadmap ID:** E09-06",
+      "acceptance_criteria": [
+        "/settings page shows poll interval",
+        "Min 5 minutes validation",
+        "Save calls PATCH /api/v1/settings",
+        "Success alert i18n",
+        "useSettings hook",
+        "Loading and error states",
+        "p-card-8 layout per spec particles"
+      ],
+      "files": [
+        "apps/web/app/(authenticated)/settings/page.tsx"
+      ],
+      "tests": [
+        "npm test"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E10",
+      "type": "epic",
+      "title": "Dashboard — status, manual poll & run history",
+      "domain": "web",
+      "priority": "high",
+      "depends_on": [
+        "E08",
+        "E07"
+      ],
+      "doc_ref": [
+        "specs.html#ui",
+        "specs.html#mvp"
+      ],
+      "description": "## Context\n\nDashboard / with status card, manual poll button, poll run history UI. Merges P20.\n\n## Spec references\n\n- [§8 Web UI & COSS Particles](specs.html#ui)\n- [§12 MVP Acceptance Criteria](specs.html#mvp)\n\n## Acceptance criteria\n\n- [ ] AC #14 operational visibility\n- [ ] Manual poll from UI\n\n---\n\n**Roadmap ID:** E10",
+      "lane": "S"
+    },
+    {
+      "id": "E10-01",
+      "type": "leaf",
+      "parent": "E10",
+      "title": "Dashboard status card, repo table, and manual poll",
+      "domain": "web",
+      "priority": "medium",
+      "depends_on": [
+        "E09-01",
+        "E08-03"
+      ],
+      "doc_ref": [
+        "specs.html#ui",
+        "specs.html#api",
+        "specs.html#mvp"
+      ],
+      "description": "## Context\n\nGET /api/v1/status display; repo status subset table (p-table-4); error alert (p-alert-6) from last run; POST /api/v1/poll/trigger button; useStatus, useRepos, useTriggerPoll.\n\n## Spec references\n\n- [§8 Web UI & COSS Particles](specs.html#ui)\n- [§7 REST API (Go)](specs.html#api)\n- [§12 MVP Acceptance Criteria](specs.html#mvp)\n\n## Implementation notes\n\n- app/(authenticated)/page.tsx\n- components/dashboard/status-card.tsx — p-card-10, p-badge-5\n- components/dashboard/repo-status-table.tsx — p-table-4 TanStack sort+pagination\n- components/dashboard/last-run-errors.tsx — p-alert-6 when errors_json present\n\n## Files\n\n- `apps/web/app/(authenticated)/page.tsx`\n\n## Acceptance criteria\n\n- [ ] Dashboard / shows system status card\n- [ ] Repo status table (subset) with source, path, last tag, open ticket\n- [ ] Error alert when last poll run has errors\n- [ ] Manual poll button triggers POST /api/v1/poll/trigger\n- [ ] Empty state p-empty-1 CTA links to /repos\n- [ ] Loading state during poll with Spinner\n- [ ] All dashboard strings use t() keys\n\n## Tests\n\n- `npm test -- dashboard`\n\n---\n\n**Roadmap ID:** E10-01",
+      "acceptance_criteria": [
+        "Dashboard / shows system status card",
+        "Repo status table (subset) with source, path, last tag, open ticket",
+        "Error alert when last poll run has errors",
+        "Manual poll button triggers POST /api/v1/poll/trigger",
+        "Empty state p-empty-1 CTA links to /repos",
+        "Loading state during poll with Spinner",
+        "All dashboard strings use t() keys"
+      ],
+      "files": [
+        "apps/web/app/(authenticated)/page.tsx"
+      ],
+      "tests": [
+        "npm test -- dashboard"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E10-02",
+      "type": "leaf",
+      "parent": "E10",
+      "title": "Poll run history table and run detail drawer",
+      "domain": "web",
+      "priority": "medium",
+      "depends_on": [
+        "E10-01",
+        "E08-03"
+      ],
+      "doc_ref": [
+        "specs.html#ui",
+        "specs.html#api",
+        "specs.html#domain"
+      ],
+      "description": "## Context\n\nGET /api/v1/poll/runs table; row click GET /api/v1/poll/runs/{id} drawer with events; usePollRuns, usePollRun hooks.\n\n## Spec references\n\n- [§8 Web UI & COSS Particles](specs.html#ui)\n- [§7 REST API (Go)](specs.html#api)\n- [§5 Domain logic & Idempotency](specs.html#domain)\n\n## Implementation notes\n\n- components/dashboard/poll-run-history.tsx\n\n## Files\n\n- `apps/web/components/dashboard/poll-run-history.tsx`\n\n## Acceptance criteria\n\n- [ ] Poll run history UI consumes GET poll/runs\n- [ ] Table data from GET /api/v1/poll/runs via usePollRuns\n- [ ] Row opens drawer with usePollRun(id)\n- [ ] Events show action enum labels i18n\n- [ ] Status badges running|success|partial|failed\n- [ ] Pagination or limit\n- [ ] Empty state when no runs\n\n## Tests\n\n- `npm test`\n\n---\n\n**Roadmap ID:** E10-02",
+      "acceptance_criteria": [
+        "Poll run history UI consumes GET poll/runs",
+        "Table data from GET /api/v1/poll/runs via usePollRuns",
+        "Row opens drawer with usePollRun(id)",
+        "Events show action enum labels i18n",
+        "Status badges running|success|partial|failed",
+        "Pagination or limit",
+        "Empty state when no runs"
+      ],
+      "files": [
+        "apps/web/components/dashboard/poll-run-history.tsx"
+      ],
+      "tests": [
+        "npm test"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E10-03",
+      "type": "leaf",
+      "parent": "E10",
+      "title": "Dashboard page integration and smoke tests",
+      "domain": "web",
+      "priority": "medium",
+      "depends_on": [
+        "E10-02"
+      ],
+      "doc_ref": [
+        "specs.html#mvp",
+        "specs.html#ci"
+      ],
+      "description": "## Context\n\nVitest/RTL smoke for dashboard; docker compose manual poll AC #14.\n\n## Spec references\n\n- [§12 MVP Acceptance Criteria](specs.html#mvp)\n- [§11 CI/CD (GitHub Actions)](specs.html#ci)\n\n## Implementation notes\n\n- dashboard page tests\n\n## Files\n\n- `apps/web/app/(authenticated)/page.test.tsx`\n\n## Acceptance criteria\n\n- [ ] Dashboard renders status + history\n- [ ] Manual poll flow tested mock API\n- [ ] All dashboard copy uses t()\n- [ ] npm test passes\n- [ ] No hardcoded English in dashboard\n- [ ] Links to config pages from empty states\n- [ ] Responsive layout mobile\n\n## Tests\n\n- `npm test`\n\n---\n\n**Roadmap ID:** E10-03",
+      "acceptance_criteria": [
+        "Dashboard renders status + history",
+        "Manual poll flow tested mock API",
+        "All dashboard copy uses t()",
+        "npm test passes",
+        "No hardcoded English in dashboard",
+        "Links to config pages from empty states",
+        "Responsive layout mobile"
+      ],
+      "files": [
+        "apps/web/app/(authenticated)/page.test.tsx"
+      ],
+      "tests": [
+        "npm test"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E11",
+      "type": "epic",
+      "title": "Ship — Docker, CI/CD & MVP verification",
+      "domain": "ci",
+      "priority": "high",
+      "depends_on": [
+        "E07",
+        "E10"
+      ],
+      "doc_ref": [
+        "specs.html#deployment",
+        "specs.html#ci",
+        "specs.html#mvp",
+        "stack.html"
+      ],
+      "description": "## Context\n\nDockerfile, compose, GitHub Actions §11, GHCR, MVP checklist. Merges P26+P27+P28.\n\n## Spec references\n\n- [§10 Deployment](specs.html#deployment)\n- [§11 CI/CD (GitHub Actions)](specs.html#ci)\n- [§12 MVP Acceptance Criteria](specs.html#mvp)\n\n## Stack references\n\n- [Tech stack — CI/CD](stack.html)\n- [Tech stack — Deployment](stack.html)\n\n## Acceptance criteria\n\n- [ ] docker compose up works\n- [ ] CI workflows per §11.2\n- [ ] All 15 MVP AC documented\n\n---\n\n**Roadmap ID:** E11",
+      "lane": "S"
+    },
+    {
+      "id": "E11-01",
+      "type": "leaf",
+      "parent": "E11",
+      "title": "Multi-stage Dockerfile and entrypoint",
+      "domain": "ci",
+      "priority": "medium",
+      "depends_on": [
+        "E01",
+        "E07"
+      ],
+      "doc_ref": [
+        "specs.html#deployment",
+        "specs.html#schema-migrations"
+      ],
+      "description": "## Context\n\nNext standalone + Go binary; docker/entrypoint.sh: migrate up → Go background → Next foreground; single image. Non-root user when feasible.\n\n## Spec references\n\n- [§10 Deployment](specs.html#deployment)\n- [§4.0 Schema migrations (sqldiff)](specs.html#schema-migrations)\n\n## Implementation notes\n\n- Dockerfile multi-stage\n- docker/entrypoint.sh — golang-migrate up, start Go, start Next\n- next.config standalone output\n\n## Files\n\n- `Dockerfile`\n- `docker/entrypoint.sh`\n\n## Acceptance criteria\n\n- [ ] Dockerfile builds successfully\n- [ ] Single image release-ops\n- [ ] Entrypoint runs migrate up then Go then Next\n- [ ] Go on 127.0.0.1:8080 inside container\n- [ ] Next on :3000 public\n- [ ] VERSION not baked as secret\n- [ ] Non-root user if feasible\n\n## Tests\n\n- `docker build -t release-ops .`\n\n---\n\n**Roadmap ID:** E11-01",
+      "acceptance_criteria": [
+        "Dockerfile builds successfully",
+        "Single image release-ops",
+        "Entrypoint runs migrate up then Go then Next",
+        "Go on 127.0.0.1:8080 inside container",
+        "Next on :3000 public",
+        "VERSION not baked as secret",
+        "Non-root user if feasible"
+      ],
+      "files": [
+        "Dockerfile",
+        "docker/entrypoint.sh"
+      ],
+      "tests": [
+        "docker build -t release-ops ."
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E11-02",
+      "type": "leaf",
+      "parent": "E11",
+      "title": "docker-compose.yml single service",
+      "domain": "ci",
+      "priority": "medium",
+      "depends_on": [
+        "E11-01"
+      ],
+      "doc_ref": [
+        "specs.html#deployment",
+        "specs.html#mvp"
+      ],
+      "description": "## Context\n\nOne service release-ops; volume /data; port 3000; env from example.\n\n## Spec references\n\n- [§10 Deployment](specs.html#deployment)\n- [§12 MVP Acceptance Criteria](specs.html#mvp)\n\n## Implementation notes\n\n- docker-compose.yml\n- .env.example\n\n## Files\n\n- `docker-compose.yml`\n- `.env.example`\n\n## Acceptance criteria\n\n- [ ] docker-compose single service release-ops\n- [ ] Volume release-ops-data:/data\n- [ ] Port 3000:3000\n- [ ] SESSION_SECRET and APP_ENCRYPTION_KEY documented\n- [ ] Health via GET /api/go/healthz or proxy\n- [ ] docker compose up --build works\n- [ ] AC #14 docker compose dashboard\n\n## Tests\n\n- `docker compose config`\n\n---\n\n**Roadmap ID:** E11-02",
+      "acceptance_criteria": [
+        "docker-compose single service release-ops",
+        "Volume release-ops-data:/data",
+        "Port 3000:3000",
+        "SESSION_SECRET and APP_ENCRYPTION_KEY documented",
+        "Health via GET /api/go/healthz or proxy",
+        "docker compose up --build works",
+        "AC #14 docker compose dashboard"
+      ],
+      "files": [
+        "docker-compose.yml",
+        ".env.example"
+      ],
+      "tests": [
+        "docker compose config"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E11-03",
+      "type": "leaf",
+      "parent": "E11",
+      "title": "GitHub Actions CI workflows",
+      "domain": "ci",
+      "priority": "medium",
+      "depends_on": [
+        "E01"
+      ],
+      "doc_ref": [
+        "specs.html#ci",
+        "specs.html#mvp"
+      ],
+      "description": "## Context\n\npr.yml, dev.yml, main.yml, release.yml, reusable ci.yml per §11.2.\n\n## Spec references\n\n- [§11 CI/CD (GitHub Actions)](specs.html#ci)\n- [§12 MVP Acceptance Criteria](specs.html#mvp)\n\n## Implementation notes\n\n- .github/workflows/ci.yml — go lint/test/build, web lint/test/typecheck/build\n- .github/workflows/pr.yml, dev.yml, main.yml, release.yml\n\n## Files\n\n- `.github/workflows/ci.yml`\n- `.github/workflows/pr.yml`\n\n## Acceptance criteria\n\n- [ ] .github/workflows per §11.2 present\n- [ ] Reusable workflows workflow_call only\n- [ ] concurrency cancel-in-progress on PR/dev/main\n- [ ] Parallel go and web jobs\n- [ ] PR blocked on CI failure\n- [ ] go test ./... in CI\n- [ ] npm test and npm run typecheck in CI\n\n## Tests\n\n- `actionlint if available`\n\n---\n\n**Roadmap ID:** E11-03",
+      "acceptance_criteria": [
+        ".github/workflows per §11.2 present",
+        "Reusable workflows workflow_call only",
+        "concurrency cancel-in-progress on PR/dev/main",
+        "Parallel go and web jobs",
+        "PR blocked on CI failure",
+        "go test ./... in CI",
+        "npm test and npm run typecheck in CI"
+      ],
+      "files": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/pr.yml"
+      ],
+      "tests": [
+        "actionlint if available"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E11-04",
+      "type": "leaf",
+      "parent": "E11",
+      "title": "GHCR image push and prepare-release",
+      "domain": "ci",
+      "priority": "medium",
+      "depends_on": [
+        "E11-03"
+      ],
+      "doc_ref": [
+        "specs.html#ci",
+        "specs.html#deployment"
+      ],
+      "description": "## Context\n\ndev push nightly+sha; release published latest+version; prepare-release on VERSION bump.\n\n## Spec references\n\n- [§11 CI/CD (GitHub Actions)](specs.html#ci)\n- [§10 Deployment](specs.html#deployment)\n\n## Implementation notes\n\n- build-and-push-image.yml reusable\n- prepare-release.yml + scripts/ci/create-draft-release.mjs\n- dev.yml chains ci → push-image\n\n## Files\n\n- `.github/workflows/build-and-push-image.yml`\n- `scripts/ci/create-draft-release.mjs`\n\n## Acceptance criteria\n\n- [ ] dev push produces nightly image after CI\n- [ ] Published release pushes latest + version tag\n- [ ] main push runs prepare-release on VERSION bump\n- [ ] create-draft-release script semver compare\n- [ ] GHCR auth via GITHUB_TOKEN\n- [ ] Docker buildcache ghcr.io/{owner}/release-ops:buildcache\n- [ ] No image build on main without release\n\n## Tests\n\n- `node scripts/ci/create-draft-release.mjs --dry-run`\n\n---\n\n**Roadmap ID:** E11-04",
+      "acceptance_criteria": [
+        "dev push produces nightly image after CI",
+        "Published release pushes latest + version tag",
+        "main push runs prepare-release on VERSION bump",
+        "create-draft-release script semver compare",
+        "GHCR auth via GITHUB_TOKEN",
+        "Docker buildcache ghcr.io/{owner}/release-ops:buildcache",
+        "No image build on main without release"
+      ],
+      "files": [
+        ".github/workflows/build-and-push-image.yml",
+        "scripts/ci/create-draft-release.mjs"
+      ],
+      "tests": [
+        "node scripts/ci/create-draft-release.mjs --dry-run"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E11-05",
+      "type": "leaf",
+      "parent": "E11",
+      "title": "CI policy gates — db:check and i18n lint",
+      "domain": "ci",
+      "priority": "medium",
+      "depends_on": [
+        "E11-03",
+        "E01-02",
+        "E08-01"
+      ],
+      "doc_ref": [
+        "specs.html#ci",
+        "specs.html#i18n",
+        "specs.html#schema-migrations"
+      ],
+      "description": "## Context\n\nci.yml db-migrations job npm run db:check; web-lint enforces i18next rule.\n\n## Spec references\n\n- [§11 CI/CD (GitHub Actions)](specs.html#ci)\n- [§8.5 Internationalization (i18n)](specs.html#i18n)\n- [§4.0 Schema migrations (sqldiff)](specs.html#schema-migrations)\n\n## Implementation notes\n\n- db-migrations job in ci.yml\n- sqlite3 in CI for sqldiff\n- Root package.json db:check script\n\n## Files\n\n- `.github/workflows/ci.yml`\n- `package.json`\n\n## Acceptance criteria\n\n- [ ] db:check in CI workflow\n- [ ] CI fails when db/schema.sql drifts\n- [ ] web-lint fails on hardcoded JSX string\n- [ ] Policy gates on PR and dev push\n- [ ] sqlite3 available in runner\n- [ ] npm run db:check documented\n- [ ] No Atlas in pipeline\n\n## Tests\n\n- `npm run db:check`\n\n---\n\n**Roadmap ID:** E11-05",
+      "acceptance_criteria": [
+        "db:check in CI workflow",
+        "CI fails when db/schema.sql drifts",
+        "web-lint fails on hardcoded JSX string",
+        "Policy gates on PR and dev push",
+        "sqlite3 available in runner",
+        "npm run db:check documented",
+        "No Atlas in pipeline"
+      ],
+      "files": [
+        ".github/workflows/ci.yml",
+        "package.json"
+      ],
+      "tests": [
+        "npm run db:check"
+      ],
+      "lane": "S"
+    },
+    {
+      "id": "E11-06",
+      "type": "leaf",
+      "parent": "E11",
+      "title": "MVP checklist, getting-started docs, and sign-off",
+      "domain": "docs",
+      "priority": "medium",
+      "depends_on": [
+        "E11-02",
+        "E11-04",
+        "E07-05"
+      ],
+      "doc_ref": [
+        "specs.html#mvp",
+        "specs.html#deployment",
+        "specs.html#env"
+      ],
+      "description": "## Context\n\ndocs/mvp-checklist.md maps AC #1–15; docs/getting-started.md operator guide including docker compose up and docker exec seed-admin for manual admin creation.\n\n## Spec references\n\n- [§12 MVP Acceptance Criteria](specs.html#mvp)\n- [§10 Deployment](specs.html#deployment)\n- [§9 Environment variables](specs.html#env)\n\n## Implementation notes\n\n- docs/mvp-checklist.md\n- docs/getting-started.md\n- Provider mock tests verified in CI\n\n## Files\n\n- `docs/mvp-checklist.md`\n- `docs/getting-started.md`\n\n## Acceptance criteria\n\n- [ ] mvp-checklist.md covers all 15 AC\n- [ ] getting-started.md docker compose up\n- [ ] Documents required env vars §9\n- [ ] Documents docker exec seed-admin CLI usage\n- [ ] Mock provider tests in CI AC #13\n- [ ] Manual poll + dashboard AC #14\n- [ ] GitHub Actions workflows AC #15\n\n## Tests\n\n- `npm test`\n- `go test ./...`\n\n---\n\n**Roadmap ID:** E11-06",
+      "acceptance_criteria": [
+        "mvp-checklist.md covers all 15 AC",
+        "getting-started.md docker compose up",
+        "Documents required env vars §9",
+        "Documents docker exec seed-admin CLI usage",
+        "Mock provider tests in CI AC #13",
+        "Manual poll + dashboard AC #14",
+        "GitHub Actions workflows AC #15"
+      ],
+      "files": [
+        "docs/mvp-checklist.md",
+        "docs/getting-started.md"
+      ],
+      "tests": [
+        "npm test",
+        "go test ./..."
+      ],
+      "lane": "S"
+    }
+  ],
+  "meta": {
+    "epic_count": 11,
+    "leaf_count": 51,
+    "domains": [
+      "backend",
+      "web",
+      "db",
+      "config",
+      "ci",
+      "docs"
+    ],
+    "phasical_mapping": {
+      "epic": {
+        "relation": null,
+        "status_on_import": "to-do"
+      },
+      "leaf": {
+        "relation": "subtask",
+        "parent_field": "parent",
+        "blocks_field": "depends_on",
+        "description_field": "description"
+      }
+    },
+    "spec_audit": {
+      "passed": true,
+      "exit_code": 0,
+      "stdout": "=== Roadmap spec audit ===\n\nLeaves: 51\nRequirements checked: 81\nGaps (no matching leaf): 0\n\nBackend/frontend drift: 0\n\n--- MVP AC coverage (keyword match) ---\n  AC #1: 10 leaves ✓\n  AC #2: 17 leaves ✓\n  AC #3: 9 leaves ✓\n  AC #4: 24 leaves ✓\n  AC #5: 5 leaves ✓\n  AC #6: 2 leaves ✓\n  AC #7: 5 leaves ✓\n  AC #8: 2 leaves ✓\n  AC #9: 14 leaves ✓\n  AC #10: 5 leaves ✓\n  AC #11: 6 leaves ✓\n  AC #12: 11 leaves ✓\n  AC #13: 25 leaves ✓\n  AC #14: 8 leaves ✓\n  AC #15: 7 leaves ✓\n\n--- Consistency ---\n  Stale pattern hits: 0\n  Broken task refs: 0\n  Spec doc gaps: 0"
+    }
+  }
+}

@@ -75,7 +75,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   </p>
 
   <div class="card amber">
-    <strong>Version:</strong> Spec v2.6 (2026-08-06) — Go-native auth · Single-container deploy (one image, one Compose service).
+    <strong>Version:</strong> Spec v2.7 (2026-08-06) — Go-native auth · Single-container deploy · locked implementation defaults
   </div>
 
   <nav class="toc">
@@ -91,6 +91,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
       <li><a href="#providers">Provider interfaces (Go)</a></li>
       <li><a href="#api">REST API (Go)</a></li>
       <li><a href="#ui">Web UI &amp; COSS Particles</a></li>
+      <li><a href="#i18n">Internationalization (i18n)</a></li>
       <li><a href="#env">Environment variables</a></li>
       <li><a href="#deployment">Deployment</a></li>
       <li><a href="#ci">CI/CD (GitHub Actions)</a></li>
@@ -116,7 +117,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <ul>
     <li>No additional sources (Bitbucket, Azure DevOps, …).</li>
     <li>No multi-user RBAC (one admin is enough; all logged-in users have equal permissions).</li>
-    <li>No public sign-up (admin account via seed/CLI or once in UI).</li>
+    <li>No public sign-up — admin via <code>BOOTSTRAP_ADMIN_*</code> env on first start or <code>seed-admin</code> CLI only (no in-app registration or setup wizard).</li>
     <li>Self-host with <strong>one</strong> Docker container — no multi-service Compose.</li>
   </ul>
 
@@ -148,7 +149,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <tr><td>Next.js</td><td><code>0.0.0.0:${PORT}</code> (default 3000)</td><td>COSS UI, HTTP proxy to Go (forwards <code>Cookie</code> / <code>Set-Cookie</code>)</td></tr>
     <tr><td>Go</td><td><code>127.0.0.1:${GO_INTERNAL_PORT}</code> (default 8080)</td><td>REST API, credential decrypt, polling, migrations</td></tr>
   </table>
-  <p>Start via <code>docker/entrypoint.sh</code>: migrations → start Go → start Next (or supervisord equivalent). Go does not run as a second container.</p>
+  <p>Start via <code>docker/entrypoint.sh</code>: migrations → start Go in background → start Next in foreground. Go does not run as a second container.</p>
 
   <h2 id="auth">3. Authentication</h2>
   <p>Auth lives entirely in <strong>Go</strong>. Next.js is UI-only — login forms and API clients call Go through the same-origin proxy. One SQLite file (<code>app.db</code>), one writer process.</p>
@@ -175,9 +176,19 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   </ul>
 
   <h2 id="schema">4. Data model</h2>
-  <p>Canonical SQL: <a href="schema.html">schema.html</a> · <a href="schema.sql">schema.sql</a>. Migrations in <code>migrations/</code> must match the schema. All tables in <code>app.db</code> (including auth).</p>
+  <p>Canonical SQL: <a href="schema.html">schema.html</a> (browser view) · <a href="../db/schema.sql"><code>db/schema.sql</code></a> (source file). All tables in <code>app.db</code> (including auth).</p>
 
-  <h3>4.0 <code>users</code> &amp; <code>sessions</code></h3>
+  <h3 id="schema-migrations">4.0 Schema migrations (generated only)</h3>
+  <p><strong>Never hand-write</strong> migration SQL. Workflow:</p>
+  <ol>
+    <li>Edit <code>db/schema.sql</code> (canonical DDL — not under <code>docs/</code>).</li>
+    <li>Run <code>make migrate-diff name=&lt;change&gt;</code> — <code>scripts/migrate-diff.mjs</code> uses SQLite <code>sqldiff</code> (free, bundled with <code>sqlite3</code>) to generate <code>migrations/*.sql</code>.</li>
+    <li>Review generated <code>.up.sql</code> and <code>.down.sql</code>; commit both.</li>
+    <li>Runtime apply: <code>golang-migrate up</code> in entrypoint (unchanged).</li>
+  </ol>
+  <p>CI runs <code>npm run db:check</code> — fails if <code>db/schema.sql</code> drifts from applied migrations. Agents: see <code>.cursor/rules/11-db-migrations.mdc</code>.</p>
+
+  <h3>4.0.1 <code>users</code> &amp; <code>sessions</code></h3>
   <p>Auth tables — written only by Go.</p>
   <table>
     <tr><th>Table</th><th>Columns</th><th>Notes</th></tr>
@@ -294,7 +305,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <ul>
     <li>Algorithm: AES-256-GCM.</li>
     <li>Key: <code>APP_ENCRYPTION_KEY</code> — 32 bytes, hex-encoded (64 characters).</li>
-    <li>Stored format: <code>base64(nonce + ciphertext + tag)</code> or JSON <code>{ "v": 1, "data": "..." }</code>.</li>
+    <li>Stored format: <code>base64(nonce + ciphertext + tag)</code> — 12-byte random nonce prepended to ciphertext; entire blob base64-encoded in <code>encrypted_payload</code> / <code>shoutrrr_url_encrypted</code>.</li>
     <li>Go decrypts credentials only in the Go process — never sent to frontend except “configured” / masking.</li>
     <li>API returns <code>has_secret: true</code> for integrations, never the secret value.</li>
   </ul>
@@ -308,6 +319,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <li><strong>error</strong> — API error (except “no release”) → <code>last_error</code>, continue run.</li>
   </ol>
   <p>“No release”: GitHub/GitLab/Gitea/Forgejo/Codeberg 404 on latest release — not an error.</p>
+  <p><strong>Tag comparison:</strong> poll skip uses <strong>exact string equality</strong> between the fetched release tag and <code>last_known_tag</code> (no semver ordering). Provider tests may assert tag parsing separately; poll decisions never reorder tags.</p>
 
   <h3>5.2 Open ticket &amp; idempotency</h3>
   <p>On a new tag, Go checks the linked ticket status (<code>open_ticket_external_id</code>) <strong>live</strong>, not only the local DB — the ticket may have been closed manually.</p>
@@ -363,7 +375,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <tr><th>Provider</th><th><code>external_project_id</code></th><th>Status values in mapping</th></tr>
     <tr><td>Phasical</td><td><code>projectId</code></td><td>Board column slugs (<code>ready</code>, <code>in-progress</code>, …) — <strong>different per project</strong></td></tr>
     <tr><td>Jira</td><td><code>projectKey</code> (e.g. <code>DEV</code>)</td><td>Status <strong>names</strong> from the workflow of the project key</td></tr>
-    <tr><td>Linear</td><td><code>teamId</code></td><td>Prefer <code>stateId</code>s in arrays; optional <code>openTypes</code>/<code>doneTypes</code> (<code>unstarted</code>, <code>started</code>, <code>completed</code>, <code>canceled</code>)</td></tr>
+    <tr><td>Linear</td><td><code>teamId</code></td><td>MVP: <code>stateId</code> strings in <code>open</code>/<code>done</code>/<code>cancelled</code> arrays and <code>superseded</code> (see example below). <code>openTypes</code>/<code>doneTypes</code> — post-MVP.</td></tr>
   </table>
   <pre><code>// Linear example with stateIds
 {
@@ -437,7 +449,7 @@ type StatusMapping struct {
     Done        []string
     Cancelled   []string
     Superseded  string
-    // Linear optional: OpenTypes, DoneTypes, CancelledTypes []string
+    // Linear post-MVP: OpenTypes, DoneTypes, CancelledTypes []string
 }
 
 type TicketInput struct {
@@ -703,7 +715,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <h4>/repos</h4>
   <table>
     <tr><th>Particle</th><th>Usage</th></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-table-3.json">p-table-3</a> checkboxes</td><td>Repo list, bulk enable/disable optional</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-3.json">p-table-3</a></td><td>Repo list (bulk enable/disable — post-MVP)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-dialog-1.json">p-dialog-1</a> form</td><td>Add / Edit Repo</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-alert-dialog-1.json">p-alert-dialog-1</a></td><td>Delete confirmation</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td>Source kind, source integration, <strong>ticket project</strong></td></tr>
@@ -758,7 +770,20 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   </table>
 
   <h3>8.4 API client (frontend)</h3>
-  <p>All API calls to <code>/api/go/api/v1/...</code> (Next proxy — same origin, session cookie forwarded automatically). Login: <code>POST /api/go/api/v1/auth/login</code>. React Query hooks: <code>useSession</code>, <code>useStatus</code>, <code>useRepos</code>, <code>useIntegrations</code>, <code>useTicketProjects</code>, <code>useNotificationTargets</code>, <code>useSettings</code>.</p>
+  <p>All API calls to <code>/api/go/api/v1/...</code> (Next proxy — same origin, session cookie forwarded automatically). Login: <code>POST /api/go/api/v1/auth/login</code>. React Query hooks: <code>useSession</code>, <code>useStatus</code>, <code>useRepos</code>, <code>useIntegrations</code>, <code>useTicketProjects</code>, <code>useNotificationTargets</code>, <code>useSettings</code>, <code>usePollRuns</code>, <code>usePollRun</code>, <code>useTriggerPoll</code>.</p>
+
+  <h3 id="i18n">8.5 Internationalization (i18n)</h3>
+  <p><strong>Zero hardcoded UI strings.</strong> All user-facing copy (labels, buttons, headings, errors, toasts, empty states, table headers, <code>aria-label</code>, placeholders) uses <strong>next-intl</strong>.</p>
+  <table>
+    <tr><th>Item</th><th>Rule</th></tr>
+    <tr><td>Library</td><td><code>next-intl</code> with App Router provider in root layout</td></tr>
+    <tr><td>Messages</td><td><code>apps/web/messages/en.json</code> (MVP default locale <code>en</code>)</td></tr>
+    <tr><td>Components</td><td><code>useTranslations('namespace')</code> / server <code>getTranslations</code></td></tr>
+    <tr><td>Keys</td><td>Dotted namespaces: <code>dashboard.runPoll</code>, <code>repos.add</code></td></tr>
+    <tr><td>CI</td><td><code>eslint-plugin-i18next</code> — <code>i18next/no-literal-string</code> fails on JSX literals</td></tr>
+  </table>
+  <p>Allowed without i18n keys: route paths, API enum values, CSS classes, test IDs. Forbidden: <code>&lt;Button&gt;Save&lt;/Button&gt;</code>, <code>toast('Error')</code>.</p>
+  <p>Agents: <code>.cursor/rules/10-i18n.mdc</code>.</p>
 
   <h2 id="env">9. Environment variables</h2>
   <p>All variables for the <strong>single</strong> container (<code>release-ops</code>). No service-specific Compose splitting.</p>
@@ -904,6 +929,7 @@ jobs:
     <tr><td>test</td><td><code>go test ./...</code></td><td><code>npm test</code></td></tr>
     <tr><td>typecheck</td><td><code>go vet</code> / optional staticcheck</td><td><code>npm run typecheck</code></td></tr>
     <tr><td>build</td><td><code>go build -o /dev/null ./cmd/server</code></td><td><code>npm run build</code> (production)</td></tr>
+    <tr><td>db</td><td><code>npm run db:check</code> (schema ↔ migrations via <code>sqldiff</code>)</td><td>—</td></tr>
   </table>
   <p>All jobs must be green before downstream jobs (images / release) run. No <code>--no-verify</code> in CI.</p>
 
@@ -975,6 +1001,9 @@ jobs:
     <li>Webhook instead of poll.</li>
     <li>Multi-user with roles.</li>
     <li>OAuth/social login (COSS: <a href="https://coss.com/ui/r/p-button-38.json">p-button-38</a>).</li>
+    <li>Bulk enable/disable on <code>/repos</code> table.</li>
+    <li>Linear <code>openTypes</code>/<code>doneTypes</code> status mapping (MVP uses <code>stateId</code> only).</li>
+    <li>In-app admin registration / first-run setup wizard.</li>
   </ul>
 
   <p class="docnav"><a href="index.html">Docs</a> · <a href="specs.html">Spec</a> · <a href="stack.html">Stack</a> · <a href="schema.html">Schema</a></p>

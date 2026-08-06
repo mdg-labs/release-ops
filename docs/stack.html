@@ -63,8 +63,10 @@ pre code { background: none; border: none; padding: 0; color: var(--text); }
   internal/          # Go packages (api, poll, providers, store, crypto)
   docker/            # entrypoint.sh
   Dockerfile         # Single image: Next standalone + Go binary
-  migrations/        # SQL migrations for app.db (golang-migrate)
-  scripts/ci/        # create-draft-release.mjs, build-push helpers
+  migrations/        # sqldiff-generated SQL only (golang-migrate applies)
+  db/schema.sql      # Canonical DDL — edit then migrate-diff
+  scripts/migrate-diff.mjs
+  scripts/ci/        # check-migrations-sync.mjs, create-draft-release.mjs
   .github/workflows/ # pr, dev, main, release + reusable workflows
   VERSION            # Semver — release tag v{VERSION} on main bump
   docs/              # This specification
@@ -74,11 +76,12 @@ pre code { background: none; border: none; padding: 0; color: var(--text); }
   <table>
     <tr><th>Tool</th><th>Why</th></tr>
     <tr><td><code>Go 1.22+</code></td><td>API + background polling in one process; small binary in the container image.</td></tr>
-    <tr><td><code>chi</code> or <code>echo</code></td><td>Lightweight HTTP router for the REST API.</td></tr>
-    <tr><td><code>modernc.org/sqlite</code> or <code>github.com/mattn/go-sqlite3</code></td><td>Prefer SQLite without CGO (<code>modernc</code>) for easier cross-builds.</td></tr>
-    <tr><td><code>sqlc</code></td><td>Typed queries from SQL — schema in <code>docs/schema.sql</code> + migrations.</td></tr>
-    <tr><td><code>golang-migrate</code></td><td>Versioned migrations — <code>up</code> in the container entrypoint before Go starts.</td></tr>
-    <tr><td><code>robfig/cron</code></td><td>Poll scheduler (or <code>time.Ticker</code>).</td></tr>
+    <tr><td><code>chi</code></td><td>HTTP router for the REST API (locked for MVP).</td></tr>
+    <tr><td><code>modernc.org/sqlite</code></td><td>SQLite driver without CGO — easier cross-builds in Docker (locked for MVP).</td></tr>
+    <tr><td><code>sqlc</code></td><td>Typed queries from SQL — schema path <code>migrations/</code> (generated from <code>db/schema.sql</code>).</td></tr>
+    <tr><td><code>sqldiff</code></td><td><code>scripts/migrate-diff.mjs</code> — generates <code>migrations/*.sql</code> from <code>db/schema.sql</code> (SQLite, free).</td></tr>
+    <tr><td><code>golang-migrate</code></td><td>Applies versioned migrations — <code>up</code> in container entrypoint.</td></tr>
+    <tr><td><code>robfig/cron</code></td><td>Poll scheduler — interval from <code>poll_interval_minutes</code> (locked for MVP).</td></tr>
     <tr><td><code>golang.org/x/crypto/bcrypt</code></td><td>Password hashing for admin login.</td></tr>
     <tr><td><code>github.com/alexedwards/scs/v2</code></td><td>Session cookies + SQLite session store.</td></tr>
     <tr><td><code>github.com/containrrr/shoutrrr</code></td><td>Notifications to Slack, ntfy, Discord, … via URL schemes.</td></tr>
@@ -92,7 +95,8 @@ pre code { background: none; border: none; padding: 0; color: var(--text); }
     <tr><td><code>Tailwind CSS v4</code></td><td>Required for COSS.</td></tr>
     <tr><td><code>@base-ui/react</code> + COSS registry</td><td>UI components per <code>.agents/skills/coss</code>.</td></tr>
     <tr><td><code>@tanstack/react-query</code></td><td>Server state for tables and forms.</td></tr>
-    <tr><td><code>@tanstack/react-table</code></td><td>COSS table particles with sorting and checkboxes.</td></tr>
+    <tr><td><code>next-intl</code></td><td>All UI strings via message files — zero hardcoded copy; ESLint enforced.</td></tr>
+    <tr><td><code>eslint-plugin-i18next</code></td><td><code>i18next/no-literal-string</code> in CI lint gate.</td></tr>
   </table>
 
   <h2>Data</h2>
@@ -141,7 +145,7 @@ pre code { background: none; border: none; padding: 0; color: var(--text); }
     <li><strong>No multi-container deploy</strong> — no separate <code>web</code> + <code>worker</code> Compose.</li>
     <li><strong>No YAML config</strong> — everything via UI + <code>app.db</code>.</li>
     <li><strong>No Node worker</strong> — polling only in Go.</li>
-    <li><strong>No Drizzle</strong> — Go stack uses sqlc + golang-migrate.</li>
+    <li><strong>No Drizzle</strong> — Go stack uses sqlc + sqldiff-generated migrations (<code>scripts/migrate-diff.mjs</code>).</li>
     <li><strong>No OAuth/social login</strong> in MVP — email/password via Go session auth.</li>
     <li><strong>No Bitbucket / Azure DevOps</strong> — MVP: five source kinds; Phasical + Jira + Linear tickets.</li>
     <li><strong>No Redis/Postgres</strong> — SQLite is enough for single-instance self-host.</li>

@@ -288,9 +288,11 @@ SCOPED CI GATE (mandatory before commit and in verifier Layer 2):
 
 ```text
 DB MIGRATIONS (mandatory in every execution prompt):
-- Schema changes → use project migration CLI only (npx drizzle-kit generate)
-- Never hand-write migration.sql or create migration directories manually
-- If CLI cannot run → report blocked; no SQL workaround
+- Schema changes → edit db/schema.sql only, then: make migrate-diff name=<change>
+- Tool: scripts/migrate-diff.mjs (SQLite sqldiff) — generates migrations/*.sql; golang-migrate applies at runtime
+- Never hand-write or hand-edit migrations/*.sql
+- CI: npm run db:check must pass when db/schema.sql or migrations/ in scope
+- If sqlite3/sqldiff unavailable → report blocked; no manual SQL workaround
 ```
 
 ## PLAN FILE GUARD

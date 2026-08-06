@@ -13,8 +13,8 @@
 | Production branch | `main` — agents must not push here |
 | Task branch (Lane P) | `orchestrator/<TASK-ID>` |
 | Worktree (Lane P) | `../release-ops-wt/<TASK-ID>` |
-| Plan file | `docs/roadmap.html` (not created yet — use `docs/specs.html` for AC) |
-| Spec doc glob | `docs/specs.html`, `docs/schema.sql`, `docs/stack.html` |
+| Plan file | `docs/roadmap.html` |
+| Spec doc glob | `docs/specs.html`, `db/schema.sql`, `docs/stack.html` |
 
 ## Phasical
 
@@ -41,14 +41,14 @@
 
 ## Area prefixes (titles)
 
-- `G1` / `G2` — Grundlagen modules
-- `P00`–`P10` — project phases (map to `docs/0*.html`, `docs/10-cicd.html`)
+- `E01`–`E11` — consolidated roadmap epics (one orchestrator session per epic)
+- `G1` / `G2` — Grundlagen modules (legacy)
 - `EL-` — epic-level orchestrator batches (when used)
 
 ## Commit conventions
 
 - Phasical/GitHub tasks: `[#N]` in subject
-- Roadmap-only (no Phasical mirror): `[P*-*]` or `[G*]` in subject
+- Roadmap-only (no Phasical mirror): `[E*-*]` or `[G*]` in subject
 - Body: `fixes #N` when project rules require it (see `.cursor/rules/`)
 
 ## Optional

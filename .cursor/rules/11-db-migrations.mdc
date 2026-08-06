@@ -1,0 +1,45 @@
+---
+description: SQLite migrations — sqldiff-generated only; never hand-write SQL migrations
+globs: migrations/**/*,db/schema.sql,scripts/migrate-diff.mjs,Makefile
+alwaysApply: false
+---
+
+# Database migrations (generated only)
+
+## Rule
+
+**Never hand-write or hand-edit** files under `migrations/`.
+
+Schema changes flow:
+
+1. Edit **`db/schema.sql`** (canonical DDL — source of truth; not under `docs/`).
+2. Run **`make migrate-diff name=<description>`** — repo script uses **SQLite `sqldiff`** (bundled with sqlite3, free, no SaaS).
+3. Review generated `migrations/<version>_<name>.up.sql` and `.down.sql`.
+4. Run **`make migrate-up`** (golang-migrate applies at runtime).
+
+## Tooling (all free, no paid services)
+
+| Tool | Role |
+|------|------|
+| **`scripts/migrate-diff.mjs`** | Applies current migrations + `schema.sql` to two temp DBs; **`sqldiff`** emits up/down SQL |
+| **`sqldiff`** | SQLite official diff utility — transforms DB A → DB B as SQL |
+| **`sqlite3`** | Applies schema and migrations to temp databases |
+| **golang-migrate** | Applies versioned files in container entrypoint / `make migrate-up` |
+| **sqlc** | Reads `migrations/` schema path for Go types |
+
+**Do not use Atlas** — not in this project.
+
+## Forbidden
+
+- `migrate create -ext sql` with manual SQL body
+- Copy-pasting `db/schema.sql` into `migrations/` by hand
+- Editing generated `.up.sql` / `.down.sql` without re-running `migrate-diff`
+- Atlas, Drizzle, Prisma, or other paid/SaaS schema-diff services
+
+## CI
+
+`npm run db:check` runs `scripts/ci/check-migrations-sync.mjs` — fails if `sqldiff` between migrated DB and `db/schema.sql` is non-empty.
+
+## Spec
+
+See `docs/specs.html#schema-migrations`.
