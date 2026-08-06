@@ -9,7 +9,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	"github.com/mdguggenbichler/release-ops/internal/store"
+	"github.com/mdg-labs/release-ops/internal/store"
 	_ "modernc.org/sqlite"
 )
 

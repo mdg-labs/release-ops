@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	storedb "github.com/mdguggenbichler/release-ops/internal/store/db"
+	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
 
 var (

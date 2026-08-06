@@ -13,9 +13,9 @@ import (
 	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/mdguggenbichler/release-ops/internal/api/auth"
-	apimw "github.com/mdguggenbichler/release-ops/internal/api/middleware"
-	storedb "github.com/mdguggenbichler/release-ops/internal/store/db"
+	"github.com/mdg-labs/release-ops/internal/api/auth"
+	apimw "github.com/mdg-labs/release-ops/internal/api/middleware"
+	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
 
 const apiV1Prefix = "/api/v1"

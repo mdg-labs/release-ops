@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/mdguggenbichler/release-ops/internal/crypto"
-	"github.com/mdguggenbichler/release-ops/internal/store/db"
+	"github.com/mdg-labs/release-ops/internal/crypto"
+	"github.com/mdg-labs/release-ops/internal/store/db"
 )
 
 // ErrInvalidJSON is returned when a JSON column fails validation.

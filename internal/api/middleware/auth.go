@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/alexedwards/scs/v2"
-	"github.com/mdguggenbichler/release-ops/internal/api/auth"
+	"github.com/mdg-labs/release-ops/internal/api/auth"
 )
 
 type contextKey string

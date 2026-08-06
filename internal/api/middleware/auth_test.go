@@ -15,8 +15,8 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	"github.com/mdguggenbichler/release-ops/internal/api/auth"
-	apimw "github.com/mdguggenbichler/release-ops/internal/api/middleware"
+	"github.com/mdg-labs/release-ops/internal/api/auth"
+	apimw "github.com/mdg-labs/release-ops/internal/api/middleware"
 	_ "modernc.org/sqlite"
 )
 

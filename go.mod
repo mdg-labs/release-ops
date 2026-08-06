@@ -1,4 +1,4 @@
-module github.com/mdguggenbichler/release-ops
+module github.com/mdg-labs/release-ops
 
 go 1.25.0
 

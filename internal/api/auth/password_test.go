@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/mdguggenbichler/release-ops/internal/api/auth"
-	storedb "github.com/mdguggenbichler/release-ops/internal/store/db"
+	"github.com/mdg-labs/release-ops/internal/api/auth"
+	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
 
 func TestHashPasswordAndComparePassword(t *testing.T) {

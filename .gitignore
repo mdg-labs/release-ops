@@ -3,8 +3,9 @@ node_modules
 out
 dist
 coverage
+/server
 *.db
 *.db-journal
 .env
-.agents/project/agent-memory/archive/
+.agents/project/agent-memory/
 .agents/project/phasical-intake/plans/

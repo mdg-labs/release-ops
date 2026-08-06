@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mdguggenbichler/release-ops/internal/store"
+	"github.com/mdg-labs/release-ops/internal/store"
 )
 
 func TestGetAppSettingsPollInterval(t *testing.T) {

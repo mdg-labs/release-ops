@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/mdguggenbichler/release-ops/internal/store/db"
+	"github.com/mdg-labs/release-ops/internal/store/db"
 )
 
 // PollStateUpdate holds monitored repo fields updated after a poll cycle.

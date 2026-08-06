@@ -180,9 +180,17 @@ details.task-detail .meta { color: var(--text-faint); font-size: 12px; }
         <tr><th>ID</th><th>Status</th><th>Task</th><th>Domain</th><th>Depends</th><th>Doc Ref</th></tr>
       </thead>
       <tbody>
+        <tr data-task-id="E02">
+          <td><code>E02</code></td>
+          <td class="cb">- [x]</td>
+          <td><strong>Authentication &amp; credential encryption</strong> <span class="tag">epic</span></td>
+          <td><span class="tag">backend</span></td>
+          <td>E01</td>
+          <td>specs.html#auth, specs.html#api, specs.html#schema, stack.html</td>
+        </tr>
         <tr data-task-id="E02-01">
           <td><code>E02-01</code></td>
-          <td class="cb">- [ ]</td>
+          <td class="cb">- [x]</td>
           <td>
             <strong>AES-GCM credential encryption service</strong>
             <details class="task-detail">
@@ -196,7 +204,7 @@ details.task-detail .meta { color: var(--text-faint); font-size: 12px; }
         </tr>
         <tr data-task-id="E02-02">
           <td><code>E02-02</code></td>
-          <td class="cb">- [ ]</td>
+          <td class="cb">- [x]</td>
           <td>
             <strong>Users store, bcrypt, and scs session manager</strong>
             <details class="task-detail">
@@ -210,7 +218,7 @@ details.task-detail .meta { color: var(--text-faint); font-size: 12px; }
         </tr>
         <tr data-task-id="E02-03">
           <td><code>E02-03</code></td>
-          <td class="cb">- [ ]</td>
+          <td class="cb">- [x]</td>
           <td>
             <strong>Auth HTTP handlers and session middleware</strong>
             <details class="task-detail">
@@ -224,7 +232,7 @@ details.task-detail .meta { color: var(--text-faint); font-size: 12px; }
         </tr>
         <tr data-task-id="E02-04">
           <td><code>E02-04</code></td>
-          <td class="cb">- [ ]</td>
+          <td class="cb">- [x]</td>
           <td>
             <strong>Bootstrap admin and seed-admin CLI</strong>
             <details class="task-detail">

@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 
-	"github.com/mdguggenbichler/release-ops/internal/store/db"
+	"github.com/mdg-labs/release-ops/internal/store/db"
 )
 
 // AppSettings is the singleton application settings row (id=1).

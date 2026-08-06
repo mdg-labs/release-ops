@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	"github.com/alexedwards/scs/v2"
-	storedb "github.com/mdguggenbichler/release-ops/internal/store/db"
+	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
 
 const (

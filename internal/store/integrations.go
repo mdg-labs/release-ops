@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/mdguggenbichler/release-ops/internal/store/db"
+	"github.com/mdg-labs/release-ops/internal/store/db"
 )
 
 // Integration is an integration record safe for API exposure (no decrypted secrets).

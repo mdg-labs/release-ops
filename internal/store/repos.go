@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 
-	"github.com/mdguggenbichler/release-ops/internal/store/db"
+	"github.com/mdg-labs/release-ops/internal/store/db"
 )
 
 // MonitoredRepo is a repository monitored for new releases.

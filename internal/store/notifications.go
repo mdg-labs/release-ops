@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/mdguggenbichler/release-ops/internal/store/db"
+	"github.com/mdg-labs/release-ops/internal/store/db"
 )
 
 // NotificationTarget is a Shoutrrr notification target safe for API exposure.

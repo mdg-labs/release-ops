@@ -7,11 +7,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/mdguggenbichler/release-ops/internal/api"
-	"github.com/mdguggenbichler/release-ops/internal/api/auth"
-	"github.com/mdguggenbichler/release-ops/internal/config"
-	"github.com/mdguggenbichler/release-ops/internal/store"
-	storedb "github.com/mdguggenbichler/release-ops/internal/store/db"
+	"github.com/mdg-labs/release-ops/internal/api"
+	"github.com/mdg-labs/release-ops/internal/api/auth"
+	"github.com/mdg-labs/release-ops/internal/config"
+	"github.com/mdg-labs/release-ops/internal/store"
+	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
 
 func main() {
