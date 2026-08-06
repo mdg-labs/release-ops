@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Specs — release-monitor</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --ink: #10141a;
+  --panel: #171d26;
+  --panel-2: #1c2330;
+  --border: #262e3a;
+  --text: #dce3ea;
+  --text-dim: #8590a3;
+  --text-faint: #5b6577;
+  --amber: #e8a33d;
+  --amber-dim: #6b551f;
+  --teal: #4fd1c5;
+  --teal-dim: #1f4844;
+  --danger: #c1583f;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --radius: 6px;
+  --maxw: 860px;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--ink);
+  background-image:
+    radial-gradient(ellipse 900px 500px at 50% -10%, rgba(232,163,61,0.06), transparent),
+    repeating-linear-gradient(180deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.6;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--teal); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 48px 24px 96px;
+}
+
+/* Top nav */
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.topnav .brand { color: var(--amber); font-weight: 700; letter-spacing: 0.02em; }
+.topnav a { color: var(--text-dim); }
+.topnav a:hover { color: var(--teal); text-decoration: none; }
+.topnav .sep { color: var(--text-faint); }
+.topnav .current { color: var(--text); }
+
+/* Headings */
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin: 0 0 10px;
+}
+h1 {
+  font-family: var(--sans);
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 700;
+  line-height: 1.15;
+  margin: 0 0 14px;
+  letter-spacing: -0.01em;
+}
+h2 {
+  font-family: var(--sans);
+  font-size: 22px;
+  font-weight: 700;
+  margin: 44px 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+h3 {
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--amber);
+  margin: 28px 0 10px;
+}
+p { color: var(--text); margin: 0 0 14px; }
+p.lede { color: var(--text-dim); font-size: 17px; max-width: 640px; }
+ul, ol { padding-left: 22px; margin: 0 0 16px; }
+li { margin-bottom: 6px; }
+strong { color: #fff; font-weight: 600; }
+code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--teal);
+}
+pre {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  overflow-x: auto;
+  margin: 0 0 18px;
+}
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+/* Cards */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  margin-bottom: 18px;
+}
+.card.amber { border-color: var(--amber-dim); }
+.card.teal { border-color: var(--teal-dim); }
+
+/* Box types used across module pages */
+.box { border-radius: var(--radius); padding: 16px 18px; margin: 0 0 18px; border: 1px solid var(--border); }
+.box-title { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 8px; }
+.box.goal { background: rgba(79,209,197,0.06); border-color: var(--teal-dim); }
+.box.goal .box-title { color: var(--teal); }
+.box.task { background: rgba(232,163,61,0.06); border-color: var(--amber-dim); }
+.box.task .box-title { color: var(--amber); }
+.box.pitfall { background: rgba(193,88,63,0.07); border-color: rgba(193,88,63,0.35); }
+.box.pitfall .box-title { color: var(--danger); }
+.box.check { background: var(--panel-2); }
+.box.check .box-title { color: var(--text-dim); }
+.box p:last-child, .box ul:last-child { margin-bottom: 0; }
+
+/* Terminal pipeline (signature element, index page) */
+.pipeline { position: relative; margin: 40px 0 0; padding-left: 34px; }
+.pipeline::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: linear-gradient(180deg, var(--amber-dim), var(--border) 90%);
+}
+.phase {
+  position: relative;
+  margin-bottom: 14px;
+  display: block;
+}
+.phase::before {
+  content: '';
+  position: absolute;
+  left: -34px;
+  top: 22px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  border: 2px solid var(--ink);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.phase.current::before { background: var(--amber); box-shadow: 0 0 0 1px var(--amber), 0 0 8px 1px rgba(232,163,61,0.6); }
+.phase.done::before { background: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
+.phase-card {
+  display: block;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.phase-card:hover { border-color: var(--text-faint); text-decoration: none; transform: translateX(2px); }
+.phase.current .phase-card { border-color: var(--amber-dim); }
+.phase-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
+.phase-num { font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
+.phase-title { font-family: var(--sans); font-weight: 600; font-size: 16px; color: var(--text); }
+.phase-status {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  margin-left: auto;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.phase.current .phase-status { color: var(--amber); border-color: var(--amber-dim); }
+.phase-desc { color: var(--text-dim); font-size: 14px; margin: 0; }
+
+/* Prompt line */
+.prompt { font-family: var(--mono); font-size: 13px; color: var(--text-faint); }
+.prompt::before { content: '$ '; color: var(--teal); }
+
+/* Footer nav between modules */
+.modnav {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 56px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.modnav a { display: block; color: var(--text-dim); }
+.modnav a:hover { color: var(--teal); }
+.modnav .dir { display: block; color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+.modnav .right { text-align: right; }
+
+/* Grid links (stack/specs index cards) */
+.linkgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 22px 0 0; }
+@media (max-width: 620px) { .linkgrid { grid-template-columns: 1fr; } }
+.linkcard {
+  display: block;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  color: var(--text);
+}
+.linkcard:hover { border-color: var(--teal-dim); text-decoration: none; }
+.linkcard .t { font-weight: 600; margin-bottom: 4px; }
+.linkcard .d { color: var(--text-dim); font-size: 13.5px; }
+
+table { width: 100%; border-collapse: collapse; margin: 0 0 18px; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.05em; }
+td code { white-space: nowrap; }
+
+.tag {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  margin: 0 6px 6px 0;
+}
+
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">release-monitor</span>
+  <span class="sep">/</span>
+  <a href="index.html">roadmap</a>
+  <span class="sep">·</span>
+  <span class="current">specs</span>
+  <span class="sep">·</span>
+  <a href="stack.html">stack</a>
+</nav>
+
+<div class="wrap">
+  <p class="eyebrow">Referenz</p>
+  <h1>Projekt-Spezifikation</h1>
+  <p class="lede">Was release-monitor am Ende tut — als Referenz, auf die die Module verweisen. Du musst das jetzt nicht alles verstehen, das kommt Stück für Stück.</p>
+
+  <h2>Zweck</h2>
+  <p>Ein Docker-Container, der in festen Abständen eine Liste von GitHub-Repos abfragt, das jeweils neueste <strong>stable</strong> Release prüft und bei einem echten neuen Release (nicht beim allerersten Sehen des Repos) ein Ticket in Phasical erstellt.</p>
+
+  <h2>Config (<code>repos.yml</code>)</h2>
+  <p>Der Nutzer pflegt eine YAML-Datei, die im Container gemountet wird:</p>
+  <pre><code>repos:
+  - source: github
+    owner: FreshRSS
+    repo: FreshRSS
+  - source: github
+    owner: usekaneo
+    repo: kaneo
+
+ticketing:
+  provider: phasical
+  projectId: "abc123"</code></pre>
+  <p><code>source</code> ist heute immer <code>github</code>, aber das Feld existiert von Anfang an — Phase 09 erklärt warum.</p>
+
+  <h2>Environment-Variablen</h2>
+  <table>
+    <tr><th>Variable</th><th>Pflicht</th><th>Beschreibung</th></tr>
+    <tr><td><code>CONFIG_PATH</code></td><td>nein</td><td>Pfad zur <code>repos.yml</code>, Default <code>/config/repos.yml</code></td></tr>
+    <tr><td><code>DB_PATH</code></td><td>nein</td><td>Pfad zur SQLite-Datei, Default <code>/data/release-monitor.db</code></td></tr>
+    <tr><td><code>GITHUB_TOKEN</code></td><td>nein</td><td>PAT für höheres Rate-Limit &amp; private Repos</td></tr>
+    <tr><td><code>PHASICAL_API_KEY</code></td><td>ja</td><td>Bearer-Token für die Phasical-API</td></tr>
+    <tr><td><code>PHASICAL_BASE_URL</code></td><td>ja</td><td>z.B. <code>https://phasical.mdg-labs.dev/api</code></td></tr>
+    <tr><td><code>POLL_INTERVAL_MINUTES</code></td><td>nein</td><td>Default <code>360</code> (6h)</td></tr>
+    <tr><td><code>PORT</code></td><td>nein</td><td>Port des Status-Endpoints, Default <code>3000</code></td></tr>
+  </table>
+
+  <h2>Die zwei Kern-Interfaces</h2>
+  <h3>SourceProvider</h3>
+  <pre><code>interface SourceProvider {
+  getLatestRelease(owner: string, repo: string): Promise&lt;Release | null&gt;;
+}
+
+interface Release {
+  tag: string;
+  name: string;
+  url: string;
+  publishedAt: string;
+}</code></pre>
+  <p><code>null</code> bedeutet: kein stable Release vorhanden (z.B. GitHub-404).</p>
+
+  <h3>TicketProvider</h3>
+  <pre><code>interface TicketProvider {
+  createTicket(input: TicketInput): Promise&lt;string&gt;; // gibt Ticket-ID zurück
+}
+
+interface TicketInput {
+  title: string;
+  description: string;
+}</code></pre>
+
+  <h2>Datenbank-Tabelle <code>known_releases</code></h2>
+  <table>
+    <tr><th>Spalte</th><th>Typ</th><th>Hinweis</th></tr>
+    <tr><td><code>id</code></td><td>integer</td><td>Primary Key, autoincrement</td></tr>
+    <tr><td><code>owner</code></td><td>text</td><td>zusammen mit <code>repo</code> eindeutig</td></tr>
+    <tr><td><code>repo</code></td><td>text</td><td></td></tr>
+    <tr><td><code>tag</code></td><td>text</td><td>zuletzt gesehener Tag</td></tr>
+    <tr><td><code>createdAt</code></td><td>text</td><td>von Drizzle/SQLite gesetzt</td></tr>
+    <tr><td><code>updatedAt</code></td><td>text</td><td>bei jedem Upsert aktualisiert</td></tr>
+  </table>
+
+  <h2>Entscheidungslogik</h2>
+  <ol>
+    <li>Kein Eintrag für <code>owner+repo</code> vorhanden → <strong>baseline</strong> (nur speichern, kein Ticket)</li>
+    <li>Eintrag vorhanden, Tag identisch → <strong>skip</strong> (nichts tun)</li>
+    <li>Eintrag vorhanden, Tag unterschiedlich → <strong>create</strong> (Ticket + Tag aktualisieren)</li>
+  </ol>
+
+  <h2>Status-Endpoint</h2>
+  <p><code>GET /status</code> liefert JSON:</p>
+  <pre><code>{
+  "lastRunAt": "2026-08-02T06:00:00.000Z",
+  "repos": [
+    { "owner": "FreshRSS", "repo": "FreshRSS", "lastKnownTag": "1.26.0" }
+  ],
+  "lastErrors": []
+}</code></pre>
+
+  <p style="margin-top:32px"><a href="index.html">← zurück zur Roadmap</a></p>
+</div>
+</body>
+</html>

@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>G2 — Objekte, Arrays, Interfaces, Async/Await</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --ink: #10141a;
+  --panel: #171d26;
+  --panel-2: #1c2330;
+  --border: #262e3a;
+  --text: #dce3ea;
+  --text-dim: #8590a3;
+  --text-faint: #5b6577;
+  --amber: #e8a33d;
+  --amber-dim: #6b551f;
+  --teal: #4fd1c5;
+  --teal-dim: #1f4844;
+  --danger: #c1583f;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --radius: 6px;
+  --maxw: 860px;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--ink);
+  background-image:
+    radial-gradient(ellipse 900px 500px at 50% -10%, rgba(232,163,61,0.06), transparent),
+    repeating-linear-gradient(180deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.6;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--teal); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 48px 24px 96px;
+}
+
+/* Top nav */
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.topnav .brand { color: var(--amber); font-weight: 700; letter-spacing: 0.02em; }
+.topnav a { color: var(--text-dim); }
+.topnav a:hover { color: var(--teal); text-decoration: none; }
+.topnav .sep { color: var(--text-faint); }
+.topnav .current { color: var(--text); }
+
+/* Headings */
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin: 0 0 10px;
+}
+h1 {
+  font-family: var(--sans);
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 700;
+  line-height: 1.15;
+  margin: 0 0 14px;
+  letter-spacing: -0.01em;
+}
+h2 {
+  font-family: var(--sans);
+  font-size: 22px;
+  font-weight: 700;
+  margin: 44px 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+h3 {
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--amber);
+  margin: 28px 0 10px;
+}
+p { color: var(--text); margin: 0 0 14px; }
+p.lede { color: var(--text-dim); font-size: 17px; max-width: 640px; }
+ul, ol { padding-left: 22px; margin: 0 0 16px; }
+li { margin-bottom: 6px; }
+strong { color: #fff; font-weight: 600; }
+code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--teal);
+}
+pre {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  overflow-x: auto;
+  margin: 0 0 18px;
+}
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+/* Cards */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  margin-bottom: 18px;
+}
+.card.amber { border-color: var(--amber-dim); }
+.card.teal { border-color: var(--teal-dim); }
+
+/* Box types used across module pages */
+.box { border-radius: var(--radius); padding: 16px 18px; margin: 0 0 18px; border: 1px solid var(--border); }
+.box-title { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 8px; }
+.box.goal { background: rgba(79,209,197,0.06); border-color: var(--teal-dim); }
+.box.goal .box-title { color: var(--teal); }
+.box.task { background: rgba(232,163,61,0.06); border-color: var(--amber-dim); }
+.box.task .box-title { color: var(--amber); }
+.box.pitfall { background: rgba(193,88,63,0.07); border-color: rgba(193,88,63,0.35); }
+.box.pitfall .box-title { color: var(--danger); }
+.box.check { background: var(--panel-2); }
+.box.check .box-title { color: var(--text-dim); }
+.box p:last-child, .box ul:last-child { margin-bottom: 0; }
+
+/* Terminal pipeline (signature element, index page) */
+.pipeline { position: relative; margin: 40px 0 0; padding-left: 34px; }
+.pipeline::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: linear-gradient(180deg, var(--amber-dim), var(--border) 90%);
+}
+.phase {
+  position: relative;
+  margin-bottom: 14px;
+  display: block;
+}
+.phase::before {
+  content: '';
+  position: absolute;
+  left: -34px;
+  top: 22px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  border: 2px solid var(--ink);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.phase.current::before { background: var(--amber); box-shadow: 0 0 0 1px var(--amber), 0 0 8px 1px rgba(232,163,61,0.6); }
+.phase.done::before { background: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
+.phase-card {
+  display: block;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.phase-card:hover { border-color: var(--text-faint); text-decoration: none; transform: translateX(2px); }
+.phase.current .phase-card { border-color: var(--amber-dim); }
+.phase-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
+.phase-num { font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
+.phase-title { font-family: var(--sans); font-weight: 600; font-size: 16px; color: var(--text); }
+.phase-status {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  margin-left: auto;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.phase.current .phase-status { color: var(--amber); border-color: var(--amber-dim); }
+.phase-desc { color: var(--text-dim); font-size: 14px; margin: 0; }
+
+/* Prompt line */
+.prompt { font-family: var(--mono); font-size: 13px; color: var(--text-faint); }
+.prompt::before { content: '$ '; color: var(--teal); }
+
+/* Footer nav between modules */
+.modnav {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 56px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.modnav a { display: block; color: var(--text-dim); }
+.modnav a:hover { color: var(--teal); }
+.modnav .dir { display: block; color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+.modnav .right { text-align: right; }
+
+/* Grid links (stack/specs index cards) */
+.linkgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 22px 0 0; }
+@media (max-width: 620px) { .linkgrid { grid-template-columns: 1fr; } }
+.linkcard {
+  display: block;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  color: var(--text);
+}
+.linkcard:hover { border-color: var(--teal-dim); text-decoration: none; }
+.linkcard .t { font-weight: 600; margin-bottom: 4px; }
+.linkcard .d { color: var(--text-dim); font-size: 13.5px; }
+
+table { width: 100%; border-collapse: collapse; margin: 0 0 18px; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.05em; }
+td code { white-space: nowrap; }
+
+.tag {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  margin: 0 6px 6px 0;
+}
+
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">release-monitor</span>
+  <span class="sep">/</span>
+  <a href="./index.html">roadmap</a>
+  <span class="sep">·</span>
+  <a href="../specs.html">specs</a>
+  <span class="sep">·</span>
+  <a href="../stack.html">stack</a>
+</nav>
+
+<div class="wrap">
+  <p class="eyebrow">Grundlagen · G2 von 2</p>
+  <h1>Objekte, Arrays, Interfaces, Async/Await &amp; Fehlerbehandlung</h1>
+  <p class="lede">Der zweite und letzte Grundlagen-Block, bevor's ans Projekt geht. Wieder komplett anhand generischer Beispiele.</p>
+
+  <div class="box goal">
+    <p class="box-title">Lernziel</p>
+    <p>Objekte und Arrays lesen/verarbeiten. Ein <code>interface</code> definieren und verstehen, was es von einer konkreten Implementierung unterscheidet. Was ein <code>Promise</code> ist. <code>async</code>/<code>await</code> sicher anwenden. Fehler mit <code>try/catch</code> behandeln.</p>
+  </div>
+
+  <h2>Objekte</h2>
+  <p>
+    Ein Objekt bündelt zusammengehörige Werte unter benannten Schlüsseln (auch "Eigenschaften" oder "Properties" genannt) — statt mehrerer einzelner Variablen wie <code>bookTitle</code>, <code>bookYear</code> hast du <em>ein</em> Ding, das beides zusammenhält:
+  </p>
+  <pre><code>const book = {
+  title: "Dune",
+  year: 1965,
+};</code></pre>
+  <p>Auf einzelne Werte greifst du über den Schlüsselnamen zu — meistens mit einem Punkt:</p>
+  <pre><code>console.log(book.title); // "Dune" — Punkt-Notation, der Normalfall
+console.log(book["title"]); // "Dune" — Klammer-Notation, macht dasselbe</code></pre>
+  <p>Die Klammer-Notation brauchst du nur, wenn der Schlüsselname selbst in einer Variable steckt (z.B. <code>book[someVariable]</code>) — für den ganz normalen Fall reicht der Punkt.</p>
+
+  <h3>Destructuring — Werte direkt beim Zugriff auspacken</h3>
+  <p>
+    Wenn du aus einem Objekt mehrere Werte brauchst, ist <code>book.title</code>, <code>book.year</code> immer wieder <code>book.</code> voranzustellen umständlich. <strong>Destructuring</strong> ist eine Kurzschreibweise, die dir erlaubt, mehrere Eigenschaften in einem Schritt in eigene, gleichnamige Variablen "auszupacken":
+  </p>
+  <pre><code>const { title, year } = book;</code></pre>
+  <p>
+    Lies die linke Seite so: "nimm die Eigenschaften <code>title</code> und <code>year</code> aus dem Objekt rechts und leg sie als eigene Variablen mit exakt diesen Namen an." Nach dieser Zeile existieren zwei neue Variablen, <code>title</code> und <code>year</code>, mit den Werten <code>"Dune"</code> und <code>1965</code> — du musst danach nicht mehr <code>book.title</code> schreiben, nur noch <code>title</code>:
+  </p>
+  <pre><code>console.log(title); // "Dune"
+console.log(year);  // 1965</code></pre>
+  <p>
+    Am häufigsten begegnet dir das bei Funktionen, die ein ganzes Objekt als Parameter bekommen — statt im Funktionskörper ständig <code>params.title</code> zu schreiben, packst du direkt in der Parameterliste aus:
+  </p>
+  <pre><code>function describe({ title, year }: { title: string; year: number }): string {
+  return `${title} (${year})`;
+}
+
+describe(book); // "Dune (1965)"</code></pre>
+  <p>
+    Das sieht auf den ersten Blick verwirrend aus, weil zwei unterschiedliche Dinge geschachtelt sind: <code>{ title, year }</code> ist das <strong>Destructuring</strong> (welche Werte du auspacken willst), <code>{ title: string; year: number }</code> direkt danach ist die <strong>Typ-Annotation</strong> (welche Form das übergebene Objekt haben muss) — zwei separate geschweifte Klammern für zwei separate Zwecke, die zufällig gleich aussehen.
+  </p>
+
+  <h2>interface — einer Objekt-Form einen Namen geben</h2>
+  <p>
+    Die Typ-Annotation <code>{ title: string; year: number }</code> von eben musstest du direkt in der Funktionssignatur ausschreiben. Brauchst du dieselbe Form an mehreren Stellen (Parameter, Rückgabewert, Array-Elemente, ...), willst du sie nicht jedes Mal neu hintippen. Ein <code>interface</code> gibt dieser Form einen Namen, den du überall wiederverwenden kannst:
+  </p>
+  <pre><code>interface Book {
+  title: string;
+  year: number;
+  subtitle?: string; // das ? macht die Eigenschaft optional, wie bei Funktionsparametern in G1
+}</code></pre>
+  <p>
+    Ein <code>interface</code> beschreibt <strong>nur die Form</strong> — welche Eigenschaften mit welchen Typen existieren müssen —, nicht wie ein konkretes Objekt entsteht oder sich verhält. TypeScript prüft danach bei jeder Zuweisung automatisch, ob die Form passt:
+  </p>
+  <pre><code>const dune: Book = { title: "Dune", year: 1965 }; // ok — subtitle fehlt, darf es aber wegen "?"
+const broken: Book = { title: "Dune" };            // Fehler — year fehlt und ist nicht optional</code></pre>
+
+  <h3>Ein interface kann auch Funktionen beschreiben</h3>
+  <p>
+    Das ist der wichtigere Fall für unser Projekt: ein <code>interface</code> kann festlegen, dass "irgendetwas" eine bestimmte Funktion in einer bestimmten Form haben muss — ohne festzulegen, <em>wie</em> diese Funktion arbeitet. Das nennt man eine <strong>Abstraktion</strong>. Zwei komplett unterschiedliche Implementierungen können dasselbe Interface erfüllen:
+  </p>
+  <pre><code>interface Greeter {
+  greet(name: string): string;
+}
+
+const englishGreeter: Greeter = {
+  greet: (name) =&gt; `Hello, ${name}!`,
+};
+
+const germanGreeter: Greeter = {
+  greet: (name) =&gt; `Hallo, ${name}!`,
+};</code></pre>
+  <p>
+    Beide Objekte, <code>englishGreeter</code> und <code>germanGreeter</code>, erfüllen dasselbe <code>Greeter</code>-Interface — sie haben beide eine <code>greet</code>-Funktion mit derselben Signatur, nur der Inhalt unterscheidet sich. Eine Funktion, die einen <code>Greeter</code> entgegennimmt, muss nie wissen, welchen konkreten Greeter sie bekommt:
+  </p>
+  <pre><code>function announce(greeter: Greeter, name: string) {
+  console.log(greeter.greet(name)); // kennt nur die Form, nicht welche konkrete Sprache
+}
+
+announce(englishGreeter, "Ada"); // "Hello, Ada!"
+announce(germanGreeter, "Ada");  // "Hallo, Ada!"</code></pre>
+  <p>Das ist genau der Mechanismus, den du im Projekt bei <code>SourceProvider</code> (GitHub heute, evtl. GitLab morgen) und <code>TicketProvider</code> (Phasical heute, evtl. Jira morgen) wiedersiehst.</p>
+
+  <h3>type vs. interface</h3>
+  <p>
+    Für Objekt-Formen wie oben sind <code>interface</code> und <code>type</code> fast austauschbar — als Faustregel: <code>interface</code> für Objekt-Formen, <code>type</code> für alles andere. Der Fall, wo <code>type</code> etwas kann, das <code>interface</code> nicht kann, ist der <strong>Union-Type</strong> — "einer von mehreren festgelegten Werten":
+  </p>
+  <pre><code>type Status = "active" | "paused" | "cancelled"; // nur genau diese drei Strings sind gültig
+
+function setStatus(status: Status) { /* ... */ }
+setStatus("active");     // ok, einer der drei erlaubten Werte
+setStatus("unknown");    // Fehler — TypeScript kennt "unknown" nicht als gültigen Wert für Status</code></pre>
+
+  <h2>Arrays verarbeiten</h2>
+  <p>
+    Ein <code>Book[]</code> ist ein Array, dessen Elemente alle die Form <code>Book</code> haben. Statt mit einer Schleife selbst durchzuzählen und Ergebnisse einzusammeln, bevorzugt moderner JS/TS-Code eingebaute Array-Methoden — jede drückt eine klare Absicht aus, statt dass du den Mechanismus (Zähler, leeres Array, push) selbst nachbaust:
+  </p>
+  <pre><code>const books: Book[] = [
+  { title: "Dune", year: 1965 },
+  { title: "Neuromancer", year: 1984 },
+  { title: "Foundation", year: 1951 },
+];</code></pre>
+  <p><code>map</code> — "wandle <strong>jedes</strong> Element um, gib ein gleich langes neues Array zurück":</p>
+  <pre><code>const titles = books.map((b) =&gt; b.title);
+// ["Dune", "Neuromancer", "Foundation"]</code></pre>
+  <p>Lies das so: für jedes Element <code>b</code> im Array wird die Funktion <code>(b) => b.title</code> aufgerufen, ihr Rückgabewert landet an derselben Position im neuen Array. Aus 3 Büchern werden 3 Titel.</p>
+
+  <p><code>filter</code> — "behalte <strong>nur</strong> die Elemente, für die die Bedingung <code>true</code> ergibt":</p>
+  <pre><code>const recent = books.filter((b) =&gt; b.year &gt; 1960);
+// [{ title: "Dune", ... }, { title: "Neuromancer", ... }] — Foundation fällt raus (1951)</code></pre>
+
+  <p><code>find</code> — "gib das <strong>erste</strong> passende Element zurück, oder <code>undefined</code> wenn keins passt":</p>
+  <pre><code>const oldest = books.find((b) =&gt; b.year &lt; 1960);
+// { title: "Foundation", year: 1951 }</code></pre>
+  <p>Genau dieses <code>undefined</code>-als-möglichem-Ergebnis begegnet dir gleich in der Übung wieder — deshalb ist <code>Book | undefined</code> dort der korrekte Rückgabetyp, kein Bug.</p>
+
+  <p><code>some</code> — "gibt es <strong>mindestens ein</strong> passendes Element? nur <code>true</code>/<code>false</code>":</p>
+  <pre><code>const hasClassic = books.some((b) =&gt; b.year &lt; 1960);
+// true</code></pre>
+  <p>Wichtig bei allen vieren: das <strong>Original-Array</strong> <code>books</code> bleibt unverändert — jede Methode gibt ein neues Ergebnis zurück, statt <code>books</code> selbst zu verändern.</p>
+
+  <h2>Das Problem, das Promises lösen</h2>
+  <p>
+    Manche Operationen brauchen Zeit — ein Netzwerk-Request, ein Timer, eine Festplatten-Operation. Würde JavaScript dabei einfach warten (blockieren), stünde in dieser Zeit das <strong>gesamte</strong> Programm still, auch für alles andere, das nichts mit dieser einen Operation zu tun hat. Die Lösung: solche Operationen geben sofort ein <strong>Promise</strong>-Objekt zurück — ein Platzhalter, der sagt "der eigentliche Wert kommt später nach", während der Rest des Programms normal weiterläuft.
+  </p>
+  <p>Ein Promise hat immer einen von drei Zuständen: <em>pending</em> (noch unterwegs), <em>fulfilled</em> (erfolgreich abgeschlossen, Wert liegt vor) oder <em>rejected</em> (fehlgeschlagen).</p>
+
+  <h3>Ein eigenes Promise bauen — Zeile für Zeile</h3>
+  <p>Das folgende Beispiel baut eine Funktion, die "warte X Millisekunden" als Promise verpackt — <code>setTimeout</code> selbst kennst du evtl. schon aus JS, es ruft eine Funktion erst nach einer Wartezeit auf:</p>
+  <pre><code>function delay(ms: number): Promise&lt;void&gt; {
+  return new Promise((resolve) =&gt; setTimeout(resolve, ms));
+}</code></pre>
+  <p>Zerlegt in Einzelteile:</p>
+  <ul>
+    <li><code>new Promise(...)</code> erzeugt ein neues Promise. Es bekommt eine Funktion übergeben, die sofort ausgeführt wird und als einzigen Job hat, irgendwann <code>resolve</code> aufzurufen, sobald der Wert bereit ist.</li>
+    <li><code>resolve</code> ist selbst eine Funktion, die dir <code>new Promise</code> automatisch bereitstellt — rufst du sie auf, wechselt das Promise von <em>pending</em> zu <em>fulfilled</em>.</li>
+    <li><code>setTimeout(resolve, ms)</code> heißt: "rufe die Funktion <code>resolve</code> nach <code>ms</code> Millisekunden auf" — <code>resolve</code> wird hier nicht selbst aufgerufen (kein <code>resolve()</code>), sondern nur als "das hier soll später ausgeführt werden" an <code>setTimeout</code> weitergereicht.</li>
+    <li><code>Promise&lt;void&gt;</code> als Rückgabetyp heißt: "ein Promise, das am Ende keinen konkreten Wert liefert" — uns interessiert hier nur <em>dass</em> die Zeit um ist, nicht ein Ergebnis.</li>
+  </ul>
+  <p>Diesen Aufbau musst du dir nicht merken, um ihn zu <em>nutzen</em> — <code>delay</code> ist ab jetzt einfach eine fertige Funktion, die du aufrufen kannst.</p>
+
+  <h3>async/await — Promises lesbar konsumieren</h3>
+  <p>
+    Du <em>könntest</em> mit einem Promise über <code>.then(...)</code> arbeiten, aber <code>async</code>/<code>await</code> ist die lesbarere, heute übliche Syntax — sie lässt asynchronen Code aussehen wie ganz normalen, Zeile-für-Zeile ausgeführten Code:
+  </p>
+  <pre><code>async function run() {
+  console.log("Start");
+  await delay(1000); // pausiert HIER, bis das Promise "fulfilled" ist
+  console.log("Eine Sekunde später");
+}</code></pre>
+  <p>Zwei feste Regeln, die immer gelten:</p>
+  <ol>
+    <li><code>await</code> darf <strong>nur</strong> innerhalb einer mit <code>async</code> markierten Funktion stehen — schreibst du <code>await</code> außerhalb, gibt's einen Syntaxfehler.</li>
+    <li>Jede <code>async</code>-Funktion gibt <strong>selbst automatisch</strong> ein Promise zurück, egal was du <code>return</code>est — <code>run()</code> von oben liefert also ein <code>Promise&lt;void&gt;</code>, auch ohne dass irgendwo <code>Promise</code> hingeschrieben steht. TypeScript wickelt das automatisch ein.</li>
+  </ol>
+
+  <h3>for...of mit await — der Grund, warum wir es in Phase 06 brauchen</h3>
+  <p>Du kannst <code>await</code> auch innerhalb einer Schleife nutzen — dann wartet jeder Durchlauf, bis der vorherige fertig ist, bevor der nächste startet:</p>
+  <pre><code>const delays = [100, 200, 300];
+
+for (const ms of delays) {
+  await delay(ms); // wartet bei diesem Durchlauf, bevor der nächste startet
+  console.log(`${ms}ms vorbei`);
+}
+// Ausgabe kommt nacheinander: "100ms vorbei", dann "200ms vorbei", dann "300ms vorbei"</code></pre>
+  <p>
+    <code>.forEach()</code> würde hier <strong>nicht</strong> wie erwartet funktionieren: seine Callback-Funktion darf zwar <code>async</code> sein, aber <code>forEach</code> selbst ignoriert die zurückgegebenen Promises komplett und startet sofort den nächsten Durchlauf, ohne zu warten. Für "einer nach dem anderen, mit Wartezeit dazwischen" ist <code>for...of</code> deshalb die richtige Wahl, nicht <code>forEach</code>.
+  </p>
+
+  <h2>Fehlerbehandlung mit try/catch</h2>
+  <p>
+    Wenn innerhalb einer <code>async</code>-Funktion etwas fehlschlägt (ein <code>Error</code> geworfen wird, oder ein Promise "rejected"), musst du das behandeln — sonst läuft der Fehler entweder als unbehandelte Exception durch (Programmabsturz) oder verschwindet still, je nachdem wo er landet. <code>try/catch</code> gibt dir die Kontrolle darüber, was in diesem Fall passieren soll:
+  </p>
+  <pre><code>async function safeDelay(ms: number) {
+  try {
+    await delay(ms);
+    console.log("fertig");
+  } catch (error) {
+    console.error("Fehler beim Warten:", error);
+  }
+}</code></pre>
+  <p>
+    Alles zwischen <code>try {</code> und <code>}</code> wird normal ausgeführt. Passiert dabei ein Fehler, springt die Ausführung sofort in den <code>catch</code>-Block, mit dem Fehler-Objekt als Parameter (hier <code>error</code> genannt) — der restliche Code im <code>try</code>-Block danach wird <strong>übersprungen</strong>, aber das Programm läuft danach normal weiter, statt abzustürzen.
+  </p>
+
+  <h3>Ein ganzes Skript, das await braucht</h3>
+  <p>
+    <code>await</code> darf nur in einer <code>async</code>-Funktion stehen (Regel von oben) — aber deine `run2.ts` ist auf oberster Ebene erstmal <strong>keine</strong> Funktion, sondern lose ausgeführter Code. Die zuverlässige Lösung: alles, was <code>await</code> braucht, in eine eigene <code>async function main()</code> packen und diese am Ende der Datei einmal aufrufen:
+  </p>
+  <pre><code>async function main() {
+  console.log("Start");
+  await delay(500);
+  console.log("Ende");
+}
+
+main();</code></pre>
+
+  <div class="box task">
+    <p class="box-title">Übung, Teil 1 — <code>src/playground/books.ts</code></p>
+    <p>Das hast du bereits: <code>Book</code>-Interface, <code>books</code>-Array, <code>findOldestBook</code>.</p>
+  </div>
+
+  <div class="box task">
+    <p class="box-title">Übung, Teil 2 — <code>src/playground/delay.ts</code></p>
+    <ol>
+      <li>Exportiere genau eine Funktion: <code>export function delay(ms: number): Promise&lt;void&gt;</code></li>
+      <li>Der Funktionskörper ist exakt das Muster aus "Ein eigenes Promise bauen" weiter oben — hier gibt's nichts zu erfinden, das ist Standard-Boilerplate: <code>return new Promise((resolve) =&gt; setTimeout(resolve, ms));</code></li>
+    </ol>
+  </div>
+
+  <div class="box task">
+    <p class="box-title">Übung, Teil 3 — <code>src/playground/run2.ts</code></p>
+    <p>Das komplette Gerüst der Datei — Imports und der <code>main()</code>-Wrapper sind reine Mechanik, kopier sie 1:1:</p>
+    <pre><code>import { findOldestBook, books } from "./books.js";
+import { delay } from "./delay.js";
+
+async function main() {
+  // hier kommen deine Zeilen rein, siehe unten
+
+}
+
+main();</code></pre>
+    <p>Das ist der eigentliche Übungsteil — diese 8 Zeilen kommen zwischen den Kommentar und die schließende <code>}</code> von <code>main()</code>:</p>
+    <pre><code>const oldest = findOldestBook(books);
+console.log("Ältestes Buch:", oldest);
+
+await delay(500);
+console.log("fertig");
+
+try {
+  await delay("nicht-die-zahl" as any);
+} catch (error) {
+  console.error("Fehler bei delay:", error);
+}</code></pre>
+    <p style="margin-bottom:0">Das <code>as any</code> überredet TypeScript, den eigentlich falschen Typ durchzulassen — nur zu Testzwecken, in echtem Code vermeidest du <code>as any</code> normalerweise. Erwartete Konsolen-Ausgabe, in dieser Reihenfolge: das älteste Buch, 500ms Pause, <code>"fertig"</code>, dann die geloggte Fehlermeldung aus dem <code>catch</code>. Kein roter Absturz, kein unbehandelter Fehler im Terminal.</p>
+  </div>
+
+  <div class="box check">
+    <p class="box-title">Erfolgskriterium</p>
+    <p>Alles läuft ohne unbehandelte Fehler durch, inklusive deines absichtlich eingebauten Fehlerfalls. Du kannst in eigenen Worten erklären, was <code>resolve</code> in der <code>delay</code>-Funktion tut, und warum <code>.forEach()</code> für den <code>delay</code>-Loop die falsche Wahl gewesen wäre.</p>
+  </div>
+
+  <h2>Weiterführend</h2>
+  <ul>
+    <li><a href="https://developer.mozilla.org/de/docs/Web/JavaScript/Guide/Using_promises" target="_blank" rel="noopener">MDN: Using Promises</a></li>
+    <li><a href="https://www.typescriptlang.org/docs/handbook/interfaces.html" target="_blank" rel="noopener">TypeScript Handbook: Interfaces</a></li>
+    <li><a href="https://developer.mozilla.org/de/docs/Web/JavaScript/Reference/Global_Objects/Array#instanzmethoden" target="_blank" rel="noopener">MDN: Array-Methoden im Überblick</a></li>
+  </ul>
+
+  <div class="modnav">
+    <a href="g1-sprache-module.html"><span class="dir">Zurück</span>← G1 — Variablen, Typen, Funktionen</a>
+    <a class="right" href="../modules/00-setup.html"><span class="dir">Weiter zum Projekt</span>Phase 00 — Setup &amp; Grundlagen →</a>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 10 — CI/CD: GitHub Actions → GHCR</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --ink: #10141a;
+  --panel: #171d26;
+  --panel-2: #1c2330;
+  --border: #262e3a;
+  --text: #dce3ea;
+  --text-dim: #8590a3;
+  --text-faint: #5b6577;
+  --amber: #e8a33d;
+  --amber-dim: #6b551f;
+  --teal: #4fd1c5;
+  --teal-dim: #1f4844;
+  --danger: #c1583f;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --radius: 6px;
+  --maxw: 860px;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--ink);
+  background-image:
+    radial-gradient(ellipse 900px 500px at 50% -10%, rgba(232,163,61,0.06), transparent),
+    repeating-linear-gradient(180deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.6;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--teal); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 48px 24px 96px;
+}
+
+/* Top nav */
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.topnav .brand { color: var(--amber); font-weight: 700; letter-spacing: 0.02em; }
+.topnav a { color: var(--text-dim); }
+.topnav a:hover { color: var(--teal); text-decoration: none; }
+.topnav .sep { color: var(--text-faint); }
+.topnav .current { color: var(--text); }
+
+/* Headings */
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin: 0 0 10px;
+}
+h1 {
+  font-family: var(--sans);
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 700;
+  line-height: 1.15;
+  margin: 0 0 14px;
+  letter-spacing: -0.01em;
+}
+h2 {
+  font-family: var(--sans);
+  font-size: 22px;
+  font-weight: 700;
+  margin: 44px 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+h3 {
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--amber);
+  margin: 28px 0 10px;
+}
+p { color: var(--text); margin: 0 0 14px; }
+p.lede { color: var(--text-dim); font-size: 17px; max-width: 640px; }
+ul, ol { padding-left: 22px; margin: 0 0 16px; }
+li { margin-bottom: 6px; }
+strong { color: #fff; font-weight: 600; }
+code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--teal);
+}
+pre {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  overflow-x: auto;
+  margin: 0 0 18px;
+}
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+/* Cards */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  margin-bottom: 18px;
+}
+.card.amber { border-color: var(--amber-dim); }
+.card.teal { border-color: var(--teal-dim); }
+
+/* Box types used across module pages */
+.box { border-radius: var(--radius); padding: 16px 18px; margin: 0 0 18px; border: 1px solid var(--border); }
+.box-title { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 8px; }
+.box.goal { background: rgba(79,209,197,0.06); border-color: var(--teal-dim); }
+.box.goal .box-title { color: var(--teal); }
+.box.task { background: rgba(232,163,61,0.06); border-color: var(--amber-dim); }
+.box.task .box-title { color: var(--amber); }
+.box.pitfall { background: rgba(193,88,63,0.07); border-color: rgba(193,88,63,0.35); }
+.box.pitfall .box-title { color: var(--danger); }
+.box.check { background: var(--panel-2); }
+.box.check .box-title { color: var(--text-dim); }
+.box p:last-child, .box ul:last-child { margin-bottom: 0; }
+
+/* Terminal pipeline (signature element, index page) */
+.pipeline { position: relative; margin: 40px 0 0; padding-left: 34px; }
+.pipeline::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: linear-gradient(180deg, var(--amber-dim), var(--border) 90%);
+}
+.phase {
+  position: relative;
+  margin-bottom: 14px;
+  display: block;
+}
+.phase::before {
+  content: '';
+  position: absolute;
+  left: -34px;
+  top: 22px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  border: 2px solid var(--ink);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.phase.current::before { background: var(--amber); box-shadow: 0 0 0 1px var(--amber), 0 0 8px 1px rgba(232,163,61,0.6); }
+.phase.done::before { background: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
+.phase-card {
+  display: block;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.phase-card:hover { border-color: var(--text-faint); text-decoration: none; transform: translateX(2px); }
+.phase.current .phase-card { border-color: var(--amber-dim); }
+.phase-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
+.phase-num { font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
+.phase-title { font-family: var(--sans); font-weight: 600; font-size: 16px; color: var(--text); }
+.phase-status {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  margin-left: auto;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.phase.current .phase-status { color: var(--amber); border-color: var(--amber-dim); }
+.phase-desc { color: var(--text-dim); font-size: 14px; margin: 0; }
+
+/* Prompt line */
+.prompt { font-family: var(--mono); font-size: 13px; color: var(--text-faint); }
+.prompt::before { content: '$ '; color: var(--teal); }
+
+/* Footer nav between modules */
+.modnav {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 56px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.modnav a { display: block; color: var(--text-dim); }
+.modnav a:hover { color: var(--teal); }
+.modnav .dir { display: block; color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+.modnav .right { text-align: right; }
+
+/* Grid links (stack/specs index cards) */
+.linkgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 22px 0 0; }
+@media (max-width: 620px) { .linkgrid { grid-template-columns: 1fr; } }
+.linkcard {
+  display: block;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  color: var(--text);
+}
+.linkcard:hover { border-color: var(--teal-dim); text-decoration: none; }
+.linkcard .t { font-weight: 600; margin-bottom: 4px; }
+.linkcard .d { color: var(--text-dim); font-size: 13.5px; }
+
+table { width: 100%; border-collapse: collapse; margin: 0 0 18px; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.05em; }
+td code { white-space: nowrap; }
+
+.tag {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  margin: 0 6px 6px 0;
+}
+
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">release-monitor</span>
+  <span class="sep">/</span>
+  <a href="../index.html">roadmap</a>
+  <span class="sep">·</span>
+  <a href="../specs.html">specs</a>
+  <span class="sep">·</span>
+  <a href="../stack.html">stack</a>
+</nav>
+
+<div class="wrap">
+  <p class="eyebrow">Phase 10 von 10</p>
+  <h1>CI/CD: GitHub Actions → GHCR</h1>
+  <p class="lede">Statt <code>docker build</code> von Hand auf deinem Rechner auszuführen: bei jedem Push baut GitHub selbst das Image und lädt es in die GitHub Container Registry (GHCR) hoch — bereit für Coolify, um es zu pullen.</p>
+
+  <div class="box goal">
+    <p class="box-title">Lernziel</p>
+    <p>Was eine GitHub-Actions-Workflow-Datei strukturell ist (Trigger, Jobs, Steps). Was <code>GITHUB_TOKEN</code> automatisch kann, ohne dass du ein eigenes Secret anlegen musst. Wie ein fertiges Image bei GHCR landet und wie du es taggst.</p>
+  </div>
+
+  <h2>Konzepte</h2>
+
+  <h3>Was CI/CD hier konkret bedeutet</h3>
+  <p>
+    <strong>CI</strong> (Continuous Integration): bei jeder Änderung automatisch prüfen, ob der Code noch funktioniert (bei uns: <code>npm test</code>). <strong>CD</strong> (Continuous Delivery/Deployment): bei erfolgreicher Prüfung automatisch ein auslieferbares Artefakt bauen — bei uns ein Docker-Image, veröffentlicht auf <a href="https://ghcr.io" target="_blank" rel="noopener">ghcr.io</a>, GitHubs eigener Container-Registry.
+  </p>
+
+  <h3>Aufbau einer Workflow-Datei</h3>
+  <p>Eine GitHub-Actions-Workflow-Datei liegt immer unter <code>.github/workflows/*.yml</code> und hat drei Ebenen:</p>
+  <ul>
+    <li><strong>Trigger</strong> (<code>on:</code>) — wann soll der Workflow laufen? (z.B. bei jedem Push auf <code>main</code>)</li>
+    <li><strong>Jobs</strong> (<code>jobs:</code>) — eine oder mehrere unabhängige Ausführungseinheiten, die auf einer frischen virtuellen Maschine laufen</li>
+    <li><strong>Steps</strong> — einzelne Schritte innerhalb eines Jobs, entweder eigene Shell-Befehle (<code>run:</code>) oder wiederverwendbare, von anderen gebaute Bausteine (<code>uses:</code>)</li>
+  </ul>
+
+  <h3>GITHUB_TOKEN — ein Secret, das du nicht selbst anlegen musst</h3>
+  <p>
+    Für jeden Workflow-Lauf erzeugt GitHub automatisch ein kurzlebiges Token namens <code>GITHUB_TOKEN</code>, verfügbar als <code>secrets.GITHUB_TOKEN</code>. Es reicht, um Pakete in <strong>dein eigenes</strong> Repository bei GHCR zu veröffentlichen — kein Personal Access Token, kein manuelles Secret-Anlegen nötig. Du musst nur explizit erlauben, wofür es genutzt werden darf, über den <code>permissions</code>-Block im Workflow.
+  </p>
+
+  <h3>Die drei Bausteine für Docker → GHCR</h3>
+  <p>Statt <code>docker build</code>/<code>docker push</code> von Hand im Workflow aufzurufen, nutzt man drei offizielle, wiederverwendbare Actions (das entspricht dem aktuellen offiziellen GitHub-Tutorial, siehe Link unten):</p>
+  <table>
+    <tr><th>Action</th><th>Aufgabe</th></tr>
+    <tr><td><code>docker/login-action</code></td><td>Meldet sich bei einer Registry an (hier: <code>ghcr.io</code>, mit <code>github.actor</code> als Username und <code>GITHUB_TOKEN</code> als Passwort).</td></tr>
+    <tr><td><code>docker/metadata-action</code></td><td>Erzeugt sinnvolle Tags &amp; Labels für das Image, abgeleitet z.B. vom Branch-Namen oder Git-SHA — du musst sie nicht selbst zusammenbauen.</td></tr>
+    <tr><td><code>docker/build-push-action</code></td><td>Baut das Image gemäß deinem <code>Dockerfile</code> und pusht es, wenn der Build erfolgreich war.</td></tr>
+  </table>
+
+  <h3>Der komplette Workflow</h3>
+  <p>Angepasst an unser Projekt (Trigger: Push auf <code>main</code>, statt wie im GitHub-Beispiel auf einen separaten <code>release</code>-Branch) — jedes YAML-Feld einzeln erklärt darunter:</p>
+  <pre><code>name: Build and publish image
+
+on:
+  push:
+    branches: ["main"]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}</code></pre>
+
+  <table>
+    <tr><th>Feld</th><th>Bedeutung</th></tr>
+    <tr><td><code>on: push: branches: ["main"]</code></td><td>Der Workflow läuft bei jedem Push auf <code>main</code> — also nach jedem Merge, nicht bei jedem Push in einen Feature-Branch.</td></tr>
+    <tr><td><code>env:</code></td><td>Wiederverwendbare Variablen für den ganzen Workflow. <code>${{ github.repository }}</code> ist ein von GitHub bereitgestellter Kontext-Wert — z.B. <code>dein-user/release-monitor</code>.</td></tr>
+    <tr><td><code>permissions:</code></td><td>Ohne <code>packages: write</code> darf der automatisch generierte <code>GITHUB_TOKEN</code> nichts bei GHCR veröffentlichen — Standardverhalten ist restriktiv, du musst explizit erlauben.</td></tr>
+    <tr><td><code>runs-on: ubuntu-latest</code></td><td>Die virtuelle Maschine, auf der der Job ausgeführt wird — von GitHub bereitgestellt, kostenlos im üblichen Rahmen für öffentliche Repos.</td></tr>
+    <tr><td><code>uses: actions/checkout@v4</code></td><td>Ohne diesen Schritt hat der Runner keinen Zugriff auf deinen Code — er checkt dein Repository in die virtuelle Maschine aus.</td></tr>
+    <tr><td><code>tags: | type=raw,...</code> / <code>type=sha,...</code></td><td>Zwei Tags pro Build: <code>latest</code> (nur auf dem Standard-Branch) und der Git-Commit-SHA (immer) — so kannst du später ein exaktes Image aus einem bestimmten Commit referenzieren, nicht nur "die aktuellste Version".</td></tr>
+    <tr><td><code>steps.meta.outputs.tags</code></td><td>Das <code>id: meta</code> beim vorherigen Step erlaubt es, dessen Ergebnis (<code>outputs</code>) in einem späteren Step wiederzuverwenden — ähnlich wie eine Variable, die zwischen Steps weitergereicht wird.</td></tr>
+  </table>
+
+  <div class="box task">
+    <p class="box-title">Aufgabe</p>
+    <ol>
+      <li><code>.github/workflows/docker-publish.yml</code> mit dem Workflow oben anlegen (Image-Namen ggf. anpassen).</li>
+      <li>Erweitere den Workflow um einen <strong>eigenen, vorgeschalteten Job</strong> <code>test</code>, der Node/npm einrichtet (<code>actions/setup-node@v4</code> mit <code>node-version: 24</code>) und <code>npm ci</code> + <code>npm test</code> ausführt. Der <code>build-and-push</code>-Job soll erst starten, wenn <code>test</code> erfolgreich war — dafür gibt es <code>needs: test</code> auf Job-Ebene.</li>
+      <li>Push auf <code>main</code> (oder committe testweise direkt dorthin, falls du (noch) ohne Branch-Schutz arbeitest) und schau im "Actions"-Tab deines Repos zu, wie der Workflow läuft.</li>
+      <li>Nach erfolgreichem Lauf: Repo → "Packages" (rechte Seitenleiste) → dein Image sollte dort auftauchen, mit den beiden Tags.</li>
+    </ol>
+  </div>
+
+  <div class="box pitfall">
+    <p class="box-title">Stolpersteine</p>
+    <ul>
+      <li>Neu veröffentlichte Packages sind bei GHCR standardmäßig <strong>privat</strong>, auch wenn dein Repo öffentlich ist — für ein <code>docker pull</code> von deinem Coolify-Server aus musst du entweder die Package-Sichtbarkeit auf "public" stellen (Package-Settings) oder dort ein Zugangstoken hinterlegen.</li>
+      <li><code>needs: test</code> muss exakt den <code>id</code>-Namen (nicht den <code>name:</code>-Anzeigetext) des vorherigen Jobs treffen.</li>
+      <li>Image-Namen bei GHCR müssen komplett kleingeschrieben sein — <code>${{ github.repository }}</code> enthält aber deinen GitHub-Usernamen genau so, wie du ihn geschrieben hast. Falls dein Username Großbuchstaben enthält, brauchst du einen zusätzlichen Schritt, der den Namen kleinschreibt (z.B. via <code>${{ github.repository }}</code> durch eine kleine Shell-Zeile mit <code>tr '[:upper:]' '[:lower:]'</code> ersetzen), sonst schlägt der Push fehl.</li>
+    </ul>
+  </div>
+
+  <div class="box check">
+    <p class="box-title">Erfolgskriterium</p>
+    <p>Ein Push auf <code>main</code> triggert automatisch beide Jobs, <code>test</code> läuft vor <code>build-and-push</code>, und am Ende erscheint ein neues Image unter "Packages" in deinem GitHub-Profil/Repo, mit einem <code>latest</code>- und einem SHA-Tag.</p>
+  </div>
+
+  <h2>Weiterführend</h2>
+  <ul>
+    <li><a href="https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images" target="_blank" rel="noopener">GitHub Docs: Publishing Docker images</a> — die offizielle, aktuelle Referenz, auf der dieses Modul basiert.</li>
+    <li><a href="https://github.com/docker/metadata-action" target="_blank" rel="noopener">docker/metadata-action Dokumentation</a> — alle möglichen Tag-Strategien im Detail.</li>
+    <li><a href="https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets" target="_blank" rel="noopener">GitHub Docs: Using secrets in GitHub Actions</a> — falls du später doch eigene Secrets brauchst (z.B. für den <code>PHASICAL_API_KEY</code> in einem Deploy-Schritt).</li>
+  </ul>
+
+  <div class="modnav">
+    <a href="09-ausblick.html"><span class="dir">Zurück</span>← Phase 09 — Ausblick</a>
+    <a class="right" href="../index.html"><span class="dir">Fertig</span>Zurück zur Roadmap →</a>
+  </div>
+</div>
+</body>
+</html>

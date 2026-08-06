@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>G1 — Variablen, Typen, Funktionen, Module</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --ink: #10141a;
+  --panel: #171d26;
+  --panel-2: #1c2330;
+  --border: #262e3a;
+  --text: #dce3ea;
+  --text-dim: #8590a3;
+  --text-faint: #5b6577;
+  --amber: #e8a33d;
+  --amber-dim: #6b551f;
+  --teal: #4fd1c5;
+  --teal-dim: #1f4844;
+  --danger: #c1583f;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --radius: 6px;
+  --maxw: 860px;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--ink);
+  background-image:
+    radial-gradient(ellipse 900px 500px at 50% -10%, rgba(232,163,61,0.06), transparent),
+    repeating-linear-gradient(180deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.6;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--teal); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 48px 24px 96px;
+}
+
+/* Top nav */
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.topnav .brand { color: var(--amber); font-weight: 700; letter-spacing: 0.02em; }
+.topnav a { color: var(--text-dim); }
+.topnav a:hover { color: var(--teal); text-decoration: none; }
+.topnav .sep { color: var(--text-faint); }
+.topnav .current { color: var(--text); }
+
+/* Headings */
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin: 0 0 10px;
+}
+h1 {
+  font-family: var(--sans);
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 700;
+  line-height: 1.15;
+  margin: 0 0 14px;
+  letter-spacing: -0.01em;
+}
+h2 {
+  font-family: var(--sans);
+  font-size: 22px;
+  font-weight: 700;
+  margin: 44px 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+h3 {
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--amber);
+  margin: 28px 0 10px;
+}
+p { color: var(--text); margin: 0 0 14px; }
+p.lede { color: var(--text-dim); font-size: 17px; max-width: 640px; }
+ul, ol { padding-left: 22px; margin: 0 0 16px; }
+li { margin-bottom: 6px; }
+strong { color: #fff; font-weight: 600; }
+code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--teal);
+}
+pre {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  overflow-x: auto;
+  margin: 0 0 18px;
+}
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+/* Cards */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  margin-bottom: 18px;
+}
+.card.amber { border-color: var(--amber-dim); }
+.card.teal { border-color: var(--teal-dim); }
+
+/* Box types used across module pages */
+.box { border-radius: var(--radius); padding: 16px 18px; margin: 0 0 18px; border: 1px solid var(--border); }
+.box-title { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 8px; }
+.box.goal { background: rgba(79,209,197,0.06); border-color: var(--teal-dim); }
+.box.goal .box-title { color: var(--teal); }
+.box.task { background: rgba(232,163,61,0.06); border-color: var(--amber-dim); }
+.box.task .box-title { color: var(--amber); }
+.box.pitfall { background: rgba(193,88,63,0.07); border-color: rgba(193,88,63,0.35); }
+.box.pitfall .box-title { color: var(--danger); }
+.box.check { background: var(--panel-2); }
+.box.check .box-title { color: var(--text-dim); }
+.box p:last-child, .box ul:last-child { margin-bottom: 0; }
+
+/* Terminal pipeline (signature element, index page) */
+.pipeline { position: relative; margin: 40px 0 0; padding-left: 34px; }
+.pipeline::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: linear-gradient(180deg, var(--amber-dim), var(--border) 90%);
+}
+.phase {
+  position: relative;
+  margin-bottom: 14px;
+  display: block;
+}
+.phase::before {
+  content: '';
+  position: absolute;
+  left: -34px;
+  top: 22px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  border: 2px solid var(--ink);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.phase.current::before { background: var(--amber); box-shadow: 0 0 0 1px var(--amber), 0 0 8px 1px rgba(232,163,61,0.6); }
+.phase.done::before { background: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
+.phase-card {
+  display: block;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.phase-card:hover { border-color: var(--text-faint); text-decoration: none; transform: translateX(2px); }
+.phase.current .phase-card { border-color: var(--amber-dim); }
+.phase-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
+.phase-num { font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
+.phase-title { font-family: var(--sans); font-weight: 600; font-size: 16px; color: var(--text); }
+.phase-status {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  margin-left: auto;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.phase.current .phase-status { color: var(--amber); border-color: var(--amber-dim); }
+.phase-desc { color: var(--text-dim); font-size: 14px; margin: 0; }
+
+/* Prompt line */
+.prompt { font-family: var(--mono); font-size: 13px; color: var(--text-faint); }
+.prompt::before { content: '$ '; color: var(--teal); }
+
+/* Footer nav between modules */
+.modnav {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 56px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.modnav a { display: block; color: var(--text-dim); }
+.modnav a:hover { color: var(--teal); }
+.modnav .dir { display: block; color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+.modnav .right { text-align: right; }
+
+/* Grid links (stack/specs index cards) */
+.linkgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 22px 0 0; }
+@media (max-width: 620px) { .linkgrid { grid-template-columns: 1fr; } }
+.linkcard {
+  display: block;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  color: var(--text);
+}
+.linkcard:hover { border-color: var(--teal-dim); text-decoration: none; }
+.linkcard .t { font-weight: 600; margin-bottom: 4px; }
+.linkcard .d { color: var(--text-dim); font-size: 13.5px; }
+
+table { width: 100%; border-collapse: collapse; margin: 0 0 18px; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.05em; }
+td code { white-space: nowrap; }
+
+.tag {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  margin: 0 6px 6px 0;
+}
+
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">release-monitor</span>
+  <span class="sep">/</span>
+  <a href="../index.html">roadmap</a>
+  <span class="sep">·</span>
+  <a href="../specs.html">specs</a>
+  <span class="sep">·</span>
+  <a href="../stack.html">stack</a>
+</nav>
+
+<div class="wrap">
+  <p class="eyebrow">Grundlagen · G1 von 2</p>
+  <h1>Variablen, Typen, Funktionen, Module &amp; Imports</h1>
+  <p class="lede">Das Fundament, auf das jede spätere Projekt-Phase zurückgreift — anhand von Beispielen, die mit release-monitor nichts zu tun haben, damit du das Muster wirklich verstehst statt es nur abzutippen.</p>
+
+  <div class="box goal">
+    <p class="box-title">Lernziel</p>
+    <p>Variablen deklarieren und typisieren. Funktionen in zwei Schreibweisen schreiben und lesen. Verstehen, was <code>export</code>/<code>import</code> tatsächlich tun — und drei verschiedene "Woher kommt das?"-Fälle unterscheiden. Schleifen, insbesondere <code>for...of</code>.</p>
+  </div>
+
+  <h2>Variablen</h2>
+  <p><code>let</code> und <code>const</code> ersetzen das alte <code>var</code> vollständig — nutze <code>const</code> als Standard, <code>let</code> nur wenn sich der Wert wirklich später ändert:</p>
+  <pre><code>const greeting = "hello";   // darf nie neu zugewiesen werden
+let counter = 0;             // darf sich ändern
+counter = counter + 1;       // ok
+greeting = "hi";              // Fehler: Assignment to constant variable</code></pre>
+  <p><code>const</code> heißt "diese Variable zeigt immer auf denselben Wert" — bei Objekten/Arrays (siehe G2) heißt das <strong>nicht</strong>, dass der Inhalt unveränderlich ist, nur die Variable selbst.</p>
+
+  <h3>Typen</h3>
+  <p>TypeScript kennt die JavaScript-Basistypen plus eigene Konstrukte obendrauf. Die wichtigsten Basistypen:</p>
+  <table>
+    <tr><th>Typ</th><th>Beispielwert</th></tr>
+    <tr><td><code>string</code></td><td><code>"hello"</code></td></tr>
+    <tr><td><code>number</code></td><td><code>42</code>, <code>3.14</code> — es gibt keinen getrennten Integer-Typ</td></tr>
+    <tr><td><code>boolean</code></td><td><code>true</code>, <code>false</code></td></tr>
+    <tr><td><code>null</code> / <code>undefined</code></td><td>"bewusst leer" vs. "noch nie gesetzt" — die Unterscheidung ist in der Praxis oft egal, aber APIs geben meist gezielt <code>null</code> zurück, wenn "kein Wert" ein gültiges Ergebnis ist</td></tr>
+  </table>
+  <p>TypeScript kann Typen meist selbst erschließen (<strong>Type Inference</strong>) — du musst nicht überall explizit annotieren:</p>
+  <pre><code>const age = 34;              // TypeScript weiß: number, ohne dass du es hinschreibst
+const age2: number = 34;     // dasselbe, nur explizit</code></pre>
+  <p>Explizit wird's wichtig bei <strong>Funktionsparametern</strong> — die kann TypeScript nicht erraten:</p>
+
+  <h2>Funktionen</h2>
+  <p>Zwei gleichwertige Schreibweisen, die dir überall begegnen werden:</p>
+  <pre><code>// Function Declaration
+function double(n: number): number {
+  return n * 2;
+}
+
+// Arrow Function, einer Konstante zugewiesen
+const double2 = (n: number): number =&gt; {
+  return n * 2;
+};
+
+// Arrow Function, Kurzform ohne geschweifte Klammern (bei genau einem return-Ausdruck)
+const double3 = (n: number): number =&gt; n * 2;</code></pre>
+  <p>
+    Alle drei sind funktional identisch. In diesem Projekt siehst du überwiegend Arrow Functions, weil sie sich gut in Objekte einbetten lassen (relevant in G2 bei Interfaces). Die Signatur <code>(n: number): number</code> heißt: "nimmt einen Parameter <code>n</code> vom Typ <code>number</code>, gibt einen Wert vom Typ <code>number</code> zurück." Fehlt der Rückgabewert (z.B. bei <code>console.log</code>-Aufrufen), ist der Typ <code>void</code> — das musst du aber fast nie selbst hinschreiben, TypeScript erschließt es.
+  </p>
+
+  <h3>Optionale Parameter</h3>
+  <p>Ein <code>?</code> nach dem Parameternamen macht ihn optional — der Typ wird automatisch um <code>undefined</code> erweitert:</p>
+  <pre><code>function greet(name: string, title?: string): string {
+  if (title) {
+    return `${title} ${name}`;
+  }
+  return name;
+}
+
+greet("Ada");              // "Ada"
+greet("Ada", "Dr.");        // "Dr. Ada"</code></pre>
+
+  <h2>Schleifen</h2>
+  <p>Für "geh jedes Element eines Arrays durch" ist <code>for...of</code> die gängigste Wahl — lesbarer als die klassische <code>for</code>-Schleife mit Zähler, und anders als <code>.forEach()</code> funktioniert es korrekt mit <code>await</code> im Rumpf (dazu mehr in G2):</p>
+  <pre><code>const fruits = ["apple", "banana", "cherry"];
+
+for (const fruit of fruits) {
+  console.log(fruit);
+}
+// apple
+// banana
+// cherry</code></pre>
+  <p>Die klassische <code>for</code>-Schleife (<code>for (let i = 0; i &lt; fruits.length; i++)</code>) funktioniert weiterhin, wird aber nur noch gebraucht, wenn du den <strong>Index</strong> selbst brauchst.</p>
+
+  <h2>Module: export &amp; import</h2>
+  <p>Jede <code>.ts</code>-Datei ist ein eigenes Modul. Was du nicht explizit mit <code>export</code> markierst, ist von außen unsichtbar:</p>
+  <pre><code>// math.ts
+export function double(n: number): number {
+  return n * 2;
+}
+
+export const PI = 3.14159;
+
+function helper() { /* ... */ }  // NICHT exportiert — nur innerhalb von math.ts nutzbar</code></pre>
+  <p>In einer anderen Datei importierst du gezielt, was du brauchst — das nennt man einen <strong>Named Import</strong>, weil der Name exakt passen muss:</p>
+  <pre><code>// main.ts
+import { double, PI } from "./math.js";
+
+console.log(double(21)); // 42</code></pre>
+
+  <h3>Die drei "Woher kommt das?"-Fälle</h3>
+  <table>
+    <tr><th>Import-Pfad</th><th>Bedeutung</th></tr>
+    <tr><td><code>import { z } from "zod"</code></td><td>Ein <strong>npm-Paket</strong> — installiert via <code>npm install</code>, liegt in <code>node_modules</code>.</td></tr>
+    <tr><td><code>import { readFileSync } from "node:fs"</code></td><td>Ein in Node.js <strong>eingebautes</strong> Modul. Das <code>node:</code>-Präfix macht explizit, dass es sich nicht um ein npm-Paket handelt (früher schrieb man nur <code>"fs"</code> — beides funktioniert, <code>node:</code> ist heute best practice).</td></tr>
+    <tr><td><code>import { double } from "./math.js"</code></td><td>Eine <strong>eigene, relative</strong> Datei in deinem Projekt.</td></tr>
+  </table>
+
+  <div class="box pitfall">
+    <p class="box-title">Der Stolperstein, der jeden TS/Node-Einsteiger einmal erwischt</p>
+    <p>
+      Bei relativen Imports schreibst du <code>.js</code> — auch wenn die Datei tatsächlich <code>math.ts</code> heißt! Das liegt an <code>"module": "NodeNext"</code> aus Phase 00: Node führt am Ende immer <code>.js</code>-Dateien aus (TypeScript wird ja zu JS kompiliert), und die Modulauflösung erwartet deshalb schon im Quellcode die spätere <code>.js</code>-Endung. <code>tsx</code> versteht das beim Entwickeln trotzdem richtig. Lässt du die Endung ganz weg (wie du es evtl. aus älteren Tutorials kennst), meldet TypeScript mit <code>"module": "NodeNext"</code> einen Fehler.
+    </p>
+  </div>
+
+  <h3>Default Exports (nur zur Kenntnis, wir nutzen sie kaum)</h3>
+  <p>Es gibt auch <code>export default</code> für "eine Hauptsache pro Datei" — der Name beim Import ist dann frei wählbar. In diesem Projekt nutzen wir durchgehend Named Exports, weil sie beim Umbenennen/Refactoring sicherer sind (dein Editor findet alle Stellen), aber du wirst <code>export default</code> in anderen Projekten sehen:</p>
+  <pre><code>// config.ts
+export default function loadConfig() { /* ... */ }
+
+// main.ts — der Name ist hier frei wählbar, keine geschweiften Klammern
+import loadConfig from "./config.js";</code></pre>
+
+  <div class="box task">
+    <p class="box-title">Übung (losgelöst vom Projekt — reines Sprach-Training)</p>
+    <p>Leg einen Ordner <code>src/playground/</code> an (kein Teil von release-monitor, nur zum Üben):</p>
+    <ol>
+      <li><code>src/playground/temperature.ts</code>: exportiere eine Funktion <code>celsiusToFahrenheit(celsius: number): number</code>, die nach der Formel <code>°F = °C × 9/5 + 32</code> umrechnet.</li>
+      <li>Dieselbe Datei: exportiere eine zweite Funktion <code>formatFullName(first: string, last: string): string</code>, die <code>"Nachname, Vorname"</code> zurückgibt.</li>
+      <li><code>src/playground/run.ts</code>: importiere beide Funktionen (denk an die <code>.js</code>-Endung!) und logge jeweils ein Testergebnis.</li>
+      <li>Erweitere <code>run.ts</code> um ein Array mit 3 Vornamen und logge sie per <code>for...of</code>-Schleife durch.</li>
+      <li>Führ die Datei mit <code>npx tsx src/playground/run.ts</code> aus.</li>
+    </ol>
+  </div>
+
+  <div class="box check">
+    <p class="box-title">Erfolgskriterium</p>
+    <p>Alle Log-Ausgaben erscheinen ohne Fehler. Du kannst erklären, warum <code>import { celsiusToFahrenheit } from "./temperature.js"</code> auf eine Datei namens <code>temperature.ts</code> zeigt, ohne dass das ein Widerspruch ist.</p>
+  </div>
+
+  <h2>Weiterführend</h2>
+  <ul>
+    <li><a href="https://www.typescriptlang.org/docs/handbook/2/basic-types.html" target="_blank" rel="noopener">TypeScript Handbook: Basic Types</a> — die offizielle, sehr lesbare Einführung.</li>
+    <li><a href="https://developer.mozilla.org/de/docs/Web/JavaScript/Reference/Statements/for...of" target="_blank" rel="noopener">MDN: for...of</a></li>
+    <li><a href="https://nodejs.org/api/esm.html" target="_blank" rel="noopener">Node.js Docs: ECMAScript Modules</a> — falls dich das <code>.js</code>-Extension-Thema im Detail interessiert.</li>
+  </ul>
+
+  <div class="modnav">
+    <span></span>
+    <a class="right" href="g2-objekte-async.html"><span class="dir">Weiter</span>G2 — Objekte, Arrays, Async/Await →</a>
+  </div>
+</div>
+</body>
+</html>

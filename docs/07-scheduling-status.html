@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 07 — Scheduling &amp; Status-Endpoint</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --ink: #10141a;
+  --panel: #171d26;
+  --panel-2: #1c2330;
+  --border: #262e3a;
+  --text: #dce3ea;
+  --text-dim: #8590a3;
+  --text-faint: #5b6577;
+  --amber: #e8a33d;
+  --amber-dim: #6b551f;
+  --teal: #4fd1c5;
+  --teal-dim: #1f4844;
+  --danger: #c1583f;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --radius: 6px;
+  --maxw: 860px;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--ink);
+  background-image:
+    radial-gradient(ellipse 900px 500px at 50% -10%, rgba(232,163,61,0.06), transparent),
+    repeating-linear-gradient(180deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.6;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--teal); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 48px 24px 96px;
+}
+
+/* Top nav */
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.topnav .brand { color: var(--amber); font-weight: 700; letter-spacing: 0.02em; }
+.topnav a { color: var(--text-dim); }
+.topnav a:hover { color: var(--teal); text-decoration: none; }
+.topnav .sep { color: var(--text-faint); }
+.topnav .current { color: var(--text); }
+
+/* Headings */
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin: 0 0 10px;
+}
+h1 {
+  font-family: var(--sans);
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 700;
+  line-height: 1.15;
+  margin: 0 0 14px;
+  letter-spacing: -0.01em;
+}
+h2 {
+  font-family: var(--sans);
+  font-size: 22px;
+  font-weight: 700;
+  margin: 44px 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+h3 {
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--amber);
+  margin: 28px 0 10px;
+}
+p { color: var(--text); margin: 0 0 14px; }
+p.lede { color: var(--text-dim); font-size: 17px; max-width: 640px; }
+ul, ol { padding-left: 22px; margin: 0 0 16px; }
+li { margin-bottom: 6px; }
+strong { color: #fff; font-weight: 600; }
+code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--teal);
+}
+pre {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  overflow-x: auto;
+  margin: 0 0 18px;
+}
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+/* Cards */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  margin-bottom: 18px;
+}
+.card.amber { border-color: var(--amber-dim); }
+.card.teal { border-color: var(--teal-dim); }
+
+/* Box types used across module pages */
+.box { border-radius: var(--radius); padding: 16px 18px; margin: 0 0 18px; border: 1px solid var(--border); }
+.box-title { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 8px; }
+.box.goal { background: rgba(79,209,197,0.06); border-color: var(--teal-dim); }
+.box.goal .box-title { color: var(--teal); }
+.box.task { background: rgba(232,163,61,0.06); border-color: var(--amber-dim); }
+.box.task .box-title { color: var(--amber); }
+.box.pitfall { background: rgba(193,88,63,0.07); border-color: rgba(193,88,63,0.35); }
+.box.pitfall .box-title { color: var(--danger); }
+.box.check { background: var(--panel-2); }
+.box.check .box-title { color: var(--text-dim); }
+.box p:last-child, .box ul:last-child { margin-bottom: 0; }
+
+/* Terminal pipeline (signature element, index page) */
+.pipeline { position: relative; margin: 40px 0 0; padding-left: 34px; }
+.pipeline::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: linear-gradient(180deg, var(--amber-dim), var(--border) 90%);
+}
+.phase {
+  position: relative;
+  margin-bottom: 14px;
+  display: block;
+}
+.phase::before {
+  content: '';
+  position: absolute;
+  left: -34px;
+  top: 22px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  border: 2px solid var(--ink);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.phase.current::before { background: var(--amber); box-shadow: 0 0 0 1px var(--amber), 0 0 8px 1px rgba(232,163,61,0.6); }
+.phase.done::before { background: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
+.phase-card {
+  display: block;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.phase-card:hover { border-color: var(--text-faint); text-decoration: none; transform: translateX(2px); }
+.phase.current .phase-card { border-color: var(--amber-dim); }
+.phase-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
+.phase-num { font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
+.phase-title { font-family: var(--sans); font-weight: 600; font-size: 16px; color: var(--text); }
+.phase-status {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  margin-left: auto;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.phase.current .phase-status { color: var(--amber); border-color: var(--amber-dim); }
+.phase-desc { color: var(--text-dim); font-size: 14px; margin: 0; }
+
+/* Prompt line */
+.prompt { font-family: var(--mono); font-size: 13px; color: var(--text-faint); }
+.prompt::before { content: '$ '; color: var(--teal); }
+
+/* Footer nav between modules */
+.modnav {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 56px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.modnav a { display: block; color: var(--text-dim); }
+.modnav a:hover { color: var(--teal); }
+.modnav .dir { display: block; color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+.modnav .right { text-align: right; }
+
+/* Grid links (stack/specs index cards) */
+.linkgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 22px 0 0; }
+@media (max-width: 620px) { .linkgrid { grid-template-columns: 1fr; } }
+.linkcard {
+  display: block;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  color: var(--text);
+}
+.linkcard:hover { border-color: var(--teal-dim); text-decoration: none; }
+.linkcard .t { font-weight: 600; margin-bottom: 4px; }
+.linkcard .d { color: var(--text-dim); font-size: 13.5px; }
+
+table { width: 100%; border-collapse: collapse; margin: 0 0 18px; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.05em; }
+td code { white-space: nowrap; }
+
+.tag {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  margin: 0 6px 6px 0;
+}
+
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">release-monitor</span>
+  <span class="sep">/</span>
+  <a href="../index.html">roadmap</a>
+  <span class="sep">·</span>
+  <a href="../specs.html">specs</a>
+  <span class="sep">·</span>
+  <a href="../stack.html">stack</a>
+</nav>
+
+<div class="wrap">
+  <p class="eyebrow">Phase 07 von 10</p>
+  <h1>Scheduling &amp; Status-Endpoint</h1>
+  <p class="lede">Aus einem einmal laufenden Skript wird ein dauerhaft laufender Dienst.</p>
+
+  <div class="box goal">
+    <p class="box-title">Lernziel</p>
+    <p>Cron-Syntax lesen und schreiben. Ein minimaler HTTP-Server ohne Framework. Zustand (letzter Lauf, letzte Fehler) im Speicher halten und darüber ausliefern.</p>
+  </div>
+
+  <h2>Konzepte</h2>
+
+  <h3>Cron-Syntax</h3>
+  <p>Ein Cron-Ausdruck hat 5 Felder: <code>Minute Stunde Tag-des-Monats Monat Wochentag</code>. <code>*</code> bedeutet "jeder Wert", <code>*/6</code> bedeutet "alle 6 Einheiten":</p>
+  <pre><code>0 */6 * * *   // Minute 0, alle 6 Stunden → 00:00, 06:00, 12:00, 18:00</code></pre>
+  <p>Für einen konfigurierbaren Minuten-Wert (aus <code>POLL_INTERVAL_MINUTES</code>) baust du den Ausdruck als String zusammen: <code>`*/${intervalMinutes} * * * *`</code> — funktioniert sauber, solange der Wert unter 60 bleibt (was für dieses Projekt reicht).</p>
+  <pre><code>import cron from "node-cron";
+
+cron.schedule(`*/${intervalMinutes} * * * *`, () =&gt; {
+  runOnce(config, sourceProvider, ticketProvider, db);
+}, { noOverlap: true });</code></pre>
+  <p>
+    <code>noOverlap: true</code> ist eine Option der aktuellen <code>node-cron</code>-Version (4.x): läuft dein vorheriger Durchlauf noch (z.B. weil GitHub gerade langsam antwortet), wird der nächste geplante Tick übersprungen statt parallel gestartet zu werden. Ohne das könnten sich bei einem hängenden Request theoretisch mehrere <code>runOnce</code>-Läufe überlappen.
+  </p>
+
+  <h3>@types/node-cron wird nicht mehr gebraucht</h3>
+  <p><code>node-cron</code> ist seit Version 4 selbst in TypeScript geschrieben und bringt seine Typen direkt mit — ein zusätzliches <code>@types/node-cron</code>-Paket (früher üblich, für ältere Versionen) würde hier nur veraltete, potenziell falsche Typen installieren. Nicht mit installieren.</p>
+
+  <h3>Ein HTTP-Server ohne Framework</h3>
+  <p>Node bringt einen eingebauten HTTP-Server mit — für einen einzigen Endpoint musst du kein Express installieren:</p>
+  <pre><code>import { createServer } from "node:http";
+
+const server = createServer((req, res) =&gt; {
+  if (req.url === "/status" &amp;&amp; req.method === "GET") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(getStatus()));
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+});
+
+server.listen(port);</code></pre>
+
+  <h3>Zustand im Speicher</h3>
+  <p>
+    <code>getStatus()</code> muss irgendwo herwissen, wann der letzte Lauf war und welche Fehler dabei auftraten. Am einfachsten: ein Modul-weites, veränderliches Objekt, das nach jedem Ereignis aktualisiert wird. Generisches Beispiel — ein simpler Zähler, <strong>nicht</strong> dein <code>status.ts</code>:
+  </p>
+  <pre><code>// generisches Beispiel für Modul-State
+let count = 0;
+
+export function increment() {
+  count += 1;
+}
+
+export function getCount() {
+  return count;
+}</code></pre>
+  <p>Das ist bewusst simpel gehalten (kein Persistieren, kein Broadcast) — für einen internen Health-Check reicht In-Memory-Zustand völlig.</p>
+
+  <div class="box task">
+    <p class="box-title">Aufgabe</p>
+    <ol>
+      <li><code>npm install node-cron</code> — <strong>kein</strong> <code>-D @types/node-cron</code> nötig, siehe oben.</li>
+      <li><code>src/status.ts</code> nach demselben Muster wie <code>increment</code>/<code>getCount</code> oben, aber mit den Feldern aus dem <code>/status</code>-Response-Format in den <a href="../specs.html">Specs</a>: <code>recordRun(errors: string[])</code> setzt Zeitstempel und Fehlerliste, <code>getStatus()</code> gibt sie inkl. der Repo-Liste mit ihrem jeweils letzten bekannten Tag (Query aus Phase 03) zurück.</li>
+      <li><code>src/server.ts</code>: der minimale HTTP-Server mit dem <code>/status</code>-Endpoint.</li>
+      <li><code>src/index.ts</code> final zusammensetzen: Config/Env laden → Provider &amp; DB aufbauen → einmal sofort <code>runOnce</code> ausführen → Cron-Job registrieren → HTTP-Server starten.</li>
+      <li><code>runOnce</code> so anpassen, dass es am Ende <code>recordRun(errors)</code> aufruft.</li>
+    </ol>
+  </div>
+
+  <div class="box pitfall">
+    <p class="box-title">Stolpersteine</p>
+    <ul>
+      <li>Läuft <code>runOnce</code> beim Start <em>und</em> ist der Cron-Job zusätzlich sofort fällig, kann es zu doppelten Läufen kommen — <code>node-cron</code> feuert aber standardmäßig erst beim nächsten Intervall-Tick, nicht sofort, das ist also meist unkritisch. <code>noOverlap</code> schützt zusätzlich davor, dass sich zwei Läufe zeitlich überlappen.</li>
+      <li>Der Prozess darf nicht beenden, nachdem <code>runOnce</code> einmal durchgelaufen ist — stell sicher, dass <code>server.listen(...)</code> und der Cron-Job den Node-Prozess aktiv am Leben halten (das tun sie von selbst, solange du nichts explizit beendest).</li>
+    </ul>
+  </div>
+
+  <div class="box task">
+    <p class="box-title">Tests</p>
+    <p>
+      Für <code>status.ts</code> reicht ein einfacher Unit-Test ohne echten HTTP-Server — <code>recordRun</code> und <code>getStatus</code> sind reine Funktionen auf Modul-State, genau wie beim <code>increment</code>/<code>getCount</code>-Beispiel oben. Schreib mindestens einen Test, der <code>recordRun</code> mit einer Beispiel-Fehlerliste aufruft und danach prüft, dass <code>getStatus()</code> genau diese Fehler und einen nicht-<code>null</code>-Zeitstempel zurückgibt.
+    </p>
+    <p style="margin-bottom:0">Den HTTP-Server selbst (<code>createServer(...)</code>) automatisiert zu testen würde ein Tool wie <code>supertest</code> brauchen — für dieses kleine Projekt reicht der manuelle <code>curl</code>-Check unten, das lohnt sich hier noch nicht.</p>
+  </div>
+
+  <div class="box check">
+    <p class="box-title">Erfolgskriterium</p>
+    <p>Der Prozess läuft dauerhaft (bricht nicht nach dem ersten Durchlauf ab). <code>curl -s http://localhost:3000/status | jq</code> liefert ein sinnvolles JSON mit Zeitstempel und Repo-Liste (<code>-s</code> = "silent", unterdrückt curls eigene Fortschrittsanzeige; <code>jq</code> formatiert das JSON lesbar — falls nicht installiert, reicht auch <code>curl http://localhost:3000/status</code> ohne Pipe). Der Status-Test ist grün.</p>
+  </div>
+
+  <div class="modnav">
+    <a href="06-orchestrierung.html"><span class="dir">Zurück</span>← Phase 06 — Orchestrierung</a>
+    <a class="right" href="08-docker.html"><span class="dir">Weiter</span>Phase 08 — Docker →</a>
+  </div>
+</div>
+</body>
+</html>

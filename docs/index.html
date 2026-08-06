@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lernpfad — Release Monitor</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --ink: #10141a;
+  --panel: #171d26;
+  --panel-2: #1c2330;
+  --border: #262e3a;
+  --text: #dce3ea;
+  --text-dim: #8590a3;
+  --text-faint: #5b6577;
+  --amber: #e8a33d;
+  --amber-dim: #6b551f;
+  --teal: #4fd1c5;
+  --teal-dim: #1f4844;
+  --danger: #c1583f;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --radius: 6px;
+  --maxw: 860px;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--ink);
+  background-image:
+    radial-gradient(ellipse 900px 500px at 50% -10%, rgba(232,163,61,0.06), transparent),
+    repeating-linear-gradient(180deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.6;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--teal); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 48px 24px 96px;
+}
+
+/* Top nav */
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.topnav .brand { color: var(--amber); font-weight: 700; letter-spacing: 0.02em; }
+.topnav a { color: var(--text-dim); }
+.topnav a:hover { color: var(--teal); text-decoration: none; }
+.topnav .sep { color: var(--text-faint); }
+.topnav .current { color: var(--text); }
+
+/* Headings */
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin: 0 0 10px;
+}
+h1 {
+  font-family: var(--sans);
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 700;
+  line-height: 1.15;
+  margin: 0 0 14px;
+  letter-spacing: -0.01em;
+}
+h2 {
+  font-family: var(--sans);
+  font-size: 22px;
+  font-weight: 700;
+  margin: 44px 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+h3 {
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--amber);
+  margin: 28px 0 10px;
+}
+p { color: var(--text); margin: 0 0 14px; }
+p.lede { color: var(--text-dim); font-size: 17px; max-width: 640px; }
+ul, ol { padding-left: 22px; margin: 0 0 16px; }
+li { margin-bottom: 6px; }
+strong { color: #fff; font-weight: 600; }
+code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--teal);
+}
+pre {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  overflow-x: auto;
+  margin: 0 0 18px;
+}
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+/* Cards */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  margin-bottom: 18px;
+}
+.card.amber { border-color: var(--amber-dim); }
+.card.teal { border-color: var(--teal-dim); }
+
+/* Box types used across module pages */
+.box { border-radius: var(--radius); padding: 16px 18px; margin: 0 0 18px; border: 1px solid var(--border); }
+.box-title { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 8px; }
+.box.goal { background: rgba(79,209,197,0.06); border-color: var(--teal-dim); }
+.box.goal .box-title { color: var(--teal); }
+.box.task { background: rgba(232,163,61,0.06); border-color: var(--amber-dim); }
+.box.task .box-title { color: var(--amber); }
+.box.pitfall { background: rgba(193,88,63,0.07); border-color: rgba(193,88,63,0.35); }
+.box.pitfall .box-title { color: var(--danger); }
+.box.check { background: var(--panel-2); }
+.box.check .box-title { color: var(--text-dim); }
+.box p:last-child, .box ul:last-child { margin-bottom: 0; }
+
+/* Terminal pipeline (signature element, index page) */
+.pipeline { position: relative; margin: 40px 0 0; padding-left: 34px; }
+.pipeline::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: linear-gradient(180deg, var(--amber-dim), var(--border) 90%);
+}
+.phase {
+  position: relative;
+  margin-bottom: 14px;
+  display: block;
+}
+.phase::before {
+  content: '';
+  position: absolute;
+  left: -34px;
+  top: 22px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  border: 2px solid var(--ink);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.phase.current::before { background: var(--amber); box-shadow: 0 0 0 1px var(--amber), 0 0 8px 1px rgba(232,163,61,0.6); }
+.phase.done::before { background: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
+.phase-card {
+  display: block;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.phase-card:hover { border-color: var(--text-faint); text-decoration: none; transform: translateX(2px); }
+.phase.current .phase-card { border-color: var(--amber-dim); }
+.phase-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
+.phase-num { font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
+.phase-title { font-family: var(--sans); font-weight: 600; font-size: 16px; color: var(--text); }
+.phase-status {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  margin-left: auto;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.phase.current .phase-status { color: var(--amber); border-color: var(--amber-dim); }
+.phase-desc { color: var(--text-dim); font-size: 14px; margin: 0; }
+
+/* Prompt line */
+.prompt { font-family: var(--mono); font-size: 13px; color: var(--text-faint); }
+.prompt::before { content: '$ '; color: var(--teal); }
+
+/* Footer nav between modules */
+.modnav {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 56px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.modnav a { display: block; color: var(--text-dim); }
+.modnav a:hover { color: var(--teal); }
+.modnav .dir { display: block; color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+.modnav .right { text-align: right; }
+
+/* Grid links (stack/specs index cards) */
+.linkgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 22px 0 0; }
+@media (max-width: 620px) { .linkgrid { grid-template-columns: 1fr; } }
+.linkcard {
+  display: block;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  color: var(--text);
+}
+.linkcard:hover { border-color: var(--teal-dim); text-decoration: none; }
+.linkcard .t { font-weight: 600; margin-bottom: 4px; }
+.linkcard .d { color: var(--text-dim); font-size: 13.5px; }
+
+table { width: 100%; border-collapse: collapse; margin: 0 0 18px; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.05em; }
+td code { white-space: nowrap; }
+
+.tag {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  margin: 0 6px 6px 0;
+}
+
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">release-monitor</span>
+  <span class="sep">/</span>
+  <span class="current">roadmap</span>
+  <span class="sep">·</span>
+  <a href="specs.html">specs</a>
+  <span class="sep">·</span>
+  <a href="stack.html">stack</a>
+</nav>
+
+<div class="wrap">
+  <p class="eyebrow">Lernpfad · 2 Grundlagenmodule + 11 Projektphasen</p>
+  <h1>Vom Lesen zum Schreiben: dein erstes eigenes Backend-Projekt</h1>
+  <p class="lede">
+    Diese Roadmap hat zwei Teile: zuerst <strong>Grundlagen</strong> (Sprache, Module,
+    Async — anhand von Beispielen, die mit dem Projekt nichts zu tun haben),
+    danach der Bau von <strong>release-monitor</strong> selbst — einem kleinen
+    TypeScript/Node-Service, der GitHub-Releases überwacht und bei echten neuen
+    Releases automatisch ein Ticket in Phasical anlegt, inklusive eigener
+    CI/CD-Pipeline zu GHCR. Was in den Grundlagen erklärt wurde, wird in den
+    Projektphasen nicht wiederholt — nur noch verlinkt.
+  </p>
+
+  <div class="card">
+    <h3 style="margin-top:0">Wie du das hier durcharbeitest</h3>
+    <p style="margin-bottom:0">
+      Du schreibst den Code — <strong>ich erkläre Konzepte, reviewe und gebe
+      Hinweise</strong>, statt fertige Lösungen zu liefern. Jede Phase hat ein
+      klares <strong>Lernziel</strong>, eine <strong>Aufgabe</strong>, typische
+      <strong>Stolpersteine</strong> und ein <strong>Erfolgskriterium</strong> —
+      also woran du merkst, dass es funktioniert, bevor du weitermachst.
+      Nimm dir für jede Phase so viel Zeit wie sie braucht. Es gibt keine Deadline.
+    </p>
+  </div>
+
+  <h2>Vorbereitung</h2>
+  <div class="linkgrid">
+    <a class="linkcard" href="specs.html">
+      <div class="t">📋 Projekt-Spezifikation</div>
+      <div class="d">Was release-monitor am Ende können soll — Config-Schema, Interfaces, Env-Vars, Status-Endpoint.</div>
+    </a>
+    <a class="linkcard" href="stack.html">
+      <div class="t">🧰 Tech-Stack &amp; Werkzeuge</div>
+      <div class="d">Node, TypeScript, Drizzle, Vitest &amp; Co — was wir nutzen und warum.</div>
+    </a>
+  </div>
+
+  <h2>Teil 1: Grundlagen</h2>
+  <div class="pipeline">
+    <a class="phase current" href="grundlagen/g1-sprache-module.html">
+      <span class="phase-card">
+        <span class="phase-head">
+          <span class="phase-num">G1</span>
+          <span class="phase-title">Variablen, Typen, Funktionen, Module &amp; Imports</span>
+          <span class="phase-status">start hier</span>
+        </span>
+        <p class="phase-desc">let/const, TS-Typen, Funktionssyntax, export/import, Schleifen — alles anhand generischer Beispiele.</p>
+      </span>
+    </a>
+    <a class="phase" href="grundlagen/g2-objekte-async.html">
+      <span class="phase-card">
+        <span class="phase-head">
+          <span class="phase-num">G2</span>
+          <span class="phase-title">Objekte, Arrays, Interfaces, Async/Await &amp; Fehlerbehandlung</span>
+        </span>
+        <p class="phase-desc">interface vs. type, Array-Methoden, Promises, try/catch.</p>
+      </span>
+    </a>
+  </div>
+
+  <h2>Teil 2: Das Projekt</h2>
+  <div class="pipeline">
+
+    <a class="phase" href="modules/00-setup.html">
+      <span class="phase-card">
+        <span class="phase-head">
+          <span class="phase-num">PHASE 00</span>
+          <span class="phase-title">Setup &amp; Grundlagen</span>
+        </span>
+        <p class="phase-desc">Node/TS-Projekt aufsetzen, verstehen wie dein Code überhaupt ausgeführt wird — inklusive Vitest-Setup von Zeile eins an.</p>
+      </span>
+    </a>
+
+    <a class="phase" href="modules/01-config.html">
+      <span class="phase-card">
+        <span class="phase-head">
+          <span class="phase-num">PHASE 01</span>
+          <span class="phase-title">Konfiguration &amp; Environment</span>
+        </span>
+        <p class="phase-desc">YAML-Config einlesen, validieren, Env-Vars für Secrets nutzen.</p>
+      </span>
+    </a>
+
+    <a class="phase" href="modules/02-source-provider.html">
+      <span class="phase-card">
+        <span class="phase-head">
+          <span class="phase-num">PHASE 02</span>
+          <span class="phase-title">Typen &amp; der Source-Provider</span>
+        </span>
+        <p class="phase-desc">TypeScript-Interfaces, erste echte HTTP-Requests gegen die GitHub API.</p>
+      </span>
+    </a>
+
+    <a class="phase" href="modules/03-datenbank.html">
+      <span class="phase-card">
+        <span class="phase-head">
+          <span class="phase-num">PHASE 03</span>
+          <span class="phase-title">Datenbank: SQLite + Drizzle</span>
+        </span>
+        <p class="phase-desc">Zentrales Schema, generierte Migrations, erste Queries.</p>
+      </span>
+    </a>
+
+    <a class="phase" href="modules/04-kernlogik.html">
+      <span class="phase-card">
+        <span class="phase-head">
+          <span class="phase-num">PHASE 04</span>
+          <span class="phase-title">Kernlogik: Baseline / Skip / Create</span>
+        </span>
+        <p class="phase-desc">Reine Funktionen, deine erste Entscheidungs-Logik, erste Unit-Tests.</p>
+      </span>
+    </a>
+
+    <a class="phase" href="modules/05-ticket-provider.html">
+      <span class="phase-card">
+        <span class="phase-head">
+          <span class="phase-num">PHASE 05</span>
+          <span class="phase-title">Der Ticket-Provider (Phasical)</span>
+        </span>
+        <p class="phase-desc">Zweites Interface, authentifizierte POST-Requests, Fehlerbehandlung.</p>
+      </span>
+    </a>
+
+    <a class="phase" href="modules/06-orchestrierung.html">
+      <span class="phase-card">
+        <span class="phase-head">
+          <span class="phase-num">PHASE 06</span>
+          <span class="phase-title">Orchestrierung: der Poll-Loop</span>
+        </span>
+        <p class="phase-desc">Alle Bausteine zu einem Durchlauf zusammensetzen.</p>
+      </span>
+    </a>
+
+    <a class="phase" href="modules/07-scheduling-status.html">
+      <span class="phase-card">
+        <span class="phase-head">
+          <span class="phase-num">PHASE 07</span>
+          <span class="phase-title">Scheduling &amp; Status-Endpoint</span>
+        </span>
+        <p class="phase-desc">Wiederkehrende Ausführung, ein minimaler HTTP-Server für <code>/status</code>.</p>
+      </span>
+    </a>
+
+    <a class="phase" href="modules/08-docker.html">
+      <span class="phase-card">
+        <span class="phase-head">
+          <span class="phase-num">PHASE 08</span>
+          <span class="phase-title">Docker &amp; Deployment</span>
+        </span>
+        <p class="phase-desc">Dockerfile, Compose, Volumes — bereit für Coolify.</p>
+      </span>
+    </a>
+
+    <a class="phase" href="modules/09-ausblick.html">
+      <span class="phase-card">
+        <span class="phase-head">
+          <span class="phase-num">PHASE 09</span>
+          <span class="phase-title">Ausblick: weitere Provider &amp; mehr</span>
+        </span>
+        <p class="phase-desc">GitLab/Codeberg, Jira, evtl. ein Frontend als Phase 2.</p>
+      </span>
+    </a>
+
+    <a class="phase" href="modules/10-cicd.html">
+      <span class="phase-card">
+        <span class="phase-head">
+          <span class="phase-num">PHASE 10</span>
+          <span class="phase-title">CI/CD: GitHub Actions → GHCR</span>
+        </span>
+        <p class="phase-desc">Bei jedem Push automatisch testen, Image bauen und zu ghcr.io veröffentlichen.</p>
+      </span>
+    </a>
+
+  </div>
+
+  <h2>Grundsätze für diesen Lernpfad</h2>
+  <ul>
+    <li><strong>Grundlagen einmal, danach nur noch Cross-Reference.</strong> Was in G1/G2 erklärt wurde (Funktionen, Module, Interfaces, Async/Await, try/catch), wird in den Projektphasen nicht nochmal ausgewalzt, nur kurz verlinkt.</li>
+    <li><strong>Ein Konzept pro Phase.</strong> Wenn du in Phase 03 noch mit SQL-Queries kämpfst, überspring nicht zu Phase 04.</li>
+    <li><strong>Kein Copy-Paste-Code in den Modulen.</strong> Konzepte werden an generischen, projektfremden Beispielen gezeigt — die Übertragung auf <em>dein</em> Projekt machst du selbst.</li>
+    <li><strong>Kein Schema-Drift.</strong> Ab Phase 03 gilt fest: Datenbankänderungen ausschließlich über generierte Drizzle-Migrations.</li>
+    <li><strong>Tests von Tag eins, keine Ausnahme.</strong> Ab Phase 00 gilt: <code>npm test</code> muss grün sein, bevor ein Modul als fertig gilt — Unit-Tests mit Mocks für externe APIs, echte Integrationstests gegen eine isolierte Temp-DB.</li>
+    <li><strong>Jede Phase endet lauffähig.</strong> Kein Modul hinterlässt kaputten Code — das Erfolgskriterium ist immer etwas, das du wirklich ausführen kannst.</li>
+  </ul>
+</div>
+</body>
+</html>

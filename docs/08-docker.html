@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 08 — Docker &amp; Deployment</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --ink: #10141a;
+  --panel: #171d26;
+  --panel-2: #1c2330;
+  --border: #262e3a;
+  --text: #dce3ea;
+  --text-dim: #8590a3;
+  --text-faint: #5b6577;
+  --amber: #e8a33d;
+  --amber-dim: #6b551f;
+  --teal: #4fd1c5;
+  --teal-dim: #1f4844;
+  --danger: #c1583f;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --radius: 6px;
+  --maxw: 860px;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--ink);
+  background-image:
+    radial-gradient(ellipse 900px 500px at 50% -10%, rgba(232,163,61,0.06), transparent),
+    repeating-linear-gradient(180deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.6;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--teal); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 48px 24px 96px;
+}
+
+/* Top nav */
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.topnav .brand { color: var(--amber); font-weight: 700; letter-spacing: 0.02em; }
+.topnav a { color: var(--text-dim); }
+.topnav a:hover { color: var(--teal); text-decoration: none; }
+.topnav .sep { color: var(--text-faint); }
+.topnav .current { color: var(--text); }
+
+/* Headings */
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin: 0 0 10px;
+}
+h1 {
+  font-family: var(--sans);
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 700;
+  line-height: 1.15;
+  margin: 0 0 14px;
+  letter-spacing: -0.01em;
+}
+h2 {
+  font-family: var(--sans);
+  font-size: 22px;
+  font-weight: 700;
+  margin: 44px 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+h3 {
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--amber);
+  margin: 28px 0 10px;
+}
+p { color: var(--text); margin: 0 0 14px; }
+p.lede { color: var(--text-dim); font-size: 17px; max-width: 640px; }
+ul, ol { padding-left: 22px; margin: 0 0 16px; }
+li { margin-bottom: 6px; }
+strong { color: #fff; font-weight: 600; }
+code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--teal);
+}
+pre {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  overflow-x: auto;
+  margin: 0 0 18px;
+}
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+/* Cards */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  margin-bottom: 18px;
+}
+.card.amber { border-color: var(--amber-dim); }
+.card.teal { border-color: var(--teal-dim); }
+
+/* Box types used across module pages */
+.box { border-radius: var(--radius); padding: 16px 18px; margin: 0 0 18px; border: 1px solid var(--border); }
+.box-title { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 8px; }
+.box.goal { background: rgba(79,209,197,0.06); border-color: var(--teal-dim); }
+.box.goal .box-title { color: var(--teal); }
+.box.task { background: rgba(232,163,61,0.06); border-color: var(--amber-dim); }
+.box.task .box-title { color: var(--amber); }
+.box.pitfall { background: rgba(193,88,63,0.07); border-color: rgba(193,88,63,0.35); }
+.box.pitfall .box-title { color: var(--danger); }
+.box.check { background: var(--panel-2); }
+.box.check .box-title { color: var(--text-dim); }
+.box p:last-child, .box ul:last-child { margin-bottom: 0; }
+
+/* Terminal pipeline (signature element, index page) */
+.pipeline { position: relative; margin: 40px 0 0; padding-left: 34px; }
+.pipeline::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: linear-gradient(180deg, var(--amber-dim), var(--border) 90%);
+}
+.phase {
+  position: relative;
+  margin-bottom: 14px;
+  display: block;
+}
+.phase::before {
+  content: '';
+  position: absolute;
+  left: -34px;
+  top: 22px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  border: 2px solid var(--ink);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.phase.current::before { background: var(--amber); box-shadow: 0 0 0 1px var(--amber), 0 0 8px 1px rgba(232,163,61,0.6); }
+.phase.done::before { background: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
+.phase-card {
+  display: block;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.phase-card:hover { border-color: var(--text-faint); text-decoration: none; transform: translateX(2px); }
+.phase.current .phase-card { border-color: var(--amber-dim); }
+.phase-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
+.phase-num { font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
+.phase-title { font-family: var(--sans); font-weight: 600; font-size: 16px; color: var(--text); }
+.phase-status {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  margin-left: auto;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.phase.current .phase-status { color: var(--amber); border-color: var(--amber-dim); }
+.phase-desc { color: var(--text-dim); font-size: 14px; margin: 0; }
+
+/* Prompt line */
+.prompt { font-family: var(--mono); font-size: 13px; color: var(--text-faint); }
+.prompt::before { content: '$ '; color: var(--teal); }
+
+/* Footer nav between modules */
+.modnav {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 56px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.modnav a { display: block; color: var(--text-dim); }
+.modnav a:hover { color: var(--teal); }
+.modnav .dir { display: block; color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+.modnav .right { text-align: right; }
+
+/* Grid links (stack/specs index cards) */
+.linkgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 22px 0 0; }
+@media (max-width: 620px) { .linkgrid { grid-template-columns: 1fr; } }
+.linkcard {
+  display: block;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  color: var(--text);
+}
+.linkcard:hover { border-color: var(--teal-dim); text-decoration: none; }
+.linkcard .t { font-weight: 600; margin-bottom: 4px; }
+.linkcard .d { color: var(--text-dim); font-size: 13.5px; }
+
+table { width: 100%; border-collapse: collapse; margin: 0 0 18px; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.05em; }
+td code { white-space: nowrap; }
+
+.tag {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  margin: 0 6px 6px 0;
+}
+
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">release-monitor</span>
+  <span class="sep">/</span>
+  <a href="../index.html">roadmap</a>
+  <span class="sep">·</span>
+  <a href="../specs.html">specs</a>
+  <span class="sep">·</span>
+  <a href="../stack.html">stack</a>
+</nav>
+
+<div class="wrap">
+  <p class="eyebrow">Phase 08 von 10</p>
+  <h1>Docker &amp; Deployment</h1>
+  <p class="lede">Aus dem Node-Prozess auf deinem Rechner wird ein Image, das genauso auf deinem Coolify-Server läuft.</p>
+
+  <div class="box goal">
+    <p class="box-title">Lernziel</p>
+    <p>Multi-Stage-Builds verstehen — warum das Produktions-Image nicht denselben Inhalt hat wie dein Entwicklungsordner. Volumes für persistente Daten (SQLite-Datei, Config).</p>
+  </div>
+
+  <h2>Konzepte</h2>
+
+  <h3>Warum "Multi-Stage"?</h3>
+  <p>
+    Zum <em>Bauen</em> brauchst du TypeScript, alle Dev-Dependencies, den Compiler. Zum <em>Laufen</em> brauchst du nur noch fertiges JavaScript und die paar Production-Dependencies. Ein Multi-Stage-Build trennt das in zwei Etappen — das Endimage enthält nur, was für die Ausführung nötig ist, und bleibt dadurch deutlich kleiner:
+  </p>
+  <pre><code># Stage 1: bauen
+FROM node:24-slim AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm test        # Build bricht ab, wenn Tests fehlschlagen
+RUN npm run build   # tsc -&gt; dist/
+
+# Stage 2: laufen
+FROM node:24-slim
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/drizzle ./drizzle
+CMD ["node", "dist/index.js"]</code></pre>
+  <p><code>COPY --from=builder</code> holt gezielt nur fertige Artefakte aus der ersten Stage — der ganze Build-Kram (TypeScript-Compiler, Quellcode, Dev-Dependencies) landet nie im finalen Image.</p>
+  <p><code>RUN npm test</code> in der Builder-Stage ist bewusst platziert: schlägt ein Test fehl, bricht <code>docker build</code> komplett ab — ein kaputtes Image kann so gar nicht erst entstehen, geschweige denn deployed werden.</p>
+  <p><code>node:24-slim</code> statt nur <code>node:24</code>: das <code>-slim</code>-Tag enthält ein deutlich abgespecktes Debian ohne unnötige Tools — kleineres Image, weniger Angriffsfläche. Node 24 ist Stand August 2026 die aktuelle Active-LTS-Version (siehe Phase 00).</p>
+
+  <div class="box check">
+    <p class="box-title">Befehle im Detail: npm ci vs. npm install</p>
+    <table>
+      <tr><th>Befehl</th><th>Unterschied</th></tr>
+      <tr><td><code>npm install</code></td><td>Kann <code>package-lock.json</code> aktualisieren, wenn Versionen nicht exakt passen — nicht deterministisch genug für einen reproduzierbaren Build.</td></tr>
+      <tr><td><code>npm ci</code></td><td>"Clean Install": löscht zuerst <code>node_modules</code> komplett, installiert danach exakt die in <code>package-lock.json</code> fixierten Versionen. Schlägt fehl, wenn <code>package.json</code> und <code>package-lock.json</code> nicht zusammenpassen — genau das willst du im Build: lieber ein harter Fehler als eine stillschweigend andere Version im Image.</td></tr>
+      <tr><td><code>npm ci --omit=dev</code></td><td>Wie <code>npm ci</code>, installiert aber nur <code>dependencies</code>, keine <code>devDependencies</code> — genau das richtige für die Runtime-Stage, in der TypeScript &amp; Co. nicht mehr gebraucht werden.</td></tr>
+    </table>
+  </div>
+
+  <h3>Volumes für Dinge, die den Container überleben müssen</h3>
+  <p>
+    Ein Container-Dateisystem ist standardmäßig flüchtig — stirbt der Container, ist alles weg. Deine SQLite-Datei (<code>DB_PATH</code>) und die Config (<code>repos.yml</code>) müssen das überleben. Dafür mountest du Host-Verzeichnisse/-Dateien in den Container:
+  </p>
+  <pre><code># docker-compose.yml
+services:
+  release-monitor:
+    build: .
+    environment:
+      - PHASICAL_API_KEY=${PHASICAL_API_KEY}
+      - PHASICAL_BASE_URL=https://phasical.mdg-labs.dev/api
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+    volumes:
+      - ./repos.yml:/config/repos.yml:ro
+      - release-monitor-data:/data
+    ports:
+      - "3000:3000"
+
+volumes:
+  release-monitor-data:</code></pre>
+  <p>Die Config wird <code>:ro</code> (read-only) gemountet — der Container soll sie nie selbst verändern.</p>
+
+  <div class="box task">
+    <p class="box-title">Aufgabe</p>
+    <ol>
+      <li>In <code>package.json</code> Script <code>"build": "tsc"</code> ergänzen, testweise lokal <code>npm run build</code> ausführen und den entstandenen <code>dist/</code>-Ordner anschauen.</li>
+      <li><code>Dockerfile</code> nach obigem Muster anlegen, an dein Projekt angepasst.</li>
+      <li><code>.dockerignore</code> anlegen (mindestens <code>node_modules</code>, <code>dist</code>, <code>.git</code>) — verhindert, dass der Build-Kontext unnötig groß wird.</li>
+      <li><code>docker build -t release-monitor .</code> lokal ausführen.</li>
+      <li><code>docker-compose.yml</code> wie oben anlegen, mit einer echten <code>repos.yml</code> und einer <code>.env</code>-Datei für die Secrets.</li>
+      <li><code>docker compose up</code> — und via <code>curl localhost:3000/status</code> prüfen, dass es läuft.</li>
+    </ol>
+  </div>
+
+  <div class="box check">
+    <p class="box-title">Befehle im Detail</p>
+    <table>
+      <tr><th>Befehl</th><th>Was er tut</th></tr>
+      <tr><td><code>docker build -t release-monitor .</code></td><td><code>-t</code> ("tag") vergibt einen Namen fürs Image, unter dem du es später referenzierst. <code>.</code> am Ende ist der Build-Kontext — das Verzeichnis, aus dem Docker Dateien für <code>COPY</code>-Befehle lesen darf.</td></tr>
+      <tr><td><code>docker compose up</code></td><td>Baut (falls nötig) und startet alle Services aus <code>docker-compose.yml</code>, blockiert das Terminal und zeigt Logs live an. Mit <code>-d</code> (detached) läuft es stattdessen im Hintergrund.</td></tr>
+      <tr><td><code>docker compose logs -f</code></td><td>Zeigt die Logs eines im Hintergrund laufenden Compose-Stacks weiter an. <code>-f</code> ("follow") hält den Stream offen, statt nur einmalig auszugeben.</td></tr>
+      <tr><td><code>docker compose down</code></td><td>Stoppt und entfernt die Container wieder — Volumes (deine SQLite-Daten) bleiben dabei standardmäßig erhalten, nur <code>-v</code> zusätzlich würde auch sie löschen.</td></tr>
+    </table>
+  </div>
+
+  <div class="box pitfall">
+    <p class="box-title">Stolpersteine</p>
+    <ul>
+      <li>Vergisst du, <code>drizzle/</code> (die Migrations) mit ins finale Image zu kopieren, schlägt <code>migrate()</code> beim Containerstart fehl — die Migrations werden zur <em>Laufzeit</em> gebraucht, nicht nur beim Build.</li>
+      <li><code>better-sqlite3</code> enthält nativen (kompilierten) Code — stell sicher, dass <code>npm ci</code> <em>innerhalb</em> des Containers läuft (nicht nur lokal kopiert wird), damit die Binary zur Container-Architektur passt.</li>
+      <li>Der Ordner für <code>DB_PATH</code> (z.B. <code>/data</code>) muss dem Node-Prozess gehören/beschreibbar sein — bei Rootless-Containern ggf. explizit <code>chown</code> im Dockerfile.</li>
+    </ul>
+  </div>
+
+  <div class="box check">
+    <p class="box-title">Erfolgskriterium</p>
+    <p><code>docker compose up</code> startet fehlerfrei, <code>/status</code> ist von außen erreichbar, und ein Container-Neustart verliert nicht die bereits bekannten Tags (Volume funktioniert).</p>
+  </div>
+
+  <div class="modnav">
+    <a href="07-scheduling-status.html"><span class="dir">Zurück</span>← Phase 07 — Scheduling &amp; Status</a>
+    <a class="right" href="09-ausblick.html"><span class="dir">Weiter</span>Phase 09 — Ausblick →</a>
+  </div>
+</div>
+</body>
+</html>
