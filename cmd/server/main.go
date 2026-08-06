@@ -2,10 +2,12 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"log"
-	"net/http"
+	"os/signal"
+	"syscall"
 
+	"github.com/mdguggenbichler/release-ops/internal/api"
 	"github.com/mdguggenbichler/release-ops/internal/config"
 )
 
@@ -19,15 +21,14 @@ func main() {
 }
 
 func run(cfg *config.Config) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
+	handler := api.NewRouter()
 	addr := cfg.GoListenAddr()
 	log.Printf("release-ops server listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatal(fmt.Errorf("listen and serve: %w", err))
+
+	if err := api.Serve(ctx, addr, handler); err != nil {
+		log.Fatalf("server: %v", err)
 	}
 }
