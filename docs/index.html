@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -53,44 +53,44 @@ li { margin-bottom: 6px; }
   <a href="schema.html">schema</a>
 </nav>
 <div class="wrap">
-  <p class="eyebrow">Spezifikation</p>
+  <p class="eyebrow">Specification</p>
   <h1>Release Ops</h1>
   <p class="lede">
-    Self-hosted Release-Monitor mit Web-UI: Releases von GitHub, GitLab, Gitea, Forgejo und Codeberg pollen,
-    bei echten neuen Releases Tickets in Phasical, Jira oder Linear anlegen.
-    Konfiguration und Credentials nur über die UI.
+    Self-hosted release monitor with a web UI: poll releases on GitHub, GitLab, Gitea, Forgejo, and Codeberg;
+    create tickets in Phasical, Jira, or Linear when a real new release ships.
+    One Docker container for self-hosting — no multi-service Compose.
   </p>
 
-  <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">Dokumente</h2>
+  <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">Documents</h2>
   <div class="linkgrid">
     <a class="linkcard" href="specs.html">
-      <div class="t">📋 Produktspezifikation</div>
-      <div class="d">Architektur, Schema, APIs, Provider, UI, MVP-AC.</div>
+      <div class="t">📋 Product specification</div>
+      <div class="d">Architecture, schema, APIs, providers, UI, MVP acceptance criteria.</div>
     </a>
     <a class="linkcard" href="stack.html">
-      <div class="t">🧰 Tech-Stack</div>
-      <div class="d">Go, Next.js, COSS, BetterAuth, SQLite, Docker.</div>
+      <div class="t">🧰 Tech stack</div>
+      <div class="d">Go, Next.js, COSS, session auth, SQLite, Docker.</div>
     </a>
     <a class="linkcard" href="schema.html">
-      <div class="t">🗄️ Datenbank-Schema</div>
-      <div class="d">SQLite <code>app.db</code> — HTML-Ansicht; Quelle: <code>schema.sql</code>.</div>
+      <div class="t">🗄️ Database schema</div>
+      <div class="d">SQLite <code>app.db</code> — HTML view; source: <code>schema.sql</code>.</div>
     </a>
   </div>
 
-  <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">Spec-Precedence</h2>
+  <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">Spec precedence</h2>
   <ol>
-    <li><a href="specs.html">specs.html</a> — MVP-Vertrag</li>
-    <li><a href="schema.html">schema.html</a> / <a href="schema.sql">schema.sql</a> — Datenbank</li>
-    <li><a href="stack.html">stack.html</a> — Werkzeuge</li>
+    <li><a href="specs.html">specs.html</a> — MVP contract</li>
+    <li><a href="schema.html">schema.html</a> / <a href="schema.sql">schema.sql</a> — database</li>
+    <li><a href="stack.html">stack.html</a> — tooling</li>
   </ol>
 
-  <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">MVP in Kurzform</h2>
+  <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">MVP at a glance</h2>
   <p>
     <span class="tag">Go</span>
     <span class="tag">SQLite</span>
     <span class="tag">Next.js</span>
     <span class="tag">COSS</span>
-    <span class="tag">BetterAuth</span>
+    <span class="tag">Go auth</span>
     <span class="tag">GitHub</span>
     <span class="tag">GitLab</span>
     <span class="tag">Gitea</span>
@@ -102,13 +102,13 @@ li { margin-bottom: 6px; }
     <span class="tag">Shoutrrr</span>
   </p>
   <ul>
-    <li>Sources: GitHub, GitLab, Gitea, Forgejo, Codeberg · Tickets: Phasical, Jira, Linear (alle ab Tag 1)</li>
-    <li>Ticket-Integrationen mit <strong>mehreren Projekt-/Team-Zielen</strong> — jedes mit eigenem open/done/cancelled/superseded-Mapping</li>
-    <li>Idempotenz bei offenen Tickets: Default <code>supersede</code>, alternativ <code>merge</code> oder <code>skip_if_open</code></li>
-    <li>Notifications via Shoutrrr (Slack, ntfy, …) — keine Custom-Chat-Integrationen</li>
-    <li>Admin-UI für Repos, Integrationen, Ticket-Projekte, Notifications, Poll-Intervall</li>
-    <li>CI: Entrypoint-Workflows + reusable CI/Release/Image-Build (dev → nightly, main → VERSION-Draft, release → GHCR)</li>
-    <li>Baseline / Skip / Create — kein Ticket beim ersten Sehen eines Repos</li>
+    <li>Sources: GitHub, GitLab, Gitea, Forgejo, Codeberg · Tickets: Phasical, Jira, Linear (all from day 1)</li>
+    <li>Ticket integrations with <strong>multiple project/team targets</strong> — each with its own open/done/cancelled/superseded mapping</li>
+    <li>Open-ticket idempotency: default <code>supersede</code>; alternatives <code>merge</code> or <code>skip_if_open</code></li>
+    <li>Notifications via Shoutrrr (Slack, ntfy, …) — no custom chat integrations</li>
+    <li>Admin UI for repos, integrations, ticket projects, notifications, poll interval</li>
+    <li>CI: entrypoint workflows + reusable CI/release/image build (dev → nightly, main → VERSION draft, release → GHCR)</li>
+    <li>Baseline / skip / create — no ticket on first sight of a repo</li>
   </ul>
   <p class="docnav"><a href="index.html">Docs</a> · <a href="specs.html">Spec</a> · <a href="stack.html">Stack</a> · <a href="schema.html">Schema</a></p>
 </div>

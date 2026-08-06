@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -63,35 +63,35 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
 </nav>
 
 <div class="wrap">
-  <p class="eyebrow">Produktspezifikation · MVP</p>
+  <p class="eyebrow">Product specification · MVP</p>
   <h1>Release Ops</h1>
   <p class="lede">
-    Self-hosted Service: überwacht Releases auf GitHub, GitLab, Gitea, Forgejo und Codeberg für konfigurierte Repos und erstellt bei
-    <em>echten</em> neuen Releases (nicht beim ersten Baseline-Sehen) Tickets in Phasical, Jira oder Linear.
-    Ticket-Integrationen unterstützen mehrere Projekt-/Team-Ziele mit eigenem Status-Mapping; offene Tickets werden per Policy
-    superseded, gemerged oder übersprungen. Notifications via Shoutrrr.
-    Konfiguration, Integration-Credentials und Monitoring laufen über eine geschützte Web-UI (COSS).
-    Worker und REST-API laufen in Go; Auth und UI in Next.js mit BetterAuth.
+    Self-hosted service: monitors releases on GitHub, GitLab, Gitea, Forgejo, and Codeberg for configured repos and creates tickets in Phasical, Jira, or Linear when
+    <em>genuine</em> new releases ship (not on the first baseline sighting). Ticket integrations support multiple project/team targets with their own status mapping; open tickets are
+    superseded, merged, or skipped per policy.
+    Notifications via Shoutrrr.
+    Configuration, integration credentials, and monitoring run through a protected web UI (COSS).
+    <strong>One container</strong> for self-hosting: Next.js (COSS UI) and Go (auth, REST API, polling) in the same image.
   </p>
 
   <div class="card amber">
-    <strong>Version:</strong> Spec v2.4 (2026-08-06) — CI/CD: branch entrypoints + reusable workflows (slugbase/pipewatch-Pattern), GHCR, <code>VERSION</code>-Releases.
+    <strong>Version:</strong> Spec v2.6 (2026-08-06) — Go-native auth · Single-container deploy (one image, one Compose service).
   </div>
 
   <nav class="toc">
-    <strong>Inhalt</strong>
+    <strong>Contents</strong>
     <ol style="margin-top:8px">
-      <li><a href="#purpose">Zweck &amp; Nicht-Ziele</a></li>
-      <li><a href="#architecture">Architektur</a></li>
-      <li><a href="#auth">Authentifizierung</a></li>
-      <li><a href="#schema">Datenmodell</a></li>
-      <li><a href="#domain">Domänenlogik &amp; Idempotenz</a></li>
-      <li><a href="#ticket-projects">Ticket-Projekte &amp; Status-Mapping</a></li>
+      <li><a href="#purpose">Purpose &amp; Non-goals</a></li>
+      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#auth">Authentication</a></li>
+      <li><a href="#schema">Data model</a></li>
+      <li><a href="#domain">Domain logic &amp; Idempotency</a></li>
+      <li><a href="#ticket-projects">Ticket projects &amp; status mapping</a></li>
       <li><a href="#notifications">Notifications (Shoutrrr)</a></li>
-      <li><a href="#providers">Provider-Interfaces (Go)</a></li>
+      <li><a href="#providers">Provider interfaces (Go)</a></li>
       <li><a href="#api">REST API (Go)</a></li>
-      <li><a href="#ui">Web-UI &amp; COSS Particles</a></li>
-      <li><a href="#env">Environment-Variablen</a></li>
+      <li><a href="#ui">Web UI &amp; COSS Particles</a></li>
+      <li><a href="#env">Environment variables</a></li>
       <li><a href="#deployment">Deployment</a></li>
       <li><a href="#ci">CI/CD (GitHub Actions)</a></li>
       <li><a href="#mvp">MVP Acceptance Criteria</a></li>
@@ -99,120 +99,131 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     </ol>
   </nav>
 
-  <h2 id="purpose">1. Zweck &amp; Nicht-Ziele</h2>
-  <h3>Zweck</h3>
+  <h2 id="purpose">1. Purpose &amp; Non-goals</h2>
+  <h3>Purpose</h3>
   <ul>
-    <li>Pollt in konfigurierbaren Intervallen das jeweils neueste <strong>stable</strong> Release pro konfiguriertem Projekt.</li>
-    <li><strong>Sources (MVP):</strong> GitHub, GitLab, Gitea, Forgejo, Codeberg — jeweils <code>releases/latest</code> (GitLab: <code>permalink/latest</code>; Gitea-Familie: Gitea-API v1).</li>
-    <li>Speichert den zuletzt gesehenen Tag pro Projekt in SQLite.</li>
-    <li>Erstellt bei Tag-Wechsel (nach Baseline) ein Ticket im gewählten System.</li>
-    <li><strong>Tickets (MVP):</strong> Phasical, Jira, Linear — pro Repo frei kombinierbar mit Source.</li>
-    <li>Jede Ticket-Integration kann <strong>mehrere Projekt-/Team-Ziele</strong> haben (<code>ticket_projects</code>) — jedes mit eigenem open/done/cancelled/superseded-Mapping.</li>
-    <li>Idempotenz bei offenen Tickets: Default <code>supersede</code>; alternativ <code>merge</code> oder <code>skip_if_open</code>.</li>
-    <li>Notifications an Shoutrrr-Targets (Slack, ntfy, …) bei create, error, supersede.</li>
-    <li>Zeigt Betriebsstatus in der UI: letzter Poll, Fehler, Projekt-Übersicht.</li>
+    <li>Polls the respective latest <strong>stable</strong> release per configured project at configurable intervals.</li>
+    <li><strong>Sources (MVP):</strong> GitHub, GitLab, Gitea, Forgejo, Codeberg — each via <code>releases/latest</code> (GitLab: <code>permalink/latest</code>; Gitea family: Gitea API v1).</li>
+    <li>Stores the last seen tag per project in SQLite.</li>
+    <li>Creates a ticket in the chosen system on tag change (after baseline).</li>
+    <li><strong>Tickets (MVP):</strong> Phasical, Jira, Linear — freely combinable with source per repo.</li>
+    <li>Each ticket integration can have <strong>multiple project/team targets</strong> (<code>ticket_projects</code>) — each with its own open/done/cancelled/superseded mapping.</li>
+    <li>Idempotency with open tickets: default <code>supersede</code>; alternatively <code>merge</code> or <code>skip_if_open</code>.</li>
+    <li>Notifications to Shoutrrr targets (Slack, ntfy, …) on create, error, supersede.</li>
+    <li>Shows operational status in the UI: last poll, errors, project overview.</li>
   </ul>
-  <h3>MVP-Nicht-Ziele</h3>
+  <h3>MVP non-goals</h3>
   <ul>
-    <li>Keine weiteren Sources (Bitbucket, Azure DevOps, …).</li>
-    <li>Kein Multi-User-RBAC (ein Admin reicht; alle eingeloggten User sind gleichberechtigt).</li>
-    <li>Kein öffentliches Sign-up (Admin-Account per Seed/CLI oder einmalig in UI).</li>
-    <li>Kein High-Availability / Horizontal Scaling.</li>
+    <li>No additional sources (Bitbucket, Azure DevOps, …).</li>
+    <li>No multi-user RBAC (one admin is enough; all logged-in users have equal permissions).</li>
+    <li>No public sign-up (admin account via seed/CLI or once in UI).</li>
+    <li>Self-host with <strong>one</strong> Docker container — no multi-service Compose.</li>
   </ul>
 
-  <h2 id="architecture">2. Architektur</h2>
-  <pre><code>┌─────────────────────────────────────────────────────────────┐
-│  Browser                                                    │
-│    COSS UI (React) ──► Next.js (apps/web)                     │
-│         │                    │                              │
-│         │                    ├─ /api/auth/*  BetterAuth     │
-│         │                    ├─ auth.db (SQLite)              │
-│         │                    └─ /api/go/*    Proxy + JWT      │
-└─────────┼────────────────────┼──────────────────────────────┘
-          │                    │ Authorization: Bearer &lt;JWT&gt;
-          │                    ▼
-          │         ┌──────────────────────────┐
-          │         │  Go worker (cmd/worker)    │
-          │         │  - REST /api/v1/*        │
-          │         │  - Poll scheduler        │
-          │         │  - app.db (SQLite)       │
-          │         └──────────┬───────────────┘
-          │                    │
-          ▼                    ▼
+  <h2 id="architecture">2. Architecture</h2>
+  <p>Self-host target: <strong>one container</strong>, <strong>one public port</strong> (<code>3000</code>). No separate <code>web</code> + <code>worker</code> in Compose/Coolify.</p>
+  <pre><code>┌──────────────────────────────────────────────────────────────┐
+│  Browser  ──►  :3000  release-ops Container                  │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │ Next.js (apps/web) — public HTTP                         │  │
+│  │   ├─ UI (COSS)                                          │  │
+│  │   └─ /api/go/*    Proxy (cookies) ──► Go (127.0.0.1:8080)   │  │
+│  │ Go (cmd/server) — container-only, not exposed           │  │
+│  │   ├─ Auth (session cookie) + REST /api/v1/*           │  │
+│  │   ├─ Poll scheduler                                     │  │
+│  │   └─ app.db (SQLite — users, sessions, app data)        │  │
+│  └────────────────────────────────────────────────────────┘  │
+│  Volume: /data  (app.db)                                     │
+└──────────────────────────────────────────────────────────────┘
+          │
+          ▼
    GitHub / GitLab / Gitea / Forgejo / Codeberg
-                              │
-                              ▼
-                    Phasical / Jira / Linear
-                              │
-                              ▼
-                    Shoutrrr (Notifications)</code></pre>
+          │
+          ▼
+   Phasical / Jira / Linear  ·  Shoutrrr (Notifications)</code></pre>
 
-  <h3>Prozesse</h3>
+  <h3>Runtime in container</h3>
   <table>
-    <tr><th>Prozess</th><th>Port (Default)</th><th>Verantwortung</th></tr>
-    <tr><td><code>web</code></td><td>3000</td><td>UI, BetterAuth, Proxy zu Go</td></tr>
-    <tr><td><code>worker</code></td><td>8080 (intern)</td><td>REST API, Credential-Decrypt, Polling</td></tr>
+    <tr><th>Component</th><th>Bind</th><th>Responsibility</th></tr>
+    <tr><td>Next.js</td><td><code>0.0.0.0:${PORT}</code> (default 3000)</td><td>COSS UI, HTTP proxy to Go (forwards <code>Cookie</code> / <code>Set-Cookie</code>)</td></tr>
+    <tr><td>Go</td><td><code>127.0.0.1:${GO_INTERNAL_PORT}</code> (default 8080)</td><td>REST API, credential decrypt, polling, migrations</td></tr>
   </table>
-  <p>Der Browser spricht nur mit <code>web</code>. Go ist nicht öffentlich exponiert (Docker-Netzwerk intern).</p>
+  <p>Start via <code>docker/entrypoint.sh</code>: migrations → start Go → start Next (or supervisord equivalent). Go does not run as a second container.</p>
 
-  <h2 id="auth">3. Authentifizierung</h2>
-  <h3>BetterAuth (Next.js)</h3>
+  <h2 id="auth">3. Authentication</h2>
+  <p>Auth lives entirely in <strong>Go</strong>. Next.js is UI-only — login forms and API clients call Go through the same-origin proxy. One SQLite file (<code>app.db</code>), one writer process.</p>
+  <h3>Session model (Go)</h3>
   <ul>
-    <li>Plugin: <code>better-auth</code> mit SQLite-Adapter auf <code>auth.db</code>.</li>
-    <li>MVP-Provider: <strong>Email + Password</strong> only.</li>
-    <li>Plugin: <code>jwt()</code> — JWKS unter <code>/api/auth/jwks</code> (oder BetterAuth-Default).</li>
-    <li><code>disableSignUp: true</code> nach Erst-Admin — oder Sign-up nur bis erster User existiert.</li>
+    <li>MVP: <strong>email + password</strong> only — no OAuth, no public sign-up.</li>
+    <li>Passwords: <code>bcrypt</code> (<code>golang.org/x/crypto/bcrypt</code>) stored in <code>users.password_hash</code>.</li>
+    <li>Sessions: server-side store in <code>sessions</code> table (e.g. <code>github.com/alexedwards/scs/v2</code> with SQLite store).</li>
+    <li>Cookie: <code>release_ops_session</code> — <code>HttpOnly</code>, <code>SameSite=Lax</code>, <code>Path=/</code>, <code>Secure</code> when public URL is HTTPS.</li>
+    <li>Signing key: <code>SESSION_SECRET</code> env (32+ random bytes).</li>
+    <li>No JWT between Next and Go — browser sends session cookie; Next proxy forwards <code>Cookie</code> and passes through <code>Set-Cookie</code> on login/logout.</li>
   </ul>
-  <h3>Go API Auth</h3>
+  <h3>First admin bootstrap</h3>
   <ul>
-    <li>Next.js Route <code>apps/web/app/api/go/[...path]/route.ts</code> holt Session-JWT via <code>auth.api.getToken()</code> und forwarded an Go mit <code>Authorization: Bearer</code>.</li>
-    <li>Go Middleware validiert JWT gegen BetterAuth JWKS (Cache Keys, Standard-JWT-Verify).</li>
-    <li>Alle <code>/api/v1/*</code> Endpoints erfordern gültiges JWT — außer optional <code>GET /healthz</code> für Container-Probes.</li>
+    <li>When <code>users</code> is empty: create admin via CLI <code>release-ops seed-admin --email … --password …</code> <strong>or</strong> one-time env <code>BOOTSTRAP_ADMIN_EMAIL</code> + <code>BOOTSTRAP_ADMIN_PASSWORD</code> on first container start (then remove env).</li>
+    <li>No <code>POST /api/v1/auth/register</code> in MVP — bootstrap only.</li>
+    <li>All logged-in users have equal permissions (no RBAC).</li>
   </ul>
-  <p>Kein Session-Cookie direkt an Go — nur JWT-Proxy-Pattern (vermeidet CORS/Cookie-SameSite-Probleme).</p>
+  <h3>Protected routes</h3>
+  <ul>
+    <li>Go middleware: all <code>/api/v1/*</code> require valid session except <code>POST /api/v1/auth/login</code> and <code>GET /api/v1/auth/session</code>.</li>
+    <li><code>GET /healthz</code> — no auth (container probe).</li>
+    <li>Next middleware: pages except <code>/login</code> redirect to login when <code>GET /api/go/api/v1/auth/session</code> returns <code>user: null</code>.</li>
+  </ul>
 
-  <h2 id="schema">4. Datenmodell</h2>
-  <p>Kanonisches SQL: <a href="schema.html">schema.html</a> · <a href="schema.sql">schema.sql</a>. Migrations in <code>migrations/</code> müssen dem Schema entsprechen.</p>
+  <h2 id="schema">4. Data model</h2>
+  <p>Canonical SQL: <a href="schema.html">schema.html</a> · <a href="schema.sql">schema.sql</a>. Migrations in <code>migrations/</code> must match the schema. All tables in <code>app.db</code> (including auth).</p>
+
+  <h3>4.0 <code>users</code> &amp; <code>sessions</code></h3>
+  <p>Auth tables — written only by Go.</p>
+  <table>
+    <tr><th>Table</th><th>Columns</th><th>Notes</th></tr>
+    <tr><td><code>users</code></td><td><code>id</code> (UUID PK), <code>email</code> (unique), <code>password_hash</code>, <code>created_at</code>, <code>updated_at</code></td><td>MVP: typically one admin row</td></tr>
+    <tr><td><code>sessions</code></td><td><code>token</code> (PK), <code>data</code> (BLOB), <code>expiry</code> (REAL)</td><td>Server-side session store; index on <code>expiry</code> for cleanup</td></tr>
+  </table>
 
   <h3>4.1 <code>app_settings</code></h3>
-  <p>Singleton (immer <code>id = 1</code>).</p>
+  <p>Singleton (always <code>id = 1</code>).</p>
   <table>
-    <tr><th>Spalte</th><th>Typ</th><th>Default</th><th>Beschreibung</th></tr>
-    <tr><td><code>poll_interval_minutes</code></td><td>INTEGER</td><td>360</td><td>Globaler Poll-Intervall; Min 5</td></tr>
+    <tr><th>Column</th><th>Type</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>poll_interval_minutes</code></td><td>INTEGER</td><td>360</td><td>Global poll interval; min 5</td></tr>
     <tr><td><code>updated_at</code></td><td>TEXT (ISO8601)</td><td>—</td><td>UTC</td></tr>
   </table>
 
   <h3>4.2 <code>integrations</code></h3>
-  <p>Credential-Speicher für externe APIs. Secrets nie im Klartext — siehe §4.8.</p>
+  <p>Credential store for external APIs. Secrets never in plaintext — see §4.8.</p>
   <table>
-    <tr><th>Spalte</th><th>Typ</th><th>Beschreibung</th></tr>
+    <tr><th>Column</th><th>Type</th><th>Description</th></tr>
     <tr><td><code>id</code></td><td>TEXT (UUID)</td><td>PK</td></tr>
     <tr><td><code>kind</code></td><td>TEXT</td><td>Source: <code>github</code> | <code>gitlab</code> | <code>gitea</code> | <code>forgejo</code> | <code>codeberg</code> · Ticket: <code>phasical</code> | <code>jira</code> | <code>linear</code></td></tr>
-    <tr><td><code>name</code></td><td>TEXT</td><td>Anzeigename in UI</td></tr>
-    <tr><td><code>base_url</code></td><td>TEXT NULL</td><td>Siehe Tabelle unten</td></tr>
-    <tr><td><code>encrypted_payload</code></td><td>TEXT</td><td>JSON verschlüsselt</td></tr>
+    <tr><td><code>name</code></td><td>TEXT</td><td>Display name in UI</td></tr>
+    <tr><td><code>base_url</code></td><td>TEXT NULL</td><td>See table below</td></tr>
+    <tr><td><code>encrypted_payload</code></td><td>TEXT</td><td>Encrypted JSON</td></tr>
     <tr><td><code>created_at</code>, <code>updated_at</code></td><td>TEXT</td><td>UTC ISO8601</td></tr>
   </table>
   <table>
-    <tr><th>kind</th><th>Rolle</th><th>base_url</th></tr>
+    <tr><th>kind</th><th>Role</th><th>base_url</th></tr>
     <tr><td><code>github</code></td><td>Source</td><td>NULL (api.github.com)</td></tr>
-    <tr><td><code>gitlab</code></td><td>Source</td><td>Pflicht — z.B. <code>https://gitlab.com</code> oder Self-Hosted</td></tr>
-    <tr><td><code>gitea</code></td><td>Source</td><td>Pflicht — Instance-Root, z.B. <code>https://gitea.example.com</code></td></tr>
-    <tr><td><code>forgejo</code></td><td>Source</td><td>Pflicht — Instance-Root, z.B. <code>https://forgejo.example.org</code></td></tr>
-    <tr><td><code>codeberg</code></td><td>Source</td><td>NULL (<code>https://codeberg.org</code> fest)</td></tr>
-    <tr><td><code>phasical</code></td><td>Ticket</td><td>Pflicht — API-Base</td></tr>
-    <tr><td><code>jira</code></td><td>Ticket</td><td>Pflicht — z.B. <code>https://company.atlassian.net</code></td></tr>
-    <tr><td><code>linear</code></td><td>Ticket</td><td>NULL (<code>api.linear.app</code> fest)</td></tr>
+    <tr><td><code>gitlab</code></td><td>Source</td><td>Required — e.g. <code>https://gitlab.com</code> or self-hosted</td></tr>
+    <tr><td><code>gitea</code></td><td>Source</td><td>Required — instance root, e.g. <code>https://gitea.example.com</code></td></tr>
+    <tr><td><code>forgejo</code></td><td>Source</td><td>Required — instance root, e.g. <code>https://forgejo.example.org</code></td></tr>
+    <tr><td><code>codeberg</code></td><td>Source</td><td>NULL (<code>https://codeberg.org</code> fixed)</td></tr>
+    <tr><td><code>phasical</code></td><td>Ticket</td><td>Required — API base</td></tr>
+    <tr><td><code>jira</code></td><td>Ticket</td><td>Required — e.g. <code>https://company.atlassian.net</code></td></tr>
+    <tr><td><code>linear</code></td><td>Ticket</td><td>NULL (<code>api.linear.app</code> fixed)</td></tr>
   </table>
 
-  <h4>Payload-Schema (vor Verschlüsselung)</h4>
+  <h4>Payload schema (before encryption)</h4>
   <pre><code>// github — token optional
 { "token": "ghp_..." }
 
-// gitlab — token Pflicht
+// gitlab — token required
 { "token": "glpat-..." }
 
-// gitea | forgejo | codeberg — token optional (empfohlen für Rate-Limits / private Repos)
+// gitea | forgejo | codeberg — token optional (recommended for rate limits / private repos)
 { "token": "..." }
 
 // phasical
@@ -226,17 +237,17 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
 
   <h3>4.3 <code>ticket_projects</code></h3>
   <p>
-    Eine Ticket-<strong>Integration</strong> (Credentials) kann mehrere <strong>Projekte/Teams</strong> bedienen.
-    Jede Zeile ist ein konfigurierbares Ziel mit eigenem Status-Mapping — Phasical-Projekte, Jira-Projektkeys und Linear-Teams
-    haben typisch unterschiedliche Workflow-Status.
+    One ticket <strong>integration</strong> (credentials) can serve multiple <strong>projects/teams</strong>.
+    Each row is a configurable target with its own status mapping — Phasical projects, Jira project keys, and Linear teams
+    typically have different workflow statuses.
   </p>
   <table>
-    <tr><th>Spalte</th><th>Typ</th><th>Beschreibung</th></tr>
+    <tr><th>Column</th><th>Type</th><th>Description</th></tr>
     <tr><td><code>id</code></td><td>TEXT (UUID)</td><td>PK</td></tr>
-    <tr><td><code>integration_id</code></td><td>TEXT FK</td><td>Ticket-Integration (<code>phasical</code> | <code>jira</code> | <code>linear</code>)</td></tr>
+    <tr><td><code>integration_id</code></td><td>TEXT FK</td><td>Ticket integration (<code>phasical</code> | <code>jira</code> | <code>linear</code>)</td></tr>
     <tr><td><code>external_project_id</code></td><td>TEXT</td><td>Phasical <code>projectId</code> · Jira <code>projectKey</code> · Linear <code>teamId</code></td></tr>
-    <tr><td><code>name</code></td><td>TEXT</td><td>Anzeigename in UI</td></tr>
-    <tr><td><code>create_config</code></td><td>TEXT (JSON)</td><td>Defaults beim <strong>Anlegen</strong> eines Tickets (§5.3)</td></tr>
+    <tr><td><code>name</code></td><td>TEXT</td><td>Display name in UI</td></tr>
+    <tr><td><code>create_config</code></td><td>TEXT (JSON)</td><td>Defaults when <strong>creating</strong> a ticket (§5.3)</td></tr>
     <tr><td><code>status_mapping</code></td><td>TEXT (JSON)</td><td>Open/Done/Cancelled/Superseded — §5.3</td></tr>
     <tr><td><code>on_open_ticket_policy</code></td><td>TEXT</td><td><code>supersede</code> (default) | <code>merge</code> | <code>skip_if_open</code></td></tr>
     <tr><td><code>created_at</code>, <code>updated_at</code></td><td>TEXT</td><td>UTC</td></tr>
@@ -245,83 +256,83 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
 
   <h3>4.4 <code>monitored_repos</code></h3>
   <table>
-    <tr><th>Spalte</th><th>Typ</th><th>Beschreibung</th></tr>
+    <tr><th>Column</th><th>Type</th><th>Description</th></tr>
     <tr><td><code>id</code></td><td>TEXT (UUID)</td><td>PK</td></tr>
     <tr><td><code>source_kind</code></td><td>TEXT</td><td><code>github</code> | <code>gitlab</code> | <code>gitea</code> | <code>forgejo</code> | <code>codeberg</code></td></tr>
     <tr><td><code>project_path</code></td><td>TEXT</td><td>GitHub/Gitea/Forgejo/Codeberg: <code>owner/repo</code> · GitLab: <code>namespace/project</code></td></tr>
-    <tr><td><code>enabled</code></td><td>INTEGER 0/1</td><td>Deaktiviert = kein Poll</td></tr>
-    <tr><td><code>source_integration_id</code></td><td>TEXT FK NULL</td><td>GitHub/Codeberg optional; GitLab/Gitea/Forgejo <strong>Pflicht</strong> (Instance + Token)</td></tr>
-    <tr><td><code>ticket_project_id</code></td><td>TEXT FK</td><td>Pflicht — verweist auf <code>ticket_projects</code></td></tr>
-    <tr><td><code>open_ticket_external_id</code></td><td>TEXT NULL</td><td>ID des aktuell offenen Tickets im Zielsystem</td></tr>
-    <tr><td><code>open_ticket_tag</code></td><td>TEXT NULL</td><td>Release-Tag des offenen Tickets</td></tr>
-    <tr><td><code>last_known_tag</code></td><td>TEXT NULL</td><td>Letzter gepollter Release-Tag</td></tr>
-    <tr><td><code>last_polled_at</code>, <code>last_error</code></td><td>TEXT NULL</td><td>UTC / Fehlertext</td></tr>
+    <tr><td><code>enabled</code></td><td>INTEGER 0/1</td><td>Disabled = no poll</td></tr>
+    <tr><td><code>source_integration_id</code></td><td>TEXT FK NULL</td><td>GitHub/Codeberg optional; GitLab/Gitea/Forgejo <strong>required</strong> (instance + token)</td></tr>
+    <tr><td><code>ticket_project_id</code></td><td>TEXT FK</td><td>Required — references <code>ticket_projects</code></td></tr>
+    <tr><td><code>open_ticket_external_id</code></td><td>TEXT NULL</td><td>ID of the currently open ticket in the target system</td></tr>
+    <tr><td><code>open_ticket_tag</code></td><td>TEXT NULL</td><td>Release tag of the open ticket</td></tr>
+    <tr><td><code>last_known_tag</code></td><td>TEXT NULL</td><td>Last polled release tag</td></tr>
+    <tr><td><code>last_polled_at</code>, <code>last_error</code></td><td>TEXT NULL</td><td>UTC / error text</td></tr>
     <tr><td><code>created_at</code>, <code>updated_at</code></td><td>TEXT</td><td>UTC</td></tr>
   </table>
-  <p>Unique: <code>(source_kind, project_path)</code>. Policy und Status-Mapping kommen vom verlinkten <code>ticket_project</code> — nicht vom Repo selbst.</p>
+  <p>Unique: <code>(source_kind, project_path)</code>. Policy and status mapping come from the linked <code>ticket_project</code> — not from the repo itself.</p>
 
   <h3>4.5 <code>notification_targets</code> &amp; <code>monitored_repo_notifications</code></h3>
-  <p>Notifications via <a href="https://containrrr.dev/shoutrrr/">Shoutrrr</a> (Go-Library im Worker). URL wird verschlüsselt gespeichert.</p>
+  <p>Notifications via <a href="https://containrrr.dev/shoutrrr/">Shoutrrr</a> (Go library). URL is stored encrypted.</p>
   <table>
-    <tr><th>Tabelle</th><th>Inhalt</th></tr>
+    <tr><th>Table</th><th>Content</th></tr>
     <tr><td><code>notification_targets</code></td><td><code>name</code>, <code>shoutrrr_url_encrypted</code>, <code>events_json</code>, <code>enabled</code></td></tr>
-    <tr><td><code>monitored_repo_notifications</code></td><td>Optional: Repo → Ziel(e). <strong>Keine Zeilen</strong> = alle global enabled Targets erhalten Events.</td></tr>
+    <tr><td><code>monitored_repo_notifications</code></td><td>Optional: repo → target(s). <strong>No rows</strong> = all globally enabled targets receive events.</td></tr>
   </table>
-  <p>Standard-<code>events_json</code>: <code>["create","error","supersede"]</code>. Kein Event bei <code>baseline</code> / <code>skip</code>.</p>
+  <p>Default <code>events_json</code>: <code>["create","error","supersede"]</code>. No event on <code>baseline</code> / <code>skip</code>.</p>
 
   <h3>4.6 <code>poll_runs</code> &amp; <code>poll_run_events</code></h3>
-  <p>Audit des Pollers. <code>errors_json</code>: Array <code>{ "repoId", "message" }</code>. <code>tickets_superseded</code> zählt Supersede-Aktionen.</p>
+  <p>Poller audit. <code>errors_json</code>: array <code>{ "repoId", "message" }</code>. <code>tickets_superseded</code> counts supersede actions.</p>
   <p><code>poll_run_events.action</code>:</p>
   <ul>
     <li><code>baseline</code> · <code>skip</code> · <code>create</code> · <code>supersede</code> · <code>merge</code> · <code>skip_open</code> · <code>error</code></li>
   </ul>
 
-  <h3>4.7 Zeitstempel</h3>
-  <p>Alle <code>TEXT</code>-Timestamps: RFC3339/ISO8601 UTC mit Millisekunden, z.B. <code>2026-08-06T12:00:00.000Z</code>.</p>
+  <h3>4.7 Timestamps</h3>
+  <p>All <code>TEXT</code> timestamps: RFC3339/ISO8601 UTC with milliseconds, e.g. <code>2026-08-06T12:00:00.000Z</code>.</p>
 
-  <h3>4.8 Credential-Verschlüsselung</h3>
+  <h3>4.8 Credential encryption</h3>
   <ul>
-    <li>Algorithmus: AES-256-GCM.</li>
-    <li>Key: <code>APP_ENCRYPTION_KEY</code> — 32 Bytes, hex-encoded (64 Zeichen).</li>
-    <li>Stored format: <code>base64(nonce + ciphertext + tag)</code> oder JSON <code>{ "v": 1, "data": "..." }</code>.</li>
-    <li>Go entschlüsselt nur im Worker/API — niemals an Frontend senden außer „configured“ / Maskierung.</li>
-    <li>API gibt bei Integrations <code>has_secret: true</code>, nie den Secret-Wert.</li>
+    <li>Algorithm: AES-256-GCM.</li>
+    <li>Key: <code>APP_ENCRYPTION_KEY</code> — 32 bytes, hex-encoded (64 characters).</li>
+    <li>Stored format: <code>base64(nonce + ciphertext + tag)</code> or JSON <code>{ "v": 1, "data": "..." }</code>.</li>
+    <li>Go decrypts credentials only in the Go process — never sent to frontend except “configured” / masking.</li>
+    <li>API returns <code>has_secret: true</code> for integrations, never the secret value.</li>
   </ul>
 
-  <h2 id="domain">5. Domänenlogik &amp; Idempotenz</h2>
-  <h3>5.1 Release-Entscheidung (Tag-Wechsel)</h3>
+  <h2 id="domain">5. Domain logic &amp; Idempotency</h2>
+  <h3>5.1 Release decision (tag change)</h3>
   <ol>
-    <li><strong>baseline</strong> — <code>last_known_tag</code> ist NULL → Tag speichern, kein Ticket.</li>
-    <li><strong>skip</strong> — Tag identisch mit <code>last_known_tag</code> → nichts tun.</li>
-    <li><strong>neuer Tag</strong> — weiter §5.2 (offenes Ticket? Policy?) → dann <code>create</code>, <code>supersede</code>, <code>merge</code> oder <code>skip_open</code>.</li>
-    <li><strong>error</strong> — API-Fehler (außer „kein Release“) → <code>last_error</code>, Run fortsetzen.</li>
+    <li><strong>baseline</strong> — <code>last_known_tag</code> is NULL → store tag, no ticket.</li>
+    <li><strong>skip</strong> — tag identical to <code>last_known_tag</code> → do nothing.</li>
+    <li><strong>new tag</strong> — proceed to §5.2 (open ticket? policy?) → then <code>create</code>, <code>supersede</code>, <code>merge</code>, or <code>skip_open</code>.</li>
+    <li><strong>error</strong> — API error (except “no release”) → <code>last_error</code>, continue run.</li>
   </ol>
-  <p>„Kein Release“: GitHub/GitLab/Gitea/Forgejo/Codeberg 404 auf latest-release — kein Error.</p>
+  <p>“No release”: GitHub/GitLab/Gitea/Forgejo/Codeberg 404 on latest release — not an error.</p>
 
-  <h3>5.2 Offenes Ticket &amp; Idempotenz</h3>
-  <p>Bei neuem Tag prüft der Worker <strong>live</strong> den Status des verlinkten Tickets (<code>open_ticket_external_id</code>), nicht nur die lokale DB — das Ticket kann manuell geschlossen sein.</p>
-  <p>Status-Zuordnung immer über <code>ticket_projects.status_mapping</code> des verlinkten Ticket-Projekts.</p>
+  <h3>5.2 Open ticket &amp; idempotency</h3>
+  <p>On a new tag, Go checks the linked ticket status (<code>open_ticket_external_id</code>) <strong>live</strong>, not only the local DB — the ticket may have been closed manually.</p>
+  <p>Status classification always via <code>ticket_projects.status_mapping</code> of the linked ticket project.</p>
   <table>
-    <tr><th>Live-Status</th><th>Verhalten bei neuem Tag</th></tr>
-    <tr><td>in <code>done</code> oder <code>cancelled</code></td><td><code>open_ticket_*</code> leeren → normales <strong>create</strong></td></tr>
-    <tr><td>in <code>open</code></td><td>Policy aus <code>ticket_projects.on_open_ticket_policy</code> (§5.2.1)</td></tr>
-    <tr><td>unbekannt / API-Fehler</td><td><code>error</code> für Repo; kein neues Ticket</td></tr>
+    <tr><th>Live status</th><th>Behavior on new tag</th></tr>
+    <tr><td>in <code>done</code> or <code>cancelled</code></td><td>clear <code>open_ticket_*</code> → normal <strong>create</strong></td></tr>
+    <tr><td>in <code>open</code></td><td>policy from <code>ticket_projects.on_open_ticket_policy</code> (§5.2.1)</td></tr>
+    <tr><td>unknown / API error</td><td><code>error</code> for repo; no new ticket</td></tr>
   </table>
 
   <h4>5.2.1 <code>on_open_ticket_policy</code></h4>
   <table>
-    <tr><th>Policy</th><th>Aktion</th><th>Poll-Event</th></tr>
-    <tr><td><code>supersede</code> (Default)</td><td>Altes Ticket → <code>superseded</code>-Status + Kommentar; neues Ticket anlegen</td><td><code>supersede</code> + <code>create</code></td></tr>
-    <tr><td><code>merge</code></td><td>Bestehendes Ticket aktualisieren (Titel/Beschreibung/Tag); kein zweites Ticket</td><td><code>merge</code></td></tr>
-    <tr><td><code>skip_if_open</code></td><td>Kein Ticket; optional Notification</td><td><code>skip_open</code></td></tr>
+    <tr><th>Policy</th><th>Action</th><th>Poll event</th></tr>
+    <tr><td><code>supersede</code> (default)</td><td>Old ticket → <code>superseded</code> status + comment; create new ticket</td><td><code>supersede</code> + <code>create</code></td></tr>
+    <tr><td><code>merge</code></td><td>Update existing ticket (title/description/tag); no second ticket</td><td><code>merge</code></td></tr>
+    <tr><td><code>skip_if_open</code></td><td>No ticket; optional notification</td><td><code>skip_open</code></td></tr>
   </table>
-  <p>Supersede-Kommentar (alle Provider): Link zum neuen Release, alter Tag → neuer Tag.</p>
-  <p>Nach erfolgreichem <code>create</code> / <code>supersede</code>: <code>open_ticket_external_id</code> und <code>open_ticket_tag</code> aktualisieren. Nach <code>merge</code>: nur <code>open_ticket_tag</code>.</p>
+  <p>Supersede comment (all providers): link to new release, old tag → new tag.</p>
+  <p>After successful <code>create</code> / <code>supersede</code>: update <code>open_ticket_external_id</code> and <code>open_ticket_tag</code>. After <code>merge</code>: only <code>open_ticket_tag</code>.</p>
 
-  <h3 id="ticket-projects">5.3 Ticket-Projekte &amp; Status-Mapping</h3>
-  <p>UI-Flow: Integration (Credentials) anlegen → darunter <strong>Ticket-Projekte</strong> definieren → Monitored Repo wählt ein <code>ticket_project_id</code>.</p>
+  <h3 id="ticket-projects">5.3 Ticket projects &amp; status mapping</h3>
+  <p>UI flow: create integration (credentials) → define <strong>ticket projects</strong> below → monitored repo selects a <code>ticket_project_id</code>.</p>
 
-  <h4><code>create_config</code> (beim Anlegen eines Tickets)</h4>
+  <h4><code>create_config</code> (when creating a ticket)</h4>
   <pre><code>// phasical — ticket_projects.external_project_id = projectId
 { "status": "ready", "priority": "medium" }
 
@@ -331,8 +342,8 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
 // linear — external_project_id = teamId
 { "priority": 2, "stateId": "..." }</code></pre>
 
-  <h4><code>status_mapping</code> (pro Projekt — Pflicht)</h4>
-  <p>Jedes Ticket-Projekt definiert eigenes Mapping. Werte sind Provider-native IDs/Slugs/Namen.</p>
+  <h4><code>status_mapping</code> (per project — required)</h4>
+  <p>Each ticket project defines its own mapping. Values are provider-native IDs/slugs/names.</p>
   <pre><code>{
   "open": ["ready", "in-progress", "in-review"],
   "done": ["done"],
@@ -340,21 +351,21 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   "superseded": "cancelled"
 }</code></pre>
   <table>
-    <tr><th>Key</th><th>Typ</th><th>Beschreibung</th></tr>
-    <tr><td><code>open</code></td><td>array</td><td>Status gilt als „noch offen“ — kein neues Ticket ohne Policy</td></tr>
-    <tr><td><code>done</code></td><td>array</td><td>Erledigt — nächster Release erzeugt frisches Ticket</td></tr>
-    <tr><td><code>cancelled</code></td><td>array</td><td>Abgebrochen — wie done behandeln</td></tr>
-    <tr><td><code>superseded</code></td><td>string</td><td>Ziel-Status bei Policy <code>supersede</code> (ein Wert)</td></tr>
+    <tr><th>Key</th><th>Type</th><th>Description</th></tr>
+    <tr><td><code>open</code></td><td>array</td><td>Status counts as “still open” — no new ticket without policy</td></tr>
+    <tr><td><code>done</code></td><td>array</td><td>Completed — next release creates a fresh ticket</td></tr>
+    <tr><td><code>cancelled</code></td><td>array</td><td>Cancelled — treat like done</td></tr>
+    <tr><td><code>superseded</code></td><td>string</td><td>Target status for policy <code>supersede</code> (single value)</td></tr>
   </table>
 
-  <h4>Provider-Hinweise</h4>
+  <h4>Provider notes</h4>
   <table>
-    <tr><th>Provider</th><th><code>external_project_id</code></th><th>Status-Werte in Mapping</th></tr>
-    <tr><td>Phasical</td><td><code>projectId</code></td><td>Board-Spalten-Slugs (<code>ready</code>, <code>in-progress</code>, …) — <strong>pro Projekt unterschiedlich</strong></td></tr>
-    <tr><td>Jira</td><td><code>projectKey</code> (z.B. <code>DEV</code>)</td><td>Status-<strong>Namen</strong> aus dem Workflow des Projektkeys</td></tr>
-    <tr><td>Linear</td><td><code>teamId</code></td><td>Bevorzugt <code>stateId</code>s in Arrays; optional <code>openTypes</code>/<code>doneTypes</code> (<code>unstarted</code>, <code>started</code>, <code>completed</code>, <code>canceled</code>)</td></tr>
+    <tr><th>Provider</th><th><code>external_project_id</code></th><th>Status values in mapping</th></tr>
+    <tr><td>Phasical</td><td><code>projectId</code></td><td>Board column slugs (<code>ready</code>, <code>in-progress</code>, …) — <strong>different per project</strong></td></tr>
+    <tr><td>Jira</td><td><code>projectKey</code> (e.g. <code>DEV</code>)</td><td>Status <strong>names</strong> from the workflow of the project key</td></tr>
+    <tr><td>Linear</td><td><code>teamId</code></td><td>Prefer <code>stateId</code>s in arrays; optional <code>openTypes</code>/<code>doneTypes</code> (<code>unstarted</code>, <code>started</code>, <code>completed</code>, <code>canceled</code>)</td></tr>
   </table>
-  <pre><code>// Linear-Beispiel mit stateIds
+  <pre><code>// Linear example with stateIds
 {
   "open": ["state-uuid-open", "state-uuid-in-progress"],
   "done": ["state-uuid-done"],
@@ -362,41 +373,41 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   "superseded": "state-uuid-canceled"
 }</code></pre>
 
-  <h3>5.4 Ticket-Inhalt (alle Provider)</h3>
+  <h3>5.4 Ticket content (all providers)</h3>
   <table>
-    <tr><th>Feld</th><th>Wert</th></tr>
+    <tr><th>Field</th><th>Value</th></tr>
     <tr><td><code>title</code></td><td><code>Release: {source_kind} {project_path} {tag}</code></td></tr>
-    <tr><td><code>description</code></td><td>Markdown: Release-Name, URL, <code>publishedAt</code></td></tr>
+    <tr><td><code>description</code></td><td>Markdown: release name, URL, <code>publishedAt</code></td></tr>
   </table>
 
-  <h4>API-Aufrufe (Implementierung verifizieren)</h4>
+  <h4>API calls (verify implementation)</h4>
   <table>
     <tr><th>Provider</th><th>Auth</th><th>Create</th><th>Status / Comment</th></tr>
-    <tr><td>Phasical</td><td>Bearer</td><td><code>POST {base_url}/task/{projectId}</code></td><td>Status-Update + Comment via API</td></tr>
-    <tr><td>Jira</td><td>Basic</td><td><code>POST /rest/api/3/issue</code></td><td>Transition + Comment</td></tr>
-    <tr><td>Linear</td><td>API Key header</td><td>GraphQL <code>issueCreate</code></td><td><code>issueUpdate</code> + Comment</td></tr>
+    <tr><td>Phasical</td><td>Bearer</td><td><code>POST {base_url}/task/{projectId}</code></td><td>Status update + comment via API</td></tr>
+    <tr><td>Jira</td><td>Basic</td><td><code>POST /rest/api/3/issue</code></td><td>Transition + comment</td></tr>
+    <tr><td>Linear</td><td>API Key header</td><td>GraphQL <code>issueCreate</code></td><td><code>issueUpdate</code> + comment</td></tr>
   </table>
 
   <h3 id="notifications">5.5 Notifications (Shoutrrr)</h3>
   <ul>
-    <li>Library: <code>github.com/containrrr/shoutrrr</code> im Go-Worker — keine eigenen Slack/Discord/Telegram-Integrationen.</li>
-    <li>UI: Shoutrrr-URL pro Target (z.B. <code>slack://…</code>, <code>ntfy://…</code>, <code>generic://…</code>), verschlüsselt in DB.</li>
-    <li>Events: <code>create</code>, <code>error</code>, <code>supersede</code> (konfigurierbar pro Target).</li>
-    <li>Nach Ticket-Aktionen und bei Poll-Fehlern: an alle zutreffenden Targets senden (global enabled, optional Repo-Filter).</li>
+    <li>Library: <code>github.com/containrrr/shoutrrr</code> in the Go process — no custom Slack/Discord/Telegram integrations.</li>
+    <li>UI: Shoutrrr URL per target (e.g. <code>slack://…</code>, <code>ntfy://…</code>, <code>generic://…</code>), encrypted in DB.</li>
+    <li>Events: <code>create</code>, <code>error</code>, <code>supersede</code> (configurable per target).</li>
+    <li>After ticket actions and on poll errors: send to all matching targets (globally enabled, optional repo filter).</li>
   </ul>
 
-  <h3>5.6 Poll-Run Ablauf</h3>
+  <h3>5.6 Poll run flow</h3>
   <ol>
     <li>Insert <code>poll_runs</code> status <code>running</code>.</li>
-    <li>Für jedes <code>enabled</code> Repo: Source abfragen → Entscheidung → Event loggen.</li>
-    <li>Run status: <code>success</code> (keine Errors), <code>partial</code> (einige Errors), <code>failed</code> (alle fehlgeschlagen oder kritischer Fehler).</li>
-    <li>Kein paralleles Polling desselben Runs (Mutex / <code>running</code>-Guard).</li>
+    <li>For each <code>enabled</code> repo: query source → decision → log event.</li>
+    <li>Run status: <code>success</code> (no errors), <code>partial</code> (some errors), <code>failed</code> (all failed or critical error).</li>
+    <li>No parallel polling of the same run (mutex / <code>running</code> guard).</li>
   </ol>
 
   <h3>5.7 Scheduler</h3>
-  <p>Intervall aus <code>app_settings.poll_interval_minutes</code>. Zusätzlich: manueller Trigger via API/UI.</p>
+  <p>Interval from <code>app_settings.poll_interval_minutes</code>. Additionally: manual trigger via API/UI.</p>
 
-  <h2 id="providers">6. Provider-Interfaces (Go)</h2>
+  <h2 id="providers">6. Provider interfaces (Go)</h2>
   <pre><code>type Release struct {
     Tag         string
     Name        string
@@ -406,11 +417,11 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
 
 type SourceProvider interface {
     GetLatestRelease(ctx context.Context, projectPath string) (*Release, error)
-    // (*Release, nil) = kein Release; (nil, err) = echter Fehler
+    // (*Release, nil) = no release; (nil, err) = real error
 }
 
 // Source factory: github | gitlab | gitea-compatible (gitea, forgejo, codeberg)</code></pre>
-  <p><code>gitea</code>, <code>forgejo</code> und <code>codeberg</code> nutzen denselben <code>GiteaCompatibleSource</code>-Client; Unterschied nur Default-<code>base_url</code> und ob <code>source_integration_id</code> Pflicht ist.</p>
+  <p><code>gitea</code>, <code>forgejo</code>, and <code>codeberg</code> use the same <code>GiteaCompatibleSource</code> client; difference is only default <code>base_url</code> and whether <code>source_integration_id</code> is required.</p>
   <pre><code>
 type TicketProject struct {
     ID                 string
@@ -450,7 +461,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <ul>
     <li><code>GET https://api.github.com/repos/{projectPath}/releases/latest</code></li>
     <li>Headers: <code>Accept: application/vnd.github+json</code>, <code>X-GitHub-Api-Version: 2022-11-28</code>, <code>User-Agent: release-ops</code></li>
-    <li><code>Authorization: Bearer</code> wenn Token in Integration</li>
+    <li><code>Authorization: Bearer</code> when token in integration</li>
     <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>html_url</code>→<code>URL</code>, <code>published_at</code>→<code>PublishedAt</code></li>
   </ul>
 
@@ -459,48 +470,61 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <li><code>GET {base_url}/api/v4/projects/{urlencoded_path}/releases/permalink/latest</code></li>
     <li><code>projectPath</code> → URL-encode (<code>/</code> → <code>%2F</code>)</li>
     <li>Header: <code>PRIVATE-TOKEN: {token}</code></li>
-    <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>_links.self</code> oder <code>assets.links</code>→<code>URL</code>, <code>released_at</code>→<code>PublishedAt</code></li>
-    <li>404 = kein Release</li>
+    <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>_links.self</code> or <code>assets.links</code>→<code>URL</code>, <code>released_at</code>→<code>PublishedAt</code></li>
+    <li>404 = no release</li>
   </ul>
 
-  <h3>6.3 Source: Gitea / Forgejo / Codeberg (Gitea-API)</h3>
-  <p>Gitea, Forgejo und Codeberg teilen dieselbe REST-API (<code>/api/v1</code>). Go-Implementierung: ein <code>GiteaCompatibleSource</code>-Client; <code>kind</code> steuert Default-<code>base_url</code> und UI-Label.</p>
+  <h3>6.3 Source: Gitea / Forgejo / Codeberg (Gitea API)</h3>
+  <p>Gitea, Forgejo, and Codeberg share the same REST API (<code>/api/v1</code>). Go implementation: one <code>GiteaCompatibleSource</code> client; <code>kind</code> controls default <code>base_url</code> and UI label.</p>
   <table>
     <tr><th>kind</th><th>Default <code>base_url</code></th><th><code>source_integration_id</code></th></tr>
-    <tr><td><code>gitea</code></td><td>aus Integration (Instance-Root)</td><td>Pflicht</td></tr>
-    <tr><td><code>forgejo</code></td><td>aus Integration (Instance-Root)</td><td>Pflicht</td></tr>
-    <tr><td><code>codeberg</code></td><td><code>https://codeberg.org</code> (fest)</td><td>optional (Token empfohlen)</td></tr>
+    <tr><td><code>gitea</code></td><td>from integration (instance root)</td><td>Required</td></tr>
+    <tr><td><code>forgejo</code></td><td>from integration (instance root)</td><td>Required</td></tr>
+    <tr><td><code>codeberg</code></td><td><code>https://codeberg.org</code> (fixed)</td><td>optional (token recommended)</td></tr>
   </table>
   <ul>
     <li><code>GET {base_url}/api/v1/repos/{owner}/{repo}/releases/latest</code></li>
-    <li><code>projectPath</code> = <code>owner/repo</code> (wie GitHub)</li>
-    <li>Header bei Token: <code>Authorization: token {token}</code> (Gitea-Standard)</li>
+    <li><code>projectPath</code> = <code>owner/repo</code> (like GitHub)</li>
+    <li>Header with token: <code>Authorization: token {token}</code> (Gitea standard)</li>
     <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>html_url</code>→<code>URL</code>, <code>published_at</code>→<code>PublishedAt</code></li>
-    <li>404 = kein Release; liefert neuestes non-prerelease, non-draft Release (Forgejo/GitHub-kompatibel)</li>
-    <li>Connectivity-Test: <code>GET {base_url}/api/v1/user</code></li>
+    <li>404 = no release; returns latest non-prerelease, non-draft release (Forgejo/GitHub-compatible)</li>
+    <li>Connectivity test: <code>GET {base_url}/api/v1/user</code></li>
   </ul>
 
   <h3>6.4 Ticket: Phasical / Jira / Linear</h3>
-  <p>Factory pro Integration-<code>kind</code>. Liest <code>ticket_projects</code> für Create-Defaults und Status-Mapping.</p>
-  <p>Connectivity-Tests: GitHub <code>GET /user</code>; GitLab <code>GET /api/v4/user</code>; Gitea/Forgejo/Codeberg <code>GET /api/v1/user</code>; Phasical lightweight GET; Jira <code>GET /rest/api/3/myself</code>; Linear GraphQL <code>viewer</code>.</p>
+  <p>Factory per integration <code>kind</code>. Reads <code>ticket_projects</code> for create defaults and status mapping.</p>
+  <p>Connectivity tests: GitHub <code>GET /user</code>; GitLab <code>GET /api/v4/user</code>; Gitea/Forgejo/Codeberg <code>GET /api/v1/user</code>; Phasical lightweight GET; Jira <code>GET /rest/api/3/myself</code>; Linear GraphQL <code>viewer</code>.</p>
 
   <h3>6.5 Notifications: Shoutrrr</h3>
   <ul>
-    <li><code>shoutrrr.Send(shoutrrrURL, message)</code> — URL aus <code>notification_targets</code> (decrypted).</li>
-    <li>Test-Endpoint: sendet Probe-Nachricht an ein Target.</li>
+    <li><code>shoutrrr.Send(shoutrrrURL, message)</code> — URL from <code>notification_targets</code> (decrypted).</li>
+    <li>Test endpoint: sends probe message to a target.</li>
   </ul>
 
   <h2 id="api">7. REST API (Go)</h2>
-  <p>Base path: <code>/api/v1</code>. JSON Request/Response. Fehlerformat:</p>
+  <p>Base path: <code>/api/v1</code>. JSON request/response. Error format:</p>
   <pre><code>{ "error": { "code": "VALIDATION_ERROR", "message": "..." } }</code></pre>
+
+  <h3>7.0 Auth</h3>
+  <table>
+    <tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
+    <tr><td>POST</td><td><code>/api/v1/auth/login</code></td><td>no</td><td><code>{ "email", "password" }</code> → sets session cookie; 401 on failure</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/auth/logout</code></td><td>yes</td><td>Clears session cookie</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/auth/session</code></td><td>no</td><td><code>{ "user": null }</code> or <code>{ "user": { "id", "email" } }</code></td></tr>
+  </table>
+  <pre><code>// POST /api/v1/auth/login — 200
+{ "user": { "id": "uuid", "email": "admin@example.com" } }
+
+// GET /api/v1/auth/session — 200 (always, even when logged out)
+{ "user": null }</code></pre>
 
   <h3>7.1 Status</h3>
   <table>
-    <tr><th>Method</th><th>Path</th><th>Beschreibung</th></tr>
-    <tr><td>GET</td><td><code>/api/v1/status</code></td><td>Aggregierter Betriebsstatus (siehe JSON unten)</td></tr>
-    <tr><td>POST</td><td><code>/api/v1/poll/trigger</code></td><td>Manueller Poll (async start, 202)</td></tr>
-    <tr><td>GET</td><td><code>/api/v1/poll/runs</code></td><td>Liste letzter Runs (paginiert, default limit 20)</td></tr>
-    <tr><td>GET</td><td><code>/api/v1/poll/runs/{id}</code></td><td>Run inkl. Events</td></tr>
+    <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+    <tr><td>GET</td><td><code>/api/v1/status</code></td><td>Aggregated operational status (see JSON below)</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/poll/trigger</code></td><td>Manual poll (async start, 202)</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/poll/runs</code></td><td>List of recent runs (paginated, default limit 20)</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/poll/runs/{id}</code></td><td>Run including events</td></tr>
   </table>
   <pre><code>// GET /api/v1/status
 {
@@ -543,11 +567,11 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <h3>7.3 Integrations</h3>
   <table>
     <tr><th>Method</th><th>Path</th><th>Notes</th></tr>
-    <tr><td>GET</td><td><code>/api/v1/integrations</code></td><td>Liste ohne Secrets</td></tr>
-    <tr><td>POST</td><td><code>/api/v1/integrations</code></td><td>Create mit <code>kind</code>, <code>name</code>, <code>baseUrl?</code>, <code>secret</code> (einmalig)</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/integrations</code></td><td>List without secrets</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/integrations</code></td><td>Create with <code>kind</code>, <code>name</code>, <code>baseUrl?</code>, <code>secret</code> (one-time)</td></tr>
     <tr><td>PATCH</td><td><code>/api/v1/integrations/{id}</code></td><td><code>name</code>, optional <code>secret</code> (replace)</td></tr>
-    <tr><td>DELETE</td><td><code>/api/v1/integrations/{id}</code></td><td>409 wenn noch von Repos oder Ticket-Projekten referenziert</td></tr>
-    <tr><td>POST</td><td><code>/api/v1/integrations/{id}/test</code></td><td>Connectivity pro kind (§6.3)</td></tr>
+    <tr><td>DELETE</td><td><code>/api/v1/integrations/{id}</code></td><td>409 if still referenced by repos or ticket projects</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/integrations/{id}/test</code></td><td>Connectivity per kind (§6.3)</td></tr>
   </table>
   <pre><code>// Integration list item (never includes secret)
 {
@@ -561,13 +585,13 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
 }</code></pre>
 
   <h3>7.4 Ticket Projects</h3>
-  <p>Pro Ticket-Integration mehrere Projekt-/Team-Ziele mit eigenem Status-Mapping.</p>
+  <p>Multiple project/team targets per ticket integration with their own status mapping.</p>
   <table>
     <tr><th>Method</th><th>Path</th><th>Notes</th></tr>
     <tr><td>GET</td><td><code>/api/v1/ticket-projects</code></td><td>Filter optional <code>?integrationId=</code></td></tr>
     <tr><td>POST</td><td><code>/api/v1/ticket-projects</code></td><td>Create</td></tr>
     <tr><td>PATCH</td><td><code>/api/v1/ticket-projects/{id}</code></td><td>Update mapping, policy, create_config</td></tr>
-    <tr><td>DELETE</td><td><code>/api/v1/ticket-projects/{id}</code></td><td>409 wenn noch von Repos referenziert</td></tr>
+    <tr><td>DELETE</td><td><code>/api/v1/ticket-projects/{id}</code></td><td>409 if still referenced by repos</td></tr>
   </table>
   <pre><code>// POST /api/v1/ticket-projects
 {
@@ -608,11 +632,11 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <h3>7.6 Notification Targets</h3>
   <table>
     <tr><th>Method</th><th>Path</th><th>Notes</th></tr>
-    <tr><td>GET</td><td><code>/api/v1/notification-targets</code></td><td>Liste ohne Shoutrrr-URL</td></tr>
-    <tr><td>POST</td><td><code>/api/v1/notification-targets</code></td><td><code>name</code>, <code>shoutrrrUrl</code> (einmalig), <code>events?</code>, <code>enabled?</code></td></tr>
+    <tr><td>GET</td><td><code>/api/v1/notification-targets</code></td><td>List without Shoutrrr URL</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/notification-targets</code></td><td><code>name</code>, <code>shoutrrrUrl</code> (one-time), <code>events?</code>, <code>enabled?</code></td></tr>
     <tr><td>PATCH</td><td><code>/api/v1/notification-targets/{id}</code></td><td>Optional <code>shoutrrrUrl</code> replace</td></tr>
     <tr><td>DELETE</td><td><code>/api/v1/notification-targets/{id}</code></td><td>—</td></tr>
-    <tr><td>POST</td><td><code>/api/v1/notification-targets/{id}/test</code></td><td>Probe-Nachricht via Shoutrrr</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/notification-targets/{id}/test</code></td><td>Probe message via Shoutrrr</td></tr>
   </table>
   <pre><code>// POST body
 {
@@ -624,173 +648,190 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
 
   <h3>7.7 Health</h3>
   <table>
-    <tr><th>GET</th><th><code>/healthz</code></th><th>200 OK, kein Auth</th></tr>
+    <tr><th>GET</th><th><code>/healthz</code></th><th>200 OK, no auth</th></tr>
   </table>
 
-  <h2 id="ui">8. Web-UI &amp; COSS Particles</h2>
-  <p>Alle UI mit COSS Primitives + festgelegten Particles (install via <code>npx shadcn@latest add @coss/...</code> bzw. Particle JSON URLs).</p>
+  <h2 id="ui">8. Web UI &amp; COSS Particles</h2>
+  <p>All UI with COSS primitives + specified particles (install via <code>npx shadcn@latest add @coss/...</code> or particle JSON URLs).</p>
 
-  <h3>8.1 App-Shell (alle authentifizierten Seiten)</h3>
+  <h3>8.1 App shell (all authenticated pages)</h3>
   <table>
-    <tr><th>Primitive</th><th>Particle / Pattern</th><th>Nutzung</th></tr>
+    <tr><th>Primitive</th><th>Particle / Pattern</th><th>Usage</th></tr>
     <tr><td><code>Sidebar</code> (+ <code>SidebarProvider</code>)</td><td>sidebar primitive docs</td><td>Navigation: Dashboard, Repos, Integrations, Ticket Projects, Notifications, Settings</td></tr>
-    <tr><td><code>Frame</code></td><td><a href="https://coss.com/ui/r/p-frame-3.json">p-frame-3</a> — multiple separated panels</td><td>Seiten-Layout mit Header-Bereich + Content</td></tr>
-    <tr><td><code>Breadcrumb</code></td><td><a href="https://coss.com/ui/r/p-breadcrumb-3.json">p-breadcrumb-3</a> — home icon</td><td>Sub-Seiten Kontext</td></tr>
-    <tr><td><code>Toaster</code></td><td><a href="https://coss.com/ui/r/p-toast-2.json">p-toast-2</a> — semantic types</td><td>Global Feedback (success/error)</td></tr>
+    <tr><td><code>Frame</code></td><td><a href="https://coss.com/ui/r/p-frame-3.json">p-frame-3</a> — multiple separated panels</td><td>Page layout with header area + content</td></tr>
+    <tr><td><code>Breadcrumb</code></td><td><a href="https://coss.com/ui/r/p-breadcrumb-3.json">p-breadcrumb-3</a> — home icon</td><td>Sub-page context</td></tr>
+    <tr><td><code>Toaster</code></td><td><a href="https://coss.com/ui/r/p-toast-2.json">p-toast-2</a> — semantic types</td><td>Global feedback (success/error)</td></tr>
     <tr><td><code>Spinner</code></td><td><a href="https://coss.com/ui/r/p-spinner-1.json">p-spinner-1</a></td><td>Loading states</td></tr>
   </table>
 
-  <h3>8.2 Routen</h3>
+  <h3>8.2 Routes</h3>
   <table>
-    <tr><th>Route</th><th>Seite</th><th>Beschreibung</th></tr>
+    <tr><th>Route</th><th>Page</th><th>Description</th></tr>
     <tr><td><code>/login</code></td><td>Login</td><td>Unauthenticated</td></tr>
-    <tr><td><code>/</code></td><td>Dashboard</td><td>Status, letzter Run, Quick Actions</td></tr>
+    <tr><td><code>/</code></td><td>Dashboard</td><td>Status, last run, quick actions</td></tr>
     <tr><td><code>/repos</code></td><td>Repos</td><td>CRUD monitored repos</td></tr>
-    <tr><td><code>/integrations</code></td><td>Integrations</td><td>CRUD credentials (Sources + Ticket-Provider)</td></tr>
-    <tr><td><code>/ticket-projects</code></td><td>Ticket Projects</td><td>CRUD pro Integration: Projekt/Team, Status-Mapping, Policy</td></tr>
-    <tr><td><code>/notifications</code></td><td>Notifications</td><td>Shoutrrr-Targets, Events, Test</td></tr>
-    <tr><td><code>/settings</code></td><td>Settings</td><td>Poll-Intervall</td></tr>
+    <tr><td><code>/integrations</code></td><td>Integrations</td><td>CRUD credentials (sources + ticket providers)</td></tr>
+    <tr><td><code>/ticket-projects</code></td><td>Ticket Projects</td><td>CRUD per integration: project/team, status mapping, policy</td></tr>
+    <tr><td><code>/notifications</code></td><td>Notifications</td><td>Shoutrrr targets, events, test</td></tr>
+    <tr><td><code>/settings</code></td><td>Settings</td><td>Poll interval</td></tr>
   </table>
-  <p>Middleware: alle außer <code>/login</code> und <code>/api/auth/*</code> erfordern Session.</p>
+  <p>Middleware: all pages except <code>/login</code> require session (via <code>GET /api/v1/auth/session</code> through the Go proxy).</p>
 
-  <h3>8.3 Seiten-Detail &amp; Particles</h3>
+  <h3>8.3 Page detail &amp; particles</h3>
 
   <h4>/login</h4>
   <table>
-    <tr><th>Particle</th><th>Verwendung</th></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-card-1.json">p-card-1</a> Basic card</td><td>Zentrierter Login-Container</td></tr>
+    <tr><th>Particle</th><th>Usage</th></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-card-1.json">p-card-1</a> Basic card</td><td>Centered login container</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-field-2.json">p-field-2</a> required</td><td>Email, Password</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-input-group-1.json">p-input-group-1</a></td><td>Password mit Toggle (falls in group particle)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>Submit „Sign in“</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-alert-7.json">p-alert-7</a> error</td><td>Login-Fehler</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-input-group-1.json">p-input-group-1</a></td><td>Password with toggle (if in group particle)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>Submit "Sign in"</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-alert-7.json">p-alert-7</a> error</td><td>Login error</td></tr>
   </table>
 
   <h4>/ — Dashboard</h4>
   <table>
-    <tr><th>Particle</th><th>Verwendung</th></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-card-10.json">p-card-10</a> frame header+footer</td><td>„Last poll“ Summary Card</td></tr>
+    <tr><th>Particle</th><th>Usage</th></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-card-10.json">p-card-10</a> frame header+footer</td><td>"Last poll" summary card</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-badge-5.json">p-badge-5</a> (semantic)</td><td>Run status badge</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>„Run poll now“ (triggers POST trigger)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a> TanStack sort+pagination</td><td>Repo-Status-Tabelle (subset)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>"Run poll now" (triggers POST trigger)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a> TanStack sort+pagination</td><td>Repo status table (subset)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-alert-6.json">p-alert-6</a> warning</td><td>Errors from last run</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-empty-1.json">p-empty-1</a></td><td>Keine Repos konfiguriert → CTA zu /repos</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-empty-1.json">p-empty-1</a></td><td>No repos configured → CTA to /repos</td></tr>
   </table>
 
   <h4>/repos</h4>
   <table>
-    <tr><th>Particle</th><th>Verwendung</th></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-table-3.json">p-table-3</a> checkboxes</td><td>Repo-Liste, Bulk enable/disable optional</td></tr>
+    <tr><th>Particle</th><th>Usage</th></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-3.json">p-table-3</a> checkboxes</td><td>Repo list, bulk enable/disable optional</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-dialog-1.json">p-dialog-1</a> form</td><td>Add / Edit Repo</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-alert-dialog-1.json">p-alert-dialog-1</a></td><td>Delete confirmation</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td>Source kind, source integration, <strong>ticket project</strong></td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-checkbox-group-1.json">p-checkbox-group-1</a></td><td>Optional: Notification-Targets pro Repo</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-checkbox-group-1.json">p-checkbox-group-1</a></td><td>Optional: notification targets per repo</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-switch-1.json">p-switch-1</a></td><td>Enabled toggle in form</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-badge-1.json">p-badge-1</a></td><td>source_kind + ticket project name in tables</td></tr>
   </table>
 
   <h4>/ticket-projects</h4>
   <table>
-    <tr><th>Particle</th><th>Verwendung</th></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-table-3.json">p-table-3</a></td><td>Projekt-Liste gruppiert nach Integration</td></tr>
+    <tr><th>Particle</th><th>Usage</th></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-3.json">p-table-3</a></td><td>Project list grouped by integration</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-drawer-10.json">p-drawer-10</a></td><td>Create/Edit Ticket Project</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td>Integration (ticket kinds only)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>external_project_id, Anzeigename</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>external_project_id, display name</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td><code>on_open_ticket_policy</code></td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-tabs-1.json">p-tabs-1</a></td><td>create_config Subform je Provider-Kind</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-field-2.json">p-field-2</a></td><td>Status-Mapping: open/done/cancelled Arrays + superseded</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-alert-5.json">p-alert-5</a></td><td>Hinweis: Mapping ist <strong>pro Projekt</strong> unterschiedlich</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-tabs-1.json">p-tabs-1</a></td><td>create_config subform per provider kind</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-field-2.json">p-field-2</a></td><td>Status mapping: open/done/cancelled arrays + superseded</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-alert-5.json">p-alert-5</a></td><td>Note: mapping is <strong>different per project</strong></td></tr>
   </table>
 
   <h4>/notifications</h4>
   <table>
-    <tr><th>Particle</th><th>Verwendung</th></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-table-2.json">p-table-2</a></td><td>Target-Liste (Name, Events, enabled)</td></tr>
+    <tr><th>Particle</th><th>Usage</th></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-2.json">p-table-2</a></td><td>Target list (name, events, enabled)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-drawer-10.json">p-drawer-10</a></td><td>Create/Edit Target</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-input-1.json">p-input-1</a></td><td>Shoutrrr-URL (password-style, nie re-display)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-input-1.json">p-input-1</a></td><td>Shoutrrr URL (password-style, never re-display)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-checkbox-group-1.json">p-checkbox-group-1</a></td><td>Events: create, error, supersede</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>„Test notification“</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>"Test notification"</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-toast-5.json">p-toast-5</a></td><td>Test async feedback</td></tr>
   </table>
 
   <h4>/integrations</h4>
   <table>
-    <tr><th>Particle</th><th>Verwendung</th></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-table-2.json">p-table-2</a> card-style</td><td>Integration-Liste</td></tr>
+    <tr><th>Particle</th><th>Usage</th></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-2.json">p-table-2</a> card-style</td><td>Integration list</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-drawer-10.json">p-drawer-10</a> edit form</td><td>Create/Edit Integration (mobile-friendly)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>Name; Base URL (gitlab, gitea, forgejo, phasical, jira)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-field-2.json">p-field-2</a></td><td>Jira: email field</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-input-1.json">p-input-1</a> type password</td><td>Token / API Key (never re-display)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>„Test connection“</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>"Test connection"</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-toast-5.json">p-toast-5</a> promise</td><td>Test connection async feedback</td></tr>
   </table>
 
   <h4>/settings</h4>
   <table>
-    <tr><th>Particle</th><th>Verwendung</th></tr>
+    <tr><th>Particle</th><th>Usage</th></tr>
     <tr><td><a href="https://coss.com/ui/r/p-card-8.json">p-card-8</a> within frame</td><td>Settings section</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-number-field-1.json">p-number-field-1</a></td><td>Poll interval (minutes), min 5</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>Save</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-alert-5.json">p-alert-5</a> success</td><td>Settings saved</td></tr>
   </table>
 
-  <h3>8.4 API-Client (Frontend)</h3>
-  <p>Alle Daten-Calls an <code>/api/go/api/v1/...</code> (Next Proxy). React Query Hooks: <code>useStatus</code>, <code>useRepos</code>, <code>useIntegrations</code>, <code>useTicketProjects</code>, <code>useNotificationTargets</code>, <code>useSettings</code>.</p>
+  <h3>8.4 API client (frontend)</h3>
+  <p>All API calls to <code>/api/go/api/v1/...</code> (Next proxy — same origin, session cookie forwarded automatically). Login: <code>POST /api/go/api/v1/auth/login</code>. React Query hooks: <code>useSession</code>, <code>useStatus</code>, <code>useRepos</code>, <code>useIntegrations</code>, <code>useTicketProjects</code>, <code>useNotificationTargets</code>, <code>useSettings</code>.</p>
 
-  <h2 id="env">9. Environment-Variablen</h2>
+  <h2 id="env">9. Environment variables</h2>
+  <p>All variables for the <strong>single</strong> container (<code>release-ops</code>). No service-specific Compose splitting.</p>
   <table>
-    <tr><th>Variable</th><th>Service</th><th>Pflicht</th><th>Default</th><th>Beschreibung</th></tr>
-    <tr><td><code>BETTER_AUTH_SECRET</code></td><td>web</td><td>ja</td><td>—</td><td>Session signing</td></tr>
-    <tr><td><code>BETTER_AUTH_URL</code></td><td>web</td><td>ja</td><td>—</td><td>Public URL der App</td></tr>
-    <tr><td><code>DATABASE_URL</code></td><td>web</td><td>ja</td><td><code>file:/data/auth.db</code></td><td>BetterAuth SQLite</td></tr>
-    <tr><td><code>GO_API_URL</code></td><td>web</td><td>ja</td><td><code>http://worker:8080</code></td><td>Internal Go base URL</td></tr>
-    <tr><td><code>APP_DB_PATH</code></td><td>worker</td><td>nein</td><td><code>/data/app.db</code></td><td>Application SQLite</td></tr>
-    <tr><td><code>APP_ENCRYPTION_KEY</code></td><td>worker</td><td>ja</td><td>—</td><td>64 hex chars</td></tr>
-    <tr><td><code>JWKS_URL</code></td><td>worker</td><td>ja</td><td>—</td><td>e.g. <code>{BETTER_AUTH_URL}/api/auth/jwks</code></td></tr>
-    <tr><td><code>PORT</code></td><td>worker</td><td>nein</td><td>8080</td><td>Go HTTP</td></tr>
-    <tr><td><code>PORT</code></td><td>web</td><td>nein</td><td>3000</td><td>Next.js</td></tr>
+    <tr><th>Variable</th><th>Required</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>SESSION_SECRET</code></td><td>yes</td><td>—</td><td>Session cookie signing (32+ random bytes)</td></tr>
+    <tr><td><code>APP_PUBLIC_URL</code></td><td>no</td><td>—</td><td>Public URL (e.g. <code>https://release-ops.example.com</code>) — sets <code>Secure</code> cookies when HTTPS</td></tr>
+    <tr><td><code>GO_API_URL</code></td><td>no</td><td><code>http://127.0.0.1:8080</code></td><td>Next proxy target in the same container</td></tr>
+    <tr><td><code>GO_INTERNAL_PORT</code></td><td>no</td><td><code>8080</code></td><td>Go binds only <code>127.0.0.1</code></td></tr>
+    <tr><td><code>APP_DB_PATH</code></td><td>no</td><td><code>/data/app.db</code></td><td>SQLite (app data + auth)</td></tr>
+    <tr><td><code>APP_ENCRYPTION_KEY</code></td><td>yes</td><td>—</td><td>64 hex chars — credential encryption</td></tr>
+    <tr><td><code>BOOTSTRAP_ADMIN_EMAIL</code></td><td>no</td><td>—</td><td>One-time first-start admin seed (only when no users exist)</td></tr>
+    <tr><td><code>BOOTSTRAP_ADMIN_PASSWORD</code></td><td>no</td><td>—</td><td>Pair with <code>BOOTSTRAP_ADMIN_EMAIL</code>; remove after first boot</td></tr>
+    <tr><td><code>PORT</code></td><td>no</td><td><code>3000</code></td><td>Public HTTP port (Next.js)</td></tr>
   </table>
-  <p><strong>Entfernt</strong> gegenüber alter Spec: <code>CONFIG_PATH</code>, <code>GITHUB_TOKEN</code>, <code>PHASICAL_API_KEY</code>, <code>PHASICAL_BASE_URL</code>, <code>POLL_INTERVAL_MINUTES</code> (alles in DB/UI).</p>
+  <p><strong>Removed</strong> compared to prior specs: <code>BETTER_AUTH_*</code>, <code>DATABASE_URL</code> (auth.db), <code>JWKS_URL</code>, <code>CONFIG_PATH</code>, <code>GITHUB_TOKEN</code>, <code>PHASICAL_API_KEY</code>, <code>PHASICAL_BASE_URL</code>, <code>POLL_INTERVAL_MINUTES</code> (all in DB/UI or Go auth).</p>
 
   <h2 id="deployment">10. Deployment</h2>
   <ul>
-    <li><code>docker-compose.yml</code>: Services <code>web</code>, <code>worker</code>, Volume <code>release-ops-data:/data</code>.</li>
-    <li>Worker startet Migrations (<code>golang-migrate up</code>) vor HTTP + Scheduler.</li>
-    <li>Web abhängig von Worker (<code>healthz</code>) für sauberen Start.</li>
-    <li>Einzelnes öffentliches Ingress auf <code>web:3000</code>.</li>
-    <li>Container-Images werden via GitHub Actions nach GHCR publiziert — siehe <a href="#ci">§11 CI/CD</a>.</li>
+    <li><strong>One image</strong> <code>ghcr.io/{owner}/release-ops</code> — no separate <code>-web</code> / <code>-worker</code> image.</li>
+    <li><code>docker-compose.yml</code>: <strong>one</strong> service <code>release-ops</code>, volume <code>release-ops-data:/data</code>, port <code>3000:3000</code>.</li>
+    <li><code>Dockerfile</code> multi-stage: Next standalone build + Go binary + shared runtime layer with <code>docker/entrypoint.sh</code>.</li>
+    <li>Entrypoint: <code>golang-migrate up</code> on <code>app.db</code> → Go on <code>127.0.0.1:8080</code> → Next on <code>:3000</code>.</li>
+    <li>Health probe: <code>GET /api/go/healthz</code> or dedicated Next route that proxies Go <code>/healthz</code> — no second service.</li>
+    <li>Coolify / simple self-host: one container, one URL, one volume.</li>
+    <li>Image publish via GitHub Actions — see <a href="#ci">§11 CI/CD</a>.</li>
   </ul>
+  <pre><code># docker-compose.yml (reference)
+services:
+  release-ops:
+    image: ghcr.io/mdg-labs/release-ops:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - release-ops-data:/data
+    environment:
+      SESSION_SECRET: ...
+      APP_PUBLIC_URL: https://release-ops.example.com
+      APP_ENCRYPTION_KEY: ...
+volumes:
+  release-ops-data:</code></pre>
 
   <h2 id="ci">11. CI/CD (GitHub Actions)</h2>
   <p>
-    Gleiches Muster wie <code>slugbase</code>, <code>pipewatch</code> und <code>dispatch-one</code>:
-    <strong>branch-/event-Entrypoints</strong> rufen <strong>reusable Workflows</strong> (<code>workflow_call</code>) auf.
-    Kein monolithischer Workflow pro Branch.
+    Same pattern as <code>slugbase</code>, <code>pipewatch</code>, and <code>dispatch-one</code>:
+    <strong>branch/event entrypoints</strong> call <strong>reusable workflows</strong> (<code>workflow_call</code>).
+    No monolithic workflow per branch.
   </p>
 
-  <h3>11.1 Branch-Modell</h3>
+  <h3>11.1 Branch model</h3>
   <table>
-    <tr><th>Branch</th><th>Trigger</th><th>Nach erfolgreichem CI</th></tr>
-    <tr><td><code>dev</code></td><td>Push</td><td>Build + Push GHCR: <code>nightly</code> + <code>{short_sha}</code></td></tr>
-    <tr><td><code>main</code></td><td>Push</td><td><code>prepare-release</code> — Draft-Release + Git-Tag nur bei <code>VERSION</code>-Bump</td></tr>
-    <tr><td>PR</td><td><code>pull_request</code></td><td>Nur CI — keine Images, kein Release</td></tr>
-    <tr><td>Release</td><td><code>release: published</code></td><td>Build + Push GHCR: <code>latest</code> + Release-Version-Tag</td></tr>
+    <tr><th>Branch</th><th>Trigger</th><th>After successful CI</th></tr>
+    <tr><td><code>dev</code></td><td>Push</td><td>Build + push GHCR: <code>nightly</code> + <code>{short_sha}</code></td></tr>
+    <tr><td><code>main</code></td><td>Push</td><td><code>prepare-release</code> — draft release + git tag only on <code>VERSION</code> bump</td></tr>
+    <tr><td>PR</td><td><code>pull_request</code></td><td>CI only — no images, no release</td></tr>
+    <tr><td>Release</td><td><code>release: published</code></td><td>Build + push GHCR: <code>latest</code> + release version tag</td></tr>
   </table>
-  <p>Feature-Branches: PR gegen <code>dev</code> oder <code>main</code>. Integration läuft über <code>dev</code>; <code>main</code> ist Release-Track (geschützt).</p>
+  <p>Feature branches: PR against <code>dev</code> or <code>main</code>. Integration runs via <code>dev</code>; <code>main</code> is the release track (protected).</p>
 
-  <h3>11.2 Workflow-Layout (<code>.github/workflows/</code>)</h3>
+  <h3>11.2 Workflow layout (<code>.github/workflows/</code>)</h3>
   <table>
-    <tr><th>Datei</th><th>Typ</th><th>Aufgabe</th></tr>
-    <tr><td><code>pr.yml</code></td><td>Entrypoint</td><td>PR → ruft <code>ci.yml</code></td></tr>
-    <tr><td><code>dev.yml</code></td><td>Entrypoint</td><td>Push <code>dev</code> → <code>ci.yml</code> → <code>build-and-push-images.yml</code></td></tr>
+    <tr><th>File</th><th>Type</th><th>Task</th></tr>
+    <tr><td><code>pr.yml</code></td><td>Entrypoint</td><td>PR → calls <code>ci.yml</code></td></tr>
+    <tr><td><code>dev.yml</code></td><td>Entrypoint</td><td>Push <code>dev</code> → <code>ci.yml</code> → <code>build-and-push-image.yml</code></td></tr>
     <tr><td><code>main.yml</code></td><td>Entrypoint</td><td>Push <code>main</code> → <code>ci.yml</code> → <code>prepare-release.yml</code></td></tr>
-    <tr><td><code>release.yml</code></td><td>Entrypoint</td><td><code>release: published</code> → <code>build-and-push-images.yml</code></td></tr>
-    <tr><td><code>ci.yml</code></td><td>Reusable</td><td>CI-Gate — <code>workflow_call</code> only</td></tr>
-    <tr><td><code>prepare-release.yml</code></td><td>Reusable</td><td>Draft-Release + Git-Tag bei Version-Bump</td></tr>
-    <tr><td><code>build-and-push-images.yml</code></td><td>Reusable</td><td>Matrix <code>web</code> + <code>worker</code> → GHCR</td></tr>
+    <tr><td><code>release.yml</code></td><td>Entrypoint</td><td><code>release: published</code> → <code>build-and-push-image.yml</code></td></tr>
+    <tr><td><code>ci.yml</code></td><td>Reusable</td><td>CI gate — <code>workflow_call</code> only</td></tr>
+    <tr><td><code>prepare-release.yml</code></td><td>Reusable</td><td>Draft release + git tag on version bump</td></tr>
+    <tr><td><code>build-and-push-image.yml</code></td><td>Reusable</td><td>One image <code>release-ops</code> → GHCR</td></tr>
   </table>
-  <p>Entrypoints setzen <code>concurrency</code> pro Branch/Release (<code>cancel-in-progress: true</code> außer Release-Publish). Reusable Workflows werden nur via <code>uses: ./.github/workflows/…</code> aufgerufen — kein direktes <code>on: push</code>.</p>
+  <p>Entrypoints set <code>concurrency</code> per branch/release (<code>cancel-in-progress: true</code> except release publish). Reusable workflows are only invoked via <code>uses: ./.github/workflows/…</code> — no direct <code>on: push</code>.</p>
 
-  <h3>11.3 Entrypoint-Details</h3>
+  <h3>11.3 Entrypoint details</h3>
   <h4><code>pr.yml</code></h4>
   <pre><code>on: pull_request
 jobs:
@@ -812,10 +853,10 @@ jobs:
   meta:
   # short_sha = GITHUB_SHA first 7 chars
 
-  push-images:
+  push-image:
     needs: [ci, meta]
     if: needs.ci.result == 'success'
-    uses: ./.github/workflows/build-and-push-images.yml
+    uses: ./.github/workflows/build-and-push-image.yml
     with:
       tags: |
         nightly
@@ -839,7 +880,7 @@ jobs:
       contents: write
     uses: ./.github/workflows/prepare-release.yml
     secrets: inherit</code></pre>
-  <p>Kein Image-Build auf <code>main</code>-Push — Production-Images nur bei <code>release: published</code> (wie slugbase CE-Release-Flow).</p>
+  <p>No image build on <code>main</code> push — production images only on <code>release: published</code> (like slugbase CE release flow).</p>
 
   <h4><code>release.yml</code></h4>
   <pre><code>on:
@@ -847,8 +888,8 @@ jobs:
     types: [published]
 
 jobs:
-  push-images:
-    uses: ./.github/workflows/build-and-push-images.yml
+  push-image:
+    uses: ./.github/workflows/build-and-push-image.yml
     with:
       ref: ${{ github.event.release.target_commitish }}
       tags: |
@@ -856,86 +897,84 @@ jobs:
         ${{ github.event.release.tag_name }}</code></pre>
 
   <h3>11.4 Reusable <code>ci.yml</code></h3>
-  <p>Parallele Jobs (analog pipewatch/slugbase):</p>
+  <p>Parallel jobs (similar to pipewatch/slugbase):</p>
   <table>
     <tr><th>Job</th><th>Worker (Go)</th><th>Web (Next.js)</th></tr>
     <tr><td>lint</td><td><code>golangci-lint run</code></td><td><code>npm run lint</code></td></tr>
     <tr><td>test</td><td><code>go test ./...</code></td><td><code>npm test</code></td></tr>
     <tr><td>typecheck</td><td><code>go vet</code> / optional staticcheck</td><td><code>npm run typecheck</code></td></tr>
-    <tr><td>build</td><td><code>go build -o /dev/null ./cmd/worker</code></td><td><code>npm run build</code> (production)</td></tr>
+    <tr><td>build</td><td><code>go build -o /dev/null ./cmd/server</code></td><td><code>npm run build</code> (production)</td></tr>
   </table>
-  <p>Alle Jobs müssen grün sein, bevor Downstream-Jobs (Images / Release) laufen. Kein <code>--no-verify</code> in CI.</p>
+  <p>All jobs must be green before downstream jobs (images / release) run. No <code>--no-verify</code> in CI.</p>
 
-  <h3>11.5 Root-<code>VERSION</code> &amp; <code>prepare-release.yml</code></h3>
-  <p>Repo-Root: Datei <code>VERSION</code> — eine Zeile, Semver ohne <code>v</code>-Prefix, z.B. <code>0.2.0</code>.</p>
-  <p>Script <code>scripts/ci/create-draft-release.mjs</code> (oder gleichwertig):</p>
+  <h3>11.5 Root <code>VERSION</code> &amp; <code>prepare-release.yml</code></h3>
+  <p>Repo root: file <code>VERSION</code> — one line, semver without <code>v</code> prefix, e.g. <code>0.2.0</code>.</p>
+  <p>Script <code>scripts/ci/create-draft-release.mjs</code> (or equivalent):</p>
   <ol>
-    <li><code>fetch-depth: 0</code> Checkout.</li>
-    <li>Letzten Release-Tag finden: <code>git tag --list 'v*' --sort=-v:refname</code> (oder letzter published Release via <code>gh</code>).</li>
-    <li><code>VERSION</code> bei <code>HEAD</code> vs. <code>VERSION</code> am Tag-Commit lesen.</li>
-    <li>Wenn <code>HEAD</code> nicht semver-strikt größer → <strong>skip</strong> (kein Draft, kein Tag).</li>
-    <li>Bei Bump: Git-Tag <code>v{VERSION}</code> anlegen und pushen; Draft-GitHub-Release mit Title <code>Release Ops v{VERSION}</code>; Notes = <code>git log</code> seit letztem Tag.</li>
+    <li><code>fetch-depth: 0</code> checkout.</li>
+    <li>Find last release tag: <code>git tag --list 'v*' --sort=-v:refname</code> (or last published release via <code>gh</code>).</li>
+    <li>Read <code>VERSION</code> at <code>HEAD</code> vs. <code>VERSION</code> at tag commit.</li>
+    <li>If <code>HEAD</code> is not semver-strictly greater → <strong>skip</strong> (no draft, no tag).</li>
+    <li>On bump: create git tag <code>v{VERSION}</code> and push; draft GitHub release with title <code>Release Ops v{VERSION}</code>; notes = <code>git log</code> since last tag.</li>
   </ol>
-  <p>Tag-Format: <code>v{X.Y.Z}</code> (entspricht <code>VERSION</code>). Kein date-basiertes <code>release-YYYY-MM-DD</code> — Version kommt aus der Datei.</p>
+  <p>Tag format: <code>v{X.Y.Z}</code> (matches <code>VERSION</code>). No date-based <code>release-YYYY-MM-DD</code> — version comes from the file.</p>
 
-  <h3>11.6 GHCR Images &amp; Tags</h3>
+  <h3>11.6 GHCR image &amp; tags</h3>
   <table>
-    <tr><th>Image</th><th>Registry</th><th>Build context</th></tr>
-    <tr><td><code>ghcr.io/{owner}/release-ops-web</code></td><td>GHCR</td><td><code>apps/web/Dockerfile</code></td></tr>
-    <tr><td><code>ghcr.io/{owner}/release-ops-worker</code></td><td>GHCR</td><td><code>cmd/worker</code> / Worker-Dockerfile</td></tr>
+    <tr><th>Image</th><th>Registry</th><th>Build</th></tr>
+    <tr><td><code>ghcr.io/{owner}/release-ops</code></td><td>GHCR</td><td>Root <code>Dockerfile</code> — Next + Go in the same image</td></tr>
   </table>
   <table>
-    <tr><th>Event</th><th>Tags pro Image</th></tr>
-    <tr><td>Push <code>dev</code> (CI green)</td><td><code>nightly</code>, <code>{short_sha}</code> (7 Zeichen)</td></tr>
-    <tr><td>Release <code>published</code></td><td><code>latest</code>, <code>v{X.Y.Z}</code> (= Release <code>tag_name</code>)</td></tr>
+    <tr><th>Event</th><th>Tags</th></tr>
+    <tr><td>Push <code>dev</code> (CI green)</td><td><code>nightly</code>, <code>{short_sha}</code> (7 chars)</td></tr>
+    <tr><td>Release <code>published</code></td><td><code>latest</code>, <code>v{X.Y.Z}</code> (= release <code>tag_name</code>)</td></tr>
   </table>
-  <p>Auth: <code>docker/login-action</code> mit <code>ghcr.io</code>, <code>username: ${{ github.actor }}</code>, <code>password: ${{ secrets.GITHUB_TOKEN }}</code>, Job-<code>permissions: packages: write</code>.</p>
-  <p>Reusable <code>build-and-push-images.yml</code> Inputs:</p>
+  <p>Auth: <code>docker/login-action</code> with <code>ghcr.io</code>, <code>username: ${{ github.actor }}</code>, <code>password: ${{ secrets.GITHUB_TOKEN }}</code>, job <code>permissions: packages: write</code>.</p>
+  <p>Reusable <code>build-and-push-image.yml</code> inputs:</p>
   <pre><code>workflow_call:
   inputs:
-    tags:        # newline-separated suffixes (nightly, abc1234, latest, v0.2.0)
+    tags:        # newline-separated (nightly, abc1234, latest, v0.2.0)
       required: true
-    ref:         # optional checkout ref (release target_commitish)
-      default: ""
-    service:     # optional: web | worker — default both</code></pre>
-  <p>Build: Docker Buildx, Registry-Cache (<code>buildcache</code>-Tag), kein Runtime-Secret im Image — Env zur Laufzeit (Compose/Coolify).</p>
+    ref:         # optional checkout ref
+      default: ""</code></pre>
+  <p>Build: Docker Buildx, registry cache (<code>ghcr.io/{owner}/release-ops:buildcache</code>), no runtime secret in image.</p>
 
-  <h3>11.7 MVP-CI-Anforderungen</h3>
+  <h3>11.7 MVP CI requirements</h3>
   <ul>
-    <li>Workflow-Dateien wie §11.2 vorhanden; reusable Workflows haben kein eigenes <code>on: push</code>.</li>
-    <li>PR und Push auf <code>dev</code>/<code>main</code> blockieren bei CI-Failure.</li>
-    <li><code>dev</code>-Push produziert nach CI zwei Tags pro Image (<code>nightly</code> + SHA).</li>
-    <li><code>main</code>-Push mit erhöhter <code>VERSION</code> erzeugt Draft-Release + <code>v*</code>-Tag; ohne Bump kein Release-Artefakt.</li>
-    <li>Published Release pusht <code>latest</code> + Version-Tag für <code>web</code> und <code>worker</code>.</li>
+    <li>Workflow files as in §11.2 present; reusable workflows have no own <code>on: push</code>.</li>
+    <li>PR and push to <code>dev</code>/<code>main</code> block on CI failure.</li>
+    <li><code>dev</code> push produces an image with <code>nightly</code> + SHA after CI.</li>
+    <li><code>main</code> push with increased <code>VERSION</code> creates draft release + <code>v*</code> tag; without bump no release artifact.</li>
+    <li>Published release pushes <strong>one</strong> image with <code>latest</code> + version tag.</li>
   </ul>
 
   <h2 id="mvp">12. MVP Acceptance Criteria</h2>
   <ol>
-    <li>Admin kann sich einloggen (Email/Password).</li>
-    <li>Admin kann Integrationen für alle acht <code>kind</code>-Werte anlegen; Secrets nie in API-Responses.</li>
-    <li>Admin kann pro Ticket-Integration mehrere <strong>Ticket-Projekte</strong> anlegen (Phasical-Projekte, Jira-Keys, Linear-Teams) mit eigenem <code>status_mapping</code> und <code>on_open_ticket_policy</code>.</li>
-    <li>Admin kann monitored Repo mit beliebiger Source/Ticket-Projekt-Kombination anlegen (z.B. Codeberg+Phasical, Forgejo+Jira, Gitea+Linear).</li>
-    <li>Integration-Test pro Provider liefert Erfolg/Fehler in UI.</li>
-    <li>Erster Poll: <strong>baseline</strong> — kein Ticket, <code>last_known_tag</code> gesetzt.</li>
-    <li>Poll ohne Release-Wechsel: <strong>skip</strong>.</li>
-    <li>Neues Release, kein offenes Ticket (oder done/cancelled): <strong>create</strong> — Ticket im Zielsystem sichtbar.</li>
-    <li>Neues Release, offenes Ticket, Policy <code>supersede</code>: altes Ticket → superseded-Status + Kommentar; neues Ticket angelegt; <code>tickets_superseded</code> erhöht.</li>
-    <li>Policies <code>merge</code> und <code>skip_if_open</code> funktionieren wie in §5.2.1.</li>
-    <li>Status-Mapping wird <strong>pro Ticket-Projekt</strong> angewendet (unterschiedliche open/done-Werte je Phasical-Projekt, Jira-Key, Linear-Team).</li>
-    <li>Admin kann Shoutrrr-Notification-Targets anlegen, testen; Events bei create/error/supersede.</li>
-    <li>Mindestens ein End-to-End-Test pro MVP-Source (GitHub, GitLab, Gitea, Forgejo, Codeberg) und pro Ticket-Provider (Phasical, Jira, Linear) in CI (mock oder Sandbox).</li>
-    <li>Dashboard, manueller Poll, Settings-Intervall, <code>docker compose up</code> wie zuvor.</li>
-    <li>Go + Web Tests grün in CI; Workflow-Layout gemäß <a href="#ci">§11 CI/CD</a>.</li>
+    <li>Admin can log in (email/password).</li>
+    <li>Admin can create integrations for all eight <code>kind</code> values; secrets never in API responses.</li>
+    <li>Admin can create multiple <strong>ticket projects</strong> per ticket integration (Phasical projects, Jira keys, Linear teams) with their own <code>status_mapping</code> and <code>on_open_ticket_policy</code>.</li>
+    <li>Admin can create monitored repo with any source/ticket-project combination (e.g. Codeberg+Phasical, Forgejo+Jira, Gitea+Linear).</li>
+    <li>Integration test per provider returns success/failure in UI.</li>
+    <li>First poll: <strong>baseline</strong> — no ticket, <code>last_known_tag</code> set.</li>
+    <li>Poll without release change: <strong>skip</strong>.</li>
+    <li>New release, no open ticket (or done/cancelled): <strong>create</strong> — ticket visible in target system.</li>
+    <li>New release, open ticket, policy <code>supersede</code>: old ticket → superseded status + comment; new ticket created; <code>tickets_superseded</code> incremented.</li>
+    <li>Policies <code>merge</code> and <code>skip_if_open</code> work as in §5.2.1.</li>
+    <li>Status mapping is applied <strong>per ticket project</strong> (different open/done values per Phasical project, Jira key, Linear team).</li>
+    <li>Admin can create and test Shoutrrr notification targets; events on create/error/supersede.</li>
+    <li>At least one end-to-end test per MVP source (GitHub, GitLab, Gitea, Forgejo, Codeberg) and per ticket provider (Phasical, Jira, Linear) in CI (mock or sandbox).</li>
+    <li>Dashboard, manual poll, settings interval; <code>docker compose up</code> with <strong>one</strong> service.</li>
+    <li>Go + web tests green in CI; workflow layout per <a href="#ci">§11 CI/CD</a>.</li>
   </ol>
 
   <h2 id="future">13. Post-MVP</h2>
   <ul>
-    <li>Bitbucket, Azure DevOps, weitere Git-Hoster.</li>
-    <li>Per-Repo Poll-Intervall.</li>
-    <li>Release-Filter (Pre-Releases, Regex auf Tags).</li>
-    <li>Webhook statt Poll.</li>
-    <li>Multi-User mit Rollen.</li>
-    <li>OAuth/Social Login (COSS: <a href="https://coss.com/ui/r/p-button-38.json">p-button-38</a>).</li>
+    <li>Bitbucket, Azure DevOps, more Git hosts.</li>
+    <li>Per-repo poll interval.</li>
+    <li>Release filters (pre-releases, regex on tags).</li>
+    <li>Webhook instead of poll.</li>
+    <li>Multi-user with roles.</li>
+    <li>OAuth/social login (COSS: <a href="https://coss.com/ui/r/p-button-38.json">p-button-38</a>).</li>
   </ul>
 
   <p class="docnav"><a href="index.html">Docs</a> · <a href="specs.html">Spec</a> · <a href="stack.html">Stack</a> · <a href="schema.html">Schema</a></p>

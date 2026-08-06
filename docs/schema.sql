@@ -1,8 +1,25 @@
 -- Release Ops — application schema (app.db)
--- Auth tables (BetterAuth) live in auth.db — see specs.html § Authentication
--- Apply via golang-migrate from worker on startup
+-- Auth (users + sessions) in the same file — Go-only writer; see specs.html § Authentication
+-- Apply via golang-migrate from container entrypoint / Go server on startup
 
 PRAGMA foreign_keys = ON;
+
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+-- Server-side session store (e.g. alexedwards/scs SQLite store)
+CREATE TABLE sessions (
+  token TEXT PRIMARY KEY,
+  data BLOB NOT NULL,
+  expiry REAL NOT NULL
+);
+
+CREATE INDEX idx_sessions_expiry ON sessions (expiry);
 
 CREATE TABLE app_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),

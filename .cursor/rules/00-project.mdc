@@ -5,14 +5,14 @@ alwaysApply: true
 
 # Release Ops
 
-Self-hosted release monitor — polls releases on GitHub, GitLab, Gitea, Forgejo, and Codeberg; creates tickets in Phasical, Jira, or Linear when new releases ship. Config and credentials via Web UI (COSS); worker/API in Go.
+Self-hosted release monitor — polls releases on GitHub, GitLab, Gitea, Forgejo, and Codeberg; creates tickets when new releases ship. Single Docker container (Next.js + Go); config via Web UI (COSS).
 
 ## Tech stack
 
-- Go worker/API (`cmd/worker`), `sqlc`, `golang-migrate`, SQLite (`app.db`)
-- Next.js App Router + COSS UI + BetterAuth (`apps/web`), SQLite (`auth.db`)
-- Vitest (web), `go test` (worker), ESLint, Prettier, golangci-lint
-- Docker Compose (web + worker); GitHub Actions → GHCR
+- Go API + polling (`cmd/server`), `sqlc`, `golang-migrate`, SQLite (`app.db`)
+- Next.js App Router + COSS UI (`apps/web`) — same container image; auth in Go
+- Vitest (web), `go test` (server), ESLint, Prettier, golangci-lint
+- Docker: one image `ghcr.io/{owner}/release-ops`; GitHub Actions → GHCR
 
 ## Repository state
 

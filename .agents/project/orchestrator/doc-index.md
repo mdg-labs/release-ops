@@ -10,7 +10,7 @@
 | `spec` | `docs/specs.html` | MVP contract, APIs, UI, providers, CI/CD (§11), domain logic |
 | `schema` | `docs/schema.sql` | SQLite app.db schema (source file) |
 | `schema-html` | `docs/schema.html` | Schema browser view (local preview) |
-| `stack` | `docs/stack.html` | Go, Next.js, COSS, BetterAuth, Docker |
+| `stack` | `docs/stack.html` | Go, Next.js, COSS, Go session auth, Docker |
 | `roadmap` | `docs/roadmap.html` | Implementation phases (not created yet) |
 
 ## Verification commands (when scaffold exists)

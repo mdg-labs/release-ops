@@ -32,9 +32,9 @@
 
 | Label | Scope |
 | ----- | ----- |
-| `backend` | Go worker/API, polling, providers |
-| `web` | Next.js UI, COSS, BetterAuth |
-| `db` | SQLite schema, migrations (app.db + auth.db) |
+| `backend` | Go API, polling, providers (same container as Next.js) |
+| `web` | Next.js UI, COSS, Go API proxy |
+| `db` | SQLite schema, migrations (`app.db` — app + auth) |
 | `config` | App settings in DB, env bootstrap only |
 | `ci` | GitHub Actions, Docker, GHCR |
 | `docs` | Spec and roadmap HTML docs |
