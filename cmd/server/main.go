@@ -37,11 +37,16 @@ func run(cfg *config.Config) {
 		}
 	}()
 
+	queries := storedb.New(db)
+	if err := auth.BootstrapFromEnv(context.Background(), queries, cfg.BootstrapAdminEmail, cfg.BootstrapAdminPassword); err != nil {
+		log.Fatalf("bootstrap admin: %v", err)
+	}
+
 	sessionManager := auth.NewSessionManager(db, cfg.SessionSecret, cfg.SecureCookies())
 	handler := api.NewServerRouter(&api.ServerDeps{
 		DB:      db,
 		Session: sessionManager,
-		Queries: storedb.New(db),
+		Queries: queries,
 	})
 	addr := cfg.GoListenAddr()
 	log.Printf("release-ops server listening on %s", addr)
