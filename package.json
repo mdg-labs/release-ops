@@ -8,6 +8,7 @@
     "dev": "npm run dev -w apps/web",
     "test": "npm run test -w apps/web",
     "lint": "npm run lint -w apps/web",
-    "typecheck": "npm run typecheck -w apps/web"
+    "typecheck": "npm run typecheck -w apps/web",
+    "db:check": "node scripts/ci/check-migrations-sync.mjs"
   }
 }

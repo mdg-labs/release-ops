@@ -24,11 +24,15 @@ if (!existsSync(SCHEMA)) {
   process.exit(1);
 }
 
-for (const bin of ["sqlite3", "sqldiff"]) {
-  const check = spawnSync(bin, ["--version"], { encoding: "utf8" });
+const sqliteProbes = [
+  ["sqlite3", ["--version"]],
+  ["sqldiff", ["--help"]],
+];
+for (const [bin, probeArgs] of sqliteProbes) {
+  const check = spawnSync(bin, probeArgs, { encoding: "utf8" });
   if (check.status !== 0) {
     console.warn(
-      `db:check — ${bin} not installed; skip until P01 scaffold (apt: sqlite3)`
+      `db:check — ${bin} not installed; skip until P01 scaffold (apt: sqlite3 sqlite3-tools)`
     );
     process.exit(0);
   }
