@@ -121,7 +121,7 @@ COMMIT CONTRACT — EXECUTION (MANDATORY on every execution prompt):
 Purpose: verifier Layer 3c3 checks git log for this commit. Missing [#N] → FAIL even if AC passes.
 
 Branch:
-  - Lane S: main (current integration branch)
+  - Lane S: dev (current integration branch)
   - Lane P: orchestrator/<TASK-ID> only — NEVER commit to integration branch
 
 Exactly ONE implementation commit per task (task files only).

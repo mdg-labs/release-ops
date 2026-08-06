@@ -9,7 +9,7 @@
 | Project name | Release Ops |
 | Repo path | `/home/mdguggenbichler/projects/release-ops` |
 | GitHub repo | `mdg-labs/release-ops` |
-| Integration branch | `main` |
+| Integration branch | `dev` |
 | Production branch | `main` — agents must not push here |
 | Task branch (Lane P) | `orchestrator/<TASK-ID>` |
 | Worktree (Lane P) | `../release-ops-wt/<TASK-ID>` |
