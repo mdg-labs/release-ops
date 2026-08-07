@@ -33,7 +33,7 @@ export function DashboardView(): React.ReactElement {
   const lastRunErrors = data?.lastRun?.errors ?? [];
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex min-w-0 w-full flex-col gap-6">
       <h1 className="font-semibold text-2xl">{t("title")}</h1>
 
       {isError ? (
