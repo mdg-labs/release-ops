@@ -35,6 +35,12 @@ func (m *mockStatusSettingsRepo) UpdatePollInterval(_ context.Context, pollInter
 	return m.settings, nil
 }
 
+func (m *mockStatusSettingsRepo) UpdateTokenExpiry(_ context.Context, inviteTokenExpiryHours, passwordResetTokenExpiryMinutes int64) (*store.AppSettings, error) {
+	m.settings.InviteTokenExpiryHours = inviteTokenExpiryHours
+	m.settings.PasswordResetTokenExpiryMinutes = passwordResetTokenExpiryMinutes
+	return m.settings, nil
+}
+
 type mockStatusRepoRepo struct {
 	items []store.MonitoredRepo
 }
