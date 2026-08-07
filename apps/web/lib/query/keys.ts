@@ -9,6 +9,8 @@ export const queryKeys = {
     ["ticket-projects", integrationId ?? null] as const,
   notificationTargets: () => ["notification-targets"] as const,
   settings: () => ["settings"] as const,
+  users: () => ["users"] as const,
+  invitations: () => ["invitations"] as const,
   pollRuns: (params?: PollRunsParams) => ["poll-runs", params ?? {}] as const,
   pollRun: (id: string) => ["poll-run", id] as const,
   ticketMetadata: (

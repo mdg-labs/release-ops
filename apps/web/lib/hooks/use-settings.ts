@@ -14,7 +14,7 @@ export function useSettings() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (input: Settings) =>
+    mutationFn: (input: Partial<Settings>) =>
       apiClient.patch<Settings>("/settings", input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.settings() });

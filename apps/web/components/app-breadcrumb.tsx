@@ -20,12 +20,15 @@ const PAGE_LABEL_KEYS: Record<string, string> = {
   "/ticket-projects": "ticketProjects",
   "/notifications": "notifications",
   "/settings": "settings",
+  "/settings/users": "settingsUsers",
 };
 
 export function AppBreadcrumb(): React.ReactElement {
   const pathname = usePathname();
   const t = useTranslations("nav");
-  const labelKey = PAGE_LABEL_KEYS[pathname] ?? "dashboard";
+  const labelKey =
+    PAGE_LABEL_KEYS[pathname] ??
+    (pathname.startsWith("/settings") ? "settings" : "dashboard");
   const pageLabel = t(labelKey);
   const showPageCrumb = pathname !== "/";
 

@@ -65,6 +65,49 @@ export type StatusResponse = {
 
 export type Settings = {
   pollIntervalMinutes: number;
+  inviteTokenExpiryHours: number;
+  passwordResetTokenExpiryMinutes: number;
+  smtpConfigured?: boolean;
+};
+
+export type SettingsPatch = Partial<Settings>;
+
+export type UserListItem = {
+  id: string;
+  email: string;
+  createdAt: string;
+};
+
+export type ListUsersResponse = {
+  items: UserListItem[];
+};
+
+export type Invitation = {
+  id: string;
+  email: string;
+  expiresAt: string;
+  createdAt: string;
+  invitedByUserId: string | null;
+};
+
+export type ListInvitationsResponse = {
+  items: Invitation[];
+};
+
+export type CreateInvitationInput = {
+  email: string;
+};
+
+export type CreateInvitationResponse = {
+  id: string;
+  email: string;
+  expiresAt: string;
+  inviteUrl: string;
+};
+
+export type EmailChangeRequestInput = {
+  newEmail: string;
+  currentPassword: string;
 };
 
 export type Integration = {

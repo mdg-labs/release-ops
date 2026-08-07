@@ -382,7 +382,12 @@ describe("React Query hooks", () => {
         path: "/api/go/api/v1/settings",
         method: "GET",
       })
-      .reply(200, { pollIntervalMinutes: 360 });
+      .reply(200, {
+        pollIntervalMinutes: 360,
+        inviteTokenExpiryHours: 168,
+        passwordResetTokenExpiryMinutes: 60,
+        smtpConfigured: false,
+      });
 
     const queryClient = createTestQueryClient();
     const { result } = renderHook(() => useSettings(), {
@@ -398,14 +403,24 @@ describe("React Query hooks", () => {
         method: "PATCH",
         body: JSON.stringify({ pollIntervalMinutes: 120 }),
       })
-      .reply(200, { pollIntervalMinutes: 120 });
+      .reply(200, {
+        pollIntervalMinutes: 120,
+        inviteTokenExpiryHours: 168,
+        passwordResetTokenExpiryMinutes: 60,
+        smtpConfigured: false,
+      });
 
     pool
       .intercept({
         path: "/api/go/api/v1/settings",
         method: "GET",
       })
-      .reply(200, { pollIntervalMinutes: 120 });
+      .reply(200, {
+        pollIntervalMinutes: 120,
+        inviteTokenExpiryHours: 168,
+        passwordResetTokenExpiryMinutes: 60,
+        smtpConfigured: false,
+      });
 
     pool
       .intercept({
