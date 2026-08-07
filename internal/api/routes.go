@@ -34,10 +34,22 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 
 	rateLimiter := apimw.NewRateLimiter()
 
+	appPublicURL := strings.TrimSpace(os.Getenv("APP_PUBLIC_URL"))
+
 	api.With(rateLimiter.Login).Post("/auth/login", authHandlers.Login)
 	api.Get("/auth/session", authHandlers.Session)
 	api.With(rateLimiter.AcceptInvitation).Post("/auth/accept-invitation", authHandlers.AcceptInvitation)
 	api.With(rateLimiter.ConfirmEmailChange).Post("/auth/confirm-email-change", authHandlers.ConfirmEmailChange)
+
+	passwordResetHandlers := &auth.PasswordResetHandlers{
+		SessionManager: deps.Session,
+		Queries:        deps.Queries,
+		TokenService:   auth.NewTokenService(deps.Queries),
+		Mailer:         deps.Mailer,
+		AppPublicURL:   appPublicURL,
+	}
+	api.With(rateLimiter.ForgotPassword).Post("/auth/forgot-password", passwordResetHandlers.ForgotPassword)
+	api.With(rateLimiter.ResetPassword).Post("/auth/reset-password", passwordResetHandlers.ResetPassword)
 
 	api.Group(func(protected chi.Router) {
 		protected.Use(apimw.RequireSession(deps.Session))
@@ -47,11 +59,11 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 			return
 		}
 
-		registerProtectedAPIRoutes(protected, deps)
+		registerProtectedAPIRoutes(protected, deps, appPublicURL)
 	})
 }
 
-func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps) {
+func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appPublicURL string) {
 	st := deps.Store
 	pollRunner := deps.PollRunner
 	if pollRunner == nil {
@@ -85,7 +97,6 @@ func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps) {
 		Notifications: st.Notifications(),
 		Tester:        deps.NotificationTester,
 	}
-	appPublicURL := strings.TrimSpace(os.Getenv("APP_PUBLIC_URL"))
 	tokenService := auth.NewTokenService(deps.Queries)
 	userHandlers := &handlers.UsersHandlers{
 		Queries:        deps.Queries,

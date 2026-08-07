@@ -56,6 +56,14 @@ SET
 WHERE id = ?
 RETURNING id, email, password_hash, created_at, updated_at;
 
+-- name: UpdateUserPassword :one
+UPDATE users
+SET
+  password_hash = ?,
+  updated_at = ?
+WHERE id = ?
+RETURNING id, email, password_hash, created_at, updated_at;
+
 -- name: DeleteUser :exec
 DELETE FROM users
 WHERE id = ?;
