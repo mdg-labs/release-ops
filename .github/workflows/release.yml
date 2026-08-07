@@ -1,0 +1,17 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  push-image:
+    permissions:
+      packages: write
+    uses: ./.github/workflows/build-and-push-image.yml
+    with:
+      ref: ${{ github.event.release.target_commitish }}
+      tags: |
+        latest
+        ${{ github.event.release.tag_name }}
+    secrets: inherit
