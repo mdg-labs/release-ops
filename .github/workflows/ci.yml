@@ -60,7 +60,7 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install SQLite tools
-        run: sudo apt-get update && sudo apt-get install -y sqlite3
+        run: sudo apt-get update && sudo apt-get install -y sqlite3 sqlite3-tools
       - run: npm ci
       - run: npm run db:check
 

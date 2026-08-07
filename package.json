@@ -10,5 +10,8 @@
     "lint": "npm run lint -w apps/web",
     "typecheck": "npm run typecheck -w apps/web",
     "db:check": "node scripts/ci/check-migrations-sync.mjs"
+  },
+  "scriptDocs": {
+    "db:check": "Fail if db/schema.sql drifts from migrations/ (SQLite sqldiff). Requires sqlite3 and sqldiff on PATH (apt: sqlite3 sqlite3-tools). CI db-check job installs both. See scripts/ci/check-migrations-sync.mjs and docs/specs.html#schema-migrations."
   }
 }
