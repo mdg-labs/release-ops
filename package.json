@@ -2,10 +2,14 @@
   "name": "release-ops",
   "private": true,
   "workspaces": [
-    "apps/web"
+    "apps/web",
+    "apps/docs"
   ],
   "scripts": {
     "dev": "npm run dev -w apps/web",
+    "dev:docs": "npm run dev -w apps/docs",
+    "docs:build": "npm run sync:content -w apps/docs && npm run build -w apps/docs",
+    "docs:sync": "node scripts/sync-docs-content.mjs",
     "test": "npm run test -w apps/web",
     "lint": "npm run lint -w apps/web",
     "typecheck": "npm run typecheck -w apps/web",

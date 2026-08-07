@@ -1,0 +1,107 @@
+---
+title: "Tech stack"
+description: "Go, Next.js, COSS, SQLite, Docker, and CI/CD tooling choices."
+---
+
+<p class="lede">One container for self-hosting: Next.js (COSS UI) and Go (auth, API, polling) in the same image. Single SQLite file <code>app.db</code> on volume <code>/data</code>.</p>
+
+  <h2>Repository layout (target)</h2>
+  
+```
+release-ops/
+  apps/web/          # Next.js App Router, COSS — UI + Go API proxy
+  cmd/server/        # Go: HTTP API + poll scheduler + auth
+  internal/          # Go packages (api, poll, providers, store, crypto)
+  docker/            # entrypoint.sh
+  Dockerfile         # Single image: Next standalone + Go binary
+  migrations/        # sqldiff-generated SQL only (golang-migrate applies)
+  db/schema.sql      # Canonical DDL — edit then migrate-diff
+  scripts/migrate-diff.mjs
+  scripts/ci/        # check-migrations-sync.mjs, create-draft-release.mjs
+  .github/workflows/ # pr, dev, main, release + reusable workflows
+  VERSION            # Semver — release tag v&#123;VERSION&#125; on main bump
+  docs/              # This specification
+  docker-compose.yml # Single service: release-ops
+```
+
+
+  <h2>Backend — Go</h2>
+  <table>
+    <tr><th>Tool</th><th>Why</th></tr>
+    <tr><td><code>Go 1.22+</code></td><td>API + background polling in one process; small binary in the container image.</td></tr>
+    <tr><td><code>chi</code></td><td>HTTP router for the REST API (locked for MVP).</td></tr>
+    <tr><td><code>modernc.org/sqlite</code></td><td>SQLite driver without CGO — easier cross-builds in Docker (locked for MVP).</td></tr>
+    <tr><td><code>sqlc</code></td><td>Typed queries from SQL — schema path <code>migrations/</code> (generated from <code>db/schema.sql</code>).</td></tr>
+    <tr><td><code>sqldiff</code></td><td><code>scripts/migrate-diff.mjs</code> — generates <code>migrations/*.sql</code> from <code>db/schema.sql</code> (SQLite, free).</td></tr>
+    <tr><td><code>golang-migrate</code></td><td>Applies versioned migrations — <code>up</code> in container entrypoint.</td></tr>
+    <tr><td><code>robfig/cron</code></td><td>Poll scheduler — interval from <code>poll_interval_minutes</code> (locked for MVP).</td></tr>
+    <tr><td><code>golang.org/x/crypto/bcrypt</code></td><td>Password hashing for admin login.</td></tr>
+    <tr><td><code>github.com/alexedwards/scs/v2</code></td><td>Session cookies + SQLite session store.</td></tr>
+    <tr><td><code>github.com/containrrr/shoutrrr</code></td><td>Notifications to Slack, ntfy, Discord, … via URL schemes.</td></tr>
+  </table>
+
+  <h2>Frontend — Next.js + COSS</h2>
+  <table>
+    <tr><th>Tool</th><th>Why</th></tr>
+    <tr><td><code>Next.js 15</code> (App Router)</td><td>COSS UI; <code>/api/go/*</code> proxy to Go (forwards session cookies).</td></tr>
+    <tr><td><code>React 19</code></td><td>COSS standard.</td></tr>
+    <tr><td><code>Tailwind CSS v4</code></td><td>Required for COSS.</td></tr>
+    <tr><td><code>@base-ui/react</code> + COSS registry</td><td>UI components per <code>.agents/skills/coss</code>.</td></tr>
+    <tr><td><code>@tanstack/react-query</code></td><td>Server state for tables and forms.</td></tr>
+    <tr><td><code>next-intl</code></td><td>All UI strings via message files — zero hardcoded copy; ESLint enforced.</td></tr>
+    <tr><td><code>eslint-plugin-i18next</code></td><td><code>i18next/no-literal-string</code> in CI lint gate.</td></tr>
+  </table>
+
+  <h2>Data</h2>
+  <table>
+    <tr><th>File</th><th>Contents</th></tr>
+    <tr><td><code>/data/app.db</code></td><td>Users, sessions, repos, integrations, ticket projects, notifications, poll runs — <a href="/schema/">schema</a></td></tr>
+  </table>
+  <p>Single SQLite file on the volume; Go is the only writer (Next never opens the DB).</p>
+
+  <h2>Secrets</h2>
+  <table>
+    <tr><th>Tool</th><th>Why</th></tr>
+    <tr><td><code>AES-256-GCM</code> (Go <code>crypto/aes</code>)</td><td>Encrypt integration credentials and Shoutrrr URLs in <code>app.db</code>.</td></tr>
+    <tr><td><code>SESSION_SECRET</code></td><td>Session cookie signing (Go auth).</td></tr>
+    <tr><td><code>APP_ENCRYPTION_KEY</code></td><td>32-byte key (hex) for credential encryption.</td></tr>
+  </table>
+
+  <h2>Quality</h2>
+  <table>
+    <tr><th>Area</th><th>Tool</th></tr>
+    <tr><td>Go tests</td><td><code>go test</code>, <code>httptest</code>, provider mocks</td></tr>
+    <tr><td>Go lint</td><td><code>golangci-lint</code></td></tr>
+    <tr><td>Web tests</td><td><code>vitest</code> + React Testing Library</td></tr>
+    <tr><td>Web lint</td><td><code>eslint</code> + <code>prettier</code></td></tr>
+  </table>
+
+  <h2>CI/CD</h2>
+  <table>
+    <tr><th>Tool</th><th>Why</th></tr>
+    <tr><td>GitHub Actions</td><td>Branch entrypoints + reusable <code>workflow_call</code> (slugbase/pipewatch pattern).</td></tr>
+    <tr><td>GHCR</td><td>Single image <code>release-ops</code>: <code>dev</code> → <code>nightly</code> + SHA · release → <code>latest</code> + <code>v&#123;VERSION&#125;</code>.</td></tr>
+    <tr><td>Root <code>VERSION</code></td><td>Semver for the release tag on <code>main</code> (only on bump).</td></tr>
+    <tr><td><code>docker/build-push-action</code></td><td>Single-image build and push.</td></tr>
+  </table>
+
+  <h2>Deployment</h2>
+  <table>
+    <tr><th>Tool</th><th>Why</th></tr>
+    <tr><td><code>Docker</code> multi-stage</td><td><strong>One</strong> image <code>ghcr.io/&#123;owner&#125;/release-ops</code> — Coolify-compatible.</td></tr>
+    <tr><td><code>docker-compose</code></td><td>Single service <code>release-ops</code>, port 3000, volume <code>/data</code>.</td></tr>
+    <tr><td>GitHub Actions</td><td>CI — see <a href="/spec/#ci">Spec §11</a>.</td></tr>
+  </table>
+
+  <h2>Intentionally not used (MVP)</h2>
+  <ul>
+    <li><strong>No multi-container deploy</strong> — no separate <code>web</code> + <code>worker</code> Compose.</li>
+    <li><strong>No YAML config</strong> — everything via UI + <code>app.db</code>.</li>
+    <li><strong>No Node worker</strong> — polling only in Go.</li>
+    <li><strong>No Drizzle</strong> — Go stack uses sqlc + sqldiff-generated migrations (<code>scripts/migrate-diff.mjs</code>).</li>
+    <li><strong>No OAuth/social login</strong> in MVP — email/password via Go session auth.</li>
+    <li><strong>No Bitbucket / Azure DevOps</strong> — MVP: five source kinds; Phasical + Jira + Linear tickets.</li>
+    <li><strong>No Redis/Postgres</strong> — SQLite is enough for single-instance self-host.</li>
+  </ul>
+
+  

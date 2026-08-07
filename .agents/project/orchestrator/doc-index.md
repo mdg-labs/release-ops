@@ -6,12 +6,13 @@
 
 | Shorthand | Path | Topics |
 | --------- | ---- | ------ |
-| `docs` | `docs/index.html` | Doc hub, MVP summary |
+| `docs-site` | `apps/docs/` | Published docs (Starlight) → https://mdg-labs.github.io/release-ops/ |
+| `docs` | `docs/index.html` | Legacy hub source (synced to site intro) |
 | `spec` | `docs/specs.html` | MVP contract, APIs, UI, providers, CI/CD (§11), domain logic |
 | `schema` | `db/schema.sql` | SQLite app.db schema (canonical DDL) |
-| `schema-html` | `docs/schema.html` | Schema browser view (local preview) |
+| `schema-html` | `docs/schema.html` | Schema browser view (synced to site) |
 | `stack` | `docs/stack.html` | Go, Next.js, COSS, Go session auth, Docker |
-| `roadmap` | `docs/roadmap.html` | Implementation phases — 11 epics, 51 leaves; machine source: `docs/roadmap.json`; audit: `node scripts/audit-roadmap-spec.mjs` |
+| `roadmap` | `docs/roadmap.html` | Plan file — 11 epics, 51 leaves; machine source: `docs/roadmap.json`; site: `/roadmap/` |
 
 ## Verification commands (when scaffold exists)
 

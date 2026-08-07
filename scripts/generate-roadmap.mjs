@@ -3,7 +3,7 @@
  * Generates docs/roadmap.json and docs/roadmap.html from detailed epic modules.
  * Run: node scripts/generate-roadmap.mjs
  */
-import { writeFileSync } from "node:fs";
+import { writeFileSync, copyFileSync, mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -235,6 +235,14 @@ roadmap.meta.spec_audit = {
 };
 writeFileSync(OUT_JSON, JSON.stringify(roadmap, null, 2) + "\n");
 console.log(`Wrote ${OUT_JSON}`);
+
+const docsDataDir = join(__dirname, "../apps/docs/src/data");
+const docsPublicDir = join(__dirname, "../apps/docs/public");
+mkdirSync(docsDataDir, { recursive: true });
+mkdirSync(docsPublicDir, { recursive: true });
+copyFileSync(OUT_JSON, join(docsDataDir, "roadmap.json"));
+copyFileSync(OUT_JSON, join(docsPublicDir, "roadmap.json"));
+console.log("Copied roadmap.json → apps/docs/src/data/ and public/");
 if (audit.status !== 0) {
   console.warn("Spec audit reported gaps — see meta.spec_audit in roadmap.json");
   console.warn(audit.stdout);

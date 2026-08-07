@@ -10,3 +10,5 @@ coverage
 .agents/project/agent-memory/
 .agents/project/phasical-intake/plans/
 apps/web/tsconfig.tsbuildinfo
+apps/docs/dist/
+apps/docs/.astro/

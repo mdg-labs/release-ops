@@ -1,0 +1,72 @@
+---
+import roadmapData from "../../data/roadmap.json";
+import { simpleMarkdown } from "../../lib/simple-markdown";
+import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
+import {
+  type RoadmapDocument,
+  type RoadmapLeaf,
+  isRoadmapEpic,
+  isRoadmapLeaf,
+} from "../../types/roadmap";
+
+const roadmap = roadmapData as RoadmapDocument;
+const epics = roadmap.tasks.filter(isRoadmapEpic);
+const leavesByParent = new Map<string, RoadmapLeaf[]>();
+for (const task of roadmap.tasks) {
+  if (!isRoadmapLeaf(task)) continue;
+  const siblings = leavesByParent.get(task.parent) ?? [];
+  siblings.push(task);
+  leavesByParent.set(task.parent, siblings);
+}
+---
+
+<StarlightPage
+  frontmatter={{
+    title: "Implementation roadmap",
+    description: `${roadmap.meta.epic_count} epics and ${roadmap.meta.leaf_count} leaf tasks for Release Ops.`,
+  }}
+>
+  <p>
+    {roadmap.meta.epic_count} epics · {roadmap.meta.leaf_count} leaf tasks · generated{" "}
+    {roadmap.generated} · spec {roadmap.spec_ref}
+  </p>
+
+  <p class="roadmap-meta">
+    <span>Integration branch: <code>{roadmap.integration_branch}</code></span>
+    <span>Machine source: <code>docs/roadmap.json</code></span>
+  </p>
+
+  {
+    epics.map((epic) => {
+      const leaves = leavesByParent.get(epic.id) ?? [];
+      return (
+        <details class="roadmap-epic" open={epic.id === "E01"}>
+          <summary>
+            {epic.id} — {epic.title}
+            <span class="roadmap-tag">{epic.domain}</span>
+          </summary>
+          <div class="roadmap-epic-body">
+            <div set:html={simpleMarkdown(epic.description)} />
+            <p class="roadmap-meta">
+              <span>Depends on: {(epic.depends_on ?? []).join(", ") || "—"}</span>
+              <span>Doc ref: {(epic.doc_ref ?? []).join(", ") || "—"}</span>
+            </p>
+            {leaves.map((leaf) => (
+              <div class="roadmap-leaf">
+                <h3>
+                  {leaf.id} — {leaf.title}
+                </h3>
+                <p class="roadmap-meta">
+                  <span class="roadmap-tag">{leaf.domain}</span>
+                  <span>Lane {leaf.lane ?? "S"}</span>
+                  <span>Deps: {(leaf.depends_on ?? []).join(", ") || "—"}</span>
+                </p>
+                <div set:html={simpleMarkdown(leaf.description)} />
+              </div>
+            ))}
+          </div>
+        </details>
+      );
+    })
+  }
+</StarlightPage>

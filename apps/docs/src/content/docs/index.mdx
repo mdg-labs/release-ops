@@ -1,0 +1,83 @@
+---
+title: Introduction
+description: Self-hosted release monitor with a web UI — poll releases and create tickets when they ship.
+template: splash
+hero:
+  tagline: Self-hosted release monitor — one Docker container, full control.
+  actions:
+    - text: Get started
+      link: /getting-started/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/mdg-labs/release-ops
+      icon: external
+      variant: minimal
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+<p class="lede">
+    Self-hosted release monitor with a web UI: poll releases on GitHub, GitLab, Gitea, Forgejo, and Codeberg;
+    create tickets in Phasical, Jira, or Linear when a real new release ships.
+    One Docker container for self-hosting — no multi-service Compose.
+  </p>
+
+  
+
+  <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">Spec precedence</h2>
+  <ol>
+    <li><a href="/spec/">specs.html</a> — MVP contract</li>
+    <li><a href="/schema/">schema.html</a> (browser view) · <a href="https://github.com/mdg-labs/release-ops/blob/dev/db/schema.sql"><code>db/schema.sql</code></a> — database</li>
+    <li><a href="/stack/">stack.html</a> — tooling</li>
+  </ol>
+
+  <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">MVP at a glance</h2>
+  <p>
+    <span class="tag">Go</span>
+    <span class="tag">SQLite</span>
+    <span class="tag">Next.js</span>
+    <span class="tag">COSS</span>
+    <span class="tag">Go auth</span>
+    <span class="tag">GitHub</span>
+    <span class="tag">GitLab</span>
+    <span class="tag">Gitea</span>
+    <span class="tag">Forgejo</span>
+    <span class="tag">Codeberg</span>
+    <span class="tag">Phasical</span>
+    <span class="tag">Jira</span>
+    <span class="tag">Linear</span>
+    <span class="tag">Shoutrrr</span>
+  </p>
+  <ul>
+    <li>Sources: GitHub, GitLab, Gitea, Forgejo, Codeberg · Tickets: Phasical, Jira, Linear (all from day 1)</li>
+    <li>Ticket integrations with <strong>multiple project/team targets</strong> — each with its own open/done/cancelled/superseded mapping</li>
+    <li>Open-ticket idempotency: default <code>supersede</code>; alternatives <code>merge</code> or <code>skip_if_open</code></li>
+    <li>Notifications via Shoutrrr (Slack, ntfy, …) — no custom chat integrations</li>
+    <li>Admin UI for repos, integrations, ticket projects, notifications, poll interval</li>
+    <li>CI: entrypoint workflows + reusable CI/release/image build (dev → nightly, main → VERSION draft, release → GHCR)</li>
+    <li>Baseline / skip / create — no ticket on first sight of a repo</li>
+  </ul>
+  
+
+<CardGrid>
+  <LinkCard title="Getting started" href="/getting-started/">
+    Docker Compose setup, env vars, admin bootstrap, troubleshooting.
+  </LinkCard>
+  <LinkCard title="Product specification" href="/spec/">
+    Architecture, schema, APIs, providers, UI, MVP acceptance criteria.
+  </LinkCard>
+  <LinkCard title="Tech stack" href="/stack/">
+    Go, Next.js, COSS, session auth, SQLite, Docker.
+  </LinkCard>
+  <LinkCard title="Database schema" href="/schema/">
+    SQLite app.db — HTML view; canonical DDL in db/schema.sql.
+  </LinkCard>
+  <LinkCard title="MVP checklist" href="/mvp-checklist/">
+    Sign-off against all 15 acceptance criteria.
+  </LinkCard>
+  <LinkCard title="Roadmap" href="/roadmap/">
+    Implementation phases — epics, leaf tasks, spec backlinks.
+  </LinkCard>
+</CardGrid>
+
