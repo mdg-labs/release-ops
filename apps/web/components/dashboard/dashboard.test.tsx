@@ -79,6 +79,19 @@ function renderDashboard(): void {
   );
 }
 
+function mockPollRuns(
+  pool: ReturnType<MockAgent["get"]>,
+  runs: unknown[] = [],
+): void {
+  pool
+    .intercept({
+      path: "/api/go/api/v1/poll/runs",
+      method: "GET",
+      query: { limit: "10", offset: "0" },
+    })
+    .reply(200, runs);
+}
+
 describe("DashboardView", () => {
   let mockAgent: MockAgent;
   let originalFetch: typeof fetch;
@@ -118,6 +131,7 @@ describe("DashboardView", () => {
         method: "GET",
       })
       .reply(200, sampleStatus);
+    mockPollRuns(pool);
 
     renderDashboard();
 
@@ -141,6 +155,7 @@ describe("DashboardView", () => {
         method: "GET",
       })
       .reply(200, sampleStatus);
+    mockPollRuns(pool);
 
     renderDashboard();
 
@@ -157,6 +172,7 @@ describe("DashboardView", () => {
       })
       .reply(200, sampleStatus)
       .times(2);
+    mockPollRuns(pool);
     pool
       .intercept({
         path: "/api/go/api/v1/poll/trigger",
@@ -189,6 +205,7 @@ describe("DashboardView", () => {
         repos: [],
         isPolling: false,
       });
+    mockPollRuns(pool);
 
     renderDashboard();
 

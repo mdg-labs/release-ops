@@ -56,7 +56,41 @@
       "polling": "Polling",
       "success": "Success",
       "failed": "Failed",
+      "partial": "Partial",
       "running": "Running"
+    },
+    "pollHistorySectionTitle": "Poll run history",
+    "pollHistoryEmptyTitle": "No poll runs yet",
+    "pollHistoryEmptyDescription": "Runs appear here after the scheduler or a manual poll completes.",
+    "pollHistoryLoadFailed": "Failed to load poll run history.",
+    "pollHistoryDetailTitle": "Poll run details",
+    "pollHistoryDetailDescription": "Events and counters for this poll run.",
+    "pollHistoryDetailLoadFailed": "Failed to load poll run details.",
+    "pollHistoryEventsTitle": "Events",
+    "pollHistoryNoEvents": "No events recorded for this run.",
+    "pollHistoryErrorsTitle": "Errors",
+    "noEventDetail": "—",
+    "paginationRange": "Showing {start}–{end}",
+    "pollHistoryColumns": {
+      "startedAt": "Started",
+      "finishedAt": "Finished",
+      "status": "Status",
+      "reposChecked": "Repos checked",
+      "ticketsCreated": "Tickets created"
+    },
+    "pollHistoryEventColumns": {
+      "time": "Time",
+      "action": "Action",
+      "detail": "Detail"
+    },
+    "eventActions": {
+      "baseline": "Baseline",
+      "skip": "Skip",
+      "create": "Create ticket",
+      "supersede": "Supersede",
+      "merge": "Merge",
+      "skip_open": "Skip open ticket",
+      "error": "Error"
     }
   },
   "repos": {

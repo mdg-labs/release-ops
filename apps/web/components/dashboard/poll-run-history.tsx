@@ -1,0 +1,446 @@
+"use client";
+
+import { HistoryIcon } from "lucide-react";
+import { useFormatter, useTranslations } from "next-intl";
+import { useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Frame, FrameFooter, FramePanel } from "@/components/ui/frame";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Sheet,
+  SheetClose,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetPanel,
+  SheetPopup,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { usePollRun, usePollRuns } from "@/lib/hooks/use-poll";
+import { isPollEventAction } from "@/lib/poll/actions";
+import type { PollRun, PollRunEvent } from "@/lib/query/types";
+
+const PAGE_SIZE = 10;
+
+function runStatusVariant(
+  status: string,
+): "success" | "error" | "warning" | "info" | "secondary" {
+  switch (status) {
+    case "success":
+      return "success";
+    case "failed":
+      return "error";
+    case "partial":
+      return "warning";
+    case "running":
+      return "info";
+    default:
+      return "secondary";
+  }
+}
+
+function PollRunsEmptyState(): React.ReactElement {
+  const t = useTranslations("dashboard");
+
+  return (
+    <div
+      className="flex min-w-0 flex-1 flex-col items-center justify-center gap-6 px-6 py-12 text-center text-balance md:py-20"
+      data-slot="empty"
+    >
+      <div
+        className="flex max-w-sm flex-col items-center text-center"
+        data-slot="empty-header"
+      >
+        <div
+          className="relative mb-6"
+          data-slot="empty-media"
+          data-variant="icon"
+        >
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute bottom-px origin-bottom-left -translate-x-0.5 -rotate-10 scale-84 border bg-card shadow-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-md)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] flex size-9 shrink-0 items-center justify-center rounded-md not-dark:bg-clip-padding text-foreground [&_svg:not([class*='size-'])]:size-4.5"
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute bottom-px origin-bottom-right translate-x-0.5 rotate-10 scale-84 border bg-card shadow-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-md)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] flex size-9 shrink-0 items-center justify-center rounded-md not-dark:bg-clip-padding text-foreground [&_svg:not([class*='size-'])]:size-4.5"
+          />
+          <div className="relative flex size-9 shrink-0 items-center justify-center rounded-md border bg-card not-dark:bg-clip-padding text-foreground shadow-sm/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-md)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] [&_svg:not([class*='size-'])]:size-4.5">
+            <HistoryIcon />
+          </div>
+        </div>
+        <div
+          className="font-heading font-semibold text-xl"
+          data-slot="empty-title"
+        >
+          {t("pollHistoryEmptyTitle")}
+        </div>
+        <div
+          className="text-muted-foreground text-sm [[data-slot=empty-title]+&]:mt-1"
+          data-slot="empty-description"
+        >
+          {t("pollHistoryEmptyDescription")}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatTimestamp(
+  value: string | null | undefined,
+  format: ReturnType<typeof useFormatter>,
+  fallback: string,
+): string {
+  if (!value) {
+    return fallback;
+  }
+
+  return format.dateTime(new Date(value), {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+function RunStatusBadge({ status }: { status: string }): React.ReactElement {
+  const t = useTranslations("dashboard");
+
+  function statusLabel(): string {
+    switch (status) {
+      case "success":
+        return t("runStatus.success");
+      case "failed":
+        return t("runStatus.failed");
+      case "partial":
+        return t("runStatus.partial");
+      case "running":
+        return t("runStatus.running");
+      default:
+        return status;
+    }
+  }
+
+  return <Badge variant={runStatusVariant(status)}>{statusLabel()}</Badge>;
+}
+
+function PollRunEventsList({
+  events,
+}: {
+  events: PollRunEvent[];
+}): React.ReactElement {
+  const t = useTranslations("dashboard");
+  const format = useFormatter();
+
+  if (events.length === 0) {
+    return (
+      <p className="text-muted-foreground text-sm">
+        {t("pollHistoryNoEvents")}
+      </p>
+    );
+  }
+
+  return (
+    <Table variant="card">
+      <TableHeader>
+        <TableRow>
+          <TableHead>{t("pollHistoryEventColumns.time")}</TableHead>
+          <TableHead>{t("pollHistoryEventColumns.action")}</TableHead>
+          <TableHead>{t("pollHistoryEventColumns.detail")}</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {events.map((event) => {
+          const actionLabel = isPollEventAction(event.action)
+            ? t(`eventActions.${event.action}`)
+            : event.action;
+
+          return (
+            <TableRow key={event.id}>
+              <TableCell className="text-muted-foreground text-sm">
+                {format.dateTime(new Date(event.createdAt), {
+                  dateStyle: "medium",
+                  timeStyle: "medium",
+                })}
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline">{actionLabel}</Badge>
+              </TableCell>
+              <TableCell className="max-w-xs truncate text-sm">
+                {event.detail ?? t("noEventDetail")}
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
+  );
+}
+
+function PollRunDetailDrawer({
+  runId,
+  open,
+  onOpenChange,
+}: {
+  runId: string | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}): React.ReactElement {
+  const t = useTranslations("dashboard");
+  const tCommon = useTranslations("common");
+  const format = useFormatter();
+  const { data: run, isLoading, isError } = usePollRun(runId ?? undefined);
+
+  return (
+    <Sheet onOpenChange={onOpenChange} open={open}>
+      <SheetPopup side="right">
+        <SheetHeader>
+          <SheetTitle>{t("pollHistoryDetailTitle")}</SheetTitle>
+          <SheetDescription>
+            {t("pollHistoryDetailDescription")}
+          </SheetDescription>
+        </SheetHeader>
+        <SheetPanel className="flex min-h-0 flex-1 flex-col gap-4">
+          {isLoading ? (
+            <div className="flex flex-col gap-3">
+              <Skeleton className="h-6 w-32" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-48 w-full" />
+            </div>
+          ) : null}
+
+          {isError ? (
+            <p className="text-destructive-foreground text-sm" role="alert">
+              {t("pollHistoryDetailLoadFailed")}
+            </p>
+          ) : null}
+
+          {!isLoading && !isError && run ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <RunStatusBadge status={run.status} />
+              </div>
+              <dl className="grid gap-3 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-muted-foreground">
+                    {t("pollHistoryColumns.startedAt")}
+                  </dt>
+                  <dd className="font-medium">
+                    {formatTimestamp(run.startedAt, format, t("lastRunNever"))}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">
+                    {t("pollHistoryColumns.finishedAt")}
+                  </dt>
+                  <dd className="font-medium">
+                    {formatTimestamp(
+                      run.finishedAt,
+                      format,
+                      t("lastRunInProgress"),
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">
+                    {t("lastRunReposChecked")}
+                  </dt>
+                  <dd className="font-medium">{run.reposChecked}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">
+                    {t("lastRunTicketsCreated")}
+                  </dt>
+                  <dd className="font-medium">{run.ticketsCreated}</dd>
+                </div>
+              </dl>
+
+              {run.errors.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  <h3 className="font-medium text-sm">
+                    {t("pollHistoryErrorsTitle")}
+                  </h3>
+                  <ul className="list-disc ps-4 text-sm">
+                    {run.errors.map((error) => (
+                      <li key={`${error.repoId}-${error.message}`}>
+                        <span className="font-mono">{error.repoId}</span>
+                        {": "}
+                        {error.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="flex min-h-0 flex-1 flex-col gap-2">
+                <h3 className="font-medium text-sm">
+                  {t("pollHistoryEventsTitle")}
+                </h3>
+                <ScrollArea className="max-h-80">
+                  <PollRunEventsList events={run.events ?? []} />
+                </ScrollArea>
+              </div>
+            </>
+          ) : null}
+        </SheetPanel>
+        <SheetFooter variant="bare">
+          <SheetClose render={<Button variant="ghost" type="button" />}>
+            {tCommon("cancel")}
+          </SheetClose>
+        </SheetFooter>
+      </SheetPopup>
+    </Sheet>
+  );
+}
+
+export function PollRunHistory(): React.ReactElement {
+  const t = useTranslations("dashboard");
+  const format = useFormatter();
+  const [offset, setOffset] = useState(0);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+
+  const {
+    data: runs = [],
+    isLoading,
+    isError,
+  } = usePollRuns({
+    limit: PAGE_SIZE,
+    offset,
+  });
+
+  const hasPreviousPage = offset > 0;
+  const hasNextPage = runs.length === PAGE_SIZE;
+  const pageStart = runs.length === 0 ? 0 : offset + 1;
+  const pageEnd = offset + runs.length;
+
+  function openRun(run: PollRun): void {
+    setSelectedRunId(run.id);
+  }
+
+  if (!isLoading && !isError && runs.length === 0 && offset === 0) {
+    return <PollRunsEmptyState />;
+  }
+
+  return (
+    <>
+      {isError ? (
+        <p className="text-destructive-foreground text-sm" role="alert">
+          {t("pollHistoryLoadFailed")}
+        </p>
+      ) : null}
+
+      <Frame>
+        <FramePanel className="p-0">
+          <Table variant="card">
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("pollHistoryColumns.startedAt")}</TableHead>
+                <TableHead>{t("pollHistoryColumns.finishedAt")}</TableHead>
+                <TableHead>{t("pollHistoryColumns.status")}</TableHead>
+                <TableHead>{t("pollHistoryColumns.reposChecked")}</TableHead>
+                <TableHead>{t("pollHistoryColumns.ticketsCreated")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading
+                ? Array.from({ length: 3 }, (_, index) => (
+                    <TableRow key={`skeleton-${index}`}>
+                      <TableCell colSpan={5}>
+                        <Skeleton className="h-8 w-full" />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                : null}
+
+              {!isLoading
+                ? runs.map((run) => (
+                    <TableRow
+                      className="cursor-pointer"
+                      key={run.id}
+                      onClick={() => openRun(run)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openRun(run);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <TableCell className="text-sm">
+                        {formatTimestamp(
+                          run.startedAt,
+                          format,
+                          t("lastRunNever"),
+                        )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {formatTimestamp(
+                          run.finishedAt,
+                          format,
+                          t("lastRunInProgress"),
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <RunStatusBadge status={run.status} />
+                      </TableCell>
+                      <TableCell>{run.reposChecked}</TableCell>
+                      <TableCell>{run.ticketsCreated}</TableCell>
+                    </TableRow>
+                  ))
+                : null}
+            </TableBody>
+          </Table>
+        </FramePanel>
+
+        {!isLoading && (hasPreviousPage || hasNextPage) ? (
+          <FrameFooter className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-muted-foreground text-sm">
+              {t("paginationRange", {
+                end: pageEnd,
+                start: pageStart,
+              })}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                disabled={!hasPreviousPage}
+                onClick={() =>
+                  setOffset((current) => Math.max(0, current - PAGE_SIZE))
+                }
+                size="sm"
+                variant="outline"
+              >
+                {t("paginationPrevious")}
+              </Button>
+              <Button
+                disabled={!hasNextPage}
+                onClick={() => setOffset((current) => current + PAGE_SIZE)}
+                size="sm"
+                variant="outline"
+              >
+                {t("paginationNext")}
+              </Button>
+            </div>
+          </FrameFooter>
+        ) : null}
+      </Frame>
+
+      <PollRunDetailDrawer
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedRunId(null);
+          }
+        }}
+        open={selectedRunId !== null}
+        runId={selectedRunId}
+      />
+    </>
+  );
+}

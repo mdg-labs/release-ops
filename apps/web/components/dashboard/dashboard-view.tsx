@@ -3,6 +3,7 @@
 import { useTranslations } from "next-intl";
 import { useEffect } from "react";
 import { LastRunErrors } from "@/components/dashboard/last-run-errors";
+import { PollRunHistory } from "@/components/dashboard/poll-run-history";
 import { RepoStatusTable } from "@/components/dashboard/repo-status-table";
 import { StatusCard } from "@/components/dashboard/status-card";
 import { useTriggerPoll } from "@/lib/hooks/use-poll";
@@ -54,6 +55,13 @@ export function DashboardView(): React.ReactElement {
       {!isLoading && lastRunErrors.length > 0 ? (
         <LastRunErrors errors={lastRunErrors} repos={data?.repos ?? []} />
       ) : null}
+
+      <section className="flex flex-col gap-3">
+        <h2 className="font-semibold text-lg">
+          {t("pollHistorySectionTitle")}
+        </h2>
+        <PollRunHistory />
+      </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="font-semibold text-lg">{t("reposSectionTitle")}</h2>
