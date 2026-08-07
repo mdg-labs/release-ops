@@ -23,6 +23,7 @@ type mockSettingsRepo struct {
 	settings *store.AppSettings
 	getErr   error
 	updateFn func(ctx context.Context, pollIntervalMinutes int64) (*store.AppSettings, error)
+	tokenFn  func(ctx context.Context, inviteTokenExpiryHours, passwordResetTokenExpiryMinutes int64) (*store.AppSettings, error)
 }
 
 func (m *mockSettingsRepo) EnsureDefault(context.Context) error {
@@ -42,6 +43,18 @@ func (m *mockSettingsRepo) UpdatePollInterval(ctx context.Context, pollIntervalM
 	}
 	updated := *m.settings
 	updated.PollIntervalMinutes = pollIntervalMinutes
+	updated.UpdatedAt = "2026-08-07T12:00:00.000Z"
+	m.settings = &updated
+	return m.settings, nil
+}
+
+func (m *mockSettingsRepo) UpdateTokenExpiry(ctx context.Context, inviteTokenExpiryHours, passwordResetTokenExpiryMinutes int64) (*store.AppSettings, error) {
+	if m.tokenFn != nil {
+		return m.tokenFn(ctx, inviteTokenExpiryHours, passwordResetTokenExpiryMinutes)
+	}
+	updated := *m.settings
+	updated.InviteTokenExpiryHours = inviteTokenExpiryHours
+	updated.PasswordResetTokenExpiryMinutes = passwordResetTokenExpiryMinutes
 	updated.UpdatedAt = "2026-08-07T12:00:00.000Z"
 	m.settings = &updated
 	return m.settings, nil
@@ -89,9 +102,11 @@ func TestGetSettingsReturnsPollIntervalMinutes(t *testing.T) {
 
 	repo := &mockSettingsRepo{
 		settings: &store.AppSettings{
-			ID:                  1,
-			PollIntervalMinutes: 360,
-			UpdatedAt:           "2026-08-07T10:00:00.000Z",
+			ID:                              1,
+			PollIntervalMinutes:             360,
+			InviteTokenExpiryHours:          168,
+			PasswordResetTokenExpiryMinutes: 60,
+			UpdatedAt:                       "2026-08-07T10:00:00.000Z",
 		},
 	}
 	router, sm := newSettingsTestRouter(t, repo)
@@ -107,13 +122,21 @@ func TestGetSettingsReturnsPollIntervalMinutes(t *testing.T) {
 	}
 
 	var resp struct {
-		PollIntervalMinutes int64 `json:"pollIntervalMinutes"`
+		PollIntervalMinutes             int64 `json:"pollIntervalMinutes"`
+		InviteTokenExpiryHours          int64 `json:"inviteTokenExpiryHours"`
+		PasswordResetTokenExpiryMinutes int64 `json:"passwordResetTokenExpiryMinutes"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if resp.PollIntervalMinutes != 360 {
 		t.Fatalf("pollIntervalMinutes = %d, want 360", resp.PollIntervalMinutes)
+	}
+	if resp.InviteTokenExpiryHours != 168 {
+		t.Fatalf("inviteTokenExpiryHours = %d, want 168", resp.InviteTokenExpiryHours)
+	}
+	if resp.PasswordResetTokenExpiryMinutes != 60 {
+		t.Fatalf("passwordResetTokenExpiryMinutes = %d, want 60", resp.PasswordResetTokenExpiryMinutes)
 	}
 }
 
@@ -139,9 +162,11 @@ func TestPatchSettingsUpdatesValue(t *testing.T) {
 
 	repo := &mockSettingsRepo{
 		settings: &store.AppSettings{
-			ID:                  1,
-			PollIntervalMinutes: 360,
-			UpdatedAt:           "2026-08-07T10:00:00.000Z",
+			ID:                              1,
+			PollIntervalMinutes:             360,
+			InviteTokenExpiryHours:          168,
+			PasswordResetTokenExpiryMinutes: 60,
+			UpdatedAt:                       "2026-08-07T10:00:00.000Z",
 		},
 	}
 	router, sm := newSettingsTestRouter(t, repo)
@@ -282,5 +307,151 @@ func TestPatchSettingsSetsUpdatedAt(t *testing.T) {
 	}
 	if updatedSettings.UpdatedAt == originalUpdatedAt {
 		t.Fatalf("updatedAt should change on patch, still %q", originalUpdatedAt)
+	}
+}
+
+func TestPatchSettingsUpdatesTokenExpiry(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockSettingsRepo{
+		settings: &store.AppSettings{
+			ID:                              1,
+			PollIntervalMinutes:             360,
+			InviteTokenExpiryHours:          168,
+			PasswordResetTokenExpiryMinutes: 60,
+		},
+	}
+	router, sm := newSettingsTestRouter(t, repo)
+	cookie := seedSession(t, sm)
+
+	body := `{"inviteTokenExpiryHours":48,"passwordResetTokenExpiryMinutes":30}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/settings", strings.NewReader(body))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		PollIntervalMinutes             int64 `json:"pollIntervalMinutes"`
+		InviteTokenExpiryHours          int64 `json:"inviteTokenExpiryHours"`
+		PasswordResetTokenExpiryMinutes int64 `json:"passwordResetTokenExpiryMinutes"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.PollIntervalMinutes != 360 {
+		t.Fatalf("pollIntervalMinutes = %d, want 360 (unchanged)", resp.PollIntervalMinutes)
+	}
+	if resp.InviteTokenExpiryHours != 48 {
+		t.Fatalf("inviteTokenExpiryHours = %d, want 48", resp.InviteTokenExpiryHours)
+	}
+	if resp.PasswordResetTokenExpiryMinutes != 30 {
+		t.Fatalf("passwordResetTokenExpiryMinutes = %d, want 30", resp.PasswordResetTokenExpiryMinutes)
+	}
+}
+
+func TestPatchSettingsRejectsInviteExpiryBelowMinimum(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockSettingsRepo{
+		settings: &store.AppSettings{
+			ID:                              1,
+			PollIntervalMinutes:             360,
+			InviteTokenExpiryHours:          168,
+			PasswordResetTokenExpiryMinutes: 60,
+		},
+	}
+	router, sm := newSettingsTestRouter(t, repo)
+	cookie := seedSession(t, sm)
+
+	body := `{"inviteTokenExpiryHours":0}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/settings", strings.NewReader(body))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if repo.settings.InviteTokenExpiryHours != 168 {
+		t.Fatalf("inviteTokenExpiryHours should not be updated, got %d", repo.settings.InviteTokenExpiryHours)
+	}
+}
+
+func TestPatchSettingsRejectsInviteExpiryAboveMaximum(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockSettingsRepo{
+		settings: &store.AppSettings{
+			ID:                              1,
+			PollIntervalMinutes:             360,
+			InviteTokenExpiryHours:          168,
+			PasswordResetTokenExpiryMinutes: 60,
+		},
+	}
+	router, sm := newSettingsTestRouter(t, repo)
+	cookie := seedSession(t, sm)
+
+	body := `{"inviteTokenExpiryHours":721}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/settings", strings.NewReader(body))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestPatchSettingsRejectsResetExpiryBelowMinimum(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockSettingsRepo{
+		settings: &store.AppSettings{
+			ID:                              1,
+			PollIntervalMinutes:             360,
+			InviteTokenExpiryHours:          168,
+			PasswordResetTokenExpiryMinutes: 60,
+		},
+	}
+	router, sm := newSettingsTestRouter(t, repo)
+	cookie := seedSession(t, sm)
+
+	body := `{"passwordResetTokenExpiryMinutes":4}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/settings", strings.NewReader(body))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestPatchSettingsRejectsResetExpiryAboveMaximum(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockSettingsRepo{
+		settings: &store.AppSettings{
+			ID:                              1,
+			PollIntervalMinutes:             360,
+			InviteTokenExpiryHours:          168,
+			PasswordResetTokenExpiryMinutes: 60,
+		},
+	}
+	router, sm := newSettingsTestRouter(t, repo)
+	cookie := seedSession(t, sm)
+
+	body := `{"passwordResetTokenExpiryMinutes":1441}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/settings", strings.NewReader(body))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
 }

@@ -88,6 +88,10 @@ func (m *schedulerMockSettingsRepo) UpdatePollInterval(context.Context, int64) (
 	return nil, errors.New("not implemented")
 }
 
+func (m *schedulerMockSettingsRepo) UpdateTokenExpiry(context.Context, int64, int64) (*store.AppSettings, error) {
+	return nil, errors.New("not implemented")
+}
+
 type schedulerMockReposRepo struct {
 	repos []store.MonitoredRepo
 }
