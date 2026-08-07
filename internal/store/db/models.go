@@ -9,9 +9,23 @@ import (
 )
 
 type AppSetting struct {
-	ID                  int64  `json:"id"`
-	PollIntervalMinutes int64  `json:"poll_interval_minutes"`
-	UpdatedAt           string `json:"updated_at"`
+	ID                              int64  `json:"id"`
+	PollIntervalMinutes             int64  `json:"poll_interval_minutes"`
+	InviteTokenExpiryHours          int64  `json:"invite_token_expiry_hours"`
+	PasswordResetTokenExpiryMinutes int64  `json:"password_reset_token_expiry_minutes"`
+	UpdatedAt                       string `json:"updated_at"`
+}
+
+type AuthToken struct {
+	ID              string         `json:"id"`
+	Kind            string         `json:"kind"`
+	Email           string         `json:"email"`
+	TokenHash       string         `json:"token_hash"`
+	NewEmail        sql.NullString `json:"new_email"`
+	InvitedByUserID sql.NullString `json:"invited_by_user_id"`
+	ExpiresAt       string         `json:"expires_at"`
+	UsedAt          sql.NullString `json:"used_at"`
+	CreatedAt       string         `json:"created_at"`
 }
 
 type Integration struct {
@@ -76,9 +90,10 @@ type PollRunEvent struct {
 }
 
 type Session struct {
-	Token  string  `json:"token"`
-	Data   []byte  `json:"data"`
-	Expiry float64 `json:"expiry"`
+	Token  string         `json:"token"`
+	Data   []byte         `json:"data"`
+	Expiry float64        `json:"expiry"`
+	UserID sql.NullString `json:"user_id"`
 }
 
 type TicketProject struct {

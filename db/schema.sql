@@ -16,16 +16,41 @@ CREATE TABLE users (
 CREATE TABLE sessions (
   token TEXT PRIMARY KEY,
   data BLOB NOT NULL,
-  expiry REAL NOT NULL
+  expiry REAL NOT NULL,
+  user_id TEXT REFERENCES users(id)
 );
 
 CREATE INDEX idx_sessions_expiry ON sessions (expiry);
+CREATE INDEX idx_sessions_user_id ON sessions (user_id);
 
 CREATE TABLE app_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   poll_interval_minutes INTEGER NOT NULL DEFAULT 360 CHECK (poll_interval_minutes >= 5),
+  invite_token_expiry_hours INTEGER NOT NULL DEFAULT 168 CHECK (
+    invite_token_expiry_hours >= 1 AND invite_token_expiry_hours <= 720
+  ),
+  password_reset_token_expiry_minutes INTEGER NOT NULL DEFAULT 60 CHECK (
+    password_reset_token_expiry_minutes >= 5 AND password_reset_token_expiry_minutes <= 1440
+  ),
   updated_at TEXT NOT NULL
 );
+
+-- One-time tokens for invitations, password reset, and email change (raw token never stored)
+CREATE TABLE auth_tokens (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (
+    kind IN ('invitation', 'password_reset', 'email_change')
+  ),
+  email TEXT NOT NULL,
+  token_hash TEXT NOT NULL,
+  new_email TEXT,
+  invited_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_auth_tokens_token_hash ON auth_tokens (token_hash);
 
 -- kind: source → github, gitlab, gitea, forgejo, codeberg | ticket → phasical, jira, linear
 CREATE TABLE integrations (

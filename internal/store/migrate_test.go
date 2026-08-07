@@ -39,8 +39,8 @@ func TestMigrateUpCreatesSchema(t *testing.T) {
 	if dirty {
 		t.Fatal("migration version is dirty")
 	}
-	if version != 1 {
-		t.Fatalf("migration version = %d, want 1", version)
+	if version != 2 {
+		t.Fatalf("migration version = %d, want 2", version)
 	}
 
 	db, err := store.OpenPath(dbPath)
@@ -53,6 +53,7 @@ func TestMigrateUpCreatesSchema(t *testing.T) {
 
 	wantTables := []string{
 		"app_settings",
+		"auth_tokens",
 		"integrations",
 		"monitored_repo_notifications",
 		"monitored_repos",

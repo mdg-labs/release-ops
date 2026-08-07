@@ -10,8 +10,14 @@ import (
 )
 
 const ensureAppSettings = `-- name: EnsureAppSettings :exec
-INSERT OR IGNORE INTO app_settings (id, poll_interval_minutes, updated_at)
-VALUES (1, 360, ?)
+INSERT OR IGNORE INTO app_settings (
+  id,
+  poll_interval_minutes,
+  invite_token_expiry_hours,
+  password_reset_token_expiry_minutes,
+  updated_at
+)
+VALUES (1, 360, 168, 60, ?)
 `
 
 func (q *Queries) EnsureAppSettings(ctx context.Context, updatedAt string) error {
@@ -23,6 +29,8 @@ const getAppSettings = `-- name: GetAppSettings :one
 SELECT
   id,
   poll_interval_minutes,
+  invite_token_expiry_hours,
+  password_reset_token_expiry_minutes,
   updated_at
 FROM app_settings
 WHERE id = 1
@@ -31,7 +39,13 @@ WHERE id = 1
 func (q *Queries) GetAppSettings(ctx context.Context) (AppSetting, error) {
 	row := q.db.QueryRowContext(ctx, getAppSettings)
 	var i AppSetting
-	err := row.Scan(&i.ID, &i.PollIntervalMinutes, &i.UpdatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.PollIntervalMinutes,
+		&i.InviteTokenExpiryHours,
+		&i.PasswordResetTokenExpiryMinutes,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
 
@@ -41,7 +55,12 @@ SET
   poll_interval_minutes = ?,
   updated_at = ?
 WHERE id = 1
-RETURNING id, poll_interval_minutes, updated_at
+RETURNING
+  id,
+  poll_interval_minutes,
+  invite_token_expiry_hours,
+  password_reset_token_expiry_minutes,
+  updated_at
 `
 
 type UpdatePollIntervalParams struct {
@@ -52,6 +71,46 @@ type UpdatePollIntervalParams struct {
 func (q *Queries) UpdatePollInterval(ctx context.Context, arg UpdatePollIntervalParams) (AppSetting, error) {
 	row := q.db.QueryRowContext(ctx, updatePollInterval, arg.PollIntervalMinutes, arg.UpdatedAt)
 	var i AppSetting
-	err := row.Scan(&i.ID, &i.PollIntervalMinutes, &i.UpdatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.PollIntervalMinutes,
+		&i.InviteTokenExpiryHours,
+		&i.PasswordResetTokenExpiryMinutes,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateTokenExpirySettings = `-- name: UpdateTokenExpirySettings :one
+UPDATE app_settings
+SET
+  invite_token_expiry_hours = ?,
+  password_reset_token_expiry_minutes = ?,
+  updated_at = ?
+WHERE id = 1
+RETURNING
+  id,
+  poll_interval_minutes,
+  invite_token_expiry_hours,
+  password_reset_token_expiry_minutes,
+  updated_at
+`
+
+type UpdateTokenExpirySettingsParams struct {
+	InviteTokenExpiryHours          int64  `json:"invite_token_expiry_hours"`
+	PasswordResetTokenExpiryMinutes int64  `json:"password_reset_token_expiry_minutes"`
+	UpdatedAt                       string `json:"updated_at"`
+}
+
+func (q *Queries) UpdateTokenExpirySettings(ctx context.Context, arg UpdateTokenExpirySettingsParams) (AppSetting, error) {
+	row := q.db.QueryRowContext(ctx, updateTokenExpirySettings, arg.InviteTokenExpiryHours, arg.PasswordResetTokenExpiryMinutes, arg.UpdatedAt)
+	var i AppSetting
+	err := row.Scan(
+		&i.ID,
+		&i.PollIntervalMinutes,
+		&i.InviteTokenExpiryHours,
+		&i.PasswordResetTokenExpiryMinutes,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
