@@ -106,7 +106,7 @@ func (j *jiraProvider) ListStatuses(ctx context.Context, externalProjectID strin
 			if id == "" {
 				id = name
 			}
-			items = append(items, Item{ID: name, Name: name, Label: name})
+			items = append(items, Item{ID: id, Name: name, Label: name})
 		}
 	}
 	return items, nil
@@ -131,7 +131,7 @@ func (j *jiraProvider) ListPriorities(ctx context.Context, _ string) ([]Item, er
 		if id == "" {
 			id = name
 		}
-		items = append(items, Item{ID: name, Name: name})
+		items = append(items, Item{ID: id, Name: name})
 	}
 	return items, nil
 }
@@ -161,7 +161,7 @@ func (j *jiraProvider) ListIssueTypes(ctx context.Context, externalProjectID str
 		if id == "" {
 			id = name
 		}
-		items = append(items, Item{ID: name, Name: name})
+		items = append(items, Item{ID: id, Name: name})
 	}
 	return items, nil
 }

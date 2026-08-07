@@ -16,8 +16,6 @@ import (
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
 
-const minPasswordLength = 8
-
 // UsersHandlers serves user management HTTP endpoints.
 type UsersHandlers struct {
 	Queries        *storedb.Queries

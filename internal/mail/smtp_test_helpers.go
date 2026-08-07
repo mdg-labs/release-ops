@@ -130,7 +130,7 @@ func (s *testSMTPServer) WaitForMessage() string {
 }
 
 func (s *testSMTPServer) handleConn(conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	reader := bufio.NewReader(conn)
 	_, _ = conn.Write([]byte("220 test-smtp ready\r\n"))
