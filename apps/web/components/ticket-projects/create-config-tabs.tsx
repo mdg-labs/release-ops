@@ -2,13 +2,20 @@
 
 import { useTranslations } from "next-intl";
 import { useId } from "react";
+import { MetadataSelect } from "@/components/ticket-projects/metadata-select";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
+import {
+  useTicketMetadataIssueTypes,
+  useTicketMetadataPriorities,
+  useTicketMetadataStatuses,
+} from "@/lib/hooks/use-ticket-metadata";
 import type { TicketIntegrationKind } from "@/lib/integrations/kinds";
 import { TICKET_INTEGRATION_KINDS } from "@/lib/integrations/kinds";
 
 type CreateConfigTabsProps = {
+  integrationId: string | null;
+  externalProjectId: string;
   kind: TicketIntegrationKind | null;
   values: Record<string, unknown>;
   onChange: (values: Record<string, unknown>) => void;
@@ -23,6 +30,8 @@ function updateStringField(
 }
 
 export function CreateConfigTabs({
+  integrationId,
+  externalProjectId,
   kind,
   values,
   onChange,
@@ -31,14 +40,33 @@ export function CreateConfigTabs({
   const statusId = useId();
   const priorityId = useId();
   const issueTypeId = useId();
-  const initialStatusId = useId();
   const stateIdFieldId = useId();
+
+  const metadataEnabled = Boolean(integrationId && externalProjectId && kind);
+  const statusesQuery = useTicketMetadataStatuses(
+    integrationId,
+    externalProjectId,
+    metadataEnabled,
+  );
+  const prioritiesQuery = useTicketMetadataPriorities(
+    integrationId,
+    externalProjectId,
+    metadataEnabled,
+  );
+  const issueTypesQuery = useTicketMetadataIssueTypes(
+    integrationId,
+    externalProjectId,
+    metadataEnabled && kind === "jira",
+  );
 
   if (!kind) {
     return null;
   }
 
   const activeTab = kind;
+  const statuses = statusesQuery.data?.items ?? [];
+  const priorities = prioritiesQuery.data?.items ?? [];
+  const issueTypes = issueTypesQuery.data?.items ?? [];
 
   return (
     <div className="flex flex-col gap-2">
@@ -57,109 +85,140 @@ export function CreateConfigTabs({
         </TabsList>
 
         <TabsPanel className="flex flex-col gap-4 pt-2" value="phasical">
-          <Field name="phasicalStatus">
-            <FieldLabel htmlFor={statusId}>{t("phasical.status")}</FieldLabel>
-            <Input
-              id={statusId}
-              onChange={(event) =>
-                onChange(
-                  updateStringField(values, "status", event.target.value),
-                )
-              }
-              value={String(values.status ?? "")}
-            />
-          </Field>
-          <Field name="phasicalPriority">
-            <FieldLabel htmlFor={priorityId}>
-              {t("phasical.priority")}
-            </FieldLabel>
-            <Input
-              id={priorityId}
-              onChange={(event) =>
-                onChange(
-                  updateStringField(values, "priority", event.target.value),
-                )
-              }
-              value={String(values.priority ?? "")}
-            />
-          </Field>
+          <MetadataSelect
+            disabled={!metadataEnabled}
+            errorMessage={statusesQuery.data?.message}
+            id={statusId}
+            includeMissingValue
+            isError={statusesQuery.isError}
+            isLoading={statusesQuery.isLoading}
+            items={statuses}
+            label={t("phasical.status")}
+            name="phasicalStatus"
+            onValueChange={(next) =>
+              onChange(updateStringField(values, "status", next))
+            }
+            placeholder={t("metadata.statusPlaceholder")}
+            required
+            value={String(values.status ?? "")}
+          />
+          <MetadataSelect
+            disabled={!metadataEnabled}
+            errorMessage={prioritiesQuery.data?.message}
+            id={priorityId}
+            includeMissingValue
+            isError={prioritiesQuery.isError}
+            isLoading={prioritiesQuery.isLoading}
+            items={priorities}
+            label={t("phasical.priority")}
+            name="phasicalPriority"
+            onValueChange={(next) =>
+              onChange(updateStringField(values, "priority", next))
+            }
+            placeholder={t("metadata.priorityPlaceholder")}
+            required
+            value={String(values.priority ?? "")}
+          />
         </TabsPanel>
 
         <TabsPanel className="flex flex-col gap-4 pt-2" value="jira">
-          <Field name="jiraIssueType">
-            <FieldLabel htmlFor={issueTypeId}>{t("jira.issueType")}</FieldLabel>
-            <Input
-              id={issueTypeId}
-              onChange={(event) =>
-                onChange(
-                  updateStringField(values, "issueType", event.target.value),
-                )
-              }
-              value={String(values.issueType ?? "")}
-            />
-          </Field>
-          <Field name="jiraPriority">
-            <FieldLabel htmlFor={priorityId}>{t("jira.priority")}</FieldLabel>
-            <Input
-              id={priorityId}
-              onChange={(event) =>
-                onChange(
-                  updateStringField(values, "priority", event.target.value),
-                )
-              }
-              value={String(values.priority ?? "")}
-            />
-          </Field>
-          <Field name="jiraInitialStatus">
-            <FieldLabel htmlFor={initialStatusId}>
-              {t("jira.initialStatus")}
-            </FieldLabel>
-            <Input
-              id={initialStatusId}
-              onChange={(event) =>
-                onChange(
-                  updateStringField(
-                    values,
-                    "initialStatus",
-                    event.target.value,
-                  ),
-                )
-              }
-              value={String(values.initialStatus ?? "")}
-            />
-          </Field>
+          <MetadataSelect
+            disabled={!metadataEnabled}
+            errorMessage={issueTypesQuery.data?.message}
+            id={issueTypeId}
+            includeMissingValue
+            isError={issueTypesQuery.isError}
+            isLoading={issueTypesQuery.isLoading}
+            items={issueTypes}
+            label={t("jira.issueType")}
+            name="jiraIssueType"
+            onValueChange={(next) =>
+              onChange(updateStringField(values, "issueType", next))
+            }
+            placeholder={t("metadata.issueTypePlaceholder")}
+            required
+            value={String(values.issueType ?? "")}
+          />
+          <MetadataSelect
+            disabled={!metadataEnabled}
+            errorMessage={prioritiesQuery.data?.message}
+            id={priorityId}
+            includeMissingValue
+            isError={prioritiesQuery.isError}
+            isLoading={prioritiesQuery.isLoading}
+            items={priorities}
+            label={t("jira.priority")}
+            name="jiraPriority"
+            onValueChange={(next) =>
+              onChange(updateStringField(values, "priority", next))
+            }
+            placeholder={t("metadata.priorityPlaceholder")}
+            value={String(values.priority ?? "")}
+          />
+          <MetadataSelect
+            disabled={!metadataEnabled}
+            errorMessage={statusesQuery.data?.message}
+            id={statusId}
+            includeMissingValue
+            isError={statusesQuery.isError}
+            isLoading={statusesQuery.isLoading}
+            items={statuses}
+            label={t("jira.initialStatus")}
+            name="jiraInitialStatus"
+            onValueChange={(next) =>
+              onChange(updateStringField(values, "initialStatus", next))
+            }
+            placeholder={t("metadata.statusPlaceholder")}
+            value={String(values.initialStatus ?? "")}
+          />
         </TabsPanel>
 
         <TabsPanel className="flex flex-col gap-4 pt-2" value="linear">
-          <Field name="linearPriority">
-            <FieldLabel htmlFor={priorityId}>{t("linear.priority")}</FieldLabel>
-            <Input
-              id={priorityId}
-              inputMode="numeric"
-              onChange={(event) =>
-                onChange(
-                  updateStringField(values, "priority", event.target.value),
-                )
-              }
-              value={String(values.priority ?? "")}
-            />
-          </Field>
-          <Field name="linearStateId">
-            <FieldLabel htmlFor={stateIdFieldId}>
-              {t("linear.stateId")}
-            </FieldLabel>
-            <Input
-              id={stateIdFieldId}
-              onChange={(event) =>
-                onChange(
-                  updateStringField(values, "stateId", event.target.value),
-                )
-              }
-              value={String(values.stateId ?? "")}
-            />
-          </Field>
+          <MetadataSelect
+            disabled={!metadataEnabled}
+            errorMessage={prioritiesQuery.data?.message}
+            id={priorityId}
+            includeMissingValue
+            isError={prioritiesQuery.isError}
+            isLoading={prioritiesQuery.isLoading}
+            items={priorities}
+            label={t("linear.priority")}
+            name="linearPriority"
+            onValueChange={(next) =>
+              onChange(updateStringField(values, "priority", next))
+            }
+            placeholder={t("metadata.priorityPlaceholder")}
+            value={String(values.priority ?? "")}
+          />
+          <MetadataSelect
+            disabled={!metadataEnabled}
+            errorMessage={statusesQuery.data?.message}
+            id={stateIdFieldId}
+            includeMissingValue
+            isError={statusesQuery.isError}
+            isLoading={statusesQuery.isLoading}
+            items={statuses}
+            label={t("linear.stateId")}
+            name="linearStateId"
+            onValueChange={(next) =>
+              onChange(updateStringField(values, "stateId", next))
+            }
+            placeholder={t("metadata.statePlaceholder")}
+            required
+            value={String(values.stateId ?? "")}
+          />
         </TabsPanel>
       </Tabs>
+      {!metadataEnabled ? (
+        <Field name="createConfigHint">
+          <FieldLabel className="sr-only">
+            {t("metadata.projectRequired")}
+          </FieldLabel>
+          <p className="text-muted-foreground text-sm">
+            {t("metadata.projectRequired")}
+          </p>
+        </Field>
+      ) : null}
     </div>
   );
 }

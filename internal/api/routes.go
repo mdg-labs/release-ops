@@ -67,6 +67,9 @@ func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps) {
 		Integrations: st.Integrations(),
 		Tester:       deps.IntegrationTester,
 	}
+	integrationMetadataHandlers := &handlers.IntegrationMetadataHandlers{
+		Integrations: st.Integrations(),
+	}
 	ticketProjectHandlers := &handlers.TicketProjectHandlers{
 		TicketProjects: st.TicketProjects(),
 	}
@@ -90,6 +93,11 @@ func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps) {
 	protected.Patch("/integrations/{id}", integrationHandlers.Patch)
 	protected.Delete("/integrations/{id}", integrationHandlers.Delete)
 	protected.Post("/integrations/{id}/test", integrationHandlers.TestConnection)
+	protected.Get("/integrations/{id}/ticket-metadata/workspaces", integrationMetadataHandlers.ListWorkspaces)
+	protected.Get("/integrations/{id}/ticket-metadata/projects", integrationMetadataHandlers.ListProjects)
+	protected.Get("/integrations/{id}/ticket-metadata/statuses", integrationMetadataHandlers.ListStatuses)
+	protected.Get("/integrations/{id}/ticket-metadata/priorities", integrationMetadataHandlers.ListPriorities)
+	protected.Get("/integrations/{id}/ticket-metadata/issue-types", integrationMetadataHandlers.ListIssueTypes)
 
 	protected.Get("/ticket-projects", ticketProjectHandlers.List)
 	protected.Post("/ticket-projects", ticketProjectHandlers.Create)

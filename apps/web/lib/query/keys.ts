@@ -11,4 +11,15 @@ export const queryKeys = {
   settings: () => ["settings"] as const,
   pollRuns: (params?: PollRunsParams) => ["poll-runs", params ?? {}] as const,
   pollRun: (id: string) => ["poll-run", id] as const,
+  ticketMetadata: (
+    integrationId: string | null | undefined,
+    resource: string,
+    scope?: string | null,
+  ) =>
+    [
+      "ticket-metadata",
+      integrationId ?? null,
+      resource,
+      scope ?? null,
+    ] as const,
 };

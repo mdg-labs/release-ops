@@ -4,7 +4,6 @@ import {
   fireEvent,
   render,
   screen,
-  waitFor,
   within,
 } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
@@ -172,6 +171,12 @@ describe("TicketProjectsView", () => {
       .reply(200, ticketIntegrations);
     pool
       .intercept({
+        path: /\/api\/go\/api\/v1\/integrations\/int-jira\/ticket-metadata\/.*/,
+        method: "GET",
+      })
+      .reply(200, { items: [] });
+    pool
+      .intercept({
         path: "/api/go/api/v1/ticket-projects",
         method: "POST",
       })
@@ -189,29 +194,14 @@ describe("TicketProjectsView", () => {
     );
 
     const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText(/External project ID/), {
-      target: { value: "DEV" },
-    });
     fireEvent.change(within(dialog).getByLabelText(/Display name/), {
       target: { value: "Jira — DEV" },
-    });
-    fireEvent.change(within(dialog).getByLabelText(/^Open statuses/), {
-      target: { value: "To Do, In Progress" },
-    });
-    fireEvent.change(within(dialog).getByLabelText(/^Done statuses/), {
-      target: { value: "Done" },
-    });
-    fireEvent.change(within(dialog).getByLabelText(/^Cancelled statuses/), {
-      target: { value: "Cancelled" },
-    });
-    fireEvent.change(within(dialog).getByLabelText(/^Superseded status/), {
-      target: { value: "Cancelled" },
     });
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
     expect(
-      await within(dialog).findByText("statusMapping must be valid JSON"),
+      await within(dialog).findByText("External project ID is required."),
     ).toBeInTheDocument();
   });
 
@@ -241,7 +231,7 @@ describe("TicketProjectsView", () => {
     ).toBeInTheDocument();
   });
 
-  it("pre-fills status mapping when editing", async () => {
+  it("pre-fills edit drawer values", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool
       .intercept({
@@ -263,14 +253,9 @@ describe("TicketProjectsView", () => {
     );
 
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByLabelText(/^Open statuses/)).toHaveValue(
-      "To Do, In Progress",
+    expect(within(dialog).getByLabelText(/Display name/)).toHaveValue(
+      "Jira — DEV",
     );
-    expect(within(dialog).getByLabelText(/^Superseded status/)).toHaveValue(
-      "Cancelled",
-    );
-    await waitFor(() =>
-      expect(within(dialog).getByLabelText(/Issue type/)).toHaveValue("Task"),
-    );
+    expect(within(dialog).getByText("DEV")).toBeInTheDocument();
   });
 });

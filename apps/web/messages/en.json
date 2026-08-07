@@ -222,7 +222,7 @@
     "policyPlaceholder": "Select policy",
     "createConfigTitle": "Create defaults",
     "mappingNoteTitle": "Per-project mapping",
-    "mappingNoteDescription": "Status values differ per project. Use provider-native IDs, slugs, or names.",
+    "mappingNoteDescription": "Status values differ per project. Choose from the provider options below.",
     "statusOpen": "Open statuses",
     "statusDone": "Done statuses",
     "statusCancelled": "Cancelled statuses",
@@ -253,6 +253,7 @@
       "linear": "Linear"
     },
     "phasical": {
+      "workspace": "Workspace",
       "status": "Default status",
       "priority": "Default priority"
     },
@@ -263,12 +264,27 @@
     },
     "linear": {
       "priority": "Priority",
-      "stateId": "State ID"
+      "stateId": "Initial state"
+    },
+    "metadata": {
+      "loading": "Loading options from the integration…",
+      "loadFailed": "Could not load options from the integration.",
+      "empty": "No options returned for this integration.",
+      "projectRequired": "Select an integration project before configuring defaults and status mapping.",
+      "workspacePlaceholder": "Select workspace",
+      "projectPlaceholder": "Select project or team",
+      "statusPlaceholder": "Select status",
+      "priorityPlaceholder": "Select priority",
+      "issueTypePlaceholder": "Select issue type",
+      "statePlaceholder": "Select workflow state",
+      "selectedStatus": "Selected: {status}"
     },
     "validation": {
       "nameRequired": "Display name is required.",
       "externalProjectIdRequired": "External project ID is required.",
+      "workspaceRequired": "Select a workspace.",
       "integrationRequired": "Select a ticket integration.",
+      "createConfigRequired": "Complete the create defaults for this provider.",
       "statusOpenRequired": "At least one open status is required.",
       "statusDoneRequired": "At least one done status is required.",
       "statusCancelledRequired": "At least one cancelled status is required.",

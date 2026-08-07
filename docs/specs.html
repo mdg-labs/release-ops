@@ -596,6 +596,31 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   "updatedAt": "..."
 }</code></pre>
 
+  <h4>7.3.1 Ticket integration metadata</h4>
+  <p>Discovery endpoints proxy provider APIs using stored (decrypted) credentials. Responses use the same actionable error pattern as <code>POST …/test</code>: HTTP 200 with <code>message</code> when the provider rejects credentials or the request fails.</p>
+  <p><strong>Phasical (Kaneo-compatible):</strong> normalize <code>baseUrl</code> by appending <code>/api</code> when missing before calling Kaneo paths (<code>/workspace</code>, <code>/project</code>, <code>/column/{projectId}</code>). UI flow: workspace → project → column slugs / fixed priorities.</p>
+  <table>
+    <tr><th>Method</th><th>Path</th><th>Query</th><th>Notes</th></tr>
+    <tr><td>GET</td><td><code>/api/v1/integrations/{id}/ticket-metadata/workspaces</code></td><td>—</td><td>Phasical only; empty <code>items</code> for Jira/Linear</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/integrations/{id}/ticket-metadata/projects</code></td><td><code>workspaceId</code> (Phasical)</td><td>Phasical <code>projectId</code>, Jira <code>projectKey</code>, Linear <code>teamId</code></td></tr>
+    <tr><td>GET</td><td><code>/api/v1/integrations/{id}/ticket-metadata/statuses</code></td><td><code>externalProjectId</code></td><td>Column slugs (Phasical), status names (Jira), <code>stateId</code> (Linear)</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/integrations/{id}/ticket-metadata/priorities</code></td><td><code>externalProjectId?</code></td><td>Provider list or fixed enum (Phasical, Linear)</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/integrations/{id}/ticket-metadata/issue-types</code></td><td><code>externalProjectId</code></td><td>Jira only</td></tr>
+  </table>
+  <pre><code>// GET /api/v1/integrations/{id}/ticket-metadata/projects?workspaceId=...
+{
+  "items": [
+    { "id": "proj-uuid", "name": "Release Ops", "label": "Release Ops (release-ops)" }
+  ],
+  "message": ""
+}
+
+// Provider/credential failure (same UX as test connection)
+{
+  "items": [],
+  "message": "unexpected status 401: {\"error\":\"unauthorized\"}"
+}</code></pre>
+
   <h3>7.4 Ticket Projects</h3>
   <p>Multiple project/team targets per ticket integration with their own status mapping.</p>
   <table>
@@ -729,11 +754,10 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><th>Particle</th><th>Usage</th></tr>
     <tr><td><a href="https://coss.com/ui/r/p-table-3.json">p-table-3</a></td><td>Project list grouped by integration</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-drawer-10.json">p-drawer-10</a></td><td>Create/Edit Ticket Project</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td>Integration (ticket kinds only)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>external_project_id, display name</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td><code>on_open_ticket_policy</code></td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-tabs-1.json">p-tabs-1</a></td><td>create_config subform per provider kind</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-field-2.json">p-field-2</a></td><td>Status mapping: open/done/cancelled arrays + superseded</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td>Integration (ticket kinds only); Phasical workspace; external project/team; <code>on_open_ticket_policy</code>; create_config fields; status mapping superseded</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>Display name</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-checkbox-group-1.json">p-checkbox-group-1</a></td><td>Status mapping: open / done / cancelled (multi-select from provider statuses)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-tabs-1.json">p-tabs-1</a></td><td>create_config subform per provider kind (selects populated from metadata endpoints)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-alert-5.json">p-alert-5</a></td><td>Note: mapping is <strong>different per project</strong></td></tr>
   </table>
 

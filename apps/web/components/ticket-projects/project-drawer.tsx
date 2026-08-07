@@ -3,6 +3,7 @@
 import { useTranslations } from "next-intl";
 import { useEffect, useId, useMemo, useState } from "react";
 import { CreateConfigTabs } from "@/components/ticket-projects/create-config-tabs";
+import { MetadataSelect } from "@/components/ticket-projects/metadata-select";
 import {
   ON_OPEN_TICKET_POLICIES,
   PolicySelect,
@@ -30,6 +31,10 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { ApiError } from "@/lib/api/client";
+import {
+  useTicketMetadataProjects,
+  useTicketMetadataWorkspaces,
+} from "@/lib/hooks/use-ticket-metadata";
 import {
   kindIsTicket,
   type TicketIntegrationKind,
@@ -107,6 +112,25 @@ function validateStatusMapping(values: StatusMappingValues): string | null {
   return null;
 }
 
+function validateCreateConfig(
+  kind: TicketIntegrationKind,
+  values: Record<string, unknown>,
+): boolean {
+  switch (kind) {
+    case "phasical":
+      return (
+        String(values.status ?? "").trim() !== "" &&
+        String(values.priority ?? "").trim() !== ""
+      );
+    case "jira":
+      return String(values.issueType ?? "").trim() !== "";
+    case "linear":
+      return String(values.stateId ?? "").trim() !== "";
+    default:
+      return true;
+  }
+}
+
 export function ProjectDrawer({
   mode,
   project,
@@ -120,6 +144,7 @@ export function ProjectDrawer({
   const t = useTranslations("ticket-projects");
   const tCommon = useTranslations("common");
   const integrationIdField = useId();
+  const workspaceIdField = useId();
   const externalProjectIdField = useId();
   const nameField = useId();
 
@@ -137,6 +162,7 @@ export function ProjectDrawer({
   );
 
   const [integrationId, setIntegrationId] = useState("");
+  const [workspaceId, setWorkspaceId] = useState("");
   const [externalProjectId, setExternalProjectId] = useState("");
   const [name, setName] = useState("");
   const [policy, setPolicy] = useState<OnOpenTicketPolicy>("supersede");
@@ -153,6 +179,23 @@ export function ProjectDrawer({
   const activeKind = selectedIntegration?.kind as
     TicketIntegrationKind | undefined;
 
+  const activeIntegrationId =
+    mode === "edit" ? (project?.integrationId ?? null) : integrationId || null;
+
+  const activeExternalProjectId =
+    mode === "edit" ? (project?.externalProjectId ?? "") : externalProjectId;
+
+  const metadataEnabled = open && Boolean(activeIntegrationId);
+  const workspacesQuery = useTicketMetadataWorkspaces(
+    activeIntegrationId,
+    metadataEnabled && activeKind === "phasical",
+  );
+  const projectsQuery = useTicketMetadataProjects(
+    activeIntegrationId,
+    activeKind === "phasical" ? workspaceId : null,
+    metadataEnabled && (activeKind !== "phasical" || Boolean(workspaceId)),
+  );
+
   useEffect(() => {
     if (!open) {
       return;
@@ -167,6 +210,7 @@ export function ProjectDrawer({
       const kind = integration?.kind as TicketIntegrationKind | undefined;
 
       setIntegrationId(project.integrationId);
+      setWorkspaceId("");
       setExternalProjectId(project.externalProjectId);
       setName(project.name);
       setPolicy(
@@ -189,6 +233,7 @@ export function ProjectDrawer({
     const kind = firstIntegration?.kind as TicketIntegrationKind | undefined;
 
     setIntegrationId(firstIntegration?.id ?? "");
+    setWorkspaceId("");
     setExternalProjectId("");
     setName("");
     setPolicy("supersede");
@@ -201,8 +246,20 @@ export function ProjectDrawer({
       return;
     }
 
+    setWorkspaceId("");
+    setExternalProjectId("");
     setCreateConfig(defaultCreateConfig(activeKind));
-  }, [open, mode, activeKind]);
+    setStatusMapping(defaultStatusMapping());
+  }, [open, mode, activeKind, integrationId]);
+
+  useEffect(() => {
+    if (!open || mode !== "create" || !externalProjectId) {
+      return;
+    }
+
+    setCreateConfig(activeKind ? defaultCreateConfig(activeKind) : {});
+    setStatusMapping(defaultStatusMapping());
+  }, [open, mode, externalProjectId, activeKind]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -225,6 +282,11 @@ export function ProjectDrawer({
       return;
     }
 
+    if (mode === "create" && activeKind === "phasical" && !workspaceId.trim()) {
+      setFormError(t("validation.workspaceRequired"));
+      return;
+    }
+
     if (!activeKind) {
       setFormError(t("validation.integrationRequired"));
       return;
@@ -233,6 +295,11 @@ export function ProjectDrawer({
     const mappingError = validateStatusMapping(statusMapping);
     if (mappingError) {
       setFormError(t(`validation.${mappingError}`));
+      return;
+    }
+
+    if (!validateCreateConfig(activeKind, createConfig)) {
+      setFormError(t("validation.createConfigRequired"));
       return;
     }
 
@@ -262,6 +329,9 @@ export function ProjectDrawer({
       }
     }
   }
+
+  const projects = projectsQuery.data?.items ?? [];
+  const workspaces = workspacesQuery.data?.items ?? [];
 
   return (
     <Sheet onOpenChange={onOpenChange} open={open}>
@@ -330,19 +400,38 @@ export function ProjectDrawer({
               </Field>
             )}
 
-            <Field name="externalProjectId">
-              <FieldLabel htmlFor={externalProjectIdField}>
-                {t("externalProjectId")} <span aria-hidden="true">*</span>
-              </FieldLabel>
-              <Input
-                disabled={mode === "edit"}
-                id={externalProjectIdField}
-                onChange={(event) => setExternalProjectId(event.target.value)}
-                readOnly={mode === "edit"}
+            {activeKind === "phasical" && mode === "create" ? (
+              <MetadataSelect
+                disabled={!metadataEnabled}
+                errorMessage={workspacesQuery.data?.message}
+                id={workspaceIdField}
+                isError={workspacesQuery.isError}
+                isLoading={workspacesQuery.isLoading}
+                items={workspaces}
+                label={t("phasical.workspace")}
+                name="workspaceId"
+                onValueChange={setWorkspaceId}
+                placeholder={t("metadata.workspacePlaceholder")}
                 required
-                value={externalProjectId}
+                value={workspaceId}
               />
-            </Field>
+            ) : null}
+
+            <MetadataSelect
+              disabled={mode === "edit" || !metadataEnabled}
+              errorMessage={projectsQuery.data?.message}
+              id={externalProjectIdField}
+              includeMissingValue={mode === "edit"}
+              isError={projectsQuery.isError}
+              isLoading={projectsQuery.isLoading}
+              items={projects}
+              label={t("externalProjectId")}
+              name="externalProjectId"
+              onValueChange={setExternalProjectId}
+              placeholder={t("metadata.projectPlaceholder")}
+              required
+              value={activeExternalProjectId}
+            />
 
             <Field name="name">
               <FieldLabel htmlFor={nameField}>
@@ -359,12 +448,16 @@ export function ProjectDrawer({
             <PolicySelect onValueChange={setPolicy} value={policy} />
 
             <CreateConfigTabs
+              externalProjectId={activeExternalProjectId}
+              integrationId={activeIntegrationId}
               kind={activeKind ?? null}
               onChange={setCreateConfig}
               values={createConfig}
             />
 
             <StatusMappingForm
+              externalProjectId={activeExternalProjectId}
+              integrationId={activeIntegrationId}
               onChange={setStatusMapping}
               values={statusMapping}
             />

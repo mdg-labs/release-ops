@@ -95,6 +95,17 @@ export type TestConnectionResponse = {
   message?: string;
 };
 
+export type TicketMetadataItem = {
+  id: string;
+  name: string;
+  label?: string;
+};
+
+export type TicketMetadataResponse = {
+  items: TicketMetadataItem[];
+  message?: string;
+};
+
 export type TicketProject = {
   id: string;
   integrationId: string;
