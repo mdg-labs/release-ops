@@ -39,5 +39,14 @@
   "settings": {
     "title": "Settings",
     "saved": "Settings saved"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "repos": "Repos",
+    "integrations": "Integrations",
+    "ticketProjects": "Ticket projects",
+    "notifications": "Notifications",
+    "settings": "Settings",
+    "homeAriaLabel": "Home"
   }
 }
