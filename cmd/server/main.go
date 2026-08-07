@@ -11,6 +11,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/config"
 	"github.com/mdg-labs/release-ops/internal/crypto"
+	"github.com/mdg-labs/release-ops/internal/mail"
 	"github.com/mdg-labs/release-ops/internal/poll"
 	"github.com/mdg-labs/release-ops/internal/providers/integrationtester"
 	"github.com/mdg-labs/release-ops/internal/store"
@@ -72,6 +73,11 @@ func run(cfg *config.Config) {
 		log.Fatalf("poll scheduler start: %v", err)
 	}
 
+	mailer, err := mail.NewFromEnv()
+	if err != nil {
+		log.Fatalf("mail: %v", err)
+	}
+
 	sessionManager := auth.NewSessionManager(db, cfg.SessionSecret, cfg.SecureCookies())
 	handler := api.NewServerRouter(&api.ServerDeps{
 		DB:                 db,
@@ -80,6 +86,7 @@ func run(cfg *config.Config) {
 		Store:              appStore,
 		PollRunner:         scheduler,
 		IntegrationTester:  integrationtester.New(nil),
+		Mailer:             mailer,
 	})
 	addr := cfg.GoListenAddr()
 	log.Printf("release-ops server listening on %s", addr)

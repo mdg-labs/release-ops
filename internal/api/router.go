@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/mdg-labs/release-ops/internal/api/handlers"
+	"github.com/mdg-labs/release-ops/internal/mail"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
@@ -29,6 +30,7 @@ type ServerDeps struct {
 	PollRunner         handlers.PollRunner
 	IntegrationTester  handlers.IntegrationTester
 	NotificationTester handlers.NotificationTester
+	Mailer             mail.Mailer
 }
 
 // NewRouter builds the root HTTP handler with health and API routes.
