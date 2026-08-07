@@ -61,5 +61,7 @@ export const MIDDLEWARE_MATCHER_PATTERN =
   "/((?!api|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)";
 
 export const config = {
-  matcher: [MIDDLEWARE_MATCHER_PATTERN],
+  matcher: [
+    "/((?!api|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+  ],
 };
