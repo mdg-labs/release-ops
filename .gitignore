@@ -9,3 +9,4 @@ coverage
 .env
 .agents/project/agent-memory/
 .agents/project/phasical-intake/plans/
+apps/web/tsconfig.tsbuildinfo
