@@ -12,6 +12,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/config"
 	"github.com/mdg-labs/release-ops/internal/crypto"
 	"github.com/mdg-labs/release-ops/internal/poll"
+	"github.com/mdg-labs/release-ops/internal/providers/integrationtester"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
@@ -73,11 +74,12 @@ func run(cfg *config.Config) {
 
 	sessionManager := auth.NewSessionManager(db, cfg.SessionSecret, cfg.SecureCookies())
 	handler := api.NewServerRouter(&api.ServerDeps{
-		DB:         db,
-		Session:    sessionManager,
-		Queries:    queries,
-		Store:      appStore,
-		PollRunner: scheduler,
+		DB:                 db,
+		Session:            sessionManager,
+		Queries:            queries,
+		Store:              appStore,
+		PollRunner:         scheduler,
+		IntegrationTester:  integrationtester.New(nil),
 	})
 	addr := cfg.GoListenAddr()
 	log.Printf("release-ops server listening on %s", addr)

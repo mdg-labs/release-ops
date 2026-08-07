@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/cookiejar"
@@ -21,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/crypto"
+	"github.com/mdg-labs/release-ops/internal/providers/integrationtester"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 	_ "modernc.org/sqlite"
@@ -153,6 +155,81 @@ func TestPublicAuthRoutesAccessibleWithoutSession(t *testing.T) {
 	_ = loginResp.Body.Close()
 	if loginResp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("login status = %d, want %d", loginResp.StatusCode, http.StatusUnauthorized)
+	}
+}
+
+func TestIntegrationTestConnectionWithRealTester(t *testing.T) {
+	t.Parallel()
+
+	mockProvider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v4/user" {
+			t.Fatalf("path = %q, want /api/v4/user", r.URL.Path)
+		}
+		if r.Header.Get("PRIVATE-TOKEN") != "glpat_route_test" {
+			t.Fatalf("PRIVATE-TOKEN = %q", r.Header.Get("PRIVATE-TOKEN"))
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(mockProvider.Close)
+
+	deps := newRoutesTestDeps(t)
+	deps.IntegrationTester = integrationtester.New(mockProvider.Client())
+
+	created, err := deps.Store.Integrations().Create(context.Background(), store.CreateIntegrationInput{
+		Kind:    "gitlab",
+		Name:    "GitLab Route Test",
+		BaseURL: &mockProvider.URL,
+		Secret:  []byte(`{"token":"glpat_route_test"}`),
+	})
+	if err != nil {
+		t.Fatalf("Create integration: %v", err)
+	}
+
+	seedRoutesTestUser(t, deps.Queries, "admin@example.com", "secret-pass")
+	seedAppSettingsRow(t, deps.DB)
+
+	srv := httptest.NewServer(NewServerRouter(deps))
+	t.Cleanup(srv.Close)
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar: %v", err)
+	}
+	client := &http.Client{Jar: jar}
+
+	loginResp, err := client.Post(
+		srv.URL+"/api/v1/auth/login",
+		"application/json",
+		strings.NewReader(`{"email":"admin@example.com","password":"secret-pass"}`),
+	)
+	if err != nil {
+		t.Fatalf("POST login: %v", err)
+	}
+	_ = loginResp.Body.Close()
+	if loginResp.StatusCode != http.StatusOK {
+		t.Fatalf("login status = %d, want %d", loginResp.StatusCode, http.StatusOK)
+	}
+
+	testURL := srv.URL + "/api/v1/integrations/" + created.ID + "/test"
+	testResp, err := client.Post(testURL, "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST test: %v", err)
+	}
+	defer func() { _ = testResp.Body.Close() }()
+
+	if testResp.StatusCode != http.StatusOK {
+		t.Fatalf("test status = %d, want %d", testResp.StatusCode, http.StatusOK)
+	}
+
+	var body struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(testResp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode test response: %v", err)
+	}
+	if !body.Success {
+		t.Fatalf("success = false, message = %q", body.Message)
 	}
 }
 
