@@ -2,13 +2,13 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MIDDLEWARE_MATCHER_PATTERN,
-  SESSION_API_PATH,
   getSessionUser,
   isLoginPath,
   middleware,
 } from "./middleware";
 
 const ORIGIN = "http://localhost:3000";
+const GO_SESSION_URL = "http://127.0.0.1:8080/api/v1/auth/session";
 
 function makeRequest(path: string, cookie?: string): NextRequest {
   return new NextRequest(`${ORIGIN}${path}`, {
@@ -38,7 +38,7 @@ describe("auth middleware", () => {
   });
 
   describe("getSessionUser", () => {
-    it("calls GET /api/go/api/v1/auth/session with forwarded cookies", async () => {
+    it("calls GET /api/v1/auth/session on the Go API with forwarded cookies", async () => {
       const fetchMock = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
@@ -58,15 +58,15 @@ describe("auth middleware", () => {
         email: "admin@example.com",
       });
       expect(fetchMock).toHaveBeenCalledOnce();
-      const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
-      expect(url.href).toBe(`${ORIGIN}${SESSION_API_PATH}`);
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(GO_SESSION_URL);
       expect(init.cache).toBe("no-store");
       const headers = new Headers(init.headers);
       expect(headers.get("cookie")).toBe("release_ops_session=session-token");
       expect(headers.get("accept")).toBe("application/json");
     });
 
-    it("returns null when session endpoint is not ok", async () => {
+    it("returns null when the session endpoint is not ok", async () => {
       vi.stubGlobal(
         "fetch",
         vi.fn().mockResolvedValue({
@@ -76,6 +76,32 @@ describe("auth middleware", () => {
 
       const user = await getSessionUser(makeRequest("/repos"));
       expect(user).toBeNull();
+    });
+
+    it("returns null when the session check cannot reach the Go API", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockRejectedValue(new TypeError("fetch failed")),
+      );
+
+      const user = await getSessionUser(makeRequest("/repos"));
+      expect(user).toBeNull();
+    });
+
+    it("uses GO_API_URL when set", async () => {
+      vi.stubEnv("GO_API_URL", "http://127.0.0.1:9090");
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ user: null }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      await getSessionUser(makeRequest("/repos"));
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:9090/api/v1/auth/session",
+        expect.any(Object),
+      );
     });
   });
 

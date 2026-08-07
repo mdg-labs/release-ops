@@ -1,7 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 
+/** Browser-facing path via the Next.js proxy (matcher exclusions, docs). */
 export const SESSION_API_PATH = "/api/go/api/v1/auth/session";
+
+const DEFAULT_GO_API_URL = "http://127.0.0.1:8080";
+const GO_SESSION_PATH = "/api/v1/auth/session";
 const LOGIN_PATH = "/login";
+
+function getSessionCheckUrl(): string {
+  const base = (process.env.GO_API_URL ?? DEFAULT_GO_API_URL).replace(
+    /\/$/,
+    "",
+  );
+  return `${base}${GO_SESSION_PATH}`;
+}
 
 type SessionResponse = {
   user: { id: string; email: string } | null;
@@ -14,22 +26,24 @@ export function isLoginPath(pathname: string): boolean {
 export async function getSessionUser(
   request: NextRequest,
 ): Promise<SessionResponse["user"]> {
-  const sessionUrl = new URL(SESSION_API_PATH, request.nextUrl.origin);
+  try {
+    const response = await fetch(getSessionCheckUrl(), {
+      headers: {
+        cookie: request.headers.get("cookie") ?? "",
+        accept: "application/json",
+      },
+      cache: "no-store",
+    });
 
-  const response = await fetch(sessionUrl, {
-    headers: {
-      cookie: request.headers.get("cookie") ?? "",
-      accept: "application/json",
-    },
-    cache: "no-store",
-  });
+    if (!response.ok) {
+      return null;
+    }
 
-  if (!response.ok) {
+    const data = (await response.json()) as SessionResponse;
+    return data.user ?? null;
+  } catch {
     return null;
   }
-
-  const data = (await response.json()) as SessionResponse;
-  return data.user ?? null;
 }
 
 export async function middleware(request: NextRequest) {
