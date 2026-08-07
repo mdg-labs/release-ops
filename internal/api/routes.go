@@ -29,7 +29,9 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 		Queries:        deps.Queries,
 	}
 
-	api.Post("/auth/login", authHandlers.Login)
+	rateLimiter := apimw.NewRateLimiter()
+
+	api.With(rateLimiter.Login).Post("/auth/login", authHandlers.Login)
 	api.Get("/auth/session", authHandlers.Session)
 
 	api.Group(func(protected chi.Router) {
