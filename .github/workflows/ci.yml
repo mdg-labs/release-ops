@@ -15,8 +15,7 @@ jobs:
           cache-dependency-path: go.sum
       - uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.1.6
-          install-mode: gomod
+          version: v2.5.0
 
   go-test:
     name: Go test
