@@ -75,7 +75,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   </p>
 
   <div class="card amber">
-    <strong>Version:</strong> Spec v2.7 (2026-08-06) — Go-native auth · Single-container deploy · locked implementation defaults
+    <strong>Version:</strong> Spec v2.8 (2026-08-07) — Multi-user invite-only auth · SMTP · rate limits · locked implementation defaults
   </div>
 
   <nav class="toc">
@@ -116,8 +116,8 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <h3>MVP non-goals</h3>
   <ul>
     <li>No additional sources (Bitbucket, Azure DevOps, …).</li>
-    <li>No multi-user RBAC (one admin is enough; all logged-in users have equal permissions).</li>
-    <li>No public sign-up — admin via <code>BOOTSTRAP_ADMIN_*</code> env on first start or <code>seed-admin</code> CLI only (no in-app registration or setup wizard).</li>
+    <li>No RBAC — all logged-in users have equal permissions (no roles or per-resource ACLs).</li>
+    <li>No public self-registration — accounts only via invitation accept or bootstrap admin (<code>BOOTSTRAP_ADMIN_*</code> / <code>seed-admin</code> CLI on empty <code>users</code>).</li>
     <li>Self-host with <strong>one</strong> Docker container — no multi-service Compose.</li>
   </ul>
 
@@ -168,11 +168,41 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <li>No <code>POST /api/v1/auth/register</code> in MVP — bootstrap only.</li>
     <li>All logged-in users have equal permissions (no RBAC).</li>
   </ul>
+  <h3>Multi-user model (invite-only)</h3>
+  <ul>
+    <li>After bootstrap, additional accounts are created <strong>only</strong> via invitation accept — no <code>POST /api/v1/auth/register</code> and no public sign-up UI.</li>
+    <li>Any logged-in user can invite others, list users, revoke pending invitations, and remove other users.</li>
+    <li>Invitations return a one-time URL (<code>{APP_PUBLIC_URL}/accept-invitation?token=…</code>) for copy-link; optional SMTP email when configured (§9).</li>
+    <li>Password minimum: <strong>8 characters</strong> (invite accept, reset, login unchanged).</li>
+    <li>Admin/bootstrap never sets another user’s password — invited users choose their own password on accept; existing users use forgot-password or self-service flows.</li>
+  </ul>
+  <h3>Self-service email change</h3>
+  <ul>
+    <li>Logged-in user requests change via <code>POST /api/v1/users/me/email-change-request</code> with <code>newEmail</code> and <code>currentPassword</code>.</li>
+    <li>Verification link is sent to the <strong>new</strong> email address (SMTP required for delivery; no link returned in API response).</li>
+    <li>Confirm via public <code>POST /api/v1/auth/confirm-email-change</code> with one-time token from the email link.</li>
+    <li>On confirm: update <code>users.email</code>, mark token used, revoke <strong>all other sessions</strong> for that user (current session remains valid).</li>
+    <li>Email-change tokens use <code>password_reset_token_expiry_minutes</code> from <code>app_settings</code> (§4.1).</li>
+  </ul>
+  <h3>User removal</h3>
+  <ul>
+    <li><code>DELETE /api/v1/users/{id}</code> — any logged-in user may remove another user.</li>
+    <li><strong>Forbidden:</strong> delete self; delete the last remaining user (instance must always have ≥1 user).</li>
+    <li>On delete: revoke <strong>all sessions</strong> for that user (<code>DELETE FROM sessions WHERE user_id = ?</code>) before deleting the <code>users</code> row.</li>
+  </ul>
+  <h3>Session revocation rules</h3>
+  <ul>
+    <li>Every successful login, invitation accept, and password reset sets <code>sessions.user_id</code> on the new session row (§4.0.1).</li>
+    <li><strong>User delete:</strong> delete all sessions for that <code>user_id</code>.</li>
+    <li><strong>Email change confirm:</strong> delete all sessions for that <code>user_id</code> except the current session token.</li>
+    <li><strong>Logout:</strong> delete current session only (existing behaviour).</li>
+    <li>Index on <code>sessions.user_id</code> supports bulk revocation.</li>
+  </ul>
   <h3>Protected routes</h3>
   <ul>
-    <li>Go middleware: all <code>/api/v1/*</code> require valid session except <code>POST /api/v1/auth/login</code> and <code>GET /api/v1/auth/session</code>.</li>
+    <li>Go middleware: all <code>/api/v1/*</code> require valid session except the public auth paths listed in §7.0.</li>
     <li><code>GET /healthz</code> — no auth (container probe).</li>
-    <li>Next middleware: pages except <code>/login</code> redirect to login when <code>GET /api/go/api/v1/auth/session</code> returns <code>user: null</code>.</li>
+    <li>Next middleware: pages except public auth routes (§8.2) redirect to login when <code>GET /api/go/api/v1/auth/session</code> returns <code>user: null</code>.</li>
   </ul>
 
   <h2 id="schema">4. Data model</h2>
@@ -192,15 +222,33 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <p>Auth tables — written only by Go.</p>
   <table>
     <tr><th>Table</th><th>Columns</th><th>Notes</th></tr>
-    <tr><td><code>users</code></td><td><code>id</code> (UUID PK), <code>email</code> (unique), <code>password_hash</code>, <code>created_at</code>, <code>updated_at</code></td><td>MVP: typically one admin row</td></tr>
-    <tr><td><code>sessions</code></td><td><code>token</code> (PK), <code>data</code> (BLOB), <code>expiry</code> (REAL)</td><td>Server-side session store; index on <code>expiry</code> for cleanup</td></tr>
+    <tr><td><code>users</code></td><td><code>id</code> (UUID PK), <code>email</code> (unique), <code>password_hash</code>, <code>created_at</code>, <code>updated_at</code></td><td>Multi-user; bootstrap admin + invited accounts</td></tr>
+    <tr><td><code>sessions</code></td><td><code>token</code> (PK), <code>data</code> (BLOB), <code>expiry</code> (REAL), <code>user_id</code> (TEXT FK → <code>users.id</code> NULL)</td><td>Server-side session store; <code>user_id</code> set on login/accept/reset for revocation; index on <code>expiry</code> and <code>user_id</code></td></tr>
   </table>
+
+  <h3>4.0.2 <code>auth_tokens</code></h3>
+  <p>One-time tokens for invitations, password reset, and email change. Raw token is never stored — only SHA-256 hash in <code>token_hash</code>.</p>
+  <table>
+    <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+    <tr><td><code>id</code></td><td>TEXT (UUID)</td><td>PK — referenced by invitation send-email and list APIs</td></tr>
+    <tr><td><code>kind</code></td><td>TEXT</td><td><code>invitation</code> | <code>password_reset</code> | <code>email_change</code></td></tr>
+    <tr><td><code>email</code></td><td>TEXT</td><td>Target email (invitation invitee, reset account, or current email for email_change)</td></tr>
+    <tr><td><code>token_hash</code></td><td>TEXT</td><td>SHA-256 hex of the one-time secret</td></tr>
+    <tr><td><code>new_email</code></td><td>TEXT NULL</td><td>Proposed email — only for <code>email_change</code></td></tr>
+    <tr><td><code>invited_by_user_id</code></td><td>TEXT NULL FK → <code>users.id</code> ON DELETE SET NULL</td><td>Inviter — only for <code>invitation</code></td></tr>
+    <tr><td><code>expires_at</code></td><td>TEXT</td><td>UTC ISO8601 — invitation expiry from <code>invite_token_expiry_hours</code>; reset and email_change from <code>password_reset_token_expiry_minutes</code></td></tr>
+    <tr><td><code>used_at</code></td><td>TEXT NULL</td><td>UTC ISO8601 when consumed; NULL while pending</td></tr>
+    <tr><td><code>created_at</code></td><td>TEXT</td><td>UTC ISO8601</td></tr>
+  </table>
+  <p>Index on <code>token_hash</code> for lookup. Invalidate prior unused <code>password_reset</code> tokens for the same <code>email</code> when issuing a new reset request.</p>
 
   <h3>4.1 <code>app_settings</code></h3>
   <p>Singleton (always <code>id = 1</code>).</p>
   <table>
     <tr><th>Column</th><th>Type</th><th>Default</th><th>Description</th></tr>
     <tr><td><code>poll_interval_minutes</code></td><td>INTEGER</td><td>360</td><td>Global poll interval; min 5</td></tr>
+    <tr><td><code>invite_token_expiry_hours</code></td><td>INTEGER</td><td>168</td><td>Invitation link lifetime; CHECK 1–720</td></tr>
+    <tr><td><code>password_reset_token_expiry_minutes</code></td><td>INTEGER</td><td>60</td><td>Password-reset and email-change token lifetime; CHECK 5–1440</td></tr>
     <tr><td><code>updated_at</code></td><td>TEXT (ISO8601)</td><td>—</td><td>UTC</td></tr>
   </table>
 
@@ -518,17 +566,66 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <pre><code>{ "error": { "code": "VALIDATION_ERROR", "message": "..." } }</code></pre>
 
   <h3>7.0 Auth</h3>
+  <h4>Session endpoints</h4>
   <table>
     <tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
-    <tr><td>POST</td><td><code>/api/v1/auth/login</code></td><td>no</td><td><code>{ "email", "password" }</code> → sets session cookie; 401 on failure</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/auth/login</code></td><td>no</td><td><code>{ "email", "password" }</code> → sets session cookie + <code>sessions.user_id</code>; 401 on failure</td></tr>
     <tr><td>POST</td><td><code>/api/v1/auth/logout</code></td><td>yes</td><td>Clears session cookie</td></tr>
     <tr><td>GET</td><td><code>/api/v1/auth/session</code></td><td>no</td><td><code>{ "user": null }</code> or <code>{ "user": { "id", "email" } }</code></td></tr>
+  </table>
+  <h4>Public token endpoints</h4>
+  <table>
+    <tr><th>Method</th><th>Path</th><th>Body</th><th>Description</th></tr>
+    <tr><td>POST</td><td><code>/api/v1/auth/accept-invitation</code></td><td><code>{ "token", "password" }</code></td><td>Creates user, consumes invitation token, sets session; min 8-char password; 400 invalid/expired token</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/auth/forgot-password</code></td><td><code>{ "email" }</code></td><td>Always <strong>200</strong> with generic message — no email enumeration; sends reset email only when user exists and SMTP configured</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/auth/reset-password</code></td><td><code>{ "token", "password" }</code></td><td>Consumes reset token, updates password, sets session; min 8-char password; revokes prior unused reset tokens for same email on new forgot request</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/auth/confirm-email-change</code></td><td><code>{ "token" }</code></td><td>Updates <code>users.email</code> to <code>new_email</code>; revokes other sessions (keeps current)</td></tr>
+  </table>
+  <h4>Rate limiting (public auth mutations)</h4>
+  <p>Per-client IP sliding window (in-memory; honor <code>X-Forwarded-For</code> first hop when present). On exceed:</p>
+  <ul>
+    <li>HTTP <strong>429</strong> with standard error envelope (§7) and <code>Retry-After</code> header (seconds until window allows retry).</li>
+  </ul>
+  <table>
+    <tr><th>Endpoint</th><th>Limit (per IP)</th></tr>
+    <tr><td><code>POST /api/v1/auth/login</code></td><td>10 / minute</td></tr>
+    <tr><td><code>POST /api/v1/auth/forgot-password</code></td><td>5 / hour</td></tr>
+    <tr><td><code>POST /api/v1/auth/accept-invitation</code></td><td>10 / hour</td></tr>
+    <tr><td><code>POST /api/v1/auth/reset-password</code></td><td>10 / hour</td></tr>
+    <tr><td><code>POST /api/v1/auth/confirm-email-change</code></td><td>10 / hour</td></tr>
   </table>
   <pre><code>// POST /api/v1/auth/login — 200
 { "user": { "id": "uuid", "email": "admin@example.com" } }
 
 // GET /api/v1/auth/session — 200 (always, even when logged out)
-{ "user": null }</code></pre>
+{ "user": null }
+
+// POST /api/v1/auth/forgot-password — 200 (always)
+{ "message": "If an account exists for that email, a reset link has been sent." }
+
+// 429 — rate limited (all public auth mutations above)
+{ "error": { "code": "RATE_LIMITED", "message": "Too many requests. Try again later." } }
+// Header: Retry-After: &lt;seconds&gt;</code></pre>
+
+  <h3>7.0.1 Users &amp; invitations</h3>
+  <p>All endpoints require session. No RBAC — any logged-in user has equal access.</p>
+  <table>
+    <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+    <tr><td>GET</td><td><code>/api/v1/users</code></td><td>List users: <code>{ "items": [{ "id", "email", "createdAt" }] }</code></td></tr>
+    <tr><td>DELETE</td><td><code>/api/v1/users/{id}</code></td><td>Remove user — 403 self, 409 last user; revokes all sessions first</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/users/invitations</code></td><td>Pending invitations: <code>id</code>, <code>email</code>, <code>expiresAt</code>, <code>createdAt</code>, <code>invitedByUserId</code></td></tr>
+    <tr><td>POST</td><td><code>/api/v1/users/invitations</code></td><td><code>{ "email" }</code> → creates token; returns <code>inviteUrl</code> for copy-link (one-time raw token in URL)</td></tr>
+    <tr><td>DELETE</td><td><code>/api/v1/users/invitations/{id}</code></td><td>Revoke pending invitation</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/users/invitations/{id}/send-email</code></td><td>Send invitation email via SMTP — <strong>503</strong> when SMTP not configured</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/users/me/email-change-request</code></td><td><code>{ "newEmail", "currentPassword" }</code> — sends confirm link to <strong>new</strong> email; 401 wrong password</td></tr>
+  </table>
+  <pre><code>// POST /api/v1/users/invitations — 201
+{
+  "id": "token-row-uuid",
+  "email": "colleague@example.com",
+  "expiresAt": "2026-08-14T12:00:00.000Z",
+  "inviteUrl": "https://release-ops.example.com/accept-invitation?token=..."
+}</code></pre>
 
   <h3>7.1 Status</h3>
   <table>
@@ -573,8 +670,14 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <table>
     <tr><th>Method</th><th>Path</th><th>Body</th></tr>
     <tr><td>GET</td><td><code>/api/v1/settings</code></td><td>—</td></tr>
-    <tr><td>PATCH</td><td><code>/api/v1/settings</code></td><td><code>{ "pollIntervalMinutes": 360 }</code></td></tr>
+    <tr><td>PATCH</td><td><code>/api/v1/settings</code></td><td><code>{ "pollIntervalMinutes"?, "inviteTokenExpiryHours"?, "passwordResetTokenExpiryMinutes"? }</code></td></tr>
   </table>
+  <pre><code>// GET /api/v1/settings — 200
+{
+  "pollIntervalMinutes": 360,
+  "inviteTokenExpiryHours": 168,
+  "passwordResetTokenExpiryMinutes": 60
+}</code></pre>
 
   <h3>7.3 Integrations</h3>
   <table>
@@ -822,6 +925,12 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><code>BOOTSTRAP_ADMIN_EMAIL</code></td><td>no</td><td>—</td><td>One-time first-start admin seed (only when no users exist)</td></tr>
     <tr><td><code>BOOTSTRAP_ADMIN_PASSWORD</code></td><td>no</td><td>—</td><td>Pair with <code>BOOTSTRAP_ADMIN_EMAIL</code>; remove after first boot</td></tr>
     <tr><td><code>PORT</code></td><td>no</td><td><code>3000</code></td><td>Public HTTP port (Next.js)</td></tr>
+    <tr><td><code>SMTP_HOST</code></td><td>no</td><td>—</td><td>SMTP server hostname — unset disables outbound email (copy-link still works)</td></tr>
+    <tr><td><code>SMTP_PORT</code></td><td>no</td><td><code>587</code></td><td>SMTP port</td></tr>
+    <tr><td><code>SMTP_USER</code></td><td>no</td><td>—</td><td>SMTP auth username (when server requires auth)</td></tr>
+    <tr><td><code>SMTP_PASSWORD</code></td><td>no</td><td>—</td><td>SMTP auth password</td></tr>
+    <tr><td><code>SMTP_FROM</code></td><td>no</td><td>—</td><td>From address for invitation, reset, and email-change messages</td></tr>
+    <tr><td><code>SMTP_TLS</code></td><td>no</td><td><code>true</code></td><td>Use STARTTLS when <code>true</code></td></tr>
   </table>
   <p><strong>Removed</strong> compared to prior specs: <code>BETTER_AUTH_*</code>, <code>DATABASE_URL</code> (auth.db), <code>JWKS_URL</code>, <code>CONFIG_PATH</code>, <code>GITHUB_TOKEN</code>, <code>PHASICAL_API_KEY</code>, <code>PHASICAL_BASE_URL</code>, <code>POLL_INTERVAL_MINUTES</code> (all in DB/UI or Go auth).</p>
 
@@ -1023,7 +1132,7 @@ jobs:
     <li>Per-repo poll interval.</li>
     <li>Release filters (pre-releases, regex on tags).</li>
     <li>Webhook instead of poll.</li>
-    <li>Multi-user with roles.</li>
+    <li>Multi-user with roles (RBAC).</li>
     <li>OAuth/social login (COSS: <a href="https://coss.com/ui/r/p-button-38.json">p-button-38</a>).</li>
     <li>Bulk enable/disable on <code>/repos</code> table.</li>
     <li>Linear <code>openTypes</code>/<code>doneTypes</code> status mapping (MVP uses <code>stateId</code> only).</li>
