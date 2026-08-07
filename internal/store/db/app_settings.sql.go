@@ -9,6 +9,16 @@ import (
 	"context"
 )
 
+const ensureAppSettings = `-- name: EnsureAppSettings :exec
+INSERT OR IGNORE INTO app_settings (id, poll_interval_minutes, updated_at)
+VALUES (1, 360, ?)
+`
+
+func (q *Queries) EnsureAppSettings(ctx context.Context, updatedAt string) error {
+	_, err := q.db.ExecContext(ctx, ensureAppSettings, updatedAt)
+	return err
+}
+
 const getAppSettings = `-- name: GetAppSettings :one
 SELECT
   id,

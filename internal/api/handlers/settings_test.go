@@ -25,6 +25,10 @@ type mockSettingsRepo struct {
 	updateFn func(ctx context.Context, pollIntervalMinutes int64) (*store.AppSettings, error)
 }
 
+func (m *mockSettingsRepo) EnsureDefault(context.Context) error {
+	return nil
+}
+
 func (m *mockSettingsRepo) Get(_ context.Context) (*store.AppSettings, error) {
 	if m.getErr != nil {
 		return nil, m.getErr

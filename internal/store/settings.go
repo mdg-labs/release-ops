@@ -15,12 +15,17 @@ type AppSettings struct {
 
 // SettingsRepository reads and updates app_settings.
 type SettingsRepository interface {
+	EnsureDefault(ctx context.Context) error
 	Get(ctx context.Context) (*AppSettings, error)
 	UpdatePollInterval(ctx context.Context, pollIntervalMinutes int64) (*AppSettings, error)
 }
 
 type settingsRepo struct {
 	store *Store
+}
+
+func (r settingsRepo) EnsureDefault(ctx context.Context) error {
+	return r.store.q.EnsureAppSettings(ctx, nowUTC())
 }
 
 func (r settingsRepo) Get(ctx context.Context) (*AppSettings, error) {

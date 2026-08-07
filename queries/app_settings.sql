@@ -1,3 +1,7 @@
+-- name: EnsureAppSettings :exec
+INSERT OR IGNORE INTO app_settings (id, poll_interval_minutes, updated_at)
+VALUES (1, 360, ?);
+
 -- name: GetAppSettings :one
 SELECT
   id,

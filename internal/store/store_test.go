@@ -70,6 +70,41 @@ func seedAppSettings(t *testing.T, sqlDB *sql.DB) {
 	}
 }
 
+func TestEnsureDefaultAppSettings(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "app.db")
+	sqlDB := openMigratedDB(t, dbPath)
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+	})
+
+	cipher, err := crypto.NewCipherFromHex(testKeyHex)
+	if err != nil {
+		t.Fatalf("NewCipherFromHex: %v", err)
+	}
+
+	s := store.New(sqlDB, cipher)
+	ctx := context.Background()
+
+	if err := s.Settings().EnsureDefault(ctx); err != nil {
+		t.Fatalf("EnsureDefault: %v", err)
+	}
+
+	got, err := s.Settings().Get(ctx)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.ID != 1 || got.PollIntervalMinutes != 360 {
+		t.Fatalf("settings = %+v, want id=1 poll_interval_minutes=360", got)
+	}
+
+	if err := s.Settings().EnsureDefault(ctx); err != nil {
+		t.Fatalf("EnsureDefault second call: %v", err)
+	}
+}
+
 func TestSettingsGetReturnsIDOne(t *testing.T) {
 	t.Parallel()
 

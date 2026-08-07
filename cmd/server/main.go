@@ -51,6 +51,10 @@ func run(cfg *config.Config) {
 
 	appStore := store.New(db, cipher)
 
+	if err := appStore.Settings().EnsureDefault(context.Background()); err != nil {
+		log.Fatalf("app settings: %v", err)
+	}
+
 	engine := poll.NewEngine(appStore.Poll())
 	scheduler, err := poll.NewScheduler(poll.SchedulerConfig{
 		Engine:         engine,

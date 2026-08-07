@@ -22,6 +22,10 @@ type mockStatusSettingsRepo struct {
 	settings *store.AppSettings
 }
 
+func (m *mockStatusSettingsRepo) EnsureDefault(context.Context) error {
+	return nil
+}
+
 func (m *mockStatusSettingsRepo) Get(_ context.Context) (*store.AppSettings, error) {
 	return m.settings, nil
 }

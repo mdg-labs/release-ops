@@ -76,6 +76,10 @@ type schedulerMockSettingsRepo struct {
 	pollIntervalMinutes int64
 }
 
+func (m *schedulerMockSettingsRepo) EnsureDefault(context.Context) error {
+	return nil
+}
+
 func (m *schedulerMockSettingsRepo) Get(context.Context) (*store.AppSettings, error) {
 	return &store.AppSettings{PollIntervalMinutes: m.pollIntervalMinutes}, nil
 }
