@@ -281,22 +281,3 @@ func TestSchedulerStartUsesMinInterval(t *testing.T) {
 	cancel()
 	time.Sleep(50 * time.Millisecond)
 }
-
-func TestRunFinishStatus(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		repos, errors int64
-		want          string
-	}{
-		{0, 0, "success"},
-		{3, 0, "success"},
-		{3, 1, "partial"},
-		{3, 3, "failed"},
-	}
-	for _, tc := range cases {
-		if got := poll.RunFinishStatus(tc.repos, tc.errors); got != tc.want {
-			t.Errorf("RunFinishStatus(%d, %d) = %q, want %q", tc.repos, tc.errors, got, tc.want)
-		}
-	}
-}

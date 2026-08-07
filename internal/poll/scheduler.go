@@ -148,7 +148,7 @@ func (s *Scheduler) RunAll(ctx context.Context, runID string) error {
 		reposChecked      int64
 		ticketsCreated    int64
 		ticketsSuperseded int64
-		runErrors         []runErrorEntry
+		runErrors         []RunErrorEntry
 	)
 
 	for i := range repos {
@@ -157,7 +157,7 @@ func (s *Scheduler) RunAll(ctx context.Context, runID string) error {
 
 		eval, pollErr := s.pollOneRepo(ctx, runID, repo)
 		if pollErr != nil {
-			runErrors = append(runErrors, runErrorEntry{
+			runErrors = append(runErrors, RunErrorEntry{
 				RepoID:  repo.ID,
 				Message: pollErr.Error(),
 			})
@@ -171,7 +171,7 @@ func (s *Scheduler) RunAll(ctx context.Context, runID string) error {
 		}
 	}
 
-	errorsJSON, err := encodeRunErrors(runErrors)
+	errorsJSON, err := EncodeRunErrors(runErrors)
 	if err != nil {
 		return fmt.Errorf("encode run errors: %w", err)
 	}
@@ -225,29 +225,11 @@ func (s *Scheduler) recordEvaluation(
 	eval *RepoEvaluation,
 	ticketsCreated, ticketsSuperseded *int64,
 ) {
-	repoIDPtr := repoID
-	for _, action := range eval.Actions {
-		var detail *string
-		if eval.Detail != "" {
-			d := eval.Detail
-			detail = &d
-		}
-		if _, err := s.poll.InsertEvent(ctx, runID, &repoIDPtr, action, detail); err != nil {
-			slog.Error("insert poll run event", "runId", runID, "repoId", repoID, "action", action, "error", err)
-		}
-		switch action {
-		case ActionCreate:
-			*ticketsCreated++
-		case ActionSupersede:
-			*ticketsSuperseded++
-		}
-	}
+	s.recorder().RecordEvaluation(ctx, runID, repoID, eval, ticketsCreated, ticketsSuperseded)
+}
 
-	if s.notifier != nil && eval.Repo != nil {
-		for _, action := range eval.Actions {
-			s.notifier.NotifyRepoAction(ctx, *eval.Repo, action, eval.Detail)
-		}
-	}
+func (s *Scheduler) recorder() *RunRecorder {
+	return NewRunRecorder(s.poll, s.notifier)
 }
 
 func (s *Scheduler) executeRun(ctx context.Context, runID string) {
@@ -353,33 +335,6 @@ func ClampPollIntervalMinutes(minutes int64) int64 {
 		return MinPollIntervalMinutes
 	}
 	return minutes
-}
-
-type runErrorEntry struct {
-	RepoID  string `json:"repoId"`
-	Message string `json:"message"`
-}
-
-func encodeRunErrors(entries []runErrorEntry) (string, error) {
-	if entries == nil {
-		entries = []runErrorEntry{}
-	}
-	raw, err := json.Marshal(entries)
-	if err != nil {
-		return "", err
-	}
-	return string(raw), nil
-}
-
-// RunFinishStatus maps repo/error counts to poll_runs.status (specs §5.6).
-func RunFinishStatus(reposChecked, errorCount int64) string {
-	if reposChecked == 0 || errorCount == 0 {
-		return "success"
-	}
-	if errorCount >= reposChecked {
-		return "failed"
-	}
-	return "partial"
 }
 
 type tokenPayload struct {
