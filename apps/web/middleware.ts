@@ -1,0 +1,65 @@
+import { NextRequest, NextResponse } from "next/server";
+
+export const SESSION_API_PATH = "/api/go/api/v1/auth/session";
+const LOGIN_PATH = "/login";
+
+type SessionResponse = {
+  user: { id: string; email: string } | null;
+};
+
+export function isLoginPath(pathname: string): boolean {
+  return pathname === LOGIN_PATH || pathname.startsWith(`${LOGIN_PATH}/`);
+}
+
+export async function getSessionUser(
+  request: NextRequest,
+): Promise<SessionResponse["user"]> {
+  const sessionUrl = new URL(SESSION_API_PATH, request.nextUrl.origin);
+
+  const response = await fetch(sessionUrl, {
+    headers: {
+      cookie: request.headers.get("cookie") ?? "",
+      accept: "application/json",
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const data = (await response.json()) as SessionResponse;
+  return data.user ?? null;
+}
+
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  const onLoginPage = isLoginPath(pathname);
+  const user = await getSessionUser(request);
+
+  if (!user && !onLoginPage) {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = LOGIN_PATH;
+    loginUrl.search = "";
+    if (pathname !== "/") {
+      loginUrl.searchParams.set("redirect", pathname);
+    }
+    return NextResponse.redirect(loginUrl);
+  }
+
+  if (user && onLoginPage) {
+    const homeUrl = request.nextUrl.clone();
+    homeUrl.pathname = "/";
+    homeUrl.search = "";
+    return NextResponse.redirect(homeUrl);
+  }
+
+  return NextResponse.next();
+}
+
+export const MIDDLEWARE_MATCHER_PATTERN =
+  "/((?!api|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)";
+
+export const config = {
+  matcher: [MIDDLEWARE_MATCHER_PATTERN],
+};
