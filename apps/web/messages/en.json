@@ -207,7 +207,57 @@
   },
   "notifications": {
     "title": "Notifications",
-    "add": "Add notification target"
+    "add": "Add notification target",
+    "createTitle": "Add notification target",
+    "createDescription": "Configure a Shoutrrr URL and poll events to notify.",
+    "editTitle": "Edit notification target",
+    "editDescription": "Update the Shoutrrr URL, events, and enabled state.",
+    "empty": "No notification targets yet. Add one to get started.",
+    "loadFailed": "Failed to load notification targets.",
+    "saveFailed": "Failed to save notification target.",
+    "name": "Name",
+    "shoutrrrUrl": "Shoutrrr URL",
+    "urlHint": "Example: slack://token@channel or ntfy://topic",
+    "urlPlaceholder": "Enter Shoutrrr URL",
+    "urlPlaceholderEdit": "Enter a new URL to replace",
+    "urlEditHint": "Leave blank to keep the existing URL.",
+    "urlConfigured": "Configured",
+    "urlMissing": "Missing",
+    "events": "Events",
+    "eventsHint": "Notify when these poll actions occur.",
+    "eventOptions": {
+      "create": "Create",
+      "error": "Error",
+      "supersede": "Supersede"
+    },
+    "enabled": "Enabled",
+    "enabledHint": "Disabled targets are skipped during notifications.",
+    "enabledOn": "Enabled",
+    "enabledOff": "Disabled",
+    "testNotification": "Test notification",
+    "testAria": "Test notification for {name}",
+    "testLoading": "Sending test notification",
+    "testLoadingDescription": "Delivering a probe message via Shoutrrr…",
+    "testSuccess": "Test notification sent",
+    "testSuccessDescription": "The target accepted the probe message.",
+    "testFailed": "Test notification failed",
+    "testFailedDescription": "Shoutrrr could not deliver the probe message.",
+    "deleteTitle": "Delete notification target?",
+    "deleteDescription": "Delete “{name}”? This cannot be undone.",
+    "deleteAria": "Delete {name}",
+    "editAria": "Edit {name}",
+    "columns": {
+      "name": "Name",
+      "events": "Events",
+      "enabled": "Enabled",
+      "url": "URL",
+      "actions": "Actions"
+    },
+    "validation": {
+      "nameRequired": "Name is required.",
+      "urlRequired": "Shoutrrr URL is required.",
+      "eventsRequired": "Select at least one event."
+    }
   },
   "settings": {
     "title": "Settings",
