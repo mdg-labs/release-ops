@@ -1,0 +1,43 @@
+{
+  "common": {
+    "appTitle": "Release Ops",
+    "appDescription": "Self-hosted release monitor",
+    "scaffoldDescription": "Self-hosted release monitor scaffold",
+    "getStarted": "Get started",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "loading": "Loading…"
+  },
+  "auth": {
+    "login": "Log in",
+    "logout": "Log out",
+    "email": "Email",
+    "password": "Password"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "runPoll": "Run poll now"
+  },
+  "repos": {
+    "title": "Repos",
+    "add": "Add repo"
+  },
+  "integrations": {
+    "title": "Integrations",
+    "add": "Add integration",
+    "testConnection": "Test connection"
+  },
+  "ticket-projects": {
+    "title": "Ticket projects",
+    "add": "Add ticket project"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "add": "Add notification target"
+  },
+  "settings": {
+    "title": "Settings",
+    "saved": "Settings saved"
+  }
+}

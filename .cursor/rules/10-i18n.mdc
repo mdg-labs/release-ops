@@ -12,6 +12,16 @@ alwaysApply: false
 
 All copy lives in locale message files and is rendered via **next-intl**.
 
+## Setup
+
+| File | Purpose |
+|------|---------|
+| `apps/web/i18n/request.ts` | `getRequestConfig` — loads `messages/en.json` (MVP locale `en`) |
+| `apps/web/next.config.ts` | `createNextIntlPlugin('./i18n/request.ts')` |
+| `apps/web/app/layout.tsx` | `NextIntlClientProvider` + `generateMetadata` via `getTranslations` |
+
+No `[locale]` URL segment in MVP — single default locale `en`.
+
 ## Required pattern
 
 ```tsx
@@ -32,7 +42,11 @@ Server components: `getTranslations` from `next-intl/server`.
 | `apps/web/messages/en.json` | English (MVP default locale) |
 | `apps/web/messages/<locale>.json` | Additional locales when added |
 
-Key naming: `feature.element` — e.g. `dashboard.runPoll`, `integrations.testConnection`.
+### Namespaces (top-level keys in `en.json`)
+
+`common`, `auth`, `dashboard`, `repos`, `integrations`, `ticket-projects`, `notifications`, `settings`
+
+Key naming within a namespace: `feature.element` — e.g. `dashboard.runPoll`, `integrations.testConnection`.
 
 ## Allowed literals (not i18n violations)
 
@@ -48,9 +62,14 @@ Key naming: `feature.element` — e.g. `dashboard.runPoll`, `integrations.testCo
 - `toast("Settings saved")` — use `t("settings.saved")`
 - Duplicating the same string in multiple files without a message key
 
-## CI
+## ESLint
 
-`npm run lint` must include i18n literal-string check (`eslint-plugin-i18next`). Failures block commit.
+`apps/web/eslint.config.mjs` extends `eslint-plugin-i18next` flat recommended config:
+
+- Rule: `i18next/no-literal-string` — **error** on JSX text literals
+- Message files (`messages/**`) are ignored by ESLint
+
+`npm run lint` must pass before commit.
 
 ## Spec
 
