@@ -21,7 +21,43 @@
   },
   "dashboard": {
     "title": "Dashboard",
-    "runPoll": "Run poll now"
+    "runPoll": "Run poll now",
+    "loadFailed": "Failed to load dashboard status.",
+    "statusCardTitle": "System status",
+    "statusCardDescription": "Overview of the latest poll run and scheduler state.",
+    "lastPollTitle": "Last poll",
+    "pollIntervalValue": "Poll interval: {minutes} minutes",
+    "lastRunNever": "No poll has completed yet.",
+    "lastRunStarted": "Started",
+    "lastRunFinished": "Finished",
+    "lastRunInProgress": "In progress",
+    "lastRunReposChecked": "Repos checked",
+    "lastRunTicketsCreated": "Tickets created",
+    "pollingInProgress": "Poll in progress…",
+    "lastRunErrorsTitle": "Errors in last poll run",
+    "reposSectionTitle": "Monitored repos",
+    "reposEmptyTitle": "No monitored repos",
+    "reposEmptyDescription": "Add a repository to start polling for new releases.",
+    "reposEmptyCta": "Add repo",
+    "noTag": "—",
+    "noTicket": "—",
+    "noResults": "No results.",
+    "paginationSummary": "Showing {start}–{end} of {total}",
+    "paginationPrevious": "Previous",
+    "paginationNext": "Next",
+    "columns": {
+      "source": "Source",
+      "path": "Path",
+      "lastTag": "Last tag",
+      "openTicket": "Open ticket"
+    },
+    "runStatus": {
+      "never": "No runs",
+      "polling": "Polling",
+      "success": "Success",
+      "failed": "Failed",
+      "running": "Running"
+    }
   },
   "repos": {
     "title": "Repos",

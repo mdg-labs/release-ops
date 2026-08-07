@@ -1,11 +1,5 @@
-import { getTranslations } from "next-intl/server";
+import { DashboardView } from "@/components/dashboard/dashboard-view";
 
-export default async function DashboardPage(): Promise<React.ReactElement> {
-  const t = await getTranslations("dashboard");
-
-  return (
-    <div className="flex flex-col gap-2">
-      <h1 className="font-semibold text-2xl">{t("title")}</h1>
-    </div>
-  );
+export default function DashboardPage(): React.ReactElement {
+  return <DashboardView />;
 }
