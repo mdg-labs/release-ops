@@ -60,7 +60,7 @@ func TestRouterRegisteredPaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/v1/unregistered: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusNotFound)
@@ -95,7 +95,7 @@ func TestNewRouterHealthEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /healthz: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
@@ -188,7 +188,7 @@ func TestServeGracefulShutdownCompletesInFlightRequests(t *testing.T) {
 	case err := <-errClientCh:
 		t.Fatalf("client request failed: %v", err)
 	case resp := <-respCh:
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 		}

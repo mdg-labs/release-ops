@@ -200,7 +200,7 @@ export function NotificationsView(): React.ReactElement {
         onUpdate={(id, input) =>
           updateNotificationTarget.mutateAsync({ id, input })
         }
-        open={drawerOpen && drawer.mode !== "closed"}
+        open={drawerOpen}
         target={drawer.mode === "edit" ? drawer.target : null}
       />
 

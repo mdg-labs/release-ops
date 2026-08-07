@@ -123,7 +123,7 @@ func TestProtectedRoutesRequireSession(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", route, err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Fatalf("%s status = %d, want %d", route, resp.StatusCode, http.StatusUnauthorized)
 		}
@@ -141,7 +141,7 @@ func TestPublicAuthRoutesAccessibleWithoutSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET session: %v", err)
 	}
-	sessionResp.Body.Close()
+	_ = sessionResp.Body.Close()
 	if sessionResp.StatusCode != http.StatusOK {
 		t.Fatalf("session status = %d, want %d", sessionResp.StatusCode, http.StatusOK)
 	}
@@ -150,7 +150,7 @@ func TestPublicAuthRoutesAccessibleWithoutSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST login: %v", err)
 	}
-	loginResp.Body.Close()
+	_ = loginResp.Body.Close()
 	if loginResp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("login status = %d, want %d", loginResp.StatusCode, http.StatusUnauthorized)
 	}
@@ -177,7 +177,7 @@ func TestLoginThenGetSettingsReturns200(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST login: %v", err)
 	}
-	loginResp.Body.Close()
+	_ = loginResp.Body.Close()
 	if loginResp.StatusCode != http.StatusOK {
 		t.Fatalf("login status = %d, want %d", loginResp.StatusCode, http.StatusOK)
 	}
@@ -186,7 +186,7 @@ func TestLoginThenGetSettingsReturns200(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET settings: %v", err)
 	}
-	defer settingsResp.Body.Close()
+	defer func() { _ = settingsResp.Body.Close() }()
 	if settingsResp.StatusCode != http.StatusOK {
 		t.Fatalf("settings status = %d, want %d", settingsResp.StatusCode, http.StatusOK)
 	}

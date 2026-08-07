@@ -44,7 +44,6 @@ func NewServerRouter(deps *ServerDeps) http.Handler {
 func newBaseRouter(deps *ServerDeps) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
 	r.Use(requestLogger)
 	r.Use(middleware.Recoverer)
 

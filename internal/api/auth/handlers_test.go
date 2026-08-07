@@ -56,7 +56,7 @@ func TestLoginFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST login: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
@@ -130,7 +130,7 @@ func TestLoginInvalidPasswordReturns401(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST login: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
@@ -156,7 +156,7 @@ func TestLoginUnknownEmailReturns401(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST login: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
@@ -181,7 +181,7 @@ func TestSessionReturnsNullWhenLoggedOut(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET session: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
@@ -242,13 +242,13 @@ func TestSessionReturnsUserWhenLoggedIn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST login: %v", err)
 	}
-	loginResp.Body.Close()
+	_ = loginResp.Body.Close()
 
 	sessionResp, err := client.Get(srv.URL + "/api/v1/auth/session")
 	if err != nil {
 		t.Fatalf("GET session: %v", err)
 	}
-	defer sessionResp.Body.Close()
+	defer func() { _ = sessionResp.Body.Close() }()
 
 	if sessionResp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", sessionResp.StatusCode, http.StatusOK)
@@ -308,7 +308,7 @@ func TestLogoutClearsSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST login: %v", err)
 	}
-	loginResp.Body.Close()
+	_ = loginResp.Body.Close()
 
 	logoutReq, err := http.NewRequest(http.MethodPost, srv.URL+"/api/v1/auth/logout", nil)
 	if err != nil {
@@ -318,7 +318,7 @@ func TestLogoutClearsSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST logout: %v", err)
 	}
-	logoutResp.Body.Close()
+	_ = logoutResp.Body.Close()
 
 	if logoutResp.StatusCode != http.StatusOK {
 		t.Fatalf("logout status = %d, want %d", logoutResp.StatusCode, http.StatusOK)
@@ -328,7 +328,7 @@ func TestLogoutClearsSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET session: %v", err)
 	}
-	defer sessionResp.Body.Close()
+	defer func() { _ = sessionResp.Body.Close() }()
 
 	var body struct {
 		User any `json:"user"`
@@ -359,7 +359,7 @@ func TestProtectedRouteReturns401WithoutCookie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST logout: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
@@ -402,7 +402,7 @@ func TestRequireSessionAllowsAuthenticatedRequests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET protected: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
 	}

@@ -257,9 +257,7 @@ func monitoredRepoFromListEnabledRow(row db.ListEnabledRow) MonitoredRepo {
 	}
 	if raw, ok := row.NotificationTargetIds.(string); ok && raw != "" {
 		// GROUP_CONCAT returns comma-separated IDs; split for callers.
-		for _, part := range splitCommaSeparated(raw) {
-			repo.NotificationTargetIDs = append(repo.NotificationTargetIDs, part)
-		}
+		repo.NotificationTargetIDs = append(repo.NotificationTargetIDs, splitCommaSeparated(raw)...)
 	}
 	return repo
 }

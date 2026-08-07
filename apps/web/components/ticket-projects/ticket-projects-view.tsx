@@ -206,7 +206,7 @@ export function TicketProjectsView(): React.ReactElement {
           }
         }}
         onUpdate={(id, input) => updateTicketProject.mutateAsync({ id, input })}
-        open={drawerOpen && drawer.mode !== "closed"}
+        open={drawerOpen}
         project={drawer.mode === "edit" ? drawer.project : null}
       />
 

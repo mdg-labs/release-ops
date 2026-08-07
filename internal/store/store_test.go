@@ -314,12 +314,12 @@ func TestRepositoryInterfacesMockable(t *testing.T) {
 
 	s, _ := testStore(t)
 
-	var _ store.SettingsRepository = s.Settings()
-	var _ store.IntegrationRepository = s.Integrations()
-	var _ store.TicketProjectRepository = s.TicketProjects()
-	var _ store.MonitoredRepoRepository = s.Repos()
-	var _ store.NotificationTargetRepository = s.Notifications()
-	var _ store.PollRepository = s.Poll()
+	var _ = s.Settings()
+	var _ = s.Integrations()
+	var _ = s.TicketProjects()
+	var _ = s.Repos()
+	var _ = s.Notifications()
+	var _ = s.Poll()
 }
 
 type repoFixture struct {

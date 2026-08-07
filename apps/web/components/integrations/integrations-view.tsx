@@ -198,7 +198,7 @@ export function IntegrationsView(): React.ReactElement {
         }}
         onTest={(id) => testIntegration.mutateAsync(id)}
         onUpdate={(id, input) => updateIntegration.mutateAsync({ id, input })}
-        open={drawerOpen && drawer.mode !== "closed"}
+        open={drawerOpen}
       />
 
       <DeleteIntegrationDialog

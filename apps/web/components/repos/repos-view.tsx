@@ -232,7 +232,7 @@ export function ReposView(): React.ReactElement {
           }
         }}
         onUpdate={(id, input) => updateRepo.mutateAsync({ id, input })}
-        open={dialogOpen && dialog.mode !== "closed"}
+        open={dialogOpen}
         repo={dialog.mode === "edit" ? dialog.repo : null}
         ticketProjects={ticketProjects}
       />
