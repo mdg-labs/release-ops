@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
+	"github.com/mdg-labs/release-ops/internal/poll"
 	"github.com/mdg-labs/release-ops/internal/store"
 )
 
@@ -66,7 +67,7 @@ const (
 // Trigger handles POST /api/v1/poll/trigger.
 func (h *PollHandlers) Trigger(w http.ResponseWriter, r *http.Request) {
 	runID, err := h.Runner.Trigger(r.Context())
-	if errors.Is(err, ErrPollAlreadyRunning) {
+	if errors.Is(err, ErrPollAlreadyRunning) || errors.Is(err, poll.ErrAlreadyRunning) {
 		auth.WriteError(w, "CONFLICT", "poll already running", http.StatusConflict)
 		return
 	}

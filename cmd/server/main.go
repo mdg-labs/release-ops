@@ -11,6 +11,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/config"
 	"github.com/mdg-labs/release-ops/internal/crypto"
+	"github.com/mdg-labs/release-ops/internal/poll"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
@@ -49,12 +50,30 @@ func run(cfg *config.Config) {
 	}
 
 	appStore := store.New(db, cipher)
+
+	engine := poll.NewEngine(appStore.Poll())
+	scheduler, err := poll.NewScheduler(poll.SchedulerConfig{
+		Engine:         engine,
+		Settings:       appStore.Settings(),
+		Repos:          appStore.Repos(),
+		TicketProjects: appStore.TicketProjects(),
+		Integrations:   appStore.Integrations(),
+		Poll:           appStore.Poll(),
+	})
+	if err != nil {
+		log.Fatalf("poll scheduler: %v", err)
+	}
+	if err := scheduler.Start(ctx); err != nil {
+		log.Fatalf("poll scheduler start: %v", err)
+	}
+
 	sessionManager := auth.NewSessionManager(db, cfg.SessionSecret, cfg.SecureCookies())
 	handler := api.NewServerRouter(&api.ServerDeps{
-		DB:      db,
-		Session: sessionManager,
-		Queries: queries,
-		Store:   appStore,
+		DB:         db,
+		Session:    sessionManager,
+		Queries:    queries,
+		Store:      appStore,
+		PollRunner: scheduler,
 	})
 	addr := cfg.GoListenAddr()
 	log.Printf("release-ops server listening on %s", addr)
