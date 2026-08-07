@@ -7,6 +7,7 @@ import { useLogin } from "./use-login";
 import { usePollRun, usePollRuns, useTriggerPoll } from "./use-poll";
 import { useRepos } from "./use-repos";
 import { useSession } from "./use-session";
+import { useSettings } from "./use-settings";
 import { useStatus } from "./use-status";
 
 const ORIGIN = "http://localhost:3000";
@@ -372,6 +373,56 @@ describe("React Query hooks", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.events).toHaveLength(1);
     expect(result.current.data?.events?.[0].action).toBe("create");
+  });
+
+  it("useSettings GET and PATCH /api/v1/settings", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/settings",
+        method: "GET",
+      })
+      .reply(200, { pollIntervalMinutes: 360 });
+
+    const queryClient = createTestQueryClient();
+    const { result } = renderHook(() => useSettings(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.pollIntervalMinutes).toBe(360);
+
+    pool
+      .intercept({
+        path: "/api/go/api/v1/settings",
+        method: "PATCH",
+        body: JSON.stringify({ pollIntervalMinutes: 120 }),
+      })
+      .reply(200, { pollIntervalMinutes: 120 });
+
+    pool
+      .intercept({
+        path: "/api/go/api/v1/settings",
+        method: "GET",
+      })
+      .reply(200, { pollIntervalMinutes: 120 });
+
+    pool
+      .intercept({
+        path: "/api/go/api/v1/status",
+        method: "GET",
+      })
+      .reply(200, {
+        pollIntervalMinutes: 120,
+        lastRun: null,
+        repos: [],
+        isPolling: false,
+      });
+
+    const updated = await result.current.updateSettings.mutateAsync({
+      pollIntervalMinutes: 120,
+    });
+    expect(updated.pollIntervalMinutes).toBe(120);
   });
 
   it("useTriggerPoll POST /api/v1/poll/trigger", async () => {

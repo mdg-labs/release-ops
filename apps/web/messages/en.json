@@ -261,7 +261,17 @@
   },
   "settings": {
     "title": "Settings",
-    "saved": "Settings saved"
+    "saved": "Settings saved",
+    "savedDescription": "The poll interval will apply to the next scheduled run.",
+    "pollIntervalSection": "Polling",
+    "pollIntervalDescription": "Configure how often Release Ops checks monitored repositories for new releases.",
+    "pollInterval": "Poll interval (minutes)",
+    "pollIntervalHint": "Minimum 5 minutes between automated polls.",
+    "loadFailed": "Failed to load settings.",
+    "saveFailed": "Failed to save settings.",
+    "validation": {
+      "minInterval": "Poll interval must be at least 5 minutes."
+    }
   },
   "nav": {
     "dashboard": "Dashboard",

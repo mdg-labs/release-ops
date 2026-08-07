@@ -1,11 +1,5 @@
-import { getTranslations } from "next-intl/server";
+import { SettingsView } from "@/components/settings/settings-view";
 
-export default async function SettingsPage(): Promise<React.ReactElement> {
-  const t = await getTranslations("settings");
-
-  return (
-    <div className="flex flex-col gap-2">
-      <h1 className="font-semibold text-2xl">{t("title")}</h1>
-    </div>
-  );
+export default function SettingsPage(): React.ReactElement {
+  return <SettingsView />;
 }
