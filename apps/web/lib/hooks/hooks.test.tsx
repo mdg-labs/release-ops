@@ -3,6 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MockAgent, setGlobalDispatcher } from "undici";
 import { useIntegrations } from "./use-integrations";
+import { useLogin } from "./use-login";
 import { usePollRun, usePollRuns, useTriggerPoll } from "./use-poll";
 import { useRepos } from "./use-repos";
 import { useSession } from "./use-session";
@@ -55,6 +56,35 @@ describe("React Query hooks", () => {
   afterEach(async () => {
     globalThis.fetch = originalFetch;
     await mockAgent.close();
+  });
+
+  it("useLogin POST /api/v1/auth/login", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/auth/login",
+        method: "POST",
+        body: JSON.stringify({
+          email: "admin@example.com",
+          password: "secret",
+        }),
+      })
+      .reply(200, {
+        user: { id: "u1", email: "admin@example.com" },
+      });
+
+    const queryClient = createTestQueryClient();
+    const { result } = renderHook(() => useLogin(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    const loginResult = await result.current.mutateAsync({
+      email: "admin@example.com",
+      password: "secret",
+    });
+    expect(loginResult).toEqual({
+      user: { id: "u1", email: "admin@example.com" },
+    });
   });
 
   it("useSession fetches GET /api/v1/auth/session", async () => {

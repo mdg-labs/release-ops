@@ -12,8 +12,12 @@
   "auth": {
     "login": "Log in",
     "logout": "Log out",
+    "signIn": "Sign in",
     "email": "Email",
-    "password": "Password"
+    "password": "Password",
+    "invalidCredentials": "Invalid email or password.",
+    "loginFailed": "Sign in failed. Please try again.",
+    "loginFailedTitle": "Sign in failed"
   },
   "dashboard": {
     "title": "Dashboard",

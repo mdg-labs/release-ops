@@ -1,24 +1,13 @@
-import { getTranslations } from "next-intl/server";
-import {
-  Frame,
-  FrameHeader,
-  FramePanel,
-  FrameTitle,
-} from "@/components/ui/frame";
+import { Suspense } from "react";
+import { LoginForm } from "./login-form";
 
-export default async function LoginPage(): Promise<React.ReactElement> {
-  const t = await getTranslations("auth");
-
+export default function LoginPage(): React.ReactElement {
   return (
     <div className="flex min-h-svh items-center justify-center p-6">
       <div className="w-full max-w-sm">
-        <Frame>
-          <FramePanel>
-            <FrameHeader>
-              <FrameTitle>{t("login")}</FrameTitle>
-            </FrameHeader>
-          </FramePanel>
-        </Frame>
+        <Suspense fallback={null}>
+          <LoginForm />
+        </Suspense>
       </div>
     </div>
   );

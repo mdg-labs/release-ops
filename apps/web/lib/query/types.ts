@@ -7,6 +7,15 @@ export type SessionResponse = {
   user: User | null;
 };
 
+export type LoginInput = {
+  email: string;
+  password: string;
+};
+
+export type LoginResponse = {
+  user: User;
+};
+
 export type PollRunError = {
   repoId: string;
   message: string;
