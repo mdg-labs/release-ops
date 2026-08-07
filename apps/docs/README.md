@@ -20,4 +20,4 @@ npm run docs:build    # static output in dist/
 
 ## Deploy
 
-`.github/workflows/docs-pages.yml` builds on push to `dev` and publishes to GitHub Pages.
+`.github/workflows/docs-pages.yml` builds on push to `main` and publishes to GitHub Pages.

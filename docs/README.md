@@ -25,4 +25,4 @@ npm run dev:docs     # local preview at http://localhost:4321/release-ops/
 npm run docs:build   # production build → apps/docs/dist/
 ```
 
-The `docs-pages` GitHub Actions workflow deploys on push to `dev` when docs paths change.
+The `docs-pages` GitHub Actions workflow deploys on push to `main` when docs paths change.
