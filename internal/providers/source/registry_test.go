@@ -93,3 +93,61 @@ func TestMockSourceProviderRespectsContextCancellation(t *testing.T) {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}
 }
+
+func TestMockSourceProviderReturnsConfiguredError(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("provider unavailable")
+	mock := &source.MockSourceProvider{Err: wantErr}
+
+	_, err := mock.GetLatestRelease(context.Background(), "owner/repo")
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("error = %v, want %v", err, wantErr)
+	}
+}
+
+func TestRegistryRegisterRejectsNilProvider(t *testing.T) {
+	t.Parallel()
+
+	registry := source.NewRegistry()
+	err := registry.Register(source.KindGitHub, nil)
+	if err == nil {
+		t.Fatal("expected error for nil provider")
+	}
+}
+
+func TestRegistryAllSourceKindsRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	release := &source.Release{
+		Tag:         "v1.0.0",
+		URL:         "https://example.com/releases/v1.0.0",
+		PublishedAt: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC),
+	}
+
+	for _, kind := range source.ValidKinds {
+		kind := kind
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+
+			registry := source.NewRegistry()
+			mock := &source.MockSourceProvider{Release: release}
+			if err := registry.Register(kind, mock); err != nil {
+				t.Fatalf("Register(%q): %v", kind, err)
+			}
+
+			provider, err := registry.Get(kind)
+			if err != nil {
+				t.Fatalf("Get(%q): %v", kind, err)
+			}
+
+			got, err := provider.GetLatestRelease(context.Background(), "owner/repo")
+			if err != nil {
+				t.Fatalf("GetLatestRelease: %v", err)
+			}
+			if got.Tag != release.Tag {
+				t.Fatalf("tag = %q, want %q", got.Tag, release.Tag)
+			}
+		})
+	}
+}

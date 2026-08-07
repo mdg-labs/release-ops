@@ -121,3 +121,138 @@ func TestGitLabSourceRespectsContextCancellation(t *testing.T) {
 		t.Fatal("expected context error")
 	}
 }
+
+func TestGitLabSourceInvalidProjectPath(t *testing.T) {
+	t.Parallel()
+
+	provider, err := source.NewGitLabSource("https://gitlab.example", "", nil)
+	if err != nil {
+		t.Fatalf("NewGitLabSource: %v", err)
+	}
+
+	_, err = provider.GetLatestRelease(context.Background(), "   ")
+	if err == nil {
+		t.Fatal("expected error for empty project_path")
+	}
+	if !strings.Contains(err.Error(), "project path is required") {
+		t.Fatalf("error = %v, want project path required mention", err)
+	}
+}
+
+func TestGitLabSourceServerError(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("bad gateway"))
+	}))
+	t.Cleanup(srv.Close)
+
+	provider, err := source.NewGitLabSource(srv.URL, "", srv.Client())
+	if err != nil {
+		t.Fatalf("NewGitLabSource: %v", err)
+	}
+
+	_, err = provider.GetLatestRelease(context.Background(), "group/repo")
+	if err == nil {
+		t.Fatal("expected error for 502 response")
+	}
+	if !strings.Contains(err.Error(), "unexpected status 502") {
+		t.Fatalf("error = %v, want unexpected status mention", err)
+	}
+}
+
+func TestGitLabSourceMalformedJSON(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{`))
+	}))
+	t.Cleanup(srv.Close)
+
+	provider, err := source.NewGitLabSource(srv.URL, "", srv.Client())
+	if err != nil {
+		t.Fatalf("NewGitLabSource: %v", err)
+	}
+
+	_, err = provider.GetLatestRelease(context.Background(), "group/repo")
+	if err == nil {
+		t.Fatal("expected decode error")
+	}
+	if !strings.Contains(err.Error(), "decode response") {
+		t.Fatalf("error = %v, want decode response mention", err)
+	}
+}
+
+func TestGitLabSourceInvalidReleasedAt(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"tag_name": "v1.0.0",
+			"name": "Release",
+			"released_at": "not-a-timestamp",
+			"_links": { "self": "https://gitlab.example/group/repo/-/releases/v1.0.0" }
+		}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	provider, err := source.NewGitLabSource(srv.URL, "", srv.Client())
+	if err != nil {
+		t.Fatalf("NewGitLabSource: %v", err)
+	}
+
+	_, err = provider.GetLatestRelease(context.Background(), "group/repo")
+	if err == nil {
+		t.Fatal("expected released_at parse error")
+	}
+	if !strings.Contains(err.Error(), "released_at") {
+		t.Fatalf("error = %v, want released_at mention", err)
+	}
+}
+
+func TestGitLabSourceReleaseURLFromAssetsLink(t *testing.T) {
+	t.Parallel()
+
+	publishedAt := "2026-06-01T12:00:00Z"
+	expectedTime, err := time.Parse(time.RFC3339, publishedAt)
+	if err != nil {
+		t.Fatalf("parse time: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"tag_name": "v9.9.9",
+			"name": "Asset release",
+			"released_at": "` + publishedAt + `",
+			"assets": {
+				"links": [
+					{ "url": "https://gitlab.example/group/repo/-/releases/v9.9.9/downloads/bin" }
+				]
+			}
+		}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	provider, err := source.NewGitLabSource(srv.URL, "", srv.Client())
+	if err != nil {
+		t.Fatalf("NewGitLabSource: %v", err)
+	}
+
+	release, err := provider.GetLatestRelease(context.Background(), "group/repo")
+	if err != nil {
+		t.Fatalf("GetLatestRelease: %v", err)
+	}
+	if release.URL != "https://gitlab.example/group/repo/-/releases/v9.9.9/downloads/bin" {
+		t.Fatalf("url = %q, want assets link URL", release.URL)
+	}
+	if release.Tag != "v9.9.9" {
+		t.Fatalf("tag = %q, want v9.9.9", release.Tag)
+	}
+	if !release.PublishedAt.Equal(expectedTime) {
+		t.Fatalf("publishedAt = %v, want %v", release.PublishedAt, expectedTime)
+	}
+}

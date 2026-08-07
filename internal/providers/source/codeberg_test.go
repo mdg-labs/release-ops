@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -155,5 +156,47 @@ func TestCodebergSourceWorksWithoutToken(t *testing.T) {
 	}
 	if release.Tag != "v0.1.0" {
 		t.Fatalf("tag = %q, want v0.1.0", release.Tag)
+	}
+}
+
+func TestCodebergSourceServerError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("boom"))
+	}))
+	t.Cleanup(server.Close)
+
+	client := newHostRewritingClient(server, "codeberg.org")
+	provider := source.NewCodebergSource("", client)
+
+	_, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
+	if !strings.Contains(err.Error(), "unexpected status 500") {
+		t.Fatalf("error = %v, want unexpected status mention", err)
+	}
+}
+
+func TestCodebergSourceMalformedJSON(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := newHostRewritingClient(server, "codeberg.org")
+	provider := source.NewCodebergSource("", client)
+
+	_, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	if err == nil {
+		t.Fatal("expected decode error")
+	}
+	if !strings.Contains(err.Error(), "decode response") {
+		t.Fatalf("error = %v, want decode response mention", err)
 	}
 }

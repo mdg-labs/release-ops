@@ -6,37 +6,12 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/mdg-labs/release-ops/internal/providers/source"
 )
-
-type hostRewritingTransport struct {
-	base *url.URL
-	next http.RoundTripper
-}
-
-func (t hostRewritingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	cloned := req.Clone(req.Context())
-	cloned.URL.Scheme = t.base.Scheme
-	cloned.URL.Host = t.base.Host
-	cloned.Host = t.base.Host
-	return t.next.RoundTrip(cloned)
-}
-
-func newHostRewritingClient(server *httptest.Server, host string) *http.Client {
-	base, err := url.Parse(server.URL)
-	if err != nil {
-		panic(err)
-	}
-	transport := hostRewritingTransport{
-		base: base,
-		next: http.DefaultTransport,
-	}
-	return &http.Client{Transport: transport}
-}
 
 func TestGitHubSourceGetLatestReleaseSuccess(t *testing.T) {
 	t.Parallel()
@@ -187,6 +162,98 @@ func TestGitHubSourceRespectsContextCancellation(t *testing.T) {
 	_, err := provider.GetLatestRelease(ctx, "acme/widget")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+}
+
+func TestGitHubSourceServerError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("boom"))
+	}))
+	t.Cleanup(server.Close)
+
+	client := newHostRewritingClient(server, "api.github.com")
+	provider := source.NewGitHubSource("", client)
+
+	_, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
+	if !strings.Contains(err.Error(), "unexpected status 500") {
+		t.Fatalf("error = %v, want unexpected status mention", err)
+	}
+}
+
+func TestGitHubSourceMalformedJSON(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{`))
+	}))
+	t.Cleanup(server.Close)
+
+	client := newHostRewritingClient(server, "api.github.com")
+	provider := source.NewGitHubSource("", client)
+
+	_, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	if err == nil {
+		t.Fatal("expected decode error")
+	}
+	if !strings.Contains(err.Error(), "decode response") {
+		t.Fatalf("error = %v, want decode response mention", err)
+	}
+}
+
+func TestGitHubSourceInvalidPublishedAt(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"tag_name":     "v1.0.0",
+			"html_url":     "https://github.com/acme/widget/releases/tag/v1.0.0",
+			"published_at": "not-a-timestamp",
+		})
+	}))
+	t.Cleanup(server.Close)
+
+	client := newHostRewritingClient(server, "api.github.com")
+	provider := source.NewGitHubSource("", client)
+
+	_, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	if err == nil {
+		t.Fatal("expected published_at parse error")
+	}
+	if !strings.Contains(err.Error(), "published_at") {
+		t.Fatalf("error = %v, want published_at mention", err)
+	}
+}
+
+func TestGitHubSourceEmptyPublishedAtAllowed(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"tag_name": "v1.0.0",
+			"html_url": "https://github.com/acme/widget/releases/tag/v1.0.0",
+		})
+	}))
+	t.Cleanup(server.Close)
+
+	client := newHostRewritingClient(server, "api.github.com")
+	provider := source.NewGitHubSource("", client)
+
+	release, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	if err != nil {
+		t.Fatalf("GetLatestRelease: %v", err)
+	}
+	if release.Tag != "v1.0.0" {
+		t.Fatalf("tag = %q, want v1.0.0", release.Tag)
+	}
+	if !release.PublishedAt.IsZero() {
+		t.Fatalf("publishedAt = %v, want zero time", release.PublishedAt)
 	}
 }
 
