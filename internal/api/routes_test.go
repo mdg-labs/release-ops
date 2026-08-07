@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/crypto"
+	"github.com/mdg-labs/release-ops/internal/mail"
 	"github.com/mdg-labs/release-ops/internal/providers/integrationtester"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
@@ -33,6 +34,8 @@ const routesTestKeyHex = "0123456789abcdef0123456789abcdef0123456789abcdef012345
 var expectedAPIRoutes = []string{
 	"POST /api/v1/auth/login",
 	"GET /api/v1/auth/session",
+	"POST /api/v1/auth/accept-invitation",
+	"POST /api/v1/auth/confirm-email-change",
 	"POST /api/v1/auth/logout",
 	"GET /api/v1/status",
 	"POST /api/v1/poll/trigger",
@@ -63,6 +66,13 @@ var expectedAPIRoutes = []string{
 	"PATCH /api/v1/notification-targets/{id}",
 	"DELETE /api/v1/notification-targets/{id}",
 	"POST /api/v1/notification-targets/{id}/test",
+	"GET /api/v1/users",
+	"DELETE /api/v1/users/{id}",
+	"POST /api/v1/users/me/email-change-request",
+	"GET /api/v1/users/invitations",
+	"POST /api/v1/users/invitations",
+	"DELETE /api/v1/users/invitations/{id}",
+	"POST /api/v1/users/invitations/{id}/send-email",
 }
 
 func TestRegisterAllListsExpectedPaths(t *testing.T) {
@@ -160,6 +170,15 @@ func TestPublicAuthRoutesAccessibleWithoutSession(t *testing.T) {
 	_ = loginResp.Body.Close()
 	if loginResp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("login status = %d, want %d", loginResp.StatusCode, http.StatusUnauthorized)
+	}
+
+	acceptResp, err := http.Post(srv.URL+"/api/v1/auth/accept-invitation", "application/json", strings.NewReader(`{"token":"bad","password":"short"}`))
+	if err != nil {
+		t.Fatalf("POST accept-invitation: %v", err)
+	}
+	_ = acceptResp.Body.Close()
+	if acceptResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("accept-invitation status = %d, want %d", acceptResp.StatusCode, http.StatusBadRequest)
 	}
 }
 
@@ -291,6 +310,7 @@ func newRoutesTestDeps(t *testing.T) *ServerDeps {
 		Session: sm,
 		Queries: storedb.New(db),
 		Store:   store.New(db, cipher),
+		Mailer:  mail.NoopMailer{},
 	}
 }
 

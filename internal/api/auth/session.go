@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/alexedwards/scs/sqlite3store"
 	"github.com/alexedwards/scs/v2"
 )
 
@@ -21,7 +20,7 @@ func NewSessionManager(db *sql.DB, sessionSecret string, secureCookies bool) *sc
 	_ = sessionSecret
 
 	manager := scs.New()
-	manager.Store = sqlite3store.New(db)
+	manager.Store = newUserBoundSQLiteStore(db, manager.Codec)
 	manager.Lifetime = sessionLifetime
 	manager.Cookie.Name = SessionCookieName
 	manager.Cookie.HttpOnly = true

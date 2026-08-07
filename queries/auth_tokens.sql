@@ -99,3 +99,28 @@ DELETE FROM auth_tokens
 WHERE id = ?
   AND kind = 'invitation'
   AND used_at IS NULL;
+
+-- name: GetPendingInvitationByEmail :one
+SELECT
+  id,
+  kind,
+  email,
+  token_hash,
+  new_email,
+  invited_by_user_id,
+  expires_at,
+  used_at,
+  created_at
+FROM auth_tokens
+WHERE kind = 'invitation'
+  AND email = ?
+  AND used_at IS NULL
+  AND expires_at > ?
+LIMIT 1;
+
+-- name: InvalidateEmailChangeTokensForEmail :exec
+UPDATE auth_tokens
+SET used_at = ?
+WHERE kind = 'email_change'
+  AND email = ?
+  AND used_at IS NULL;

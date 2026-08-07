@@ -266,3 +266,62 @@ func (q *Queries) MarkAuthTokenUsed(ctx context.Context, arg MarkAuthTokenUsedPa
 	)
 	return i, err
 }
+
+const getPendingInvitationByEmail = `-- name: GetPendingInvitationByEmail :one
+SELECT
+  id,
+  kind,
+  email,
+  token_hash,
+  new_email,
+  invited_by_user_id,
+  expires_at,
+  used_at,
+  created_at
+FROM auth_tokens
+WHERE kind = 'invitation'
+  AND email = ?
+  AND used_at IS NULL
+  AND expires_at > ?
+LIMIT 1
+`
+
+type GetPendingInvitationByEmailParams struct {
+	Email     string `json:"email"`
+	ExpiresAt string `json:"expires_at"`
+}
+
+func (q *Queries) GetPendingInvitationByEmail(ctx context.Context, arg GetPendingInvitationByEmailParams) (AuthToken, error) {
+	row := q.db.QueryRowContext(ctx, getPendingInvitationByEmail, arg.Email, arg.ExpiresAt)
+	var i AuthToken
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.Email,
+		&i.TokenHash,
+		&i.NewEmail,
+		&i.InvitedByUserID,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const invalidateEmailChangeTokensForEmail = `-- name: InvalidateEmailChangeTokensForEmail :exec
+UPDATE auth_tokens
+SET used_at = ?
+WHERE kind = 'email_change'
+  AND email = ?
+  AND used_at IS NULL
+`
+
+type InvalidateEmailChangeTokensForEmailParams struct {
+	UsedAt sql.NullString `json:"used_at"`
+	Email  string         `json:"email"`
+}
+
+func (q *Queries) InvalidateEmailChangeTokensForEmail(ctx context.Context, arg InvalidateEmailChangeTokensForEmailParams) error {
+	_, err := q.db.ExecContext(ctx, invalidateEmailChangeTokensForEmail, arg.UsedAt, arg.Email)
+	return err
+}

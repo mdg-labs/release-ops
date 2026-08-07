@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
@@ -27,12 +29,15 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 	authHandlers := &auth.Handlers{
 		SessionManager: deps.Session,
 		Queries:        deps.Queries,
+		TokenService:   auth.NewTokenService(deps.Queries),
 	}
 
 	rateLimiter := apimw.NewRateLimiter()
 
 	api.With(rateLimiter.Login).Post("/auth/login", authHandlers.Login)
 	api.Get("/auth/session", authHandlers.Session)
+	api.With(rateLimiter.AcceptInvitation).Post("/auth/accept-invitation", authHandlers.AcceptInvitation)
+	api.With(rateLimiter.ConfirmEmailChange).Post("/auth/confirm-email-change", authHandlers.ConfirmEmailChange)
 
 	api.Group(func(protected chi.Router) {
 		protected.Use(apimw.RequireSession(deps.Session))
@@ -80,6 +85,21 @@ func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps) {
 		Notifications: st.Notifications(),
 		Tester:        deps.NotificationTester,
 	}
+	appPublicURL := strings.TrimSpace(os.Getenv("APP_PUBLIC_URL"))
+	tokenService := auth.NewTokenService(deps.Queries)
+	userHandlers := &handlers.UsersHandlers{
+		Queries:        deps.Queries,
+		SessionManager: deps.Session,
+		TokenService:   tokenService,
+		Mailer:         deps.Mailer,
+		AppPublicURL:   appPublicURL,
+	}
+	invitationHandlers := &handlers.InvitationHandlers{
+		Queries:      deps.Queries,
+		TokenService: tokenService,
+		Mailer:       deps.Mailer,
+		AppPublicURL: appPublicURL,
+	}
 
 	protected.Get("/status", statusHandlers.Get)
 
@@ -116,6 +136,14 @@ func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps) {
 	protected.Patch("/notification-targets/{id}", notificationHandlers.Patch)
 	protected.Delete("/notification-targets/{id}", notificationHandlers.Delete)
 	protected.Post("/notification-targets/{id}/test", notificationHandlers.Test)
+
+	protected.Get("/users", userHandlers.List)
+	protected.Delete("/users/{id}", userHandlers.Delete)
+	protected.Post("/users/me/email-change-request", userHandlers.EmailChangeRequest)
+	protected.Get("/users/invitations", invitationHandlers.List)
+	protected.Post("/users/invitations", invitationHandlers.Create)
+	protected.Delete("/users/invitations/{id}", invitationHandlers.Delete)
+	protected.Post("/users/invitations/{id}/send-email", invitationHandlers.SendEmail)
 }
 
 type noopPollRunner struct{}
