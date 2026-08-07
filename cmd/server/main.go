@@ -10,6 +10,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/api"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/config"
+	"github.com/mdg-labs/release-ops/internal/crypto"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
@@ -42,11 +43,18 @@ func run(cfg *config.Config) {
 		log.Fatalf("bootstrap admin: %v", err)
 	}
 
+	cipher, err := crypto.NewCipherFromHex(cfg.AppEncryptionKey)
+	if err != nil {
+		log.Fatalf("encryption: %v", err)
+	}
+
+	appStore := store.New(db, cipher)
 	sessionManager := auth.NewSessionManager(db, cfg.SessionSecret, cfg.SecureCookies())
 	handler := api.NewServerRouter(&api.ServerDeps{
 		DB:      db,
 		Session: sessionManager,
 		Queries: queries,
+		Store:   appStore,
 	})
 	addr := cfg.GoListenAddr()
 	log.Printf("release-ops server listening on %s", addr)
