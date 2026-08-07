@@ -7,6 +7,14 @@ const DEFAULT_GO_API_URL = "http://127.0.0.1:8080";
 const GO_SESSION_PATH = "/api/v1/auth/session";
 const LOGIN_PATH = "/login";
 
+export const PUBLIC_AUTH_PATHS = [
+  "/login",
+  "/accept-invitation",
+  "/forgot-password",
+  "/reset-password",
+  "/confirm-email-change",
+] as const;
+
 function getSessionCheckUrl(): string {
   const base = (process.env.GO_API_URL ?? DEFAULT_GO_API_URL).replace(
     /\/$/,
@@ -18,6 +26,12 @@ function getSessionCheckUrl(): string {
 type SessionResponse = {
   user: { id: string; email: string } | null;
 };
+
+export function isPublicAuthPath(pathname: string): boolean {
+  return PUBLIC_AUTH_PATHS.some(
+    (path) => pathname === path || pathname.startsWith(`${path}/`),
+  );
+}
 
 export function isLoginPath(pathname: string): boolean {
   return pathname === LOGIN_PATH || pathname.startsWith(`${LOGIN_PATH}/`);
@@ -48,10 +62,11 @@ export async function getSessionUser(
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const onPublicAuthPath = isPublicAuthPath(pathname);
   const onLoginPage = isLoginPath(pathname);
   const user = await getSessionUser(request);
 
-  if (!user && !onLoginPage) {
+  if (!user && !onPublicAuthPath) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = LOGIN_PATH;
     loginUrl.search = "";

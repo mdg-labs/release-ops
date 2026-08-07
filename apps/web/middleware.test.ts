@@ -2,8 +2,10 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MIDDLEWARE_MATCHER_PATTERN,
+  PUBLIC_AUTH_PATHS,
   getSessionUser,
   isLoginPath,
+  isPublicAuthPath,
   middleware,
 } from "./middleware";
 
@@ -20,6 +22,16 @@ function matcherRegex(): RegExp {
   return new RegExp(`^${MIDDLEWARE_MATCHER_PATTERN}$`);
 }
 
+function mockNoSession(): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ user: null }),
+    }),
+  );
+}
+
 describe("auth middleware", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -27,6 +39,20 @@ describe("auth middleware", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  describe("isPublicAuthPath", () => {
+    it("matches all public auth routes", () => {
+      for (const path of PUBLIC_AUTH_PATHS) {
+        expect(isPublicAuthPath(path)).toBe(true);
+      }
+      expect(isPublicAuthPath("/accept-invitation/extra")).toBe(true);
+    });
+
+    it("does not match protected routes", () => {
+      expect(isPublicAuthPath("/repos")).toBe(false);
+      expect(isPublicAuthPath("/settings")).toBe(false);
+    });
   });
 
   describe("isLoginPath", () => {
@@ -107,27 +133,32 @@ describe("auth middleware", () => {
 
   describe("middleware", () => {
     it("allows /login without a session", async () => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue({
-          ok: true,
-          json: async () => ({ user: null }),
-        }),
-      );
+      mockNoSession();
 
       const response = await middleware(makeRequest("/login"));
       expect(response.status).toBe(200);
       expect(response.headers.get("location")).toBeNull();
     });
 
+    it("allows public auth routes without a session", async () => {
+      mockNoSession();
+
+      const paths = [
+        "/accept-invitation?token=abc",
+        "/forgot-password",
+        "/reset-password?token=abc",
+        "/confirm-email-change?token=abc",
+      ];
+
+      for (const path of paths) {
+        const response = await middleware(makeRequest(path));
+        expect(response.status).toBe(200);
+        expect(response.headers.get("location")).toBeNull();
+      }
+    });
+
     it("redirects protected pages to /login when user is null", async () => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue({
-          ok: true,
-          json: async () => ({ user: null }),
-        }),
-      );
+      mockNoSession();
 
       const response = await middleware(makeRequest("/repos"));
       expect(response.status).toBe(307);
@@ -167,6 +198,22 @@ describe("auth middleware", () => {
       expect(response.status).toBe(200);
       expect(response.headers.get("location")).toBeNull();
     });
+
+    it("allows authenticated users on other public auth routes", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            user: { id: "user-1", email: "admin@example.com" },
+          }),
+        }),
+      );
+
+      const response = await middleware(makeRequest("/forgot-password"));
+      expect(response.status).toBe(200);
+      expect(response.headers.get("location")).toBeNull();
+    });
   });
 
   describe("matcher config", () => {
@@ -175,6 +222,10 @@ describe("auth middleware", () => {
     it("matches app routes that require auth checks", () => {
       expect(regex.test("/")).toBe(true);
       expect(regex.test("/login")).toBe(true);
+      expect(regex.test("/accept-invitation")).toBe(true);
+      expect(regex.test("/forgot-password")).toBe(true);
+      expect(regex.test("/reset-password")).toBe(true);
+      expect(regex.test("/confirm-email-change")).toBe(true);
       expect(regex.test("/repos")).toBe(true);
       expect(regex.test("/settings")).toBe(true);
     });

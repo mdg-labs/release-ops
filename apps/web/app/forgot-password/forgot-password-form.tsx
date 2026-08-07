@@ -1,8 +1,7 @@
 "use client";
 
-import { CircleAlertIcon } from "lucide-react";
+import { CircleAlertIcon, CircleCheckIcon } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useEffect, useId, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -10,18 +9,27 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardPanel, CardTitle } from "@/components/ui/card";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { ApiError } from "@/lib/api/client";
-import { useLogin } from "@/lib/hooks/use-login";
+import { ApiError, apiClient } from "@/lib/api/client";
 
-export function LoginForm(): React.ReactElement {
+function resolveAuthError(
+  error: unknown,
+  t: ReturnType<typeof useTranslations<"auth">>,
+): string {
+  if (error instanceof ApiError) {
+    if (error.status === 429 || error.code === "RATE_LIMITED") {
+      return t("rateLimited");
+    }
+  }
+  return t("requestFailed");
+}
+
+export function ForgotPasswordForm(): React.ReactElement {
   const t = useTranslations("auth");
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const login = useLogin();
   const alertRef = useRef<HTMLDivElement>(null);
   const emailId = useId();
-  const passwordId = useId();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [isPending, setIsPending] = useState(false);
 
   useEffect(() => {
     if (submitError) {
@@ -35,33 +43,50 @@ export function LoginForm(): React.ReactElement {
 
     const formData = new FormData(event.currentTarget);
     const email = String(formData.get("email") ?? "");
-    const password = String(formData.get("password") ?? "");
 
+    setIsPending(true);
     try {
-      await login.mutateAsync({ email, password });
-      const redirectTo = searchParams.get("redirect") ?? "/";
-      router.push(redirectTo);
-      router.refresh();
+      await apiClient.post("/auth/forgot-password", { email });
+      setIsSuccess(true);
     } catch (error) {
-      if (error instanceof ApiError) {
-        setSubmitError(t("invalidCredentials"));
-      } else {
-        setSubmitError(t("loginFailed"));
-      }
+      setSubmitError(resolveAuthError(error, t));
+    } finally {
+      setIsPending(false);
     }
+  }
+
+  if (isSuccess) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("forgotPassword")}</CardTitle>
+        </CardHeader>
+        <CardPanel className="flex flex-col gap-4">
+          <Alert variant="success">
+            <CircleCheckIcon />
+            <AlertTitle>{t("forgotPasswordSuccessTitle")}</AlertTitle>
+            <AlertDescription>{t("forgotPasswordSuccess")}</AlertDescription>
+          </Alert>
+          <Button render={<Link href="/login" />}>{t("backToLogin")}</Button>
+        </CardPanel>
+      </Card>
+    );
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("login")}</CardTitle>
+        <CardTitle>{t("forgotPassword")}</CardTitle>
       </CardHeader>
       <CardPanel className="flex flex-col gap-4">
+        <p className="text-muted-foreground text-sm">
+          {t("forgotPasswordDescription")}
+        </p>
         {submitError ? (
           <div ref={alertRef} tabIndex={-1}>
             <Alert variant="error">
               <CircleAlertIcon />
-              <AlertTitle>{t("loginFailedTitle")}</AlertTitle>
+              <AlertTitle>{t("requestFailedTitle")}</AlertTitle>
               <AlertDescription>{submitError}</AlertDescription>
             </Alert>
           </div>
@@ -80,30 +105,13 @@ export function LoginForm(): React.ReactElement {
               type="email"
             />
           </Field>
-          <Field name="password">
-            <FieldLabel htmlFor={passwordId}>
-              {t("password")} <span aria-hidden="true">*</span>
-            </FieldLabel>
-            <Input
-              autoComplete="current-password"
-              id={passwordId}
-              name="password"
-              required
-              type="password"
-            />
-          </Field>
-          <div className="text-right text-sm">
-            <Link
-              className="text-muted-foreground underline-offset-4 hover:underline"
-              href="/forgot-password"
-            >
-              {t("forgotPasswordLink")}
-            </Link>
-          </div>
-          <Button loading={login.isPending} type="submit">
-            {t("signIn")}
+          <Button loading={isPending} type="submit">
+            {t("sendResetLink")}
           </Button>
         </form>
+        <Button render={<Link href="/login" />} variant="outline">
+          {t("backToLogin")}
+        </Button>
       </CardPanel>
     </Card>
   );

@@ -81,6 +81,9 @@ describe("LoginForm", () => {
     expect(
       screen.getByRole("button", { name: "auth.signIn" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "auth.forgotPasswordLink" }),
+    ).toHaveAttribute("href", "/forgot-password");
   });
 
   it("calls login mutation and redirects to / on success", async () => {
