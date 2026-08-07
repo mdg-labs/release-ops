@@ -30,3 +30,11 @@ export function kindUsesApiKeyLabel(kind: string): boolean {
 export function kindIsJira(kind: string): boolean {
   return kind === "jira";
 }
+
+export const TICKET_INTEGRATION_KINDS = ["phasical", "jira", "linear"] as const;
+
+export type TicketIntegrationKind = (typeof TICKET_INTEGRATION_KINDS)[number];
+
+export function kindIsTicket(kind: string): boolean {
+  return TICKET_INTEGRATION_KINDS.includes(kind as TicketIntegrationKind);
+}

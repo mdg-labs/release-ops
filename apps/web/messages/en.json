@@ -91,7 +91,75 @@
   },
   "ticket-projects": {
     "title": "Ticket projects",
-    "add": "Add ticket project"
+    "add": "Add ticket project",
+    "createTitle": "Add ticket project",
+    "createDescription": "Define a project or team target with status mapping and open-ticket policy.",
+    "editTitle": "Edit ticket project",
+    "editDescription": "Update status mapping, create defaults, and open-ticket policy.",
+    "empty": "No ticket projects yet. Add one to get started.",
+    "loadFailed": "Failed to load ticket projects.",
+    "saveFailed": "Failed to save ticket project.",
+    "integration": "Integration",
+    "integrationPlaceholder": "Select integration",
+    "noTicketIntegrations": "Add a Phasical, Jira, or Linear integration first.",
+    "externalProjectId": "External project ID",
+    "name": "Display name",
+    "policy": "Open ticket policy",
+    "policyPlaceholder": "Select policy",
+    "createConfigTitle": "Create defaults",
+    "mappingNoteTitle": "Per-project mapping",
+    "mappingNoteDescription": "Status values differ per project. Use provider-native IDs, slugs, or names.",
+    "statusOpen": "Open statuses",
+    "statusDone": "Done statuses",
+    "statusCancelled": "Cancelled statuses",
+    "statusSuperseded": "Superseded status",
+    "statusListPlaceholder": "ready, in-progress, in-review",
+    "statusListHint": "Comma-separated status values.",
+    "statusSupersededPlaceholder": "cancelled",
+    "statusSupersededHint": "Single status used when superseding an open ticket.",
+    "deleteTitle": "Delete ticket project?",
+    "deleteDescription": "Delete “{name}”? This cannot be undone.",
+    "deleteAria": "Delete {name}",
+    "editAria": "Edit {name}",
+    "columns": {
+      "integration": "Integration",
+      "name": "Name",
+      "externalProjectId": "External project ID",
+      "policy": "Policy",
+      "actions": "Actions"
+    },
+    "policies": {
+      "supersede": "Supersede",
+      "merge": "Merge",
+      "skip_if_open": "Skip if open"
+    },
+    "kinds": {
+      "phasical": "Phasical",
+      "jira": "Jira",
+      "linear": "Linear"
+    },
+    "phasical": {
+      "status": "Default status",
+      "priority": "Default priority"
+    },
+    "jira": {
+      "issueType": "Issue type",
+      "priority": "Priority",
+      "initialStatus": "Initial status"
+    },
+    "linear": {
+      "priority": "Priority",
+      "stateId": "State ID"
+    },
+    "validation": {
+      "nameRequired": "Display name is required.",
+      "externalProjectIdRequired": "External project ID is required.",
+      "integrationRequired": "Select a ticket integration.",
+      "statusOpenRequired": "At least one open status is required.",
+      "statusDoneRequired": "At least one done status is required.",
+      "statusCancelledRequired": "At least one cancelled status is required.",
+      "statusSupersededRequired": "Superseded status is required."
+    }
   },
   "notifications": {
     "title": "Notifications",
