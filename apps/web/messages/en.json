@@ -347,16 +347,91 @@
   },
   "settings": {
     "title": "Settings",
+    "general": "General",
+    "usersNav": "Users",
+    "navAria": "Settings sections",
     "saved": "Settings saved",
-    "savedDescription": "The poll interval will apply to the next scheduled run.",
+    "savedDescription": "Your changes will apply to the next scheduled run and new tokens.",
     "pollIntervalSection": "Polling",
     "pollIntervalDescription": "Configure how often Release Ops checks monitored repositories for new releases.",
     "pollInterval": "Poll interval (minutes)",
     "pollIntervalHint": "Minimum 5 minutes between automated polls.",
+    "tokenExpirySection": "Token expiry",
+    "tokenExpiryDescription": "Control how long invitation and password-reset links remain valid.",
+    "inviteTokenExpiry": "Invitation link expiry (hours)",
+    "inviteTokenExpiryHint": "Between 1 and 720 hours.",
+    "resetTokenExpiry": "Password reset link expiry (minutes)",
+    "resetTokenExpiryHint": "Between 5 and 1440 minutes.",
     "loadFailed": "Failed to load settings.",
     "saveFailed": "Failed to save settings.",
+    "changeEmail": {
+      "title": "Change email",
+      "description": "Request a verification link sent to your new email address.",
+      "newEmail": "New email",
+      "currentPassword": "Current password",
+      "submit": "Request change",
+      "pendingTitle": "Verification email sent",
+      "pendingDescription": "Check your new inbox for a confirmation link to complete the change.",
+      "failed": "Email change request failed",
+      "invalidPassword": "Current password is incorrect.",
+      "smtpNotConfigured": "SMTP is not configured. Ask an administrator to set SMTP environment variables.",
+      "validation": {
+        "newEmailRequired": "New email is required.",
+        "passwordRequired": "Current password is required."
+      }
+    },
     "validation": {
-      "minInterval": "Poll interval must be at least 5 minutes."
+      "minInterval": "Poll interval must be at least 5 minutes.",
+      "inviteExpiryRange": "Invitation expiry must be between 1 and 720 hours.",
+      "resetExpiryRange": "Password reset expiry must be between 5 and 1440 minutes."
+    }
+  },
+  "users": {
+    "title": "Users",
+    "invite": "Invite user",
+    "inviteTitle": "Invite user",
+    "inviteDescription": "Send an invitation link to create a new account.",
+    "inviteEmail": "Email",
+    "inviteSubmit": "Create invitation",
+    "inviteCreatedDescription": "Copy this one-time link and share it with the invitee.",
+    "inviteFailed": "Failed to create invitation.",
+    "copyInviteLink": "Copy invite link",
+    "inviteLinkCopied": "Invite link copied",
+    "inviteLinkCopyFailed": "Could not copy invite link.",
+    "loadFailed": "Failed to load users or invitations.",
+    "usersSection": "Active users",
+    "usersSectionDescription": "All accounts with access to Release Ops.",
+    "usersEmpty": "No users found.",
+    "invitationsSection": "Pending invitations",
+    "invitationsSectionDescription": "Invitations that have not been accepted yet.",
+    "invitationsEmpty": "No pending invitations.",
+    "you": "You",
+    "removeAria": "Remove {email}",
+    "removeSelfDisabled": "You cannot remove your own account.",
+    "removeLastUserDisabled": "You cannot remove the last user.",
+    "removeTitle": "Remove user?",
+    "removeDescription": "Remove {email}? This revokes all sessions and cannot be undone.",
+    "removeConfirm": "Remove user",
+    "revokeAria": "Revoke invitation for {email}",
+    "revokeTitle": "Revoke invitation?",
+    "revokeDescription": "Revoke the invitation for {email}? The link will stop working.",
+    "revokeConfirm": "Revoke invitation",
+    "sendEmailAria": "Send invitation email to {email}",
+    "sendEmailSmtpDisabled": "SMTP is not configured. Copy the invite link instead.",
+    "sendEmailLoading": "Sending invitation email",
+    "sendEmailLoadingDescription": "Delivering the invitation via SMTP…",
+    "sendEmailSuccess": "Invitation email sent",
+    "sendEmailSuccessDescription": "The invitee should receive the message shortly.",
+    "sendEmailFailed": "Failed to send invitation email",
+    "sendEmailFailedDescription": "The invitation email could not be delivered.",
+    "columns": {
+      "email": "Email",
+      "createdAt": "Joined",
+      "expiresAt": "Expires",
+      "actions": "Actions"
+    },
+    "validation": {
+      "emailRequired": "Email is required."
     }
   },
   "nav": {
@@ -366,6 +441,7 @@
     "ticketProjects": "Ticket projects",
     "notifications": "Notifications",
     "settings": "Settings",
+    "settingsUsers": "Users",
     "homeAriaLabel": "Home"
   }
 }

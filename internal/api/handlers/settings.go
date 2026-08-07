@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/mdg-labs/release-ops/internal/api/auth"
+	"github.com/mdg-labs/release-ops/internal/mail"
 	"github.com/mdg-labs/release-ops/internal/store"
 )
 
@@ -25,6 +26,7 @@ type settingsResponse struct {
 	PollIntervalMinutes             int64 `json:"pollIntervalMinutes"`
 	InviteTokenExpiryHours          int64 `json:"inviteTokenExpiryHours"`
 	PasswordResetTokenExpiryMinutes int64 `json:"passwordResetTokenExpiryMinutes"`
+	SmtpConfigured                  bool  `json:"smtpConfigured"`
 }
 
 type patchSettingsRequest struct {
@@ -105,5 +107,6 @@ func writeSettingsJSON(w http.ResponseWriter, status int, settings *store.AppSet
 		PollIntervalMinutes:             settings.PollIntervalMinutes,
 		InviteTokenExpiryHours:          settings.InviteTokenExpiryHours,
 		PasswordResetTokenExpiryMinutes: settings.PasswordResetTokenExpiryMinutes,
+		SmtpConfigured:                  mail.MailConfigured(),
 	})
 }

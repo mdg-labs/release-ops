@@ -1,8 +1,8 @@
 "use client";
 
-import { CircleCheckIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { CircleCheckIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +20,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Frame, FrameFooter } from "@/components/ui/frame";
+import { Input } from "@/components/ui/input";
 import {
   NumberField,
   NumberFieldDecrement,
@@ -29,39 +30,94 @@ import {
 } from "@/components/ui/number-field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import { SettingsNav } from "@/components/settings/settings-nav";
 import { ApiError } from "@/lib/api/client";
 import { useSettings } from "@/lib/hooks/use-settings";
+import { useUsers } from "@/hooks/useUsers";
 
 const MIN_POLL_INTERVAL_MINUTES = 5;
+const MIN_INVITE_TOKEN_EXPIRY_HOURS = 1;
+const MAX_INVITE_TOKEN_EXPIRY_HOURS = 720;
+const MIN_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES = 5;
+const MAX_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES = 1440;
+
+type SettingsFormState = {
+  pollIntervalMinutes: number | null;
+  inviteTokenExpiryHours: number | null;
+  passwordResetTokenExpiryMinutes: number | null;
+};
 
 export function SettingsView(): React.ReactElement {
   const t = useTranslations("settings");
   const tCommon = useTranslations("common");
   const { data, isLoading, isError, updateSettings } = useSettings();
+  const { requestEmailChange } = useUsers();
 
-  const [pollIntervalMinutes, setPollIntervalMinutes] = useState<number | null>(
-    null,
-  );
+  const newEmailId = useId();
+  const currentPasswordId = useId();
+
+  const [form, setForm] = useState<SettingsFormState>({
+    pollIntervalMinutes: null,
+    inviteTokenExpiryHours: null,
+    passwordResetTokenExpiryMinutes: null,
+  });
   const [validationError, setValidationError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
 
+  const [newEmail, setNewEmail] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [emailValidationError, setEmailValidationError] = useState<
+    string | null
+  >(null);
+  const [emailChangeError, setEmailChangeError] = useState<string | null>(null);
+  const [emailChangePending, setEmailChangePending] = useState(false);
+
   useEffect(() => {
-    if (data?.pollIntervalMinutes !== undefined) {
-      setPollIntervalMinutes(data.pollIntervalMinutes);
-      setShowSuccess(false);
+    if (!data) {
+      return;
     }
-  }, [data?.pollIntervalMinutes]);
+    setForm({
+      pollIntervalMinutes: data.pollIntervalMinutes,
+      inviteTokenExpiryHours: data.inviteTokenExpiryHours,
+      passwordResetTokenExpiryMinutes: data.passwordResetTokenExpiryMinutes,
+    });
+    setShowSuccess(false);
+  }, [data]);
+
+  function validateForm(): string | null {
+    if (
+      form.pollIntervalMinutes === null ||
+      form.pollIntervalMinutes < MIN_POLL_INTERVAL_MINUTES
+    ) {
+      return t("validation.minInterval");
+    }
+    if (
+      form.inviteTokenExpiryHours === null ||
+      form.inviteTokenExpiryHours < MIN_INVITE_TOKEN_EXPIRY_HOURS ||
+      form.inviteTokenExpiryHours > MAX_INVITE_TOKEN_EXPIRY_HOURS
+    ) {
+      return t("validation.inviteExpiryRange");
+    }
+    if (
+      form.passwordResetTokenExpiryMinutes === null ||
+      form.passwordResetTokenExpiryMinutes <
+        MIN_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES ||
+      form.passwordResetTokenExpiryMinutes >
+        MAX_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES
+    ) {
+      return t("validation.resetExpiryRange");
+    }
+    return null;
+  }
 
   async function handleSave(): Promise<void> {
     setSaveError(null);
     setShowSuccess(false);
 
-    if (
-      pollIntervalMinutes === null ||
-      pollIntervalMinutes < MIN_POLL_INTERVAL_MINUTES
-    ) {
-      setValidationError(t("validation.minInterval"));
+    const error = validateForm();
+    if (error) {
+      setValidationError(error);
       return;
     }
 
@@ -69,7 +125,10 @@ export function SettingsView(): React.ReactElement {
 
     try {
       await updateSettings.mutateAsync({
-        pollIntervalMinutes,
+        pollIntervalMinutes: form.pollIntervalMinutes ?? undefined,
+        inviteTokenExpiryHours: form.inviteTokenExpiryHours ?? undefined,
+        passwordResetTokenExpiryMinutes:
+          form.passwordResetTokenExpiryMinutes ?? undefined,
       });
       setShowSuccess(true);
     } catch (error) {
@@ -81,9 +140,47 @@ export function SettingsView(): React.ReactElement {
     }
   }
 
+  async function handleEmailChange(): Promise<void> {
+    setEmailChangeError(null);
+    setEmailValidationError(null);
+    setEmailChangePending(false);
+
+    if (!newEmail.trim()) {
+      setEmailValidationError(t("changeEmail.validation.newEmailRequired"));
+      return;
+    }
+    if (!currentPassword) {
+      setEmailValidationError(t("changeEmail.validation.passwordRequired"));
+      return;
+    }
+
+    try {
+      await requestEmailChange.mutateAsync({
+        newEmail: newEmail.trim(),
+        currentPassword,
+      });
+      setEmailChangePending(true);
+      setNewEmail("");
+      setCurrentPassword("");
+    } catch (error) {
+      if (error instanceof ApiError) {
+        if (error.status === 503) {
+          setEmailChangeError(t("changeEmail.smtpNotConfigured"));
+        } else if (error.status === 401) {
+          setEmailChangeError(t("changeEmail.invalidPassword"));
+        } else {
+          setEmailChangeError(error.message);
+        }
+      } else {
+        setEmailChangeError(t("changeEmail.failed"));
+      }
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="font-semibold text-2xl">{t("title")}</h1>
+      <SettingsNav />
 
       {isError ? (
         <p className="text-destructive-foreground text-sm" role="alert">
@@ -92,72 +189,230 @@ export function SettingsView(): React.ReactElement {
       ) : null}
 
       {isLoading ? (
-        <Skeleton className="h-48 w-full max-w-lg" />
+        <Skeleton className="h-96 w-full max-w-lg" />
       ) : (
-        <Frame className="max-w-lg">
-          <Card>
-            <CardHeader>
-              <CardTitle>{t("pollIntervalSection")}</CardTitle>
-              <CardDescription>{t("pollIntervalDescription")}</CardDescription>
-            </CardHeader>
-            <CardPanel>
-              <Field>
-                <FieldLabel>{t("pollInterval")}</FieldLabel>
-                <NumberField
-                  min={MIN_POLL_INTERVAL_MINUTES}
-                  value={pollIntervalMinutes ?? MIN_POLL_INTERVAL_MINUTES}
-                  onValueChange={(value) => {
-                    if (value !== null) {
-                      setPollIntervalMinutes(value);
+        <div className="flex max-w-lg flex-col gap-6">
+          <Frame>
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("pollIntervalSection")}</CardTitle>
+                <CardDescription>
+                  {t("pollIntervalDescription")}
+                </CardDescription>
+              </CardHeader>
+              <CardPanel>
+                <Field>
+                  <FieldLabel>{t("pollInterval")}</FieldLabel>
+                  <NumberField
+                    min={MIN_POLL_INTERVAL_MINUTES}
+                    value={
+                      form.pollIntervalMinutes ?? MIN_POLL_INTERVAL_MINUTES
                     }
-                    setValidationError(null);
-                    setShowSuccess(false);
-                  }}
-                >
-                  <NumberFieldGroup>
-                    <NumberFieldDecrement />
-                    <NumberFieldInput />
-                    <NumberFieldIncrement />
-                  </NumberFieldGroup>
-                </NumberField>
-                <FieldDescription>{t("pollIntervalHint")}</FieldDescription>
+                    onValueChange={(value) => {
+                      if (value !== null) {
+                        setForm((current) => ({
+                          ...current,
+                          pollIntervalMinutes: value,
+                        }));
+                      }
+                      setValidationError(null);
+                      setShowSuccess(false);
+                    }}
+                  >
+                    <NumberFieldGroup>
+                      <NumberFieldDecrement />
+                      <NumberFieldInput />
+                      <NumberFieldIncrement />
+                    </NumberFieldGroup>
+                  </NumberField>
+                  <FieldDescription>{t("pollIntervalHint")}</FieldDescription>
+                </Field>
+              </CardPanel>
+            </Card>
+          </Frame>
+
+          <Frame>
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("tokenExpirySection")}</CardTitle>
+                <CardDescription>{t("tokenExpiryDescription")}</CardDescription>
+              </CardHeader>
+              <CardPanel className="flex flex-col gap-4">
+                <Field>
+                  <FieldLabel>{t("inviteTokenExpiry")}</FieldLabel>
+                  <NumberField
+                    min={MIN_INVITE_TOKEN_EXPIRY_HOURS}
+                    max={MAX_INVITE_TOKEN_EXPIRY_HOURS}
+                    value={
+                      form.inviteTokenExpiryHours ??
+                      MIN_INVITE_TOKEN_EXPIRY_HOURS
+                    }
+                    onValueChange={(value) => {
+                      if (value !== null) {
+                        setForm((current) => ({
+                          ...current,
+                          inviteTokenExpiryHours: value,
+                        }));
+                      }
+                      setValidationError(null);
+                      setShowSuccess(false);
+                    }}
+                  >
+                    <NumberFieldGroup>
+                      <NumberFieldDecrement />
+                      <NumberFieldInput />
+                      <NumberFieldIncrement />
+                    </NumberFieldGroup>
+                  </NumberField>
+                  <FieldDescription>
+                    {t("inviteTokenExpiryHint")}
+                  </FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel>{t("resetTokenExpiry")}</FieldLabel>
+                  <NumberField
+                    min={MIN_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES}
+                    max={MAX_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES}
+                    value={
+                      form.passwordResetTokenExpiryMinutes ??
+                      MIN_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES
+                    }
+                    onValueChange={(value) => {
+                      if (value !== null) {
+                        setForm((current) => ({
+                          ...current,
+                          passwordResetTokenExpiryMinutes: value,
+                        }));
+                      }
+                      setValidationError(null);
+                      setShowSuccess(false);
+                    }}
+                  >
+                    <NumberFieldGroup>
+                      <NumberFieldDecrement />
+                      <NumberFieldInput />
+                      <NumberFieldIncrement />
+                    </NumberFieldGroup>
+                  </NumberField>
+                  <FieldDescription>
+                    {t("resetTokenExpiryHint")}
+                  </FieldDescription>
+                </Field>
                 {validationError ? (
                   <FieldError>{validationError}</FieldError>
                 ) : null}
-              </Field>
-            </CardPanel>
-            <CardFooter>
-              <Button
-                disabled={updateSettings.isPending}
-                onClick={() => {
-                  void handleSave();
-                }}
-              >
-                {updateSettings.isPending ? (
-                  <Spinner className="size-4" />
+              </CardPanel>
+              <CardFooter>
+                <Button
+                  disabled={updateSettings.isPending}
+                  onClick={() => {
+                    void handleSave();
+                  }}
+                >
+                  {updateSettings.isPending ? (
+                    <Spinner className="size-4" />
+                  ) : null}
+                  {tCommon("save")}
+                </Button>
+              </CardFooter>
+            </Card>
+            {showSuccess || saveError ? (
+              <FrameFooter>
+                {showSuccess ? (
+                  <Alert variant="success">
+                    <CircleCheckIcon />
+                    <AlertTitle>{t("saved")}</AlertTitle>
+                    <AlertDescription>{t("savedDescription")}</AlertDescription>
+                  </Alert>
                 ) : null}
-                {tCommon("save")}
-              </Button>
-            </CardFooter>
-          </Card>
-          {showSuccess || saveError ? (
-            <FrameFooter>
-              {showSuccess ? (
-                <Alert variant="success">
-                  <CircleCheckIcon />
-                  <AlertTitle>{t("saved")}</AlertTitle>
-                  <AlertDescription>{t("savedDescription")}</AlertDescription>
-                </Alert>
-              ) : null}
-              {saveError ? (
+                {saveError ? (
+                  <Alert variant="error">
+                    <AlertTitle>{t("saveFailed")}</AlertTitle>
+                    <AlertDescription>{saveError}</AlertDescription>
+                  </Alert>
+                ) : null}
+              </FrameFooter>
+            ) : null}
+          </Frame>
+
+          <Frame>
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("changeEmail.title")}</CardTitle>
+                <CardDescription>
+                  {t("changeEmail.description")}
+                </CardDescription>
+              </CardHeader>
+              <CardPanel className="flex flex-col gap-4">
+                {emailChangePending ? (
+                  <Alert variant="success">
+                    <CircleCheckIcon />
+                    <AlertTitle>{t("changeEmail.pendingTitle")}</AlertTitle>
+                    <AlertDescription>
+                      {t("changeEmail.pendingDescription")}
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+                <Field>
+                  <FieldLabel htmlFor={newEmailId}>
+                    {t("changeEmail.newEmail")}
+                  </FieldLabel>
+                  <Input
+                    autoComplete="email"
+                    id={newEmailId}
+                    onChange={(event) => {
+                      setNewEmail(event.target.value);
+                      setEmailValidationError(null);
+                      setEmailChangeError(null);
+                    }}
+                    type="email"
+                    value={newEmail}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={currentPasswordId}>
+                    {t("changeEmail.currentPassword")}
+                  </FieldLabel>
+                  <Input
+                    autoComplete="current-password"
+                    id={currentPasswordId}
+                    onChange={(event) => {
+                      setCurrentPassword(event.target.value);
+                      setEmailValidationError(null);
+                      setEmailChangeError(null);
+                    }}
+                    type="password"
+                    value={currentPassword}
+                  />
+                  {emailValidationError ? (
+                    <FieldError>{emailValidationError}</FieldError>
+                  ) : null}
+                </Field>
+              </CardPanel>
+              <CardFooter>
+                <Button
+                  disabled={requestEmailChange.isPending}
+                  onClick={() => {
+                    void handleEmailChange();
+                  }}
+                >
+                  {requestEmailChange.isPending ? (
+                    <Spinner className="size-4" />
+                  ) : null}
+                  {t("changeEmail.submit")}
+                </Button>
+              </CardFooter>
+            </Card>
+            {emailChangeError ? (
+              <FrameFooter>
                 <Alert variant="error">
-                  <AlertTitle>{t("saveFailed")}</AlertTitle>
-                  <AlertDescription>{saveError}</AlertDescription>
+                  <AlertTitle>{t("changeEmail.failed")}</AlertTitle>
+                  <AlertDescription>{emailChangeError}</AlertDescription>
                 </Alert>
-              ) : null}
-            </FrameFooter>
-          ) : null}
-        </Frame>
+              </FrameFooter>
+            ) : null}
+          </Frame>
+        </div>
       )}
     </div>
   );
