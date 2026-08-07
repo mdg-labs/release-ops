@@ -165,6 +165,12 @@ func TestBuildInvitationMessage(t *testing.T) {
 	if !strings.Contains(msg.HTMLBody, "accept-invitation?token=abc") {
 		t.Fatalf("HTMLBody = %q", msg.HTMLBody)
 	}
+	if !strings.Contains(msg.HTMLBody, "background-color:#262626") {
+		t.Fatalf("HTMLBody missing primary button style: %q", msg.HTMLBody)
+	}
+	if !strings.Contains(msg.HTMLBody, "border-radius:10px") {
+		t.Fatalf("HTMLBody missing card radius: %q", msg.HTMLBody)
+	}
 }
 
 func TestBuildPasswordResetMessage(t *testing.T) {

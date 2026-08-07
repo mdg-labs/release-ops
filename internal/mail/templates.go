@@ -13,6 +13,16 @@ var templateFS embed.FS
 
 const appName = "Release Ops"
 
+// EmailPageData is shared HTML layout input aligned with apps/web/app/globals.css (:root).
+type EmailPageData struct {
+	AppName     string
+	Title       string
+	ActionURL   string
+	ActionLabel string
+	Footer      string
+	NewEmail    string // optional — email-change only
+}
+
 // InvitationData is template input for invitation emails.
 type InvitationData struct {
 	ActionURL string
@@ -36,7 +46,13 @@ func BuildInvitation(to string, data InvitationData) (Message, error) {
 	if err != nil {
 		return Message{}, err
 	}
-	htmlBody, err := renderHTMLTemplate("invitation.html.tmpl", data)
+	htmlBody, err := renderHTMLTemplate("invitation", EmailPageData{
+		AppName:     appName,
+		Title:       "You've been invited",
+		ActionURL:   data.ActionURL,
+		ActionLabel: "Accept your invitation",
+		Footer:      "If you did not expect this invitation, you can ignore this email.",
+	})
 	if err != nil {
 		return Message{}, err
 	}
@@ -55,7 +71,13 @@ func BuildPasswordReset(to string, data PasswordResetData) (Message, error) {
 	if err != nil {
 		return Message{}, err
 	}
-	htmlBody, err := renderHTMLTemplate("password_reset.html.tmpl", data)
+	htmlBody, err := renderHTMLTemplate("password_reset", EmailPageData{
+		AppName:     appName,
+		Title:       "Reset your password",
+		ActionURL:   data.ActionURL,
+		ActionLabel: "Reset your password",
+		Footer:      "If you did not request a password reset, you can ignore this email.",
+	})
 	if err != nil {
 		return Message{}, err
 	}
@@ -74,7 +96,14 @@ func BuildEmailChangeConfirmation(to string, data EmailChangeData) (Message, err
 	if err != nil {
 		return Message{}, err
 	}
-	htmlBody, err := renderHTMLTemplate("email_change.html.tmpl", data)
+	htmlBody, err := renderHTMLTemplate("email_change", EmailPageData{
+		AppName:     appName,
+		Title:       "Confirm your new email",
+		ActionURL:   data.ActionURL,
+		ActionLabel: "Confirm email change",
+		Footer:      "If you did not request this change, you can ignore this email.",
+		NewEmail:    data.NewEmail,
+	})
 	if err != nil {
 		return Message{}, err
 	}
@@ -102,18 +131,19 @@ func renderTextTemplate(name string, data any) (string, error) {
 	return buf.String(), nil
 }
 
-func renderHTMLTemplate(name string, data any) (string, error) {
-	raw, err := templateFS.ReadFile("templates/" + name)
+func renderHTMLTemplate(templateName string, data any) (string, error) {
+	// Parse layout with a single email template so per-email "body" blocks do not collide.
+	tmpl, err := template.ParseFS(
+		templateFS,
+		"templates/layout.html.tmpl",
+		"templates/"+templateName+".html.tmpl",
+	)
 	if err != nil {
-		return "", fmt.Errorf("read template %s: %w", name, err)
-	}
-	tmpl, err := template.New(name).Parse(string(raw))
-	if err != nil {
-		return "", fmt.Errorf("parse template %s: %w", name, err)
+		return "", fmt.Errorf("parse html templates: %w", err)
 	}
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("execute template %s: %w", name, err)
+	if err := tmpl.ExecuteTemplate(&buf, templateName, data); err != nil {
+		return "", fmt.Errorf("execute template %s: %w", templateName, err)
 	}
 	return buf.String(), nil
 }

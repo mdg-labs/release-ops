@@ -1,8 +1,6 @@
-<!DOCTYPE html>
-<html lang="en">
-  <body>
-    <p>Confirm your new Release Ops email address (<strong>{{ .NewEmail }}</strong>) by opening this link:</p>
-    <p><a href="{{ .ActionURL }}">Confirm email change</a></p>
-    <p>If you did not request this change, you can ignore this email.</p>
-  </body>
-</html>
+{{define "email_change"}}
+{{template "layout" .}}
+{{end}}
+{{define "body"}}
+<p style="margin:0 0 16px;color:#262626;">Confirm your new {{.AppName}} email address (<strong style="font-weight:600;color:#262626;">{{.NewEmail}}</strong>) by clicking the button below.</p>
+{{end}}
