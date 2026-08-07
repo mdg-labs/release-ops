@@ -30,6 +30,7 @@ type SchedulerConfig struct {
 	TicketProjects store.TicketProjectRepository
 	Integrations   store.IntegrationRepository
 	Poll           store.PollRepository
+	Notifier       *Notifier
 	HTTPClient     *http.Client
 	// PollRepo overrides per-repo polling (tests only). When nil, the default resolver runs.
 	PollRepo func(ctx context.Context, runID string, repo store.MonitoredRepo) (*RepoEvaluation, error)
@@ -43,6 +44,7 @@ type Scheduler struct {
 	ticketProjects store.TicketProjectRepository
 	integrations   store.IntegrationRepository
 	poll           store.PollRepository
+	notifier       *Notifier
 	httpClient     *http.Client
 	pollRepoFn     func(ctx context.Context, runID string, repo store.MonitoredRepo) (*RepoEvaluation, error)
 
@@ -76,6 +78,7 @@ func NewScheduler(cfg SchedulerConfig) (*Scheduler, error) {
 		ticketProjects: cfg.TicketProjects,
 		integrations:   cfg.Integrations,
 		poll:           cfg.Poll,
+		notifier:       cfg.Notifier,
 		httpClient:     client,
 		pollRepoFn:     cfg.PollRepo,
 		cron:           cron.New(),
@@ -237,6 +240,12 @@ func (s *Scheduler) recordEvaluation(
 			*ticketsCreated++
 		case ActionSupersede:
 			*ticketsSuperseded++
+		}
+	}
+
+	if s.notifier != nil && eval.Repo != nil {
+		for _, action := range eval.Actions {
+			s.notifier.NotifyRepoAction(ctx, *eval.Repo, action, eval.Detail)
 		}
 	}
 }
