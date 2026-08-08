@@ -22,7 +22,7 @@ func TestPhasicalMetadataWorkspacesProjectsStatuses(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/workspace":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/auth/organization/list":
 			_ = json.NewEncoder(w).Encode([]map[string]string{
 				{"id": workspaceID, "name": "Main Workspace"},
 			})
@@ -87,8 +87,8 @@ func TestPhasicalMetadataNormalizesAPIBase(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/workspace" {
-			t.Fatalf("path = %s, want /api/workspace", r.URL.Path)
+		if r.URL.Path != "/api/auth/organization/list" {
+			t.Fatalf("path = %s, want /api/auth/organization/list", r.URL.Path)
 		}
 		_ = json.NewEncoder(w).Encode([]map[string]string{})
 		w.WriteHeader(http.StatusOK)

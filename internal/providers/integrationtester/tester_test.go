@@ -133,8 +133,8 @@ func TestTesterPhasicalSuccess(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/me" {
-			t.Fatalf("path = %q, want /me", r.URL.Path)
+		if r.URL.Path != "/api/auth/organization/list" {
+			t.Fatalf("path = %q, want /api/auth/organization/list", r.URL.Path)
 		}
 		if r.Header.Get("Authorization") != "Bearer phasical-key" {
 			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))

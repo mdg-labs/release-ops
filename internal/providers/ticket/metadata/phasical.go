@@ -39,7 +39,7 @@ func (p *phasicalProvider) ListWorkspaces(ctx context.Context) ([]Item, error) {
 		Name string `json:"name"`
 		Slug string `json:"slug"`
 	}
-	if err := p.doJSON(ctx, http.MethodGet, "/workspace", nil, &workspaces); err != nil {
+	if err := p.doJSON(ctx, http.MethodGet, "/auth/organization/list", nil, &workspaces); err != nil {
 		return nil, err
 	}
 

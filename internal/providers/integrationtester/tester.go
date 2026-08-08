@@ -151,11 +151,12 @@ func (t *Tester) testPhasical(ctx context.Context, baseURL *string, secret []byt
 		return err
 	}
 
+	apiBase := normalizePhasicalAPIBase(root)
 	headers := map[string]string{}
 	if apiKey != "" {
 		headers["Authorization"] = "Bearer " + apiKey
 	}
-	return t.doGET(ctx, root+"/me", headers)
+	return t.doGET(ctx, apiBase+"/auth/organization/list", headers)
 }
 
 func (t *Tester) testJira(ctx context.Context, baseURL *string, secret []byte) error {
@@ -300,6 +301,18 @@ func requireBaseURL(baseURL *string, kind string) (string, error) {
 		return "", fmt.Errorf("%s base_url: %w", kind, err)
 	}
 	return normalized, nil
+}
+
+// normalizePhasicalAPIBase appends /api when missing (same semantics as ticket metadata provider).
+func normalizePhasicalAPIBase(raw string) string {
+	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
+	if raw == "" {
+		return raw
+	}
+	if strings.HasSuffix(raw, "/api") {
+		return raw
+	}
+	return raw + "/api"
 }
 
 func normalizeBaseURL(raw string) (string, error) {

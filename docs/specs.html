@@ -701,7 +701,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
 
   <h4>7.3.1 Ticket integration metadata</h4>
   <p>Discovery endpoints proxy provider APIs using stored (decrypted) credentials. Responses use the same actionable error pattern as <code>POST …/test</code>: HTTP 200 with <code>message</code> when the provider rejects credentials or the request fails.</p>
-  <p><strong>Phasical (Kaneo-compatible):</strong> normalize <code>baseUrl</code> by appending <code>/api</code> when missing before calling Kaneo paths (<code>/workspace</code>, <code>/project</code>, <code>/column/{projectId}</code>). UI flow: workspace → project → column slugs / fixed priorities.</p>
+  <p><strong>Phasical:</strong> normalize <code>baseUrl</code> by appending <code>/api</code> when missing. Workspace list: <code>GET /auth/organization/list</code> (Better Auth organizations; response <code>[{ id, name, slug, … }]</code>). Project/column discovery unchanged: <code>/project</code>, <code>/column/{projectId}</code>. UI flow: workspace → project → column slugs / fixed priorities.</p>
   <table>
     <tr><th>Method</th><th>Path</th><th>Query</th><th>Notes</th></tr>
     <tr><td>GET</td><td><code>/api/v1/integrations/{id}/ticket-metadata/workspaces</code></td><td>—</td><td>Phasical only; empty <code>items</code> for Jira/Linear</td></tr>
