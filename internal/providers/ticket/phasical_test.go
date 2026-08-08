@@ -24,8 +24,8 @@ func TestPhasicalProviderCreateTicket(t *testing.T) {
 	var gotBody map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/task/"+projectID {
-			t.Fatalf("method/path = %s %s, want POST /task/%s", r.Method, r.URL.Path, projectID)
+		if r.Method != http.MethodPost || r.URL.Path != "/api/task/"+projectID {
+			t.Fatalf("method/path = %s %s, want POST /api/task/%s", r.Method, r.URL.Path, projectID)
 		}
 		gotAuth = r.Header.Get("Authorization")
 		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
@@ -78,7 +78,7 @@ func TestPhasicalProviderGetTicketStatus(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/task/task-abc" {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/task/task-abc" {
 			t.Fatalf("method/path = %s %s", r.Method, r.URL.Path)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]string{
@@ -110,7 +110,7 @@ func TestPhasicalProviderUpdateTicketStatusViaMapping(t *testing.T) {
 
 	var gotStatus string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut || r.URL.Path != "/task/status/task-abc" {
+		if r.Method != http.MethodPut || r.URL.Path != "/api/task/status/task-abc" {
 			t.Fatalf("method/path = %s %s", r.Method, r.URL.Path)
 		}
 		var body map[string]string
@@ -140,7 +140,7 @@ func TestPhasicalProviderAddTicketComment(t *testing.T) {
 	var gotContent string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/comment/task-abc" {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/comment/task-abc" {
 			t.Fatalf("method/path = %s %s", r.Method, r.URL.Path)
 		}
 		var body map[string]string
@@ -171,14 +171,20 @@ func TestPhasicalProviderUpdateTicket(t *testing.T) {
 
 	var gotTitle, gotDescription string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut || r.URL.Path != "/task/task-abc" {
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/api/task/title/task-abc":
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			gotTitle = body["title"]
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/api/task/description/task-abc":
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			gotDescription = body["description"]
+			w.WriteHeader(http.StatusOK)
+		default:
 			t.Fatalf("method/path = %s %s", r.Method, r.URL.Path)
 		}
-		var body map[string]string
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		gotTitle = body["title"]
-		gotDescription = body["description"]
-		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(server.Close)
 
@@ -196,6 +202,70 @@ func TestPhasicalProviderUpdateTicket(t *testing.T) {
 	if gotDescription != "updated body" {
 		t.Fatalf("description = %q", gotDescription)
 	}
+}
+
+func TestPhasicalProviderAppendsAPIBaseForHostOnlyURL(t *testing.T) {
+	t.Parallel()
+
+	const projectID = "proj-123"
+	var gotPath string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if r.Method != http.MethodPost || r.URL.Path != "/api/task/"+projectID {
+			t.Fatalf("method/path = %s %s, want POST /api/task/%s", r.Method, r.URL.Path, projectID)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"id":     "task-abc",
+			"status": "ready",
+		})
+	}))
+	t.Cleanup(server.Close)
+
+	client := server.Client()
+	client.Transport = &rewriteHostTransport{
+		base:   client.Transport,
+		target: server.URL,
+	}
+
+	provider, err := ticket.NewPhasicalProvider("https://example.com", "key", client)
+	if err != nil {
+		t.Fatalf("NewPhasicalProvider: %v", err)
+	}
+
+	_, err = provider.CreateTicket(context.Background(), ticket.TicketInput{
+		Title: "Release: github acme/widget v1.0.0",
+		Project: ticket.TicketProject{
+			ExternalProjectID: projectID,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+	if gotPath != "/api/task/"+projectID {
+		t.Fatalf("request path = %q, want /api/task/%s", gotPath, projectID)
+	}
+	if strings.HasPrefix(gotPath, "/task/") {
+		t.Fatalf("request path %q missing /api prefix", gotPath)
+	}
+}
+
+type rewriteHostTransport struct {
+	base   http.RoundTripper
+	target string
+}
+
+func (rt *rewriteHostTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	parsed, err := http.NewRequest(http.MethodGet, rt.target, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.URL.Scheme = parsed.URL.Scheme
+	req.URL.Host = parsed.URL.Host
+	if rt.base == nil {
+		return http.DefaultTransport.RoundTrip(req)
+	}
+	return rt.base.RoundTrip(req)
 }
 
 func TestPhasicalProviderRequiresBaseURL(t *testing.T) {

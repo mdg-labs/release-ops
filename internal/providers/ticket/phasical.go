@@ -28,6 +28,7 @@ func NewPhasicalProvider(baseURL, apiKey string, client *http.Client) (*Phasical
 	if err != nil {
 		return nil, fmt.Errorf("phasical base_url: %w", err)
 	}
+	normalized = normalizePhasicalAPIBase(normalized)
 	if client == nil {
 		client = http.DefaultClient
 	}
@@ -54,8 +55,11 @@ type phasicalStatusRequest struct {
 	Status string `json:"status"`
 }
 
-type phasicalUpdateRequest struct {
-	Title       string `json:"title"`
+type phasicalTitleRequest struct {
+	Title string `json:"title"`
+}
+
+type phasicalDescriptionRequest struct {
 	Description string `json:"description"`
 }
 
@@ -169,13 +173,14 @@ func (p *PhasicalProvider) UpdateTicket(ctx context.Context, externalID, title, 
 		return errors.New("phasical: title is required")
 	}
 
-	path := "/task/" + url.PathEscape(externalID)
-	body := phasicalUpdateRequest{
-		Title:       title,
-		Description: description,
+	titlePath := "/task/title/" + url.PathEscape(externalID)
+	if err := p.doJSON(ctx, http.MethodPut, titlePath, phasicalTitleRequest{Title: title}, nil); err != nil {
+		return fmt.Errorf("phasical: update title: %w", err)
 	}
-	if err := p.doJSON(ctx, http.MethodPut, path, body, nil); err != nil {
-		return fmt.Errorf("phasical: update task: %w", err)
+
+	descPath := "/task/description/" + url.PathEscape(externalID)
+	if err := p.doJSON(ctx, http.MethodPut, descPath, phasicalDescriptionRequest{Description: description}, nil); err != nil {
+		return fmt.Errorf("phasical: update description: %w", err)
 	}
 	return nil
 }
@@ -256,4 +261,16 @@ func normalizeTicketBaseURL(raw string) (string, error) {
 	}
 
 	return strings.TrimRight(raw, "/"), nil
+}
+
+// normalizePhasicalAPIBase appends /api when missing (Kaneo-compatible Phasical hosts).
+func normalizePhasicalAPIBase(raw string) string {
+	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
+	if raw == "" {
+		return raw
+	}
+	if strings.HasSuffix(raw, "/api") {
+		return raw
+	}
+	return raw + "/api"
 }
