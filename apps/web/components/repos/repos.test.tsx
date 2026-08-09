@@ -210,7 +210,7 @@ describe("ReposView", () => {
     expect(within(dialog).getByText("Self-hosted GitLab")).toBeInTheDocument();
   });
 
-  it("hides source integration select for github", async () => {
+  it("shows optional source integration field for github on create", async () => {
     const pool = mockAgent.get(ORIGIN);
     mockListEndpoints(pool, []);
 
@@ -219,9 +219,189 @@ describe("ReposView", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Add repo" }));
 
     const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Source integration")).toBeInTheDocument();
     expect(
-      within(dialog).queryByRole("combobox", { name: "Source integration" }),
-    ).not.toBeInTheDocument();
+      within(dialog).getByText(
+        "Optional. Use a token to avoid API rate limits and access private repos.",
+      ),
+    ).toBeInTheDocument();
+
+    const comboboxes = within(dialog).getAllByRole("combobox");
+    const integrationCombobox = comboboxes[2];
+    expect(integrationCombobox).toHaveTextContent("None");
+
+    fireEvent.click(integrationCombobox);
+    expect(
+      await screen.findByRole("option", { name: "GitHub Org" }),
+    ).toBeInTheDocument();
+  });
+
+  it("creates github repo with selected source integration", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    mockListEndpoints(pool, []);
+
+    let postBody: string | undefined;
+    pool
+      .intercept({
+        path: "/api/go/api/v1/repos",
+        method: "POST",
+      })
+      .reply((opts) => {
+        postBody = opts.body?.toString();
+        return {
+          statusCode: 201,
+          data: JSON.stringify({
+            id: "repo-new",
+            sourceKind: "github",
+            projectPath: "org/new-app",
+            enabled: true,
+            sourceIntegrationId: "int-github",
+            ticketProjectId: "tp-1",
+            notificationTargetIds: [],
+            openTicketExternalId: null,
+            openTicketTag: null,
+            lastKnownTag: null,
+            lastPolledAt: null,
+            lastError: null,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          }),
+          responseOptions: {
+            headers: { "content-type": "application/json" },
+          },
+        };
+      });
+
+    pool.intercept({ path: "/api/go/api/v1/repos", method: "GET" }).reply(200, [
+      {
+        id: "repo-new",
+        sourceKind: "github",
+        projectPath: "org/new-app",
+        enabled: true,
+        sourceIntegrationId: "int-github",
+        ticketProjectId: "tp-1",
+        notificationTargetIds: [],
+        openTicketExternalId: null,
+        openTicketTag: null,
+        lastKnownTag: null,
+        lastPolledAt: null,
+        lastError: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+
+    pool
+      .intercept({ path: "/api/go/api/v1/status", method: "GET" })
+      .reply(200, {
+        pollIntervalMinutes: 360,
+        lastRun: null,
+        repos: [],
+        isPolling: false,
+      });
+
+    renderReposPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add repo" }));
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/Project path/), {
+      target: { value: "org/new-app" },
+    });
+
+    const integrationCombobox = within(dialog).getAllByRole("combobox")[2];
+    fireEvent.click(integrationCombobox);
+    await waitFor(() => {
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+    });
+    fireEvent.pointerDown(screen.getByRole("option", { name: "GitHub Org" }), {
+      pointerId: 1,
+      pointerType: "mouse",
+      buttons: 1,
+    });
+    fireEvent.pointerUp(screen.getByRole("option", { name: "GitHub Org" }), {
+      pointerId: 1,
+      pointerType: "mouse",
+    });
+    fireEvent.click(screen.getByRole("option", { name: "GitHub Org" }));
+
+    await waitFor(() => {
+      expect(integrationCombobox).toHaveTextContent("GitHub Org");
+    });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(postBody).toBeDefined();
+    });
+    expect(JSON.parse(postBody ?? "{}")).toMatchObject({
+      sourceKind: "github",
+      projectPath: "org/new-app",
+      sourceIntegrationId: "int-github",
+      ticketProjectId: "tp-1",
+    });
+  });
+
+  it("preserves github source integration when editing repo", async () => {
+    const githubRepoWithIntegration = {
+      ...sampleRepos[0],
+      sourceIntegrationId: "int-github",
+    };
+    const pool = mockAgent.get(ORIGIN);
+    mockListEndpoints(pool, [
+      githubRepoWithIntegration as (typeof sampleRepos)[number],
+    ]);
+
+    renderReposPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit org/app" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("GitHub Org")).toBeInTheDocument();
+
+    let patchBody: string | undefined;
+    pool
+      .intercept({
+        path: "/api/go/api/v1/repos/repo-1",
+        method: "PATCH",
+      })
+      .reply((opts) => {
+        patchBody = opts.body?.toString();
+        return {
+          statusCode: 200,
+          data: JSON.stringify({
+            ...githubRepoWithIntegration,
+            updatedAt: "2026-01-03T00:00:00.000Z",
+          }),
+          responseOptions: {
+            headers: { "content-type": "application/json" },
+          },
+        };
+      });
+
+    pool
+      .intercept({ path: "/api/go/api/v1/repos", method: "GET" })
+      .reply(200, [githubRepoWithIntegration]);
+
+    pool
+      .intercept({ path: "/api/go/api/v1/status", method: "GET" })
+      .reply(200, {
+        pollIntervalMinutes: 360,
+        lastRun: null,
+        repos: [],
+        isPolling: false,
+      });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchBody).toBeDefined();
+    });
+    expect(JSON.parse(patchBody ?? "{}")).toMatchObject({
+      sourceIntegrationId: "int-github",
+    });
   });
 
   it("opens edit dialog with existing repo values", async () => {

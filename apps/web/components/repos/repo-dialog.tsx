@@ -113,6 +113,16 @@ export function RepoDialog({
       }));
   }, [integrations, sourceKind]);
 
+  const integrationSelectItems: SelectOption[] = useMemo(() => {
+    if (!requiresIntegration) {
+      return [
+        { label: t("sourceIntegrationNone"), value: "" },
+        ...sourceIntegrationItems,
+      ];
+    }
+    return sourceIntegrationItems;
+  }, [requiresIntegration, sourceIntegrationItems, t]);
+
   const enabledNotificationTargets = useMemo(
     () => notificationTargets.filter((target) => target.enabled),
     [notificationTargets],
@@ -143,18 +153,13 @@ export function RepoDialog({
   }, [open, mode, repo, ticketProjects]);
 
   useEffect(() => {
-    if (!requiresIntegration) {
-      setSourceIntegrationId("");
-      return;
-    }
-
     if (
       sourceIntegrationId &&
       !sourceIntegrationItems.some((item) => item.value === sourceIntegrationId)
     ) {
       setSourceIntegrationId("");
     }
-  }, [requiresIntegration, sourceIntegrationId, sourceIntegrationItems]);
+  }, [sourceKind, sourceIntegrationId, sourceIntegrationItems]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -180,7 +185,7 @@ export function RepoDialog({
       sourceKind,
       projectPath: trimmedPath,
       enabled,
-      sourceIntegrationId: requiresIntegration ? sourceIntegrationId : null,
+      sourceIntegrationId: sourceIntegrationId || null,
       ticketProjectId,
       notificationTargetIds,
     };
@@ -298,46 +303,58 @@ export function RepoDialog({
               </Select>
             </Field>
 
-            {requiresIntegration ? (
-              <Field name="sourceIntegrationId">
-                <FieldLabel>{t("sourceIntegration")}</FieldLabel>
-                {sourceIntegrationItems.length === 0 ? (
-                  <p className="text-muted-foreground text-sm">
-                    {t("noSourceIntegrations", {
-                      kind: tIntegrations(`kinds.${sourceKind}`),
-                    })}
-                  </p>
-                ) : (
-                  <Select
-                    itemToStringValue={(item) => item.value}
-                    items={sourceIntegrationItems}
-                    onValueChange={(value) => {
-                      if (value) {
-                        setSourceIntegrationId(value.value);
-                      }
-                    }}
-                    value={
-                      sourceIntegrationItems.find(
-                        (item) => item.value === sourceIntegrationId,
-                      ) ?? null
+            <Field name="sourceIntegrationId">
+              <FieldLabel>{t("sourceIntegration")}</FieldLabel>
+              {!requiresIntegration ? (
+                <FieldDescription>
+                  {t("sourceIntegrationOptionalHint")}
+                </FieldDescription>
+              ) : null}
+              {requiresIntegration && sourceIntegrationItems.length === 0 ? (
+                <p className="text-muted-foreground text-sm">
+                  {t("noSourceIntegrations", {
+                    kind: tIntegrations(`kinds.${sourceKind}`),
+                  })}
+                </p>
+              ) : sourceIntegrationItems.length === 0 ? null : (
+                <Select
+                  itemToStringValue={(item) => item.label}
+                  items={integrationSelectItems}
+                  onValueChange={(value) => {
+                    if (value) {
+                      setSourceIntegrationId(value.value);
                     }
-                  >
-                    <SelectTrigger>
-                      <SelectValue
-                        placeholder={t("sourceIntegrationPlaceholder")}
-                      />
-                    </SelectTrigger>
-                    <SelectPopup>
-                      {sourceIntegrationItems.map((item) => (
-                        <SelectItem key={item.value} value={item}>
-                          {item.label}
-                        </SelectItem>
-                      ))}
-                    </SelectPopup>
-                  </Select>
-                )}
-              </Field>
-            ) : null}
+                  }}
+                  value={
+                    integrationSelectItems.find(
+                      (item) => item.value === sourceIntegrationId,
+                    ) ??
+                    (requiresIntegration
+                      ? null
+                      : (integrationSelectItems.find(
+                          (item) => item.value === "",
+                        ) ?? null))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        requiresIntegration
+                          ? t("sourceIntegrationPlaceholder")
+                          : t("sourceIntegrationOptionalPlaceholder")
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectPopup>
+                    {integrationSelectItems.map((item) => (
+                      <SelectItem key={item.value || "__none__"} value={item}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              )}
+            </Field>
 
             {enabledNotificationTargets.length > 0 ? (
               <Field name="notificationTargets">
