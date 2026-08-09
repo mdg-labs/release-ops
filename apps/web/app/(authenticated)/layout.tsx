@@ -11,7 +11,7 @@ export default function AuthenticatedLayout({
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset>
+      <SidebarInset className="flex flex-col">
         <AppFrame>{children}</AppFrame>
       </SidebarInset>
     </SidebarProvider>

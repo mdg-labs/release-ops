@@ -53,6 +53,14 @@ vi.mock("@/hooks/use-media-query", () => ({
   useMediaQuery: () => false,
 }));
 
+vi.mock("@/lib/hooks/use-session", () => ({
+  useSession: () => ({
+    data: { user: { id: "user-1", email: "admin@example.com" } },
+    isLoading: false,
+    isError: false,
+  }),
+}));
+
 function renderSidebar() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -115,6 +123,13 @@ describe("AppSidebar", () => {
         screen.getByRole("link", { name: `nav.${hrefToKey(href)}` }),
       ).toHaveAttribute("href", href);
     }
+  });
+
+  it("renders profile link with session email", () => {
+    renderSidebar();
+
+    const profileLink = screen.getByRole("link", { name: "admin@example.com" });
+    expect(profileLink).toHaveAttribute("href", "/profile");
   });
 
   it("posts to auth logout when logout is clicked", async () => {
