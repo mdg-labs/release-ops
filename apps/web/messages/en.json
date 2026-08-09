@@ -68,6 +68,8 @@
     "noTicket": "—",
     "noResults": "No results.",
     "paginationSummary": "Showing {start}–{end} of {total}",
+    "paginationPageSize": "Rows per page",
+    "paginationPageSizeOption": "{count}",
     "paginationPrevious": "Previous",
     "paginationNext": "Next",
     "columns": {

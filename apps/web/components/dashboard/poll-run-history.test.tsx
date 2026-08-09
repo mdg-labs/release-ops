@@ -10,6 +10,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MockAgent, setGlobalDispatcher } from "undici";
 import { PollRunHistory } from "@/components/dashboard/poll-run-history";
+import { POLL_RUN_HISTORY_PAGE_SIZE_STORAGE_KEY } from "@/lib/pagination/constants";
 import messages from "@/messages/en.json";
 
 const ORIGIN = "http://localhost:3000";
@@ -69,6 +70,53 @@ const sampleRunDetail = {
   ],
 };
 
+function createLocalStorageMock(): Storage {
+  let store: Record<string, string> = {};
+
+  return {
+    get length() {
+      return Object.keys(store).length;
+    },
+    clear() {
+      store = {};
+    },
+    getItem(key: string) {
+      return store[key] ?? null;
+    },
+    key(index: number) {
+      return Object.keys(store)[index] ?? null;
+    },
+    removeItem(key: string) {
+      delete store[key];
+    },
+    setItem(key: string, value: string) {
+      store[key] = value;
+    },
+  };
+}
+
+async function selectPageSize(size: number): Promise<void> {
+  const pageSizeSelect = await screen.findByRole("combobox", {
+    name: "Rows per page",
+  });
+  fireEvent.click(pageSizeSelect);
+  await waitFor(() => {
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+  });
+
+  const option = screen.getByRole("option", { name: String(size) });
+  fireEvent.pointerDown(option, {
+    buttons: 1,
+    pointerId: 1,
+    pointerType: "mouse",
+  });
+  fireEvent.pointerUp(option, {
+    pointerId: 1,
+    pointerType: "mouse",
+  });
+  fireEvent.click(option);
+}
+
 function renderPollRunHistory(): void {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -89,8 +137,14 @@ function renderPollRunHistory(): void {
 describe("PollRunHistory", () => {
   let mockAgent: MockAgent;
   let originalFetch: typeof fetch;
+  let localStorageMock: Storage;
 
   beforeEach(() => {
+    localStorageMock = createLocalStorageMock();
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: localStorageMock,
+    });
     originalFetch = globalThis.fetch;
     mockAgent = new MockAgent();
     setGlobalDispatcher(mockAgent);
@@ -243,5 +297,117 @@ describe("PollRunHistory", () => {
     await waitFor(async () => {
       expect(await screen.findByText("Failed")).toBeTruthy();
     });
+  });
+
+  it("hydrates page size from localStorage", async () => {
+    localStorageMock.setItem(POLL_RUN_HISTORY_PAGE_SIZE_STORAGE_KEY, "25");
+
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/poll/runs",
+        method: "GET",
+        query: { limit: "25", offset: "0" },
+      })
+      .reply(200, sampleRuns);
+
+    renderPollRunHistory();
+
+    expect(await screen.findByText("Success")).toBeTruthy();
+  });
+
+  it("persists page size changes and refetches with the new limit", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/poll/runs",
+        method: "GET",
+        query: { limit: "10", offset: "0" },
+      })
+      .reply(200, sampleRuns);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/poll/runs",
+        method: "GET",
+        query: { limit: "25", offset: "0" },
+      })
+      .reply(200, sampleRuns);
+
+    renderPollRunHistory();
+
+    await screen.findByText("Success");
+
+    await selectPageSize(25);
+
+    await waitFor(() => {
+      expect(
+        localStorageMock.getItem(POLL_RUN_HISTORY_PAGE_SIZE_STORAGE_KEY),
+      ).toBe("25");
+    });
+  });
+
+  it("resets offset to 0 when page size changes", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/poll/runs",
+        method: "GET",
+        query: { limit: "10", offset: "0" },
+      })
+      .reply(
+        200,
+        Array.from({ length: 10 }, (_, index) => ({
+          id: `run-page1-${index}`,
+          startedAt: "2026-08-07T10:00:00.000Z",
+          finishedAt: "2026-08-07T10:05:00.000Z",
+          status: "success",
+          triggerSource: "scheduled",
+          reposChecked: 1,
+          ticketsCreated: 0,
+          ticketsSuperseded: 0,
+          errors: [],
+        })),
+      );
+    pool
+      .intercept({
+        path: "/api/go/api/v1/poll/runs",
+        method: "GET",
+        query: { limit: "10", offset: "10" },
+      })
+      .reply(200, [
+        {
+          id: "run-page2-0",
+          startedAt: "2026-08-06T10:00:00.000Z",
+          finishedAt: "2026-08-06T10:05:00.000Z",
+          status: "failed",
+          triggerSource: "scheduled",
+          reposChecked: 1,
+          ticketsCreated: 0,
+          ticketsSuperseded: 0,
+          errors: [],
+        },
+      ]);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/poll/runs",
+        method: "GET",
+        query: { limit: "25", offset: "0" },
+      })
+      .reply(200, sampleRuns);
+
+    renderPollRunHistory();
+
+    await screen.findAllByText("Success");
+    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
+    await waitFor(async () => {
+      expect(await screen.findByText("Failed")).toBeTruthy();
+    });
+
+    await selectPageSize(25);
+
+    await waitFor(async () => {
+      expect(await screen.findByText("Partial")).toBeTruthy();
+    });
+    expect(screen.queryByText("Failed")).toBeNull();
   });
 });

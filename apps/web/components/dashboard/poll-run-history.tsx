@@ -2,7 +2,7 @@
 
 import { HistoryIcon } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,11 +34,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatPollDiagnosticDateTime } from "@/lib/format/datetime";
+import { usePersistedPageSize } from "@/lib/hooks/use-persisted-page-size";
 import { usePollRun, usePollRuns } from "@/lib/hooks/use-poll";
+import {
+  PAGE_SIZE_OPTIONS,
+  POLL_RUN_HISTORY_PAGE_SIZE_STORAGE_KEY,
+} from "@/lib/pagination/constants";
+import { TablePaginationControls } from "@/lib/pagination/table-pagination-controls";
 import { isPollEventAction } from "@/lib/poll/actions";
 import type { PollRun, PollRunEvent } from "@/lib/query/types";
-
-const PAGE_SIZE = 10;
 
 function runStatusVariant(
   status: string,
@@ -301,22 +305,43 @@ function PollRunDetailDrawer({
 export function PollRunHistory(): React.ReactElement {
   const t = useTranslations("dashboard");
   const format = useFormatter();
+  const [pageSize, setPageSize] = usePersistedPageSize(
+    POLL_RUN_HISTORY_PAGE_SIZE_STORAGE_KEY,
+  );
   const [offset, setOffset] = useState(0);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setOffset(0);
+  }, [pageSize]);
+
+  const pageSizeItems = useMemo(
+    () =>
+      PAGE_SIZE_OPTIONS.map((size) => ({
+        label: t("paginationPageSizeOption", { count: size }),
+        value: size,
+      })),
+    [t],
+  );
 
   const {
     data: runs = [],
     isLoading,
     isError,
   } = usePollRuns({
-    limit: PAGE_SIZE,
+    limit: pageSize,
     offset,
   });
 
   const hasPreviousPage = offset > 0;
-  const hasNextPage = runs.length === PAGE_SIZE;
+  const hasNextPage = runs.length === pageSize;
   const pageStart = runs.length === 0 ? 0 : offset + 1;
   const pageEnd = offset + runs.length;
+
+  function handlePageSizeChange(size: number): void {
+    setPageSize(size);
+    setOffset(0);
+  }
 
   function openRun(run: PollRun): void {
     setSelectedRunId(run.id);
@@ -402,34 +427,26 @@ export function PollRunHistory(): React.ReactElement {
           </Table>
         </FramePanel>
 
-        {!isLoading && (hasPreviousPage || hasNextPage) ? (
-          <FrameFooter className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-muted-foreground text-sm">
-              {t("paginationRange", {
+        {!isLoading && (runs.length > 0 || hasPreviousPage) ? (
+          <FrameFooter>
+            <TablePaginationControls
+              canNextPage={hasNextPage}
+              canPreviousPage={hasPreviousPage}
+              nextLabel={t("paginationNext")}
+              onNextPage={() => setOffset((current) => current + pageSize)}
+              onPageSizeChange={handlePageSizeChange}
+              onPreviousPage={() =>
+                setOffset((current) => Math.max(0, current - pageSize))
+              }
+              pageSize={pageSize}
+              pageSizeItems={pageSizeItems}
+              pageSizeLabel={t("paginationPageSize")}
+              previousLabel={t("paginationPrevious")}
+              summary={t("paginationRange", {
                 end: pageEnd,
                 start: pageStart,
               })}
-            </p>
-            <div className="flex gap-2">
-              <Button
-                disabled={!hasPreviousPage}
-                onClick={() =>
-                  setOffset((current) => Math.max(0, current - PAGE_SIZE))
-                }
-                size="sm"
-                variant="outline"
-              >
-                {t("paginationPrevious")}
-              </Button>
-              <Button
-                disabled={!hasNextPage}
-                onClick={() => setOffset((current) => current + PAGE_SIZE)}
-                size="sm"
-                variant="outline"
-              >
-                {t("paginationNext")}
-              </Button>
-            </div>
+            />
           </FrameFooter>
         ) : null}
       </Frame>

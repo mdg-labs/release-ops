@@ -12,7 +12,7 @@ import {
 import { ChevronDownIcon, ChevronUpIcon, FolderGit2Icon } from "lucide-react";
 import Link from "next/link";
 import { useFormatter, useTranslations } from "next-intl";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,10 +33,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { usePersistedPageSize } from "@/lib/hooks/use-persisted-page-size";
 import { formatAppDateTime } from "@/lib/format/datetime";
+import {
+  PAGE_SIZE_OPTIONS,
+  REPO_STATUS_PAGE_SIZE_STORAGE_KEY,
+} from "@/lib/pagination/constants";
+import { TablePaginationControls } from "@/lib/pagination/table-pagination-controls";
 import type { StatusRepo } from "@/lib/query/types";
-
-const PAGE_SIZE = 10;
 
 type RepoStatusTableProps = {
   repos: StatusRepo[];
@@ -70,9 +74,31 @@ export function RepoStatusTable({
   const tRepos = useTranslations("repos");
   const tIntegrations = useTranslations("integrations");
   const format = useFormatter();
+  const [pageSize, setPageSize] = usePersistedPageSize(
+    REPO_STATUS_PAGE_SIZE_STORAGE_KEY,
+  );
+  const [pagination, setPagination] = useState({
+    pageIndex: 0,
+    pageSize,
+  });
   const [sorting, setSorting] = useState<SortingState>([
     { desc: false, id: "projectPath" },
   ]);
+
+  useEffect(() => {
+    setPagination((current) =>
+      current.pageSize === pageSize ? current : { pageIndex: 0, pageSize },
+    );
+  }, [pageSize]);
+
+  const pageSizeItems = useMemo(
+    () =>
+      PAGE_SIZE_OPTIONS.map((size) => ({
+        label: t("paginationPageSizeOption", { count: size }),
+        value: size,
+      })),
+    [t],
+  );
 
   const formatLastPolledAt = useCallback(
     (value: string | null): string => {
@@ -180,17 +206,18 @@ export function RepoStatusTable({
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    initialState: {
-      pagination: {
-        pageIndex: 0,
-        pageSize: PAGE_SIZE,
-      },
-    },
+    onPaginationChange: setPagination,
     onSortingChange: setSorting,
     state: {
+      pagination,
       sorting,
     },
   });
+
+  function handlePageSizeChange(size: number): void {
+    setPageSize(size);
+    setPagination({ pageIndex: 0, pageSize: size });
+  }
 
   if (!isLoading && repos.length === 0) {
     return <ReposEmptyState />;
@@ -296,36 +323,28 @@ export function RepoStatusTable({
         </Table>
       </FramePanel>
 
-      {!isLoading && table.getPageCount() > 1 ? (
-        <FrameFooter className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-muted-foreground text-sm">
-            {t("paginationSummary", {
+      {!isLoading && repos.length > 0 ? (
+        <FrameFooter>
+          <TablePaginationControls
+            canNextPage={table.getCanNextPage()}
+            canPreviousPage={table.getCanPreviousPage()}
+            nextLabel={t("paginationNext")}
+            onNextPage={() => table.nextPage()}
+            onPageSizeChange={handlePageSizeChange}
+            onPreviousPage={() => table.previousPage()}
+            pageSize={pageSize}
+            pageSizeItems={pageSizeItems}
+            pageSizeLabel={t("paginationPageSize")}
+            previousLabel={t("paginationPrevious")}
+            summary={t("paginationSummary", {
               end: Math.min(
-                (table.getState().pagination.pageIndex + 1) * PAGE_SIZE,
+                (table.getState().pagination.pageIndex + 1) * pageSize,
                 table.getRowCount(),
               ),
-              start: table.getState().pagination.pageIndex * PAGE_SIZE + 1,
+              start: table.getState().pagination.pageIndex * pageSize + 1,
               total: table.getRowCount(),
             })}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              disabled={!table.getCanPreviousPage()}
-              onClick={() => table.previousPage()}
-              size="sm"
-              variant="outline"
-            >
-              {t("paginationPrevious")}
-            </Button>
-            <Button
-              disabled={!table.getCanNextPage()}
-              onClick={() => table.nextPage()}
-              size="sm"
-              variant="outline"
-            >
-              {t("paginationNext")}
-            </Button>
-          </div>
+          />
         </FrameFooter>
       ) : null}
     </Frame>
