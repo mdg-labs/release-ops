@@ -97,12 +97,6 @@ describe("SettingsView", () => {
     mockSettingsRoutes(pool);
     pool
       .intercept({
-        path: "/api/go/api/v1/users",
-        method: "GET",
-      })
-      .reply(200, { items: [] });
-    pool
-      .intercept({
         path: "/api/go/api/v1/settings",
         method: "PATCH",
         body: JSON.stringify({
@@ -142,49 +136,6 @@ describe("SettingsView", () => {
 
     await waitFor(() =>
       expect(screen.getByText(messages.settings.saved)).toBeInTheDocument(),
-    );
-  });
-
-  it("submits email change request", async () => {
-    const pool = mockAgent.get(ORIGIN);
-    mockSettingsRoutes(pool);
-    pool
-      .intercept({
-        path: "/api/go/api/v1/users",
-        method: "GET",
-      })
-      .reply(200, { items: [] });
-    pool
-      .intercept({
-        path: "/api/go/api/v1/users/me/email-change-request",
-        method: "POST",
-        body: JSON.stringify({
-          newEmail: "new@example.com",
-          currentPassword: "secret",
-        }),
-      })
-      .reply(200, {});
-
-    renderWithProviders(<SettingsView />);
-
-    fireEvent.change(
-      await screen.findByLabelText(messages.settings.changeEmail.newEmail),
-      { target: { value: "new@example.com" } },
-    );
-    fireEvent.change(
-      screen.getByLabelText(messages.settings.changeEmail.currentPassword),
-      { target: { value: "secret" } },
-    );
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: messages.settings.changeEmail.submit,
-      }),
-    );
-
-    await waitFor(() =>
-      expect(
-        screen.getByText(messages.settings.changeEmail.pendingTitle),
-      ).toBeInTheDocument(),
     );
   });
 });

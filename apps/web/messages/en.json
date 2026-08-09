@@ -395,22 +395,6 @@
     "resetTokenExpiryHint": "Between 5 and 1440 minutes.",
     "loadFailed": "Failed to load settings.",
     "saveFailed": "Failed to save settings.",
-    "changeEmail": {
-      "title": "Change email",
-      "description": "Request a verification link sent to your new email address.",
-      "newEmail": "New email",
-      "currentPassword": "Current password",
-      "submit": "Request change",
-      "pendingTitle": "Verification email sent",
-      "pendingDescription": "Check your new inbox for a confirmation link to complete the change.",
-      "failed": "Email change request failed",
-      "invalidPassword": "Current password is incorrect.",
-      "smtpNotConfigured": "SMTP is not configured. Ask an administrator to set SMTP environment variables.",
-      "validation": {
-        "newEmailRequired": "New email is required.",
-        "passwordRequired": "Current password is required."
-      }
-    },
     "validation": {
       "minInterval": "Poll interval must be at least 5 minutes.",
       "inviteExpiryRange": "Invitation expiry must be between 1 and 720 hours.",
@@ -467,6 +451,51 @@
   },
   "pollRuns": {
     "title": "Poll run history"
+  },
+  "profile": {
+    "title": "Profile",
+    "loadFailed": "Failed to load profile.",
+    "account": {
+      "title": "Account",
+      "description": "Your sign-in email address.",
+      "currentEmail": "Email"
+    },
+    "changeEmail": {
+      "title": "Change email",
+      "description": "Request a verification link sent to your new email address.",
+      "newEmail": "New email",
+      "currentPassword": "Password confirmation",
+      "submit": "Request change",
+      "pendingTitle": "Verification email sent",
+      "pendingDescription": "Check your new inbox for a confirmation link to complete the change.",
+      "failed": "Email change request failed",
+      "invalidPassword": "Current password is incorrect.",
+      "smtpNotConfigured": "SMTP is not configured. Ask an administrator to set SMTP environment variables.",
+      "validation": {
+        "newEmailRequired": "New email is required.",
+        "passwordRequired": "Current password is required."
+      }
+    },
+    "changePassword": {
+      "title": "Change password",
+      "description": "Update your account password.",
+      "currentPassword": "Current password",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm new password",
+      "submit": "Update password",
+      "successTitle": "Password updated",
+      "successDescription": "Your password has been changed.",
+      "failed": "Password change failed",
+      "invalidPassword": "Current password is incorrect.",
+      "rateLimited": "Too many requests. Try again later.",
+      "validation": {
+        "currentPasswordRequired": "Current password is required.",
+        "newPasswordRequired": "New password is required.",
+        "newPasswordTooShort": "Password must be at least 8 characters.",
+        "confirmPasswordRequired": "Confirm password is required.",
+        "passwordMismatch": "Passwords do not match."
+      }
+    }
   },
   "nav": {
     "dashboard": "Dashboard",

@@ -111,37 +111,6 @@ describe("useUsers", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     await result.current.deleteUser.mutateAsync("user-2");
   });
-
-  it("POST /api/v1/users/me/email-change-request", async () => {
-    const pool = mockAgent.get(ORIGIN);
-    pool
-      .intercept({
-        path: "/api/go/api/v1/users",
-        method: "GET",
-      })
-      .reply(200, { items: [] });
-    pool
-      .intercept({
-        path: "/api/go/api/v1/users/me/email-change-request",
-        method: "POST",
-        body: JSON.stringify({
-          newEmail: "new@example.com",
-          currentPassword: "secret",
-        }),
-      })
-      .reply(200, {});
-
-    const queryClient = createTestQueryClient();
-    const { result } = renderHook(() => useUsers(), {
-      wrapper: createWrapper(queryClient),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    await result.current.requestEmailChange.mutateAsync({
-      newEmail: "new@example.com",
-      currentPassword: "secret",
-    });
-  });
 });
 
 describe("useInvitations", () => {

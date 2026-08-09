@@ -111,6 +111,11 @@ export type EmailChangeRequestInput = {
   currentPassword: string;
 };
 
+export type PasswordChangeInput = {
+  currentPassword: string;
+  newPassword: string;
+};
+
 export type Integration = {
   id: string;
   kind: string;
