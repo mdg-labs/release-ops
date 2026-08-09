@@ -2,17 +2,20 @@
 INSERT INTO poll_runs (
   id,
   started_at,
-  status
+  status,
+  trigger_source
 ) VALUES (
   ?,
   ?,
-  'running'
+  'running',
+  ?
 )
 RETURNING
   id,
   started_at,
   finished_at,
   status,
+  trigger_source,
   repos_checked,
   tickets_created,
   tickets_superseded,
@@ -33,6 +36,7 @@ RETURNING
   started_at,
   finished_at,
   status,
+  trigger_source,
   repos_checked,
   tickets_created,
   tickets_superseded,
@@ -47,6 +51,7 @@ RETURNING
   started_at,
   finished_at,
   status,
+  trigger_source,
   repos_checked,
   tickets_created,
   tickets_superseded,
@@ -61,6 +66,7 @@ RETURNING
   started_at,
   finished_at,
   status,
+  trigger_source,
   repos_checked,
   tickets_created,
   tickets_superseded,
@@ -75,6 +81,7 @@ RETURNING
   started_at,
   finished_at,
   status,
+  trigger_source,
   repos_checked,
   tickets_created,
   tickets_superseded,
@@ -86,6 +93,7 @@ SELECT
   started_at,
   finished_at,
   status,
+  trigger_source,
   repos_checked,
   tickets_created,
   tickets_superseded,
@@ -100,6 +108,7 @@ SELECT
   started_at,
   finished_at,
   status,
+  trigger_source,
   repos_checked,
   tickets_created,
   tickets_superseded,

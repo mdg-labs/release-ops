@@ -85,6 +85,10 @@
       "partial": "Partial",
       "running": "Running"
     },
+    "runTrigger": {
+      "manual": "Manual",
+      "scheduled": "Automatic"
+    },
     "pollHistorySectionTitle": "Poll run history",
     "pollHistoryEmptyTitle": "No poll runs yet",
     "pollHistoryEmptyDescription": "Runs appear here after the scheduler or a manual poll completes.",
@@ -101,6 +105,7 @@
       "startedAt": "Started",
       "finishedAt": "Finished",
       "status": "Status",
+      "trigger": "Trigger",
       "reposChecked": "Repos checked",
       "ticketsCreated": "Tickets created"
     },

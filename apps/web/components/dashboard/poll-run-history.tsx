@@ -110,6 +110,27 @@ function formatTimestamp(
   });
 }
 
+function RunTriggerBadge({
+  triggerSource,
+}: {
+  triggerSource: string;
+}): React.ReactElement {
+  const t = useTranslations("dashboard");
+
+  function triggerLabel(): string {
+    switch (triggerSource) {
+      case "manual":
+        return t("runTrigger.manual");
+      case "scheduled":
+        return t("runTrigger.scheduled");
+      default:
+        return triggerSource;
+    }
+  }
+
+  return <Badge variant="outline">{triggerLabel()}</Badge>;
+}
+
 function RunStatusBadge({ status }: { status: string }): React.ReactElement {
   const t = useTranslations("dashboard");
 
@@ -226,8 +247,17 @@ function PollRunDetailDrawer({
             <>
               <div className="flex flex-wrap items-center gap-2">
                 <RunStatusBadge status={run.status} />
+                <RunTriggerBadge triggerSource={run.triggerSource} />
               </div>
               <dl className="grid gap-3 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-muted-foreground">
+                    {t("pollHistoryColumns.trigger")}
+                  </dt>
+                  <dd className="font-medium">
+                    <RunTriggerBadge triggerSource={run.triggerSource} />
+                  </dd>
+                </div>
                 <div>
                   <dt className="text-muted-foreground">
                     {t("pollHistoryColumns.startedAt")}
@@ -344,6 +374,7 @@ export function PollRunHistory(): React.ReactElement {
                 <TableHead>{t("pollHistoryColumns.startedAt")}</TableHead>
                 <TableHead>{t("pollHistoryColumns.finishedAt")}</TableHead>
                 <TableHead>{t("pollHistoryColumns.status")}</TableHead>
+                <TableHead>{t("pollHistoryColumns.trigger")}</TableHead>
                 <TableHead>{t("pollHistoryColumns.reposChecked")}</TableHead>
                 <TableHead>{t("pollHistoryColumns.ticketsCreated")}</TableHead>
               </TableRow>
@@ -352,7 +383,7 @@ export function PollRunHistory(): React.ReactElement {
               {isLoading
                 ? Array.from({ length: 3 }, (_, index) => (
                     <TableRow key={`skeleton-${index}`}>
-                      <TableCell colSpan={5}>
+                      <TableCell colSpan={6}>
                         <Skeleton className="h-8 w-full" />
                       </TableCell>
                     </TableRow>
@@ -390,6 +421,9 @@ export function PollRunHistory(): React.ReactElement {
                       </TableCell>
                       <TableCell>
                         <RunStatusBadge status={run.status} />
+                      </TableCell>
+                      <TableCell>
+                        <RunTriggerBadge triggerSource={run.triggerSource} />
                       </TableCell>
                       <TableCell>{run.reposChecked}</TableCell>
                       <TableCell>{run.ticketsCreated}</TableCell>

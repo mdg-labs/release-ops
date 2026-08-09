@@ -71,8 +71,8 @@ func (m *scheduleTestPollRepo) UpdatePollState(context.Context, string, store.Po
 	return nil, errors.New("not implemented")
 }
 
-func (m *scheduleTestPollRepo) InsertRun(context.Context) (*store.PollRun, error) {
-	return &store.PollRun{ID: "run-1", Status: "running"}, nil
+func (m *scheduleTestPollRepo) InsertRun(_ context.Context, triggerSource string) (*store.PollRun, error) {
+	return &store.PollRun{ID: "run-1", Status: "running", TriggerSource: triggerSource}, nil
 }
 
 func (m *scheduleTestPollRepo) FinishRun(

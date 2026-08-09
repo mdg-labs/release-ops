@@ -25,6 +25,7 @@ RETURNING
   started_at,
   finished_at,
   status,
+  trigger_source,
   repos_checked,
   tickets_created,
   tickets_superseded,
@@ -57,6 +58,7 @@ func (q *Queries) FinishRun(ctx context.Context, arg FinishRunParams) (PollRun, 
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.Status,
+		&i.TriggerSource,
 		&i.ReposChecked,
 		&i.TicketsCreated,
 		&i.TicketsSuperseded,
@@ -71,6 +73,7 @@ SELECT
   started_at,
   finished_at,
   status,
+  trigger_source,
   repos_checked,
   tickets_created,
   tickets_superseded,
@@ -88,6 +91,7 @@ func (q *Queries) GetPollRun(ctx context.Context, id string) (PollRun, error) {
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.Status,
+		&i.TriggerSource,
 		&i.ReposChecked,
 		&i.TicketsCreated,
 		&i.TicketsSuperseded,
@@ -105,6 +109,7 @@ RETURNING
   started_at,
   finished_at,
   status,
+  trigger_source,
   repos_checked,
   tickets_created,
   tickets_superseded,
@@ -119,6 +124,7 @@ func (q *Queries) IncrementPollRunReposChecked(ctx context.Context, id string) (
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.Status,
+		&i.TriggerSource,
 		&i.ReposChecked,
 		&i.TicketsCreated,
 		&i.TicketsSuperseded,
@@ -136,6 +142,7 @@ RETURNING
   started_at,
   finished_at,
   status,
+  trigger_source,
   repos_checked,
   tickets_created,
   tickets_superseded,
@@ -150,6 +157,7 @@ func (q *Queries) IncrementPollRunTicketsCreated(ctx context.Context, id string)
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.Status,
+		&i.TriggerSource,
 		&i.ReposChecked,
 		&i.TicketsCreated,
 		&i.TicketsSuperseded,
@@ -167,6 +175,7 @@ RETURNING
   started_at,
   finished_at,
   status,
+  trigger_source,
   repos_checked,
   tickets_created,
   tickets_superseded,
@@ -181,6 +190,7 @@ func (q *Queries) IncrementPollRunTicketsSuperseded(ctx context.Context, id stri
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.Status,
+		&i.TriggerSource,
 		&i.ReposChecked,
 		&i.TicketsCreated,
 		&i.TicketsSuperseded,
@@ -248,17 +258,20 @@ const insertRun = `-- name: InsertRun :one
 INSERT INTO poll_runs (
   id,
   started_at,
-  status
+  status,
+  trigger_source
 ) VALUES (
   ?,
   ?,
-  'running'
+  'running',
+  ?
 )
 RETURNING
   id,
   started_at,
   finished_at,
   status,
+  trigger_source,
   repos_checked,
   tickets_created,
   tickets_superseded,
@@ -266,18 +279,20 @@ RETURNING
 `
 
 type InsertRunParams struct {
-	ID        string `json:"id"`
-	StartedAt string `json:"started_at"`
+	ID            string `json:"id"`
+	StartedAt     string `json:"started_at"`
+	TriggerSource string `json:"trigger_source"`
 }
 
 func (q *Queries) InsertRun(ctx context.Context, arg InsertRunParams) (PollRun, error) {
-	row := q.db.QueryRowContext(ctx, insertRun, arg.ID, arg.StartedAt)
+	row := q.db.QueryRowContext(ctx, insertRun, arg.ID, arg.StartedAt, arg.TriggerSource)
 	var i PollRun
 	err := row.Scan(
 		&i.ID,
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.Status,
+		&i.TriggerSource,
 		&i.ReposChecked,
 		&i.TicketsCreated,
 		&i.TicketsSuperseded,
@@ -335,6 +350,7 @@ SELECT
   started_at,
   finished_at,
   status,
+  trigger_source,
   repos_checked,
   tickets_created,
   tickets_superseded,
@@ -364,6 +380,7 @@ func (q *Queries) ListPollRuns(ctx context.Context, arg ListPollRunsParams) ([]P
 			&i.StartedAt,
 			&i.FinishedAt,
 			&i.Status,
+			&i.TriggerSource,
 			&i.ReposChecked,
 			&i.TicketsCreated,
 			&i.TicketsSuperseded,

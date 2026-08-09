@@ -74,6 +74,7 @@ type PollRun struct {
 	StartedAt         string         `json:"started_at"`
 	FinishedAt        sql.NullString `json:"finished_at"`
 	Status            string         `json:"status"`
+	TriggerSource     string         `json:"trigger_source"`
 	ReposChecked      int64          `json:"repos_checked"`
 	TicketsCreated    int64          `json:"tickets_created"`
 	TicketsSuperseded int64          `json:"tickets_superseded"`

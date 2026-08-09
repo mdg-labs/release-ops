@@ -281,7 +281,7 @@ func newPollIntegrationEnv(t *testing.T, tags []string) *pollIntegrationEnv {
 func (env *pollIntegrationEnv) runPollCycle(t *testing.T, ctx context.Context) string {
 	t.Helper()
 
-	run, err := env.store.Poll().InsertRun(ctx)
+	run, err := env.store.Poll().InsertRun(ctx, store.PollTriggerSourceManual)
 	if err != nil {
 		t.Fatalf("InsertRun: %v", err)
 	}

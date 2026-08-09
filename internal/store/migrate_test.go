@@ -39,8 +39,8 @@ func TestMigrateUpCreatesSchema(t *testing.T) {
 	if dirty {
 		t.Fatal("migration version is dirty")
 	}
-	if version != 2 {
-		t.Fatalf("migration version = %d, want 2", version)
+	if version != 3 {
+		t.Fatalf("migration version = %d, want 3", version)
 	}
 
 	db, err := store.OpenPath(dbPath)
@@ -76,6 +76,16 @@ func TestMigrateUpCreatesSchema(t *testing.T) {
 	}
 	if foreignKeys != 1 {
 		t.Fatalf("foreign_keys = %d, want 1", foreignKeys)
+	}
+
+	var triggerSourceExists int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('poll_runs') WHERE name = 'trigger_source'`,
+	).Scan(&triggerSourceExists); err != nil {
+		t.Fatalf("poll_runs.trigger_source column lookup: %v", err)
+	}
+	if triggerSourceExists != 1 {
+		t.Fatal("poll_runs.trigger_source column missing after migrate up")
 	}
 }
 

@@ -341,6 +341,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
 
   <h3>4.6 <code>poll_runs</code> &amp; <code>poll_run_events</code></h3>
   <p>Poller audit. <code>errors_json</code>: array <code>{ "repoId", "message" }</code>. <code>tickets_superseded</code> counts supersede actions.</p>
+  <p><code>poll_runs.trigger_source</code>: <code>manual</code> (dashboard / <code>POST /api/v1/poll/trigger</code>) or <code>scheduled</code> (cron from <code>poll_interval_minutes</code>). Default <code>scheduled</code> for existing rows.</p>
   <p><code>poll_run_events.action</code>:</p>
   <ul>
     <li><code>baseline</code> · <code>skip</code> · <code>create</code> · <code>supersede</code> · <code>merge</code> · <code>skip_open</code> · <code>error</code></li>
@@ -636,6 +637,41 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td>GET</td><td><code>/api/v1/poll/runs</code></td><td>List of recent runs (paginated, default limit 20)</td></tr>
     <tr><td>GET</td><td><code>/api/v1/poll/runs/{id}</code></td><td>Run including events</td></tr>
   </table>
+  <pre><code>// GET /api/v1/poll/runs — list item (events omitted)
+{
+  "id": "...",
+  "startedAt": "...",
+  "finishedAt": "...",
+  "status": "success",
+  "triggerSource": "manual",
+  "reposChecked": 5,
+  "ticketsCreated": 1,
+  "ticketsSuperseded": 0,
+  "errors": []
+}
+
+// GET /api/v1/poll/runs/{id} — same fields plus events[]
+{
+  "id": "...",
+  "startedAt": "...",
+  "finishedAt": "...",
+  "status": "success",
+  "triggerSource": "scheduled",
+  "reposChecked": 5,
+  "ticketsCreated": 1,
+  "ticketsSuperseded": 0,
+  "errors": [],
+  "events": [
+    {
+      "id": "...",
+      "pollRunId": "...",
+      "monitoredRepoId": "...",
+      "action": "create",
+      "detail": "...",
+      "createdAt": "..."
+    }
+  ]
+}</code></pre>
   <pre><code>// GET /api/v1/status
 {
   "pollIntervalMinutes": 360,
@@ -644,6 +680,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     "startedAt": "...",
     "finishedAt": "...",
     "status": "success",
+    "triggerSource": "scheduled",
     "reposChecked": 5,
     "ticketsCreated": 1,
     "ticketsSuperseded": 0,

@@ -20,6 +20,7 @@ const sampleRuns = [
     startedAt: "2026-08-07T10:00:00.000Z",
     finishedAt: "2026-08-07T10:05:00.000Z",
     status: "success",
+    triggerSource: "manual",
     reposChecked: 2,
     ticketsCreated: 1,
     ticketsSuperseded: 0,
@@ -30,6 +31,7 @@ const sampleRuns = [
     startedAt: "2026-08-06T10:00:00.000Z",
     finishedAt: "2026-08-06T10:03:00.000Z",
     status: "partial",
+    triggerSource: "scheduled",
     reposChecked: 3,
     ticketsCreated: 0,
     ticketsSuperseded: 0,
@@ -42,6 +44,7 @@ const sampleRunDetail = {
   startedAt: "2026-08-07T10:00:00.000Z",
   finishedAt: "2026-08-07T10:05:00.000Z",
   status: "success",
+  triggerSource: "manual",
   reposChecked: 2,
   ticketsCreated: 1,
   ticketsSuperseded: 0,
@@ -128,6 +131,8 @@ describe("PollRunHistory", () => {
 
     expect(await screen.findByText("Success")).toBeTruthy();
     expect(await screen.findByText("Partial")).toBeTruthy();
+    expect(await screen.findByText("Manual")).toBeTruthy();
+    expect(await screen.findByText("Automatic")).toBeTruthy();
     expect(await screen.findByText("2")).toBeTruthy();
     expect(await screen.findByText("1")).toBeTruthy();
   });
@@ -176,6 +181,7 @@ describe("PollRunHistory", () => {
     fireEvent.click(row!);
 
     expect(await screen.findByText("Poll run details")).toBeTruthy();
+    expect(await screen.findByText("Manual")).toBeTruthy();
     expect(await screen.findByText("Create ticket")).toBeTruthy();
     expect(await screen.findByText("Skip")).toBeTruthy();
     expect(await screen.findByText("TASK-99")).toBeTruthy();
@@ -196,6 +202,7 @@ describe("PollRunHistory", () => {
           startedAt: "2026-08-07T10:00:00.000Z",
           finishedAt: "2026-08-07T10:05:00.000Z",
           status: "success",
+          triggerSource: "scheduled",
           reposChecked: 1,
           ticketsCreated: 0,
           ticketsSuperseded: 0,
@@ -214,6 +221,7 @@ describe("PollRunHistory", () => {
           startedAt: "2026-08-06T10:00:00.000Z",
           finishedAt: "2026-08-06T10:05:00.000Z",
           status: "failed",
+          triggerSource: "scheduled",
           reposChecked: 1,
           ticketsCreated: 0,
           ticketsSuperseded: 0,

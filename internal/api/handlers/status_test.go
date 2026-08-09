@@ -113,7 +113,7 @@ func (m *mockStatusPollRepo) UpdatePollState(_ context.Context, _ string, _ stor
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (m *mockStatusPollRepo) InsertRun(_ context.Context) (*store.PollRun, error) {
+func (m *mockStatusPollRepo) InsertRun(_ context.Context, _ string) (*store.PollRun, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -273,6 +273,7 @@ func TestGetStatusIncludesLastRunAndIsPolling(t *testing.T) {
 					StartedAt:         "2026-08-07T10:00:00.000Z",
 					FinishedAt:        &finishedAt,
 					Status:            "success",
+					TriggerSource:     store.PollTriggerSourceScheduled,
 					ReposChecked:      5,
 					TicketsCreated:    1,
 					TicketsSuperseded: 0,
@@ -299,6 +300,7 @@ func TestGetStatusIncludesLastRunAndIsPolling(t *testing.T) {
 		LastRun *struct {
 			ID                string `json:"id"`
 			Status            string `json:"status"`
+			TriggerSource     string `json:"triggerSource"`
 			ReposChecked      int64  `json:"reposChecked"`
 			TicketsCreated    int64  `json:"ticketsCreated"`
 			TicketsSuperseded int64  `json:"ticketsSuperseded"`
@@ -317,6 +319,9 @@ func TestGetStatusIncludesLastRunAndIsPolling(t *testing.T) {
 	}
 	if resp.LastRun.ReposChecked != 5 || resp.LastRun.TicketsCreated != 1 {
 		t.Fatalf("lastRun counters = %+v, want reposChecked 5 ticketsCreated 1", resp.LastRun)
+	}
+	if resp.LastRun.TriggerSource != store.PollTriggerSourceScheduled {
+		t.Fatalf("lastRun.triggerSource = %q, want %q", resp.LastRun.TriggerSource, store.PollTriggerSourceScheduled)
 	}
 	if !resp.IsPolling {
 		t.Fatal("isPolling = false, want true")

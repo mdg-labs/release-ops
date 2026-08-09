@@ -62,7 +62,7 @@ func (m *mockPollRepo) UpdatePollState(_ context.Context, repoID string, update 
 	return &out, nil
 }
 
-func (m *mockPollRepo) InsertRun(context.Context) (*store.PollRun, error) {
+func (m *mockPollRepo) InsertRun(context.Context, string) (*store.PollRun, error) {
 	return nil, errors.New("not implemented")
 }
 

@@ -35,6 +35,7 @@ export type PollRun = {
   startedAt: string;
   finishedAt: string | null;
   status: string;
+  triggerSource: string;
   reposChecked: number;
   ticketsCreated: number;
   ticketsSuperseded: number;

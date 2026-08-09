@@ -39,6 +39,7 @@ type pollRunResponse struct {
 	StartedAt         string           `json:"startedAt"`
 	FinishedAt        *string          `json:"finishedAt"`
 	Status            string           `json:"status"`
+	TriggerSource     string           `json:"triggerSource"`
 	ReposChecked      int64            `json:"reposChecked"`
 	TicketsCreated    int64            `json:"ticketsCreated"`
 	TicketsSuperseded int64            `json:"ticketsSuperseded"`
@@ -164,6 +165,7 @@ func pollRunFromStore(run *store.PollRun) *pollRunResponse {
 		StartedAt:         run.StartedAt,
 		FinishedAt:        run.FinishedAt,
 		Status:            run.Status,
+		TriggerSource:     run.TriggerSource,
 		ReposChecked:      run.ReposChecked,
 		TicketsCreated:    run.TicketsCreated,
 		TicketsSuperseded: run.TicketsSuperseded,

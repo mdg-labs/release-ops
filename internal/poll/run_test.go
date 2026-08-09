@@ -18,7 +18,7 @@ func (m *runTestPollRepo) UpdatePollState(context.Context, string, store.PollSta
 	return nil, errors.New("not implemented")
 }
 
-func (m *runTestPollRepo) InsertRun(context.Context) (*store.PollRun, error) {
+func (m *runTestPollRepo) InsertRun(context.Context, string) (*store.PollRun, error) {
 	return nil, errors.New("not implemented")
 }
 

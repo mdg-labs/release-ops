@@ -38,7 +38,7 @@ func (m *mockPollRepo) UpdatePollState(_ context.Context, _ string, _ store.Poll
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (m *mockPollRepo) InsertRun(_ context.Context) (*store.PollRun, error) {
+func (m *mockPollRepo) InsertRun(_ context.Context, _ string) (*store.PollRun, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -178,6 +178,7 @@ func TestListPollRunsDefaultsToLimit20(t *testing.T) {
 			ID:         id,
 			StartedAt:  fmt.Sprintf("2026-08-07T%02d:00:00.000Z", i),
 			Status:     "success",
+			TriggerSource: store.PollTriggerSourceScheduled,
 			ErrorsJSON: "[]",
 		}
 	}
@@ -220,8 +221,8 @@ func TestListPollRunsSupportsLimitAndOffset(t *testing.T) {
 	t.Parallel()
 
 	runs := map[string]*store.PollRun{
-		"run-1": {ID: "run-1", StartedAt: "2026-08-07T10:00:00.000Z", Status: "success", ErrorsJSON: "[]"},
-		"run-2": {ID: "run-2", StartedAt: "2026-08-07T11:00:00.000Z", Status: "failed", ErrorsJSON: "[]"},
+		"run-1": {ID: "run-1", StartedAt: "2026-08-07T10:00:00.000Z", Status: "success", TriggerSource: store.PollTriggerSourceManual, ErrorsJSON: "[]"},
+		"run-2": {ID: "run-2", StartedAt: "2026-08-07T11:00:00.000Z", Status: "failed", TriggerSource: store.PollTriggerSourceScheduled, ErrorsJSON: "[]"},
 	}
 
 	h := &handlers.PollHandlers{
@@ -283,6 +284,7 @@ func TestGetPollRunIncludesEventsWithActionEnum(t *testing.T) {
 					ID:                "run-1",
 					StartedAt:         "2026-08-07T10:00:00.000Z",
 					Status:            "success",
+					TriggerSource:     store.PollTriggerSourceManual,
 					ReposChecked:      1,
 					TicketsCreated:    1,
 					TicketsSuperseded: 0,
@@ -339,6 +341,46 @@ func TestGetPollRunIncludesEventsWithActionEnum(t *testing.T) {
 		if _, ok := validPollRunActions[event.Action]; !ok {
 			t.Fatalf("action = %q, want valid poll_run_events.action enum value", event.Action)
 		}
+	}
+}
+
+func TestGetPollRunIncludesTriggerSource(t *testing.T) {
+	t.Parallel()
+
+	h := &handlers.PollHandlers{
+		Poll: &mockPollRepo{
+			runs: map[string]*store.PollRun{
+				"run-1": {
+					ID:            "run-1",
+					StartedAt:     "2026-08-07T10:00:00.000Z",
+					Status:        "success",
+					TriggerSource: store.PollTriggerSourceManual,
+					ErrorsJSON:    "[]",
+				},
+			},
+		},
+		Runner: &mockPollRunner{},
+	}
+	router, sm := newPollTestRouter(t, h)
+	cookie := seedSession(t, sm)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/poll/runs/run-1", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		TriggerSource string `json:"triggerSource"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.TriggerSource != store.PollTriggerSourceManual {
+		t.Fatalf("triggerSource = %q, want %q", resp.TriggerSource, store.PollTriggerSourceManual)
 	}
 }
 

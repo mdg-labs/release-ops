@@ -16,12 +16,19 @@ type PollStateUpdate struct {
 	LastError            *string
 }
 
+// Poll trigger provenance values (poll_runs.trigger_source).
+const (
+	PollTriggerSourceManual     = "manual"
+	PollTriggerSourceScheduled = "scheduled"
+)
+
 // PollRun is an audit record for a poll execution.
 type PollRun struct {
 	ID                string
 	StartedAt         string
 	FinishedAt        *string
 	Status            string
+	TriggerSource     string
 	ReposChecked      int64
 	TicketsCreated    int64
 	TicketsSuperseded int64
@@ -41,7 +48,7 @@ type PollRunEvent struct {
 // PollRepository updates poll state on monitored repos and manages poll run audit rows.
 type PollRepository interface {
 	UpdatePollState(ctx context.Context, repoID string, update PollStateUpdate) (*MonitoredRepo, error)
-	InsertRun(ctx context.Context) (*PollRun, error)
+	InsertRun(ctx context.Context, triggerSource string) (*PollRun, error)
 	FinishRun(ctx context.Context, id string, status string, reposChecked, ticketsCreated, ticketsSuperseded int64, errorsJSON string) (*PollRun, error)
 	GetRun(ctx context.Context, id string) (*PollRun, error)
 	ListRuns(ctx context.Context, limit, offset int64) ([]PollRun, error)
@@ -76,10 +83,11 @@ func (r pollRepo) UpdatePollState(ctx context.Context, repoID string, update Pol
 	return repo, nil
 }
 
-func (r pollRepo) InsertRun(ctx context.Context) (*PollRun, error) {
+func (r pollRepo) InsertRun(ctx context.Context, triggerSource string) (*PollRun, error) {
 	row, err := r.store.q.InsertRun(ctx, db.InsertRunParams{
-		ID:        newID(),
-		StartedAt: nowUTC(),
+		ID:            newID(),
+		StartedAt:     nowUTC(),
+		TriggerSource: triggerSource,
 	})
 	if err != nil {
 		return nil, err
@@ -171,6 +179,7 @@ func pollRunFromRow(row db.PollRun) *PollRun {
 		StartedAt:         row.StartedAt,
 		FinishedAt:        nullStringPtr(row.FinishedAt),
 		Status:            row.Status,
+		TriggerSource:     row.TriggerSource,
 		ReposChecked:      row.ReposChecked,
 		TicketsCreated:    row.TicketsCreated,
 		TicketsSuperseded: row.TicketsSuperseded,

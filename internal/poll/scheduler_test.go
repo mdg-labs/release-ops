@@ -14,7 +14,7 @@ import (
 )
 
 type schedulerMockPollRepo struct {
-	insertRunFn func(ctx context.Context) (*store.PollRun, error)
+	insertRunFn func(ctx context.Context, triggerSource string) (*store.PollRun, error)
 	finishRunFn func(
 		ctx context.Context,
 		id, status string,
@@ -28,11 +28,11 @@ func (m *schedulerMockPollRepo) UpdatePollState(context.Context, string, store.P
 	return nil, errors.New("not implemented")
 }
 
-func (m *schedulerMockPollRepo) InsertRun(ctx context.Context) (*store.PollRun, error) {
+func (m *schedulerMockPollRepo) InsertRun(ctx context.Context, triggerSource string) (*store.PollRun, error) {
 	if m.insertRunFn != nil {
-		return m.insertRunFn(ctx)
+		return m.insertRunFn(ctx, triggerSource)
 	}
-	return &store.PollRun{ID: "run-1", Status: "running"}, nil
+	return &store.PollRun{ID: "run-1", Status: "running", TriggerSource: triggerSource}, nil
 }
 
 func (m *schedulerMockPollRepo) FinishRun(
@@ -296,9 +296,9 @@ func TestSchedulerScheduledPollFiresAfterStart(t *testing.T) {
 
 	var scheduledRuns atomic.Int32
 	pollRepo := &schedulerMockPollRepo{
-		insertRunFn: func(context.Context) (*store.PollRun, error) {
+		insertRunFn: func(_ context.Context, triggerSource string) (*store.PollRun, error) {
 			id := scheduledRuns.Add(1)
-			return &store.PollRun{ID: fmt.Sprintf("run-%d", id), Status: "running"}, nil
+			return &store.PollRun{ID: fmt.Sprintf("run-%d", id), Status: "running", TriggerSource: triggerSource}, nil
 		},
 	}
 
@@ -333,5 +333,43 @@ func TestSchedulerScheduledPollFiresAfterStart(t *testing.T) {
 
 	if scheduledRuns.Load() < 1 {
 		t.Fatal("expected scheduled poll to fire after Start without manual Trigger")
+	}
+}
+
+func TestSchedulerTriggerRecordsManualTriggerSource(t *testing.T) {
+	t.Parallel()
+
+	var recordedSource string
+	pollRepo := &schedulerMockPollRepo{
+		insertRunFn: func(_ context.Context, triggerSource string) (*store.PollRun, error) {
+			recordedSource = triggerSource
+			return &store.PollRun{ID: "run-manual", Status: "running", TriggerSource: triggerSource}, nil
+		},
+	}
+
+	scheduler, err := poll.NewScheduler(poll.SchedulerConfig{
+		Engine: poll.NewEngine(pollRepo),
+		Poll:   pollRepo,
+		Repos:  &schedulerMockReposRepo{},
+		PollRepo: func(context.Context, string, store.MonitoredRepo) (*poll.RepoEvaluation, error) {
+			return &poll.RepoEvaluation{Actions: []string{poll.ActionSkip}}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewScheduler: %v", err)
+	}
+
+	_, err = scheduler.Trigger(context.Background())
+	if err != nil {
+		t.Fatalf("Trigger: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for scheduler.IsPolling() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if recordedSource != store.PollTriggerSourceManual {
+		t.Fatalf("trigger_source = %q, want %q", recordedSource, store.PollTriggerSourceManual)
 	}
 }

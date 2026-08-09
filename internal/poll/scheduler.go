@@ -118,7 +118,7 @@ func (s *Scheduler) Trigger(ctx context.Context) (string, error) {
 		return "", ErrAlreadyRunning
 	}
 
-	run, err := s.poll.InsertRun(ctx)
+	run, err := s.poll.InsertRun(ctx, store.PollTriggerSourceManual)
 	if err != nil {
 		s.finish()
 		return "", err
@@ -255,7 +255,7 @@ func (s *Scheduler) runScheduled() {
 		ctx = context.Background()
 	}
 
-	run, err := s.poll.InsertRun(ctx)
+	run, err := s.poll.InsertRun(ctx, store.PollTriggerSourceScheduled)
 	if err != nil {
 		s.finish()
 		slog.Error("insert scheduled poll run", "error", err)
