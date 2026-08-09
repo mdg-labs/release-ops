@@ -79,19 +79,6 @@ function renderDashboard(): void {
   );
 }
 
-function mockPollRuns(
-  pool: ReturnType<MockAgent["get"]>,
-  runs: unknown[] = [],
-): void {
-  pool
-    .intercept({
-      path: "/api/go/api/v1/poll/runs",
-      method: "GET",
-      query: { limit: "10", offset: "0" },
-    })
-    .reply(200, runs);
-}
-
 describe("DashboardView", () => {
   let mockAgent: MockAgent;
   let originalFetch: typeof fetch;
@@ -131,7 +118,6 @@ describe("DashboardView", () => {
         method: "GET",
       })
       .reply(200, sampleStatus);
-    mockPollRuns(pool);
 
     renderDashboard();
 
@@ -155,7 +141,6 @@ describe("DashboardView", () => {
         method: "GET",
       })
       .reply(200, sampleStatus);
-    mockPollRuns(pool);
 
     renderDashboard();
 
@@ -172,7 +157,6 @@ describe("DashboardView", () => {
       })
       .reply(200, sampleStatus)
       .times(2);
-    mockPollRuns(pool);
     pool
       .intercept({
         path: "/api/go/api/v1/poll/trigger",
@@ -192,6 +176,40 @@ describe("DashboardView", () => {
     });
   });
 
+  it("links to poll run history from status card", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/status",
+        method: "GET",
+      })
+      .reply(200, sampleStatus);
+
+    renderDashboard();
+
+    const viewAllRunsLink = await screen.findByRole("link", {
+      name: "View all runs",
+    });
+    expect(viewAllRunsLink.getAttribute("href")).toBe("/poll-runs");
+  });
+
+  it("does not render poll run history section", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/status",
+        method: "GET",
+      })
+      .reply(200, sampleStatus);
+
+    renderDashboard();
+
+    await screen.findByRole("heading", { name: "Dashboard" });
+    expect(
+      screen.queryByRole("heading", { name: "Poll run history" }),
+    ).toBeNull();
+  });
+
   it("renders empty state with CTA to /repos", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool
@@ -205,7 +223,6 @@ describe("DashboardView", () => {
         repos: [],
         isPolling: false,
       });
-    mockPollRuns(pool);
 
     renderDashboard();
 

@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   BellIcon,
   FolderGit2Icon,
+  HistoryIcon,
   LayoutDashboardIcon,
   LogOutIcon,
   PlugIcon,
@@ -34,6 +35,11 @@ const NAV_ITEMS = [
     href: "/",
     icon: LayoutDashboardIcon,
     labelKey: "dashboard",
+  },
+  {
+    href: "/poll-runs",
+    icon: HistoryIcon,
+    labelKey: "pollRuns",
   },
   {
     href: "/repos",

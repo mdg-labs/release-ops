@@ -14,6 +14,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 const ORIGIN = "http://localhost:3000";
 const NAV_ROUTES = [
   "/",
+  "/poll-runs",
   "/repos",
   "/integrations",
   "/ticket-projects",
@@ -140,6 +141,10 @@ function hrefToKey(href: (typeof NAV_ROUTES)[number]): string {
 
   if (href === "/ticket-projects") {
     return "ticketProjects";
+  }
+
+  if (href === "/poll-runs") {
+    return "pollRuns";
   }
 
   return href.slice(1);

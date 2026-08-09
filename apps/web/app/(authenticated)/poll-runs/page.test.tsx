@@ -10,13 +10,12 @@ import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MockAgent, setGlobalDispatcher } from "undici";
 import messages from "@/messages/en.json";
-import DashboardPage from "./page";
+import PollRunsPage from "./page";
 
 const ORIGIN = "http://localhost:3000";
 
-const sampleStatus = {
-  pollIntervalMinutes: 360,
-  lastRun: {
+const sampleRuns = [
+  {
     id: "run-1",
     startedAt: "2026-08-07T10:00:00.000Z",
     finishedAt: "2026-08-07T10:05:00.000Z",
@@ -26,25 +25,9 @@ const sampleStatus = {
     ticketsSuperseded: 0,
     errors: [],
   },
-  repos: [
-    {
-      id: "repo-1",
-      sourceKind: "github",
-      projectPath: "org/app",
-      ticketProjectId: "tp-1",
-      ticketProjectName: "Jira — DEV",
-      enabled: true,
-      openTicketExternalId: "TASK-42",
-      openTicketTag: "v2.0.0",
-      lastKnownTag: "v2.0.0",
-      lastPolledAt: "2026-08-07T10:05:00.000Z",
-      lastError: null,
-    },
-  ],
-  isPolling: false,
-};
+];
 
-function renderDashboardPage(): HTMLElement {
+function renderPollRunsPage(): HTMLElement {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -55,7 +38,7 @@ function renderDashboardPage(): HTMLElement {
   const { container } = render(
     <QueryClientProvider client={queryClient}>
       <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
-        <DashboardPage />
+        <PollRunsPage />
       </NextIntlClientProvider>
     </QueryClientProvider>,
   );
@@ -63,7 +46,7 @@ function renderDashboardPage(): HTMLElement {
   return container;
 }
 
-describe("DashboardPage", () => {
+describe("PollRunsPage", () => {
   let mockAgent: MockAgent;
   let originalFetch: typeof fetch;
 
@@ -94,91 +77,94 @@ describe("DashboardPage", () => {
     await mockAgent.close();
   });
 
-  it("renders status card and repo table", async () => {
+  it("renders page title and poll run history table", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool
       .intercept({
-        path: "/api/go/api/v1/status",
+        path: "/api/go/api/v1/poll/runs",
         method: "GET",
+        query: { limit: "10", offset: "0" },
       })
-      .reply(200, sampleStatus);
+      .reply(200, sampleRuns);
 
-    renderDashboardPage();
+    renderPollRunsPage();
 
     expect(
-      await screen.findByRole("heading", { name: "Dashboard" }),
+      await screen.findByRole("heading", { name: "Poll run history" }),
     ).toBeTruthy();
-    expect(await screen.findByText("System status")).toBeTruthy();
-    expect(
-      await screen.findByRole("heading", { name: "Monitored repos" }),
-    ).toBeTruthy();
-    expect(await screen.findByText("org/app")).toBeTruthy();
-    expect(
-      screen.queryByRole("heading", { name: "Poll run history" }),
-    ).toBeNull();
+    expect(await screen.findByText("Success")).toBeTruthy();
+    expect(await screen.findByText("2")).toBeTruthy();
+    expect(await screen.findByText("1")).toBeTruthy();
   });
 
-  it("triggers manual poll via POST /api/v1/poll/trigger", async () => {
+  it("shows empty state when no runs exist", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool
       .intercept({
-        path: "/api/go/api/v1/status",
+        path: "/api/go/api/v1/poll/runs",
         method: "GET",
+        query: { limit: "10", offset: "0" },
       })
-      .reply(200, sampleStatus)
-      .times(2);
-    pool
-      .intercept({
-        path: "/api/go/api/v1/poll/trigger",
-        method: "POST",
-      })
-      .reply(202, { runId: "run-2" });
+      .reply(200, []);
 
-    renderDashboardPage();
+    renderPollRunsPage();
 
-    const runPollButton = await screen.findByRole("button", {
-      name: "Run poll now",
-    });
-    fireEvent.click(runPollButton);
-
-    await waitFor(() => {
-      expect(runPollButton).toBeTruthy();
-    });
+    expect(await screen.findByText("No poll runs yet")).toBeTruthy();
   });
 
-  it("links empty repos state to /repos config page", async () => {
+  it("opens run detail drawer from table row", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool
       .intercept({
-        path: "/api/go/api/v1/status",
+        path: "/api/go/api/v1/poll/runs",
+        method: "GET",
+        query: { limit: "10", offset: "0" },
+      })
+      .reply(200, sampleRuns);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/poll/runs/run-1",
         method: "GET",
       })
       .reply(200, {
-        pollIntervalMinutes: 360,
-        lastRun: null,
-        repos: [],
-        isPolling: false,
+        ...sampleRuns[0],
+        events: [
+          {
+            id: "evt-1",
+            pollRunId: "run-1",
+            monitoredRepoId: "repo-1",
+            action: "create",
+            detail: "TASK-99",
+            createdAt: "2026-08-07T10:04:00.000Z",
+          },
+        ],
       });
 
-    renderDashboardPage();
+    renderPollRunsPage();
 
-    expect(await screen.findByText("No monitored repos")).toBeTruthy();
-    const cta = await screen.findByRole("link", { name: "Add repo" });
-    expect(cta.getAttribute("href")).toBe("/repos");
+    const successBadge = await screen.findByText("Success");
+    const row = successBadge.closest("tr");
+    expect(row).toBeTruthy();
+    fireEvent.click(row!);
+
+    await waitFor(async () => {
+      expect(await screen.findByText("Poll run details")).toBeTruthy();
+    });
   });
 
   it("uses a mobile-friendly responsive root layout", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool
       .intercept({
-        path: "/api/go/api/v1/status",
+        path: "/api/go/api/v1/poll/runs",
         method: "GET",
+        query: { limit: "10", offset: "0" },
       })
-      .reply(200, sampleStatus);
+      .reply(200, sampleRuns);
 
-    const container = renderDashboardPage();
+    const container = renderPollRunsPage();
 
-    await screen.findByRole("heading", { name: "Dashboard" });
+    await screen.findByRole("heading", { name: "Poll run history" });
 
     const root = container.querySelector(".min-w-0.w-full");
     expect(root).toBeTruthy();

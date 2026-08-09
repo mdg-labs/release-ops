@@ -46,6 +46,7 @@
   "dashboard": {
     "title": "Dashboard",
     "runPoll": "Run poll now",
+    "viewAllRuns": "View all runs",
     "loadFailed": "Failed to load dashboard status.",
     "statusCardTitle": "System status",
     "statusCardDescription": "Overview of the latest poll run and scheduler state.",
@@ -458,8 +459,12 @@
       "emailRequired": "Email is required."
     }
   },
+  "pollRuns": {
+    "title": "Poll run history"
+  },
   "nav": {
     "dashboard": "Dashboard",
+    "pollRuns": "Poll runs",
     "repos": "Repos",
     "integrations": "Integrations",
     "ticketProjects": "Ticket projects",

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useFormatter, useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -175,9 +176,12 @@ export function StatusCard({
             <LastRunSummary format={format} lastRun={lastRun} t={t} />
           )}
         </CardPanel>
-        <CardFooter>
+        <CardFooter className="flex flex-wrap gap-2">
           <Button disabled={pollBusy} loading={pollBusy} onClick={onRunPoll}>
             {t("runPoll")}
+          </Button>
+          <Button render={<Link href="/poll-runs" />} variant="outline">
+            {t("viewAllRuns")}
           </Button>
         </CardFooter>
       </Card>

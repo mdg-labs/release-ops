@@ -15,6 +15,7 @@ import {
 
 const PAGE_LABEL_KEYS: Record<string, string> = {
   "/": "dashboard",
+  "/poll-runs": "pollRuns",
   "/repos": "repos",
   "/integrations": "integrations",
   "/ticket-projects": "ticketProjects",

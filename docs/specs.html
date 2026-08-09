@@ -798,7 +798,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <h3>8.1 App shell (all authenticated pages)</h3>
   <table>
     <tr><th>Primitive</th><th>Particle / Pattern</th><th>Usage</th></tr>
-    <tr><td><code>Sidebar</code> (+ <code>SidebarProvider</code>)</td><td>sidebar primitive docs</td><td>Navigation: Dashboard, Repos, Integrations, Ticket Projects, Notifications, Settings</td></tr>
+    <tr><td><code>Sidebar</code> (+ <code>SidebarProvider</code>)</td><td>sidebar primitive docs</td><td>Navigation: Dashboard, Poll runs, Repos, Integrations, Ticket Projects, Notifications, Settings</td></tr>
     <tr><td><code>Frame</code></td><td><a href="https://coss.com/ui/r/p-frame-3.json">p-frame-3</a> — multiple separated panels</td><td>Page layout with header area + content</td></tr>
     <tr><td><code>Breadcrumb</code></td><td><a href="https://coss.com/ui/r/p-breadcrumb-3.json">p-breadcrumb-3</a> — home icon</td><td>Sub-page context</td></tr>
     <tr><td><code>Toaster</code></td><td><a href="https://coss.com/ui/r/p-toast-2.json">p-toast-2</a> — semantic types</td><td>Global feedback (success/error)</td></tr>
@@ -810,6 +810,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><th>Route</th><th>Page</th><th>Description</th></tr>
     <tr><td><code>/login</code></td><td>Login</td><td>Unauthenticated</td></tr>
     <tr><td><code>/</code></td><td>Dashboard</td><td>Status, last run, quick actions</td></tr>
+    <tr><td><code>/poll-runs</code></td><td>Poll runs</td><td>Paginated poll run history with per-run detail drawer</td></tr>
     <tr><td><code>/repos</code></td><td>Repos</td><td>CRUD monitored repos</td></tr>
     <tr><td><code>/integrations</code></td><td>Integrations</td><td>CRUD credentials (sources + ticket providers)</td></tr>
     <tr><td><code>/ticket-projects</code></td><td>Ticket Projects</td><td>CRUD per integration: project/team, status mapping, policy</td></tr>
@@ -839,6 +840,15 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a> TanStack sort+pagination</td><td>Repo status table (subset)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-alert-6.json">p-alert-6</a> warning</td><td>Errors from last run</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-empty-1.json">p-empty-1</a></td><td>No repos configured → CTA to /repos</td></tr>
+  </table>
+
+  <h4>/poll-runs</h4>
+  <table>
+    <tr><th>Particle</th><th>Usage</th></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a> pagination</td><td>Poll run history table</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-badge-5.json">p-badge-5</a> (semantic)</td><td>Run status badge</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-drawer-10.json">p-drawer-10</a></td><td>Per-run detail (events, errors)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-empty-1.json">p-empty-1</a></td><td>No poll runs yet</td></tr>
   </table>
 
   <h4>/repos</h4>
