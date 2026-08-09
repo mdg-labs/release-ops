@@ -10,12 +10,14 @@ import {
   PlugIcon,
   SettingsIcon,
   TicketIcon,
+  UserIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import type React from "react";
 import { apiClient } from "@/lib/api/client";
+import { useSession } from "@/lib/hooks/use-session";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -80,9 +82,12 @@ export function AppSidebar(): React.ReactElement {
   const pathname = usePathname();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { data: session } = useSession();
   const tNav = useTranslations("nav");
   const tAuth = useTranslations("auth");
   const tCommon = useTranslations("common");
+
+  const profileLabel = session?.user?.email ?? tNav("profile");
 
   const logout = useMutation({
     mutationFn: () => apiClient.post("/auth/logout"),
@@ -94,7 +99,7 @@ export function AppSidebar(): React.ReactElement {
   });
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" variant="inset">
       <SidebarHeader className="border-sidebar-border border-b p-4">
         <span className="truncate font-semibold text-sm group-data-[collapsible=icon]:hidden">
           {tCommon("appTitle")}
@@ -121,6 +126,18 @@ export function AppSidebar(): React.ReactElement {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="border-sidebar-border border-t p-2">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              isActive={isNavActive(pathname, "/profile")}
+              render={<Link href="/profile" />}
+              tooltip={profileLabel}
+            >
+              <UserIcon aria-hidden="true" />
+              <span className="truncate">{profileLabel}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
         <Button
           className="w-full justify-start"
           data-testid="sidebar-logout"
