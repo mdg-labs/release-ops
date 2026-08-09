@@ -124,9 +124,7 @@ describe("DashboardView", () => {
     expect(
       await screen.findByRole("heading", { name: "Dashboard" }),
     ).toBeTruthy();
-    expect(
-      document.querySelector('[data-slot="page-header"]'),
-    ).toBeTruthy();
+    expect(document.querySelector('[data-slot="page-header"]')).toBeTruthy();
     expect(await screen.findByText("System status")).toBeTruthy();
     expect(
       await screen.findByRole("heading", { name: "Monitored repos" }),

@@ -173,10 +173,12 @@ describe("ReposView", () => {
     renderReposPage();
 
     expect(
-      await screen.findByText(
-        "No monitored repos yet. Add one to get started.",
-      ),
+      await screen.findByText("No monitored repos yet"),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText("Add a repository to monitor for new releases."),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Add repo" })).toHaveLength(2);
   });
 
   it("lists repos with last polled and last error columns", async () => {

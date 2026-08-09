@@ -88,6 +88,26 @@ describe("IntegrationsView", () => {
     vi.restoreAllMocks();
   });
 
+  it("renders empty state when no integrations exist", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/integrations",
+        method: "GET",
+      })
+      .reply(200, []);
+
+    renderIntegrationsPage();
+
+    expect(await screen.findByText("No integrations yet")).toBeInTheDocument();
+    expect(
+      screen.getByText("Connect a source or ticket provider to get started."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "Add integration" }),
+    ).toHaveLength(2);
+  });
+
   it("lists integrations from the API", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool

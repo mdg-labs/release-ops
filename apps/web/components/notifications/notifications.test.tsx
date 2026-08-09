@@ -88,6 +88,28 @@ describe("NotificationsView", () => {
     vi.restoreAllMocks();
   });
 
+  it("renders empty state when no notification targets exist", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/notification-targets",
+        method: "GET",
+      })
+      .reply(200, []);
+
+    renderNotificationsPage();
+
+    expect(
+      await screen.findByText("No notification targets yet"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Add a Shoutrrr target for release and error alerts."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "Add notification target" }),
+    ).toHaveLength(2);
+  });
+
   it("lists notification targets from the API", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool

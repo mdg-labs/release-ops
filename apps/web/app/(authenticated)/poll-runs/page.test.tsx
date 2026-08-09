@@ -92,9 +92,7 @@ describe("PollRunsPage", () => {
     expect(
       await screen.findByRole("heading", { name: "Poll run history" }),
     ).toBeTruthy();
-    expect(
-      document.querySelector('[data-slot="page-header"]'),
-    ).toBeTruthy();
+    expect(document.querySelector('[data-slot="page-header"]')).toBeTruthy();
     expect(await screen.findByText("Success")).toBeTruthy();
     expect(await screen.findByText("2")).toBeTruthy();
     expect(await screen.findByText("1")).toBeTruthy();

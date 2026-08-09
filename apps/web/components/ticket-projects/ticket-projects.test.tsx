@@ -107,6 +107,36 @@ describe("TicketProjectsView", () => {
     vi.restoreAllMocks();
   });
 
+  it("renders empty state when no ticket projects exist", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/ticket-projects",
+        method: "GET",
+      })
+      .reply(200, []);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/integrations",
+        method: "GET",
+      })
+      .reply(200, ticketIntegrations);
+
+    renderTicketProjectsPage();
+
+    expect(
+      await screen.findByText("No ticket projects yet"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Define a project target with status mapping and ticket policy.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "Add ticket project" }),
+    ).toHaveLength(2);
+  });
+
   it("lists ticket projects grouped by integration", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool

@@ -1,12 +1,21 @@
 "use client";
 
-import { PencilIcon, Trash2Icon } from "lucide-react";
+import { LayoutListIcon, PencilIcon, Trash2Icon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useMemo, useState } from "react";
+import { PageHeader } from "@/components/common/page-header";
 import { DeleteTicketProjectDialog } from "@/components/ticket-projects/delete-ticket-project-dialog";
 import { ProjectDrawer } from "@/components/ticket-projects/project-drawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Frame, FramePanel } from "@/components/ui/frame";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -79,14 +88,16 @@ export function TicketProjectsView(): React.ReactElement {
 
   const drawerOpen = drawer.mode !== "closed";
 
+  function openCreateDrawer(): void {
+    setDrawer({ mode: "create" });
+  }
+
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-semibold text-2xl">{t("title")}</h1>
-        <Button onClick={() => setDrawer({ mode: "create" })}>
-          {t("add")}
-        </Button>
-      </div>
+      <PageHeader
+        action={<Button onClick={openCreateDrawer}>{t("add")}</Button>}
+        title={t("title")}
+      />
 
       {isError ? (
         <p className="text-destructive-foreground text-sm" role="alert">
@@ -96,100 +107,114 @@ export function TicketProjectsView(): React.ReactElement {
 
       <Frame>
         <FramePanel className="p-0">
-          <Table variant="card">
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("columns.integration")}</TableHead>
-                <TableHead>{t("columns.name")}</TableHead>
-                <TableHead>{t("columns.externalProjectId")}</TableHead>
-                <TableHead>{t("columns.policy")}</TableHead>
-                <TableHead className="text-end">
-                  {t("columns.actions")}
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading
-                ? Array.from({ length: 3 }, (_, index) => (
-                    <TableRow key={`skeleton-${index}`}>
-                      <TableCell colSpan={5}>
-                        <Skeleton className="h-8 w-full" />
+          {isLoading ? (
+            <Table variant="card">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("columns.integration")}</TableHead>
+                  <TableHead>{t("columns.name")}</TableHead>
+                  <TableHead>{t("columns.externalProjectId")}</TableHead>
+                  <TableHead>{t("columns.policy")}</TableHead>
+                  <TableHead className="text-end">
+                    {t("columns.actions")}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {Array.from({ length: 3 }, (_, index) => (
+                  <TableRow key={`skeleton-${index}`}>
+                    <TableCell colSpan={5}>
+                      <Skeleton className="h-8 w-full" />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : sortedProjects.length === 0 ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <LayoutListIcon aria-hidden="true" />
+                </EmptyMedia>
+                <EmptyTitle>{t("emptyTitle")}</EmptyTitle>
+                <EmptyDescription>{t("emptyDescription")}</EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button onClick={openCreateDrawer}>{t("add")}</Button>
+              </EmptyContent>
+            </Empty>
+          ) : (
+            <Table variant="card">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("columns.integration")}</TableHead>
+                  <TableHead>{t("columns.name")}</TableHead>
+                  <TableHead>{t("columns.externalProjectId")}</TableHead>
+                  <TableHead>{t("columns.policy")}</TableHead>
+                  <TableHead className="text-end">
+                    {t("columns.actions")}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortedProjects.map((project) => {
+                  const integrationKind =
+                    integrationKindById.get(project.integrationId) ?? "";
+                  const integrationName =
+                    integrationNameById.get(project.integrationId) ??
+                    project.integrationId;
+
+                  return (
+                    <TableRow key={project.id}>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          <span className="font-medium">{integrationName}</span>
+                          {integrationKind ? (
+                            <Badge variant="outline">
+                              {tIntegrations(`kinds.${integrationKind}`)}
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {project.name}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {project.externalProjectId}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">
+                          {t(`policies.${project.onOpenTicketPolicy}`)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            aria-label={t("editAria", { name: project.name })}
+                            onClick={() => setDrawer({ mode: "edit", project })}
+                            size="icon-sm"
+                            variant="ghost"
+                          >
+                            <PencilIcon />
+                          </Button>
+                          <Button
+                            aria-label={t("deleteAria", {
+                              name: project.name,
+                            })}
+                            onClick={() => setDeleteTarget(project)}
+                            size="icon-sm"
+                            variant="ghost"
+                          >
+                            <Trash2Icon />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
-                  ))
-                : null}
-
-              {!isLoading && sortedProjects.length === 0 ? (
-                <TableRow>
-                  <TableCell className="text-muted-foreground" colSpan={5}>
-                    {t("empty")}
-                  </TableCell>
-                </TableRow>
-              ) : null}
-
-              {!isLoading
-                ? sortedProjects.map((project) => {
-                    const integrationKind =
-                      integrationKindById.get(project.integrationId) ?? "";
-                    const integrationName =
-                      integrationNameById.get(project.integrationId) ??
-                      project.integrationId;
-
-                    return (
-                      <TableRow key={project.id}>
-                        <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <span className="font-medium">
-                              {integrationName}
-                            </span>
-                            {integrationKind ? (
-                              <Badge variant="outline">
-                                {tIntegrations(`kinds.${integrationKind}`)}
-                              </Badge>
-                            ) : null}
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {project.name}
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">
-                          {project.externalProjectId}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">
-                            {t(`policies.${project.onOpenTicketPolicy}`)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              aria-label={t("editAria", { name: project.name })}
-                              onClick={() =>
-                                setDrawer({ mode: "edit", project })
-                              }
-                              size="icon-sm"
-                              variant="ghost"
-                            >
-                              <PencilIcon />
-                            </Button>
-                            <Button
-                              aria-label={t("deleteAria", {
-                                name: project.name,
-                              })}
-                              onClick={() => setDeleteTarget(project)}
-                              size="icon-sm"
-                              variant="ghost"
-                            >
-                              <Trash2Icon />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                : null}
-            </TableBody>
-          </Table>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
         </FramePanel>
       </Frame>
 
