@@ -135,6 +135,8 @@ describe("PollRunHistory", () => {
     expect(await screen.findByText("Automatic")).toBeTruthy();
     expect(await screen.findByText("2")).toBeTruthy();
     expect(await screen.findByText("1")).toBeTruthy();
+    expect(await screen.findByText("Aug 7, 2026, 10:00:00.000")).toBeTruthy();
+    expect(await screen.findByText("Aug 7, 2026, 10:05:00.000")).toBeTruthy();
   });
 
   it("shows empty state when no runs exist", async () => {
@@ -185,6 +187,8 @@ describe("PollRunHistory", () => {
     expect(await screen.findByText("Create ticket")).toBeTruthy();
     expect(await screen.findByText("Skip")).toBeTruthy();
     expect(await screen.findByText("TASK-99")).toBeTruthy();
+    expect(await screen.findByText("Aug 7, 2026, 10:04:00.000")).toBeTruthy();
+    expect(await screen.findByText("Aug 7, 2026, 10:04:30.000")).toBeTruthy();
   });
 
   it("paginates with limit and offset", async () => {

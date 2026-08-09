@@ -157,8 +157,23 @@ describe("DashboardView", () => {
     renderDashboard();
 
     expect(await screen.findByText("Last polled")).toBeTruthy();
-    expect(await screen.findByText("Aug 6, 2026, 3:30 PM")).toBeTruthy();
+    expect(await screen.findByText("Aug 6, 2026, 15:30")).toBeTruthy();
     expect(await screen.findByText("Never")).toBeTruthy();
+  });
+
+  it("formats poll health timestamps with milliseconds in 24-hour clock", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/status",
+        method: "GET",
+      })
+      .reply(200, sampleStatus);
+
+    renderDashboard();
+
+    expect(await screen.findByText("Aug 7, 2026, 10:00:00.000")).toBeTruthy();
+    expect(await screen.findByText("Aug 7, 2026, 10:05:00.000")).toBeTruthy();
   });
 
   it("shows error alert when last run has errors", async () => {

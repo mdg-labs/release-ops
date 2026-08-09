@@ -958,6 +958,10 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td>CI</td><td><code>eslint-plugin-i18next</code> — <code>i18next/no-literal-string</code> fails on JSX literals</td></tr>
   </table>
   <p>Allowed without i18n keys: route paths, API enum values, CSS classes, test IDs. Forbidden: <code>&lt;Button&gt;Save&lt;/Button&gt;</code>, <code>toast('Error')</code>.</p>
+  <p><strong>Display timezone:</strong> All UI timestamps use the IANA timezone from <code>APP_TIMEZONE</code> (default <code>UTC</code>) via next-intl <code>timeZone</code> in <code>i18n/request.ts</code> and <code>NextIntlClientProvider</code>. Storage and API remain UTC ISO8601 (§4.7).</p>
+  <p><strong>24-hour clock:</strong> All displayed times use 24-hour format (<code>hour12: false</code>) — no AM/PM.</p>
+  <p><strong>Poll diagnostics:</strong> Poll run history and dashboard poll health show started/finished timestamps (and poll run event times) with millisecond precision (<code>fractionalSecondDigits: 3</code>). Other screens use medium date + short time without fractional seconds.</p>
+  <p>Shared formatters: <code>apps/web/lib/format/datetime.ts</code> (<code>formatAppDateTime</code>, <code>formatPollDiagnosticDateTime</code>).</p>
   <p>Agents: <code>.cursor/rules/10-i18n.mdc</code>.</p>
 
   <h2 id="env">9. Environment variables</h2>
@@ -970,6 +974,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><code>GO_INTERNAL_PORT</code></td><td>no</td><td><code>8080</code></td><td>Go binds only <code>127.0.0.1</code></td></tr>
     <tr><td><code>APP_DB_PATH</code></td><td>no</td><td><code>/data/app.db</code></td><td>SQLite (app data + auth)</td></tr>
     <tr><td><code>APP_ENCRYPTION_KEY</code></td><td>yes</td><td>—</td><td>64 hex chars — credential encryption</td></tr>
+    <tr><td><code>APP_TIMEZONE</code></td><td>no</td><td><code>UTC</code></td><td>IANA timezone for UI timestamp display (e.g. <code>Europe/Vienna</code>); does not affect API storage (always UTC)</td></tr>
     <tr><td><code>BOOTSTRAP_ADMIN_EMAIL</code></td><td>no</td><td>—</td><td>One-time first-start admin seed (only when no users exist)</td></tr>
     <tr><td><code>BOOTSTRAP_ADMIN_PASSWORD</code></td><td>no</td><td>—</td><td>Pair with <code>BOOTSTRAP_ADMIN_EMAIL</code>; remove after first boot</td></tr>
     <tr><td><code>PORT</code></td><td>no</td><td><code>3000</code></td><td>Public HTTP port (Next.js)</td></tr>

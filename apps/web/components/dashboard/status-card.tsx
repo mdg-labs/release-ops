@@ -20,6 +20,7 @@ import {
   FrameTitle,
 } from "@/components/ui/frame";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatPollDiagnosticDateTime } from "@/lib/format/datetime";
 import type { PollRun, StatusResponse } from "@/lib/query/types";
 
 type StatusCardProps = {
@@ -75,21 +76,6 @@ function runStatusLabel(
   }
 }
 
-function formatTimestamp(
-  value: string | null | undefined,
-  format: ReturnType<typeof useFormatter>,
-  neverLabel: string,
-): string {
-  if (!value) {
-    return neverLabel;
-  }
-
-  return format.dateTime(new Date(value), {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
-
 function LastRunSummary({
   lastRun,
   format,
@@ -108,13 +94,21 @@ function LastRunSummary({
       <div>
         <dt className="text-muted-foreground">{t("lastRunStarted")}</dt>
         <dd className="font-medium">
-          {formatTimestamp(lastRun.startedAt, format, t("lastRunNever"))}
+          {formatPollDiagnosticDateTime(
+            format,
+            lastRun.startedAt,
+            t("lastRunNever"),
+          )}
         </dd>
       </div>
       <div>
         <dt className="text-muted-foreground">{t("lastRunFinished")}</dt>
         <dd className="font-medium">
-          {formatTimestamp(lastRun.finishedAt, format, t("lastRunInProgress"))}
+          {formatPollDiagnosticDateTime(
+            format,
+            lastRun.finishedAt,
+            t("lastRunInProgress"),
+          )}
         </dd>
       </div>
       <div>

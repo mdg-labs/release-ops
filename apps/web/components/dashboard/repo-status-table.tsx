@@ -25,6 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatAppDateTime } from "@/lib/format/datetime";
 import type { StatusRepo } from "@/lib/query/types";
 
 const PAGE_SIZE = 10;
@@ -104,10 +105,7 @@ export function RepoStatusTable({
         return tRepos("lastPolledNever");
       }
 
-      return format.dateTime(new Date(value), {
-        dateStyle: "medium",
-        timeStyle: "short",
-      });
+      return formatAppDateTime(format, value, tRepos("lastPolledNever"));
     },
     [format, tRepos],
   );

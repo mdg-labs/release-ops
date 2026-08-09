@@ -17,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatAppDateTime } from "@/lib/format/datetime";
 import { useIntegrations } from "@/lib/hooks/use-integrations";
 import { useNotificationTargets } from "@/lib/hooks/use-notifications";
 import { useRepos } from "@/lib/hooks/use-repos";
@@ -79,10 +80,7 @@ export function ReposView(): React.ReactElement {
       return t("lastPolledNever");
     }
 
-    return format.dateTime(new Date(value), {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
+    return formatAppDateTime(format, value, t("lastPolledNever"));
   }
 
   return (

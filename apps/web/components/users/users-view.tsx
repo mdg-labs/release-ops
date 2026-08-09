@@ -1,6 +1,6 @@
 "use client";
 
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 import { MailIcon, Trash2Icon, UserXIcon } from "lucide-react";
 import { DeleteUserDialog } from "@/components/users/delete-user-dialog";
@@ -22,18 +22,23 @@ import {
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { ApiError } from "@/lib/api/client";
+import { formatAppDateTime } from "@/lib/format/datetime";
 import { useSettings } from "@/lib/hooks/use-settings";
 import { useSession } from "@/lib/hooks/use-session";
 import { useInvitations } from "@/hooks/useInvitations";
 import { useUsers } from "@/hooks/useUsers";
 import type { Invitation, UserListItem } from "@/lib/query/types";
 
-function formatDate(value: string): string {
-  return new Date(value).toLocaleString();
+function formatDate(
+  value: string,
+  format: ReturnType<typeof useFormatter>,
+): string {
+  return formatAppDateTime(format, value, value);
 }
 
 export function UsersView(): React.ReactElement {
   const t = useTranslations("users");
+  const format = useFormatter();
   const { data: session } = useSession();
   const { data: settings } = useSettings();
   const {
@@ -159,7 +164,9 @@ export function UsersView(): React.ReactElement {
                             ) : null}
                           </div>
                         </TableCell>
-                        <TableCell>{formatDate(user.createdAt)}</TableCell>
+                        <TableCell>
+                          {formatDate(user.createdAt, format)}
+                        </TableCell>
                         <TableCell className="text-end">
                           {cannotDelete ? (
                             <Tooltip>
@@ -246,7 +253,9 @@ export function UsersView(): React.ReactElement {
                 ? invitations.map((invitation) => (
                     <TableRow key={invitation.id}>
                       <TableCell>{invitation.email}</TableCell>
-                      <TableCell>{formatDate(invitation.expiresAt)}</TableCell>
+                      <TableCell>
+                        {formatDate(invitation.expiresAt, format)}
+                      </TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-1">
                           {smtpConfigured ? (

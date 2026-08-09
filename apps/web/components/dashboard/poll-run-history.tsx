@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatPollDiagnosticDateTime } from "@/lib/format/datetime";
 import { usePollRun, usePollRuns } from "@/lib/hooks/use-poll";
 import { isPollEventAction } from "@/lib/poll/actions";
 import type { PollRun, PollRunEvent } from "@/lib/query/types";
@@ -93,21 +94,6 @@ function PollRunsEmptyState(): React.ReactElement {
       </div>
     </div>
   );
-}
-
-function formatTimestamp(
-  value: string | null | undefined,
-  format: ReturnType<typeof useFormatter>,
-  fallback: string,
-): string {
-  if (!value) {
-    return fallback;
-  }
-
-  return format.dateTime(new Date(value), {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
 }
 
 function RunTriggerBadge({
@@ -186,10 +172,11 @@ function PollRunEventsList({
           return (
             <TableRow key={event.id}>
               <TableCell className="text-muted-foreground text-sm">
-                {format.dateTime(new Date(event.createdAt), {
-                  dateStyle: "medium",
-                  timeStyle: "medium",
-                })}
+                {formatPollDiagnosticDateTime(
+                  format,
+                  event.createdAt,
+                  t("noEventDetail"),
+                )}
               </TableCell>
               <TableCell>
                 <Badge variant="outline">{actionLabel}</Badge>
@@ -263,7 +250,11 @@ function PollRunDetailDrawer({
                     {t("pollHistoryColumns.startedAt")}
                   </dt>
                   <dd className="font-medium">
-                    {formatTimestamp(run.startedAt, format, t("lastRunNever"))}
+                    {formatPollDiagnosticDateTime(
+                      format,
+                      run.startedAt,
+                      t("lastRunNever"),
+                    )}
                   </dd>
                 </div>
                 <div>
@@ -271,9 +262,9 @@ function PollRunDetailDrawer({
                     {t("pollHistoryColumns.finishedAt")}
                   </dt>
                   <dd className="font-medium">
-                    {formatTimestamp(
-                      run.finishedAt,
+                    {formatPollDiagnosticDateTime(
                       format,
+                      run.finishedAt,
                       t("lastRunInProgress"),
                     )}
                   </dd>
@@ -406,16 +397,16 @@ export function PollRunHistory(): React.ReactElement {
                       tabIndex={0}
                     >
                       <TableCell className="text-sm">
-                        {formatTimestamp(
-                          run.startedAt,
+                        {formatPollDiagnosticDateTime(
                           format,
+                          run.startedAt,
                           t("lastRunNever"),
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
-                        {formatTimestamp(
-                          run.finishedAt,
+                        {formatPollDiagnosticDateTime(
                           format,
+                          run.finishedAt,
                           t("lastRunInProgress"),
                         )}
                       </TableCell>
