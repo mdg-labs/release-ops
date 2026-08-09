@@ -3,6 +3,7 @@ package poll_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -288,4 +289,49 @@ func TestSchedulerStartUsesMinInterval(t *testing.T) {
 	// Schedule reload clamps 2 → 5; no panic means cron accepted the expression.
 	cancel()
 	time.Sleep(50 * time.Millisecond)
+}
+
+func TestSchedulerScheduledPollFiresAfterStart(t *testing.T) {
+	t.Parallel()
+
+	var scheduledRuns atomic.Int32
+	pollRepo := &schedulerMockPollRepo{
+		insertRunFn: func(context.Context) (*store.PollRun, error) {
+			id := scheduledRuns.Add(1)
+			return &store.PollRun{ID: fmt.Sprintf("run-%d", id), Status: "running"}, nil
+		},
+	}
+
+	scheduler, err := poll.NewScheduler(poll.SchedulerConfig{
+		Engine:           poll.NewEngine(pollRepo),
+		Settings:         &schedulerMockSettingsRepo{pollIntervalMinutes: 360},
+		Poll:             pollRepo,
+		Repos:            &schedulerMockReposRepo{},
+		PollScheduleSpec: "@every 2s",
+		PollRepo: func(context.Context, string, store.MonitoredRepo) (*poll.RepoEvaluation, error) {
+			return &poll.RepoEvaluation{Actions: []string{poll.ActionSkip}}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewScheduler: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := scheduler.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for scheduledRuns.Load() < 1 && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	cancel()
+	time.Sleep(50 * time.Millisecond)
+
+	if scheduledRuns.Load() < 1 {
+		t.Fatal("expected scheduled poll to fire after Start without manual Trigger")
+	}
 }

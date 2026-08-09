@@ -34,6 +34,8 @@ type SchedulerConfig struct {
 	HTTPClient     *http.Client
 	// PollRepo overrides per-repo polling (tests only). When nil, the default resolver runs.
 	PollRepo func(ctx context.Context, runID string, repo store.MonitoredRepo) (*RepoEvaluation, error)
+	// PollScheduleSpec overrides the cron expression when non-empty (tests only).
+	PollScheduleSpec string
 }
 
 // Scheduler runs polls on a cron interval and accepts manual triggers (specs §5.6–§5.7).
@@ -48,9 +50,11 @@ type Scheduler struct {
 	httpClient     *http.Client
 	pollRepoFn     func(ctx context.Context, runID string, repo store.MonitoredRepo) (*RepoEvaluation, error)
 
-	cron       *cron.Cron
-	entryID    cron.EntryID
-	scheduleMu sync.Mutex
+	cron                 *cron.Cron
+	entryID              cron.EntryID
+	currentScheduleSpec  string
+	pollScheduleSpec     string
+	scheduleMu           sync.Mutex
 
 	lifecycleCtx context.Context
 
@@ -80,8 +84,9 @@ func NewScheduler(cfg SchedulerConfig) (*Scheduler, error) {
 		poll:           cfg.Poll,
 		notifier:       cfg.Notifier,
 		httpClient:     client,
-		pollRepoFn:     cfg.PollRepo,
-		cron:           cron.New(),
+		pollRepoFn:       cfg.PollRepo,
+		pollScheduleSpec: cfg.PollScheduleSpec,
+		cron:             cron.New(),
 	}, nil
 }
 
@@ -289,9 +294,16 @@ func (s *Scheduler) reloadSchedule(ctx context.Context) error {
 
 	minutes := ClampPollIntervalMinutes(settings.PollIntervalMinutes)
 	spec := fmt.Sprintf("@every %dm", minutes)
+	if s.pollScheduleSpec != "" {
+		spec = s.pollScheduleSpec
+	}
 
 	s.scheduleMu.Lock()
 	defer s.scheduleMu.Unlock()
+
+	if spec == s.currentScheduleSpec && s.entryID != 0 {
+		return nil
+	}
 
 	if s.entryID != 0 {
 		s.cron.Remove(s.entryID)
@@ -303,6 +315,7 @@ func (s *Scheduler) reloadSchedule(ctx context.Context) error {
 		return fmt.Errorf("add cron job %q: %w", spec, err)
 	}
 	s.entryID = entryID
+	s.currentScheduleSpec = spec
 	return nil
 }
 
