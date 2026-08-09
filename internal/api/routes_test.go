@@ -69,6 +69,7 @@ var expectedAPIRoutes = []string{
 	"GET /api/v1/users",
 	"DELETE /api/v1/users/{id}",
 	"POST /api/v1/users/me/email-change-request",
+	"POST /api/v1/users/me/password-change",
 	"GET /api/v1/users/invitations",
 	"POST /api/v1/users/invitations",
 	"DELETE /api/v1/users/invitations/{id}",

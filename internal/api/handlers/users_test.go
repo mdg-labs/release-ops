@@ -29,6 +29,125 @@ import (
 
 const usersTestKeyHex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
+func TestPasswordChangeUpdatesPassword(t *testing.T) {
+	t.Parallel()
+
+	deps := newUsersTestDeps(t)
+	seedUsersTestUser(t, deps.Queries, "admin@example.com", "old-pass-1")
+	seedUsersAppSettings(t, deps.DB)
+
+	srv := httptest.NewServer(api.NewServerRouter(deps))
+	t.Cleanup(srv.Close)
+
+	client := loginUsersTestClient(t, srv.URL, "admin@example.com", "old-pass-1")
+
+	changeResp, err := client.Post(
+		srv.URL+"/api/v1/users/me/password-change",
+		"application/json",
+		strings.NewReader(`{"currentPassword":"old-pass-1","newPassword":"new-pass-1"}`),
+	)
+	if err != nil {
+		t.Fatalf("POST password-change: %v", err)
+	}
+	defer func() { _ = changeResp.Body.Close() }()
+	if changeResp.StatusCode != http.StatusOK {
+		t.Fatalf("password-change status = %d, want %d", changeResp.StatusCode, http.StatusOK)
+	}
+
+	user, err := deps.Queries.GetUserByEmail(context.Background(), "admin@example.com")
+	if err != nil {
+		t.Fatalf("GetUserByEmail: %v", err)
+	}
+	if err := auth.ComparePassword(user.PasswordHash, "new-pass-1"); err != nil {
+		t.Fatalf("new password verify: %v", err)
+	}
+	if err := auth.ComparePassword(user.PasswordHash, "old-pass-1"); err == nil {
+		t.Fatal("old password should no longer match")
+	}
+
+	settingsResp, err := client.Get(srv.URL + "/api/v1/settings")
+	if err != nil {
+		t.Fatalf("GET settings after change: %v", err)
+	}
+	_ = settingsResp.Body.Close()
+	if settingsResp.StatusCode != http.StatusOK {
+		t.Fatalf("session after change status = %d, want %d", settingsResp.StatusCode, http.StatusOK)
+	}
+}
+
+func TestPasswordChangeRejectsWrongCurrentPassword(t *testing.T) {
+	t.Parallel()
+
+	deps := newUsersTestDeps(t)
+	seedUsersTestUser(t, deps.Queries, "admin@example.com", "old-pass-1")
+
+	srv := httptest.NewServer(api.NewServerRouter(deps))
+	t.Cleanup(srv.Close)
+
+	client := loginUsersTestClient(t, srv.URL, "admin@example.com", "old-pass-1")
+
+	changeResp, err := client.Post(
+		srv.URL+"/api/v1/users/me/password-change",
+		"application/json",
+		strings.NewReader(`{"currentPassword":"wrong-pass","newPassword":"new-pass-1"}`),
+	)
+	if err != nil {
+		t.Fatalf("POST password-change: %v", err)
+	}
+	defer func() { _ = changeResp.Body.Close() }()
+	if changeResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("password-change status = %d, want %d", changeResp.StatusCode, http.StatusUnauthorized)
+	}
+}
+
+func TestPasswordChangeRejectsShortNewPassword(t *testing.T) {
+	t.Parallel()
+
+	deps := newUsersTestDeps(t)
+	seedUsersTestUser(t, deps.Queries, "admin@example.com", "old-pass-1")
+
+	srv := httptest.NewServer(api.NewServerRouter(deps))
+	t.Cleanup(srv.Close)
+
+	client := loginUsersTestClient(t, srv.URL, "admin@example.com", "old-pass-1")
+
+	changeResp, err := client.Post(
+		srv.URL+"/api/v1/users/me/password-change",
+		"application/json",
+		strings.NewReader(`{"currentPassword":"old-pass-1","newPassword":"short"}`),
+	)
+	if err != nil {
+		t.Fatalf("POST password-change: %v", err)
+	}
+	defer func() { _ = changeResp.Body.Close() }()
+	if changeResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("password-change status = %d, want %d", changeResp.StatusCode, http.StatusBadRequest)
+	}
+}
+
+func TestPasswordChangeRequiresSession(t *testing.T) {
+	t.Parallel()
+
+	deps := newUsersTestDeps(t)
+	seedUsersTestUser(t, deps.Queries, "admin@example.com", "old-pass-1")
+
+	srv := httptest.NewServer(api.NewServerRouter(deps))
+	t.Cleanup(srv.Close)
+
+	changeResp, err := http.Post(
+		srv.URL+"/api/v1/users/me/password-change",
+		"application/json",
+		strings.NewReader(`{"currentPassword":"old-pass-1","newPassword":"new-pass-1"}`),
+	)
+	if err != nil {
+		t.Fatalf("POST password-change: %v", err)
+	}
+	defer func() { _ = changeResp.Body.Close() }()
+	if changeResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("password-change status = %d, want %d", changeResp.StatusCode, http.StatusUnauthorized)
+	}
+}
+
 func TestDeleteUserRevokesSessions(t *testing.T) {
 	t.Parallel()
 
