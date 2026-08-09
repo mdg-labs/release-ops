@@ -74,7 +74,8 @@
       "source": "Source",
       "path": "Path",
       "lastTag": "Last tag",
-      "openTicket": "Open ticket"
+      "openTicket": "Open ticket",
+      "lastPolledAt": "Last polled"
     },
     "runStatus": {
       "never": "No runs",

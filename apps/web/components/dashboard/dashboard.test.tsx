@@ -133,6 +133,34 @@ describe("DashboardView", () => {
     expect(await screen.findByText("TASK-42")).toBeTruthy();
   });
 
+  it("renders last polled column with formatted dates and Never", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/status",
+        method: "GET",
+      })
+      .reply(200, {
+        ...sampleStatus,
+        repos: [
+          {
+            ...sampleStatus.repos[0],
+            lastPolledAt: "2026-08-06T15:30:00.000Z",
+          },
+          {
+            ...sampleStatus.repos[1],
+            lastPolledAt: null,
+          },
+        ],
+      });
+
+    renderDashboard();
+
+    expect(await screen.findByText("Last polled")).toBeTruthy();
+    expect(await screen.findByText("Aug 6, 2026, 3:30 PM")).toBeTruthy();
+    expect(await screen.findByText("Never")).toBeTruthy();
+  });
+
   it("shows error alert when last run has errors", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool

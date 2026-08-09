@@ -11,8 +11,8 @@ import {
 } from "@tanstack/react-table";
 import { ChevronDownIcon, ChevronUpIcon, FolderGit2Icon } from "lucide-react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
-import { useMemo, useState } from "react";
+import { useFormatter, useTranslations } from "next-intl";
+import { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Frame, FrameFooter, FramePanel } from "@/components/ui/frame";
@@ -91,10 +91,26 @@ export function RepoStatusTable({
   isLoading,
 }: RepoStatusTableProps): React.ReactElement {
   const t = useTranslations("dashboard");
+  const tRepos = useTranslations("repos");
   const tIntegrations = useTranslations("integrations");
+  const format = useFormatter();
   const [sorting, setSorting] = useState<SortingState>([
     { desc: false, id: "projectPath" },
   ]);
+
+  const formatLastPolledAt = useCallback(
+    (value: string | null): string => {
+      if (!value) {
+        return tRepos("lastPolledNever");
+      }
+
+      return format.dateTime(new Date(value), {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+    },
+    [format, tRepos],
+  );
 
   const columns = useMemo<ColumnDef<StatusRepo>[]>(
     () => [
@@ -154,8 +170,34 @@ export function RepoStatusTable({
         header: t("columns.openTicket"),
         size: 180,
       },
+      {
+        accessorKey: "lastPolledAt",
+        cell: ({ row }) => (
+          <span className="text-muted-foreground text-sm">
+            {formatLastPolledAt(row.original.lastPolledAt)}
+          </span>
+        ),
+        header: t("columns.lastPolledAt"),
+        size: 160,
+        sortingFn: (rowA, rowB, columnId) => {
+          const left = rowA.getValue(columnId) as string | null;
+          const right = rowB.getValue(columnId) as string | null;
+
+          if (!left && !right) {
+            return 0;
+          }
+          if (!left) {
+            return 1;
+          }
+          if (!right) {
+            return -1;
+          }
+
+          return new Date(left).getTime() - new Date(right).getTime();
+        },
+      },
     ],
-    [t, tIntegrations],
+    [formatLastPolledAt, t, tIntegrations],
   );
 
   const table = useReactTable({
