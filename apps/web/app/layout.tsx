@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { connection } from "next/server";
 import { NextIntlClientProvider } from "next-intl";
 import {
   getLocale,
@@ -34,6 +35,9 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Read APP_TIMEZONE from the container at request time (not docker build time).
+  await connection();
+
   const locale = await getLocale();
   const messages = await getMessages();
   const timeZone = await getTimeZone();
