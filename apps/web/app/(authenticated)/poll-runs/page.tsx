@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
+import { PageHeader } from "@/components/common/page-header";
 import { PollRunHistory } from "@/components/dashboard/poll-run-history";
 
 export default function PollRunsPage(): React.ReactElement {
@@ -8,7 +9,7 @@ export default function PollRunsPage(): React.ReactElement {
 
   return (
     <div className="flex min-w-0 w-full flex-col gap-6">
-      <h1 className="font-semibold text-2xl">{t("title")}</h1>
+      <PageHeader title={t("title")} />
       <PollRunHistory />
     </div>
   );

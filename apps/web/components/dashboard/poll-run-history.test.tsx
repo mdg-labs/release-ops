@@ -152,6 +152,7 @@ describe("PollRunHistory", () => {
     renderPollRunHistory();
 
     expect(await screen.findByText("No poll runs yet")).toBeTruthy();
+    expect(document.querySelector('[data-slot="empty"]')).toBeTruthy();
     expect(
       await screen.findByText(
         "Runs appear here after the scheduler or a manual poll completes.",

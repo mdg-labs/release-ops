@@ -2,6 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import { useEffect } from "react";
+import { PageHeader } from "@/components/common/page-header";
 import { LastRunErrors } from "@/components/dashboard/last-run-errors";
 import { RepoStatusTable } from "@/components/dashboard/repo-status-table";
 import { StatusCard } from "@/components/dashboard/status-card";
@@ -33,7 +34,7 @@ export function DashboardView(): React.ReactElement {
 
   return (
     <div className="flex min-w-0 w-full flex-col gap-6">
-      <h1 className="font-semibold text-2xl">{t("title")}</h1>
+      <PageHeader title={t("title")} />
 
       {isError ? (
         <p className="text-destructive-foreground text-sm" role="alert">
@@ -41,22 +42,37 @@ export function DashboardView(): React.ReactElement {
         </p>
       ) : null}
 
-      <StatusCard
-        isLoading={isLoading}
-        isPolling={isPolling}
-        isTriggerPending={triggerPoll.isPending}
-        onRunPoll={() => {
-          triggerPoll.mutate();
-        }}
-        status={data}
-      />
+      <section
+        className="flex flex-col gap-6"
+        data-slot="dashboard-status-section"
+      >
+        <StatusCard
+          isLoading={isLoading}
+          isPolling={isPolling}
+          isTriggerPending={triggerPoll.isPending}
+          onRunPoll={() => {
+            triggerPoll.mutate();
+          }}
+          status={data}
+        />
+      </section>
 
       {!isLoading && lastRunErrors.length > 0 ? (
-        <LastRunErrors errors={lastRunErrors} repos={data?.repos ?? []} />
+        <section
+          className="flex flex-col gap-6"
+          data-slot="dashboard-errors-section"
+        >
+          <LastRunErrors errors={lastRunErrors} repos={data?.repos ?? []} />
+        </section>
       ) : null}
 
-      <section className="flex flex-col gap-3">
-        <h2 className="font-semibold text-lg">{t("reposSectionTitle")}</h2>
+      <section
+        className="flex flex-col gap-6"
+        data-slot="dashboard-repos-section"
+      >
+        <h2 className="font-semibold text-lg tracking-tight">
+          {t("reposSectionTitle")}
+        </h2>
         <RepoStatusTable isLoading={isLoading} repos={data?.repos ?? []} />
       </section>
     </div>

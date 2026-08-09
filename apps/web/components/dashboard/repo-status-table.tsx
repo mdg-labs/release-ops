@@ -15,6 +15,14 @@ import { useFormatter, useTranslations } from "next-intl";
 import { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Frame, FrameFooter, FramePanel } from "@/components/ui/frame";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -39,51 +47,18 @@ function ReposEmptyState(): React.ReactElement {
   const t = useTranslations("dashboard");
 
   return (
-    <div
-      className="flex min-w-0 flex-1 flex-col items-center justify-center gap-6 px-6 py-12 text-center text-balance md:py-20"
-      data-slot="empty"
-    >
-      <div
-        className="flex max-w-sm flex-col items-center text-center"
-        data-slot="empty-header"
-      >
-        <div
-          className="relative mb-6"
-          data-slot="empty-media"
-          data-variant="icon"
-        >
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute bottom-px origin-bottom-left -translate-x-0.5 -rotate-10 scale-84 border bg-card shadow-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-md)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] flex size-9 shrink-0 items-center justify-center rounded-md not-dark:bg-clip-padding text-foreground [&_svg:not([class*='size-'])]:size-4.5"
-          />
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute bottom-px origin-bottom-right translate-x-0.5 rotate-10 scale-84 border bg-card shadow-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-md)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] flex size-9 shrink-0 items-center justify-center rounded-md not-dark:bg-clip-padding text-foreground [&_svg:not([class*='size-'])]:size-4.5"
-          />
-          <div className="relative flex size-9 shrink-0 items-center justify-center rounded-md border bg-card not-dark:bg-clip-padding text-foreground shadow-sm/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-md)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] [&_svg:not([class*='size-'])]:size-4.5">
-            <FolderGit2Icon />
-          </div>
-        </div>
-        <div
-          className="font-heading font-semibold text-xl"
-          data-slot="empty-title"
-        >
-          {t("reposEmptyTitle")}
-        </div>
-        <div
-          className="text-muted-foreground text-sm [[data-slot=empty-title]+&]:mt-1"
-          data-slot="empty-description"
-        >
-          {t("reposEmptyDescription")}
-        </div>
-      </div>
-      <div
-        className="flex w-full min-w-0 max-w-sm flex-col items-center gap-4 text-balance text-sm"
-        data-slot="empty-content"
-      >
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <FolderGit2Icon />
+        </EmptyMedia>
+        <EmptyTitle>{t("reposEmptyTitle")}</EmptyTitle>
+        <EmptyDescription>{t("reposEmptyDescription")}</EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
         <Button render={<Link href="/repos" />}>{t("reposEmptyCta")}</Button>
-      </div>
-    </div>
+      </EmptyContent>
+    </Empty>
   );
 }
 

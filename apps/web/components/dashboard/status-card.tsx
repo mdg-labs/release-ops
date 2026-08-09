@@ -140,7 +140,7 @@ export function StatusCard({
   const pollBusy = isPolling || isTriggerPending;
 
   return (
-    <Frame>
+    <Frame data-slot="dashboard-status-card">
       <FrameHeader>
         <FrameTitle>{t("statusCardTitle")}</FrameTitle>
         <FrameDescription>{t("statusCardDescription")}</FrameDescription>

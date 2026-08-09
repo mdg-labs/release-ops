@@ -124,6 +124,9 @@ describe("DashboardView", () => {
     expect(
       await screen.findByRole("heading", { name: "Dashboard" }),
     ).toBeTruthy();
+    expect(
+      document.querySelector('[data-slot="page-header"]'),
+    ).toBeTruthy();
     expect(await screen.findByText("System status")).toBeTruthy();
     expect(
       await screen.findByRole("heading", { name: "Monitored repos" }),
@@ -270,6 +273,7 @@ describe("DashboardView", () => {
     renderDashboard();
 
     expect(await screen.findByText("No monitored repos")).toBeTruthy();
+    expect(document.querySelector('[data-slot="empty"]')).toBeTruthy();
     const cta = await screen.findByRole("link", { name: "Add repo" });
     expect(cta.getAttribute("href")).toBe("/repos");
   });
