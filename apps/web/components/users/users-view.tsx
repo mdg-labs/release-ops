@@ -3,10 +3,11 @@
 import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 import { MailIcon, Trash2Icon, UserXIcon } from "lucide-react";
+import { PageHeader } from "@/components/common/page-header";
+import { SettingsNav } from "@/components/settings/settings-nav";
 import { DeleteUserDialog } from "@/components/users/delete-user-dialog";
 import { InviteDialog } from "@/components/users/invite-dialog";
 import { RevokeInviteDialog } from "@/components/users/revoke-invite-dialog";
-import { SettingsNav } from "@/components/settings/settings-nav";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Frame, FramePanel } from "@/components/ui/frame";
@@ -99,11 +100,13 @@ export function UsersView(): React.ReactElement {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-semibold text-2xl">{t("title")}</h1>
-        <Button onClick={() => setInviteOpen(true)}>{t("invite")}</Button>
-      </div>
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
+      <PageHeader
+        action={
+          <Button onClick={() => setInviteOpen(true)}>{t("invite")}</Button>
+        }
+        title={t("title")}
+      />
       <SettingsNav />
 
       {usersError || invitationsError ? (

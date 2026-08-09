@@ -861,7 +861,9 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><code>/integrations</code></td><td>Integrations</td><td>CRUD credentials (sources + ticket providers)</td></tr>
     <tr><td><code>/ticket-projects</code></td><td>Ticket Projects</td><td>CRUD per integration: project/team, status mapping, policy</td></tr>
     <tr><td><code>/notifications</code></td><td>Notifications</td><td>Shoutrrr targets, events, test</td></tr>
-    <tr><td><code>/settings</code></td><td>Settings</td><td>Poll interval</td></tr>
+    <tr><td><code>/profile</code></td><td>Profile</td><td>Account email, change email, change password</td></tr>
+    <tr><td><code>/settings</code></td><td>Settings</td><td>Instance: poll interval, invite/reset token expiry</td></tr>
+    <tr><td><code>/settings/users</code></td><td>Users</td><td>User list, invitations, invite/revoke</td></tr>
   </table>
   <p>Middleware: all pages except <code>/login</code> require session (via <code>GET /api/v1/auth/session</code> through the Go proxy).</p>
 
@@ -944,13 +946,31 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><a href="https://coss.com/ui/r/p-toast-5.json">p-toast-5</a> promise</td><td>Test connection async feedback</td></tr>
   </table>
 
+  <h4>/profile</h4>
+  <table>
+    <tr><th>Particle</th><th>Usage</th></tr>
+    <tr><td><code>SettingsSection</code></td><td>Account, change email, change password panels</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>Email (read-only), new email, passwords</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>Request email change, change password</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-alert-5.json">p-alert-5</a> success/error</td><td>Pending verification, password changed, errors</td></tr>
+  </table>
+
   <h4>/settings</h4>
   <table>
     <tr><th>Particle</th><th>Usage</th></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-card-8.json">p-card-8</a> within frame</td><td>Settings section</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-number-field-1.json">p-number-field-1</a></td><td>Poll interval (minutes), min 5</td></tr>
+    <tr><td><code>SettingsSection</code></td><td>Polling and token expiry panels (<code>max-w-4xl</code> layout)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-number-field-1.json">p-number-field-1</a></td><td>Poll interval (minutes, min 5); invite link expiry (hours); password-reset link expiry (minutes)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>Save</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-alert-5.json">p-alert-5</a> success</td><td>Settings saved</td></tr>
+  </table>
+
+  <h4>/settings/users</h4>
+  <table>
+    <tr><th>Particle</th><th>Usage</th></tr>
+    <tr><td><code>PageHeader</code></td><td>Title + "Invite user" action</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a></td><td>Active users and pending invitations</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-dialog-1.json">p-dialog-1</a></td><td>Invite user, delete user, revoke invitation</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-badge-1.json">p-badge-1</a></td><td>"You" badge on current user</td></tr>
   </table>
 
   <h3>8.4 API client (frontend)</h3>
