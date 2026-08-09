@@ -1,13 +1,11 @@
 "use client";
 
-import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AuthErrorAlert, AuthLayout } from "@/components/auth/auth-layout";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardPanel, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { ApiError, apiClient } from "@/lib/api/client";
 import type { LoginResponse } from "@/lib/query/types";
@@ -70,55 +68,39 @@ export function ConfirmEmailChangeForm(): React.ReactElement {
 
   if (!token) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("confirmEmailChange")}</CardTitle>
-        </CardHeader>
-        <CardPanel className="flex flex-col gap-4">
-          <Alert variant="error">
-            <CircleAlertIcon />
-            <AlertTitle>{t("invalidTokenTitle")}</AlertTitle>
-            <AlertDescription>{t("invalidToken")}</AlertDescription>
-          </Alert>
-          <Button render={<Link href="/login" />}>{t("backToLogin")}</Button>
-        </CardPanel>
-      </Card>
+      <AuthLayout title={t("confirmEmailChange")}>
+        <AuthErrorAlert
+          description={t("invalidToken")}
+          title={t("invalidTokenTitle")}
+        />
+        <Button render={<Link href="/login" />}>{t("backToLogin")}</Button>
+      </AuthLayout>
     );
   }
 
   if (isPending) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("confirmEmailChange")}</CardTitle>
-        </CardHeader>
-        <CardPanel className="flex flex-col items-center gap-4 py-6">
+      <AuthLayout
+        subtitle={t("confirmEmailChangeDescription")}
+        title={t("confirmEmailChange")}
+      >
+        <div className="flex flex-col items-center gap-4 py-2">
           <Spinner className="size-6" />
-          <p className="text-muted-foreground text-sm">
-            {t("confirmEmailChangeDescription")}
-          </p>
-        </CardPanel>
-      </Card>
+        </div>
+      </AuthLayout>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("confirmEmailChange")}</CardTitle>
-      </CardHeader>
-      <CardPanel className="flex flex-col gap-4">
-        {submitError ? (
-          <div ref={alertRef} tabIndex={-1}>
-            <Alert variant="error">
-              <CircleAlertIcon />
-              <AlertTitle>{t("requestFailedTitle")}</AlertTitle>
-              <AlertDescription>{submitError}</AlertDescription>
-            </Alert>
-          </div>
-        ) : null}
-        <Button render={<Link href="/login" />}>{t("backToLogin")}</Button>
-      </CardPanel>
-    </Card>
+    <AuthLayout title={t("confirmEmailChange")}>
+      {submitError ? (
+        <AuthErrorAlert
+          alertRef={alertRef}
+          description={submitError}
+          title={t("requestFailedTitle")}
+        />
+      ) : null}
+      <Button render={<Link href="/login" />}>{t("backToLogin")}</Button>
+    </AuthLayout>
   );
 }
