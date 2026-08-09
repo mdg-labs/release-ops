@@ -1,13 +1,15 @@
 "use client";
 
-import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useEffect, useId, useRef, useState } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AUTH_FORM_CLASS,
+  AuthErrorAlert,
+  AuthLayout,
+} from "@/components/auth/auth-layout";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardPanel, CardTitle } from "@/components/ui/card";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ApiError, apiClient } from "@/lib/api/client";
@@ -56,19 +58,13 @@ export function AcceptInvitationForm(): React.ReactElement {
 
   if (!token) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("acceptInvitation")}</CardTitle>
-        </CardHeader>
-        <CardPanel className="flex flex-col gap-4">
-          <Alert variant="error">
-            <CircleAlertIcon />
-            <AlertTitle>{t("invalidTokenTitle")}</AlertTitle>
-            <AlertDescription>{t("invalidToken")}</AlertDescription>
-          </Alert>
-          <Button render={<Link href="/login" />}>{t("backToLogin")}</Button>
-        </CardPanel>
-      </Card>
+      <AuthLayout title={t("acceptInvitation")}>
+        <AuthErrorAlert
+          description={t("invalidToken")}
+          title={t("invalidTokenTitle")}
+        />
+        <Button render={<Link href="/login" />}>{t("backToLogin")}</Button>
+      </AuthLayout>
     );
   }
 
@@ -105,57 +101,50 @@ export function AcceptInvitationForm(): React.ReactElement {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("acceptInvitation")}</CardTitle>
-      </CardHeader>
-      <CardPanel className="flex flex-col gap-4">
-        <p className="text-muted-foreground text-sm">
-          {t("acceptInvitationDescription")}
-        </p>
-        {submitError ? (
-          <div ref={alertRef} tabIndex={-1}>
-            <Alert variant="error">
-              <CircleAlertIcon />
-              <AlertTitle>{t("requestFailedTitle")}</AlertTitle>
-              <AlertDescription>{submitError}</AlertDescription>
-            </Alert>
-          </div>
-        ) : null}
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-          <Field name="password">
-            <FieldLabel htmlFor={passwordId}>
-              {t("password")} <span aria-hidden="true">*</span>
-            </FieldLabel>
-            <Input
-              autoComplete="new-password"
-              autoFocus
-              id={passwordId}
-              name="password"
-              required
-              type="password"
-            />
-          </Field>
-          <Field name="confirmPassword">
-            <FieldLabel htmlFor={confirmPasswordId}>
-              {t("confirmPassword")} <span aria-hidden="true">*</span>
-            </FieldLabel>
-            <Input
-              autoComplete="new-password"
-              id={confirmPasswordId}
-              name="confirmPassword"
-              required
-              type="password"
-            />
-          </Field>
-          <Button loading={isPending} type="submit">
-            {t("setPassword")}
-          </Button>
-        </form>
-        <Button render={<Link href="/login" />} variant="outline">
-          {t("backToLogin")}
+    <AuthLayout
+      subtitle={t("acceptInvitationDescription")}
+      title={t("acceptInvitation")}
+    >
+      {submitError ? (
+        <AuthErrorAlert
+          alertRef={alertRef}
+          description={submitError}
+          title={t("requestFailedTitle")}
+        />
+      ) : null}
+      <form className={AUTH_FORM_CLASS} onSubmit={handleSubmit}>
+        <Field name="password">
+          <FieldLabel htmlFor={passwordId}>
+            {t("password")} <span aria-hidden="true">*</span>
+          </FieldLabel>
+          <Input
+            autoComplete="new-password"
+            autoFocus
+            id={passwordId}
+            name="password"
+            required
+            type="password"
+          />
+        </Field>
+        <Field name="confirmPassword">
+          <FieldLabel htmlFor={confirmPasswordId}>
+            {t("confirmPassword")} <span aria-hidden="true">*</span>
+          </FieldLabel>
+          <Input
+            autoComplete="new-password"
+            id={confirmPasswordId}
+            name="confirmPassword"
+            required
+            type="password"
+          />
+        </Field>
+        <Button loading={isPending} type="submit">
+          {t("setPassword")}
         </Button>
-      </CardPanel>
-    </Card>
+      </form>
+      <Button render={<Link href="/login" />} variant="outline">
+        {t("backToLogin")}
+      </Button>
+    </AuthLayout>
   );
 }

@@ -1,13 +1,15 @@
 "use client";
 
-import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useEffect, useId, useRef, useState } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AUTH_FORM_CLASS,
+  AuthErrorAlert,
+  AuthLayout,
+} from "@/components/auth/auth-layout";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardPanel, CardTitle } from "@/components/ui/card";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/client";
@@ -52,59 +54,52 @@ export function LoginForm(): React.ReactElement {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("login")}</CardTitle>
-      </CardHeader>
-      <CardPanel className="flex flex-col gap-4">
-        {submitError ? (
-          <div ref={alertRef} tabIndex={-1}>
-            <Alert variant="error">
-              <CircleAlertIcon />
-              <AlertTitle>{t("loginFailedTitle")}</AlertTitle>
-              <AlertDescription>{submitError}</AlertDescription>
-            </Alert>
-          </div>
-        ) : null}
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-          <Field name="email">
-            <FieldLabel htmlFor={emailId}>
-              {t("email")} <span aria-hidden="true">*</span>
-            </FieldLabel>
-            <Input
-              autoComplete="email"
-              autoFocus
-              id={emailId}
-              name="email"
-              required
-              type="email"
-            />
-          </Field>
-          <Field name="password">
-            <FieldLabel htmlFor={passwordId}>
-              {t("password")} <span aria-hidden="true">*</span>
-            </FieldLabel>
-            <Input
-              autoComplete="current-password"
-              id={passwordId}
-              name="password"
-              required
-              type="password"
-            />
-          </Field>
-          <div className="text-right text-sm">
-            <Link
-              className="text-muted-foreground underline-offset-4 hover:underline"
-              href="/forgot-password"
-            >
-              {t("forgotPasswordLink")}
-            </Link>
-          </div>
-          <Button loading={login.isPending} type="submit">
-            {t("signIn")}
-          </Button>
-        </form>
-      </CardPanel>
-    </Card>
+    <AuthLayout title={t("login")}>
+      {submitError ? (
+        <AuthErrorAlert
+          alertRef={alertRef}
+          description={submitError}
+          title={t("loginFailedTitle")}
+        />
+      ) : null}
+      <form className={AUTH_FORM_CLASS} onSubmit={handleSubmit}>
+        <Field name="email">
+          <FieldLabel htmlFor={emailId}>
+            {t("email")} <span aria-hidden="true">*</span>
+          </FieldLabel>
+          <Input
+            autoComplete="email"
+            autoFocus
+            id={emailId}
+            name="email"
+            required
+            type="email"
+          />
+        </Field>
+        <Field name="password">
+          <FieldLabel htmlFor={passwordId}>
+            {t("password")} <span aria-hidden="true">*</span>
+          </FieldLabel>
+          <Input
+            autoComplete="current-password"
+            id={passwordId}
+            name="password"
+            required
+            type="password"
+          />
+        </Field>
+        <div className="text-right text-sm">
+          <Link
+            className="text-muted-foreground underline-offset-4 hover:underline"
+            href="/forgot-password"
+          >
+            {t("forgotPasswordLink")}
+          </Link>
+        </div>
+        <Button loading={login.isPending} type="submit">
+          {t("signIn")}
+        </Button>
+      </form>
+    </AuthLayout>
   );
 }
