@@ -59,11 +59,11 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 			return
 		}
 
-		registerProtectedAPIRoutes(protected, deps, appPublicURL)
+		registerProtectedAPIRoutes(protected, deps, appPublicURL, rateLimiter)
 	})
 }
 
-func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appPublicURL string) {
+func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appPublicURL string, rateLimiter *apimw.RateLimiter) {
 	st := deps.Store
 	pollRunner := deps.PollRunner
 	if pollRunner == nil {
@@ -151,6 +151,7 @@ func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appPubli
 	protected.Get("/users", userHandlers.List)
 	protected.Delete("/users/{id}", userHandlers.Delete)
 	protected.Post("/users/me/email-change-request", userHandlers.EmailChangeRequest)
+	protected.With(rateLimiter.ResetPassword).Post("/users/me/password-change", userHandlers.PasswordChange)
 	protected.Get("/users/invitations", invitationHandlers.List)
 	protected.Post("/users/invitations", invitationHandlers.Create)
 	protected.Delete("/users/invitations/{id}", invitationHandlers.Delete)

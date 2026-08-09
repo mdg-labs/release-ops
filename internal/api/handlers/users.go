@@ -7,6 +7,7 @@ import (
 	"net/http"
 	netmail "net/mail"
 	"strings"
+	"time"
 
 	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
@@ -179,6 +180,63 @@ func (h *UsersHandlers) EmailChangeRequest(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		auth.WriteError(w, "INTERNAL_ERROR", "failed to send email", http.StatusInternalServerError)
+		return
+	}
+
+	writeUsersJSON(w, http.StatusOK, map[string]any{})
+}
+
+type passwordChangeRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
+const minPasswordLength = 8
+
+// PasswordChange handles POST /api/v1/users/me/password-change.
+func (h *UsersHandlers) PasswordChange(w http.ResponseWriter, r *http.Request) {
+	currentUserID, ok := apimw.UserIDFromContext(r.Context())
+	if !ok {
+		auth.WriteError(w, "unauthorized", "authentication required", http.StatusUnauthorized)
+		return
+	}
+
+	var req passwordChangeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		auth.WriteError(w, "VALIDATION_ERROR", "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if req.CurrentPassword == "" || req.NewPassword == "" {
+		auth.WriteError(w, "VALIDATION_ERROR", "currentPassword and newPassword are required", http.StatusBadRequest)
+		return
+	}
+	if len(req.NewPassword) < minPasswordLength {
+		auth.WriteError(w, "VALIDATION_ERROR", "password must be at least 8 characters", http.StatusBadRequest)
+		return
+	}
+
+	user, err := h.Queries.GetUserByID(r.Context(), currentUserID)
+	if err != nil {
+		auth.WriteError(w, "INTERNAL_ERROR", "failed to load user", http.StatusInternalServerError)
+		return
+	}
+	if err := auth.ComparePassword(user.PasswordHash, req.CurrentPassword); err != nil {
+		auth.WriteError(w, "invalid_credentials", "invalid email or password", http.StatusUnauthorized)
+		return
+	}
+
+	hash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		auth.WriteError(w, "INTERNAL_ERROR", "failed to hash password", http.StatusInternalServerError)
+		return
+	}
+
+	if _, err := h.Queries.UpdateUserPassword(r.Context(), storedb.UpdateUserPasswordParams{
+		PasswordHash: hash,
+		UpdatedAt:    time.Now().UTC().Format(time.RFC3339),
+		ID:           currentUserID,
+	}); err != nil {
+		auth.WriteError(w, "INTERNAL_ERROR", "failed to update password", http.StatusInternalServerError)
 		return
 	}
 

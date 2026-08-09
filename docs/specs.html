@@ -173,8 +173,15 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <li>After bootstrap, additional accounts are created <strong>only</strong> via invitation accept — no <code>POST /api/v1/auth/register</code> and no public sign-up UI.</li>
     <li>Any logged-in user can invite others, list users, revoke pending invitations, and remove other users.</li>
     <li>Invitations return a one-time URL (<code>{APP_PUBLIC_URL}/accept-invitation?token=…</code>) for copy-link; optional SMTP email when configured (§9).</li>
-    <li>Password minimum: <strong>8 characters</strong> (invite accept, reset, login unchanged).</li>
+    <li>Password minimum: <strong>8 characters</strong> (invite accept, reset, logged-in change, login unchanged).</li>
     <li>Admin/bootstrap never sets another user’s password — invited users choose their own password on accept; existing users use forgot-password or self-service flows.</li>
+  </ul>
+  <h3>Self-service password change</h3>
+  <ul>
+    <li>Logged-in user changes password via <code>POST /api/v1/users/me/password-change</code> with <code>currentPassword</code> and <code>newPassword</code>.</li>
+    <li>Minimum <strong>8 characters</strong> for <code>newPassword</code>; <strong>401</strong> when <code>currentPassword</code> is wrong (bcrypt verify).</li>
+    <li>Rate limit: <strong>10 / hour</strong> per client IP (same window as reset-password; §7.0).</li>
+    <li>Current session remains valid after change (no session revocation).</li>
   </ul>
   <h3>Self-service email change</h3>
   <ul>
@@ -595,6 +602,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><code>POST /api/v1/auth/accept-invitation</code></td><td>10 / hour</td></tr>
     <tr><td><code>POST /api/v1/auth/reset-password</code></td><td>10 / hour</td></tr>
     <tr><td><code>POST /api/v1/auth/confirm-email-change</code></td><td>10 / hour</td></tr>
+    <tr><td><code>POST /api/v1/users/me/password-change</code></td><td>10 / hour</td></tr>
   </table>
   <pre><code>// POST /api/v1/auth/login — 200
 { "user": { "id": "uuid", "email": "admin@example.com" } }
@@ -620,6 +628,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td>DELETE</td><td><code>/api/v1/users/invitations/{id}</code></td><td>Revoke pending invitation</td></tr>
     <tr><td>POST</td><td><code>/api/v1/users/invitations/{id}/send-email</code></td><td>Send invitation email via SMTP — <strong>503</strong> when SMTP not configured</td></tr>
     <tr><td>POST</td><td><code>/api/v1/users/me/email-change-request</code></td><td><code>{ "newEmail", "currentPassword" }</code> — sends confirm link to <strong>new</strong> email; 401 wrong password</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/users/me/password-change</code></td><td><code>{ "currentPassword", "newPassword" }</code> — updates password; min 8-char <code>newPassword</code>; 401 wrong password; rate limited 10/hour per IP</td></tr>
   </table>
   <pre><code>// POST /api/v1/users/invitations — 201
 {
