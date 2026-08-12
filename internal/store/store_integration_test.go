@@ -102,6 +102,7 @@ func TestTicketProjectCreateWithValidJSONConfigs(t *testing.T) {
 
 	createConfig := `{"status":"ready","priority":"medium"}`
 	statusMapping := `{"open":["To Do"],"done":["Done"],"cancelled":["Cancelled"],"superseded":"Cancelled"}`
+	contentTemplates := `{"title":"Release: {{ .Release.Tag }}","description":"Body","supersedeComment":"Old → new"}`
 
 	project, err := s.TicketProjects().Create(ctx, store.CreateTicketProjectInput{
 		IntegrationID:     integration.ID,
@@ -109,6 +110,7 @@ func TestTicketProjectCreateWithValidJSONConfigs(t *testing.T) {
 		Name:              "JSON Valid Project",
 		CreateConfig:      createConfig,
 		StatusMapping:     statusMapping,
+		ContentTemplates:  contentTemplates,
 	})
 	if err != nil {
 		t.Fatalf("Create ticket project: %v", err)
@@ -118,6 +120,9 @@ func TestTicketProjectCreateWithValidJSONConfigs(t *testing.T) {
 	}
 	if project.StatusMapping != statusMapping {
 		t.Fatalf("StatusMapping = %q, want %q", project.StatusMapping, statusMapping)
+	}
+	if project.ContentTemplates != contentTemplates {
+		t.Fatalf("ContentTemplates = %q, want %q", project.ContentTemplates, contentTemplates)
 	}
 
 	row, err := s.Queries().GetTicketProject(ctx, project.ID)
@@ -129,6 +134,27 @@ func TestTicketProjectCreateWithValidJSONConfigs(t *testing.T) {
 	}
 	if !json.Valid([]byte(row.StatusMapping)) {
 		t.Fatalf("status_mapping is not valid JSON: %q", row.StatusMapping)
+	}
+	if !json.Valid([]byte(row.ContentTemplates)) {
+		t.Fatalf("content_templates is not valid JSON: %q", row.ContentTemplates)
+	}
+	if row.ContentTemplates != contentTemplates {
+		t.Fatalf("content_templates = %q, want %q", row.ContentTemplates, contentTemplates)
+	}
+
+	updatedTemplates := `{"title":"","description":"","supersedeComment":""}`
+	updated, err := s.TicketProjects().Update(ctx, project.ID, store.UpdateTicketProjectInput{
+		Name:               project.Name,
+		CreateConfig:       createConfig,
+		StatusMapping:      statusMapping,
+		ContentTemplates:   updatedTemplates,
+		OnOpenTicketPolicy: project.OnOpenTicketPolicy,
+	})
+	if err != nil {
+		t.Fatalf("Update ticket project: %v", err)
+	}
+	if updated.ContentTemplates != updatedTemplates {
+		t.Fatalf("updated ContentTemplates = %q, want %q", updated.ContentTemplates, updatedTemplates)
 	}
 
 	_, err = s.TicketProjects().Create(ctx, store.CreateTicketProjectInput{

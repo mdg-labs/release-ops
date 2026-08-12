@@ -18,21 +18,32 @@ var validOnOpenTicketPolicies = map[string]struct{}{
 	"skip_if_open": {},
 }
 
+const defaultContentTemplatesJSON = `{"title":"","description":"","supersedeComment":""}`
+
+var requiredContentTemplateKeys = []string{"title", "description", "supersedeComment"}
+
 // TicketProjectHandlers serves ticket project HTTP endpoints.
 type TicketProjectHandlers struct {
 	TicketProjects store.TicketProjectRepository
 }
 
+type contentTemplatesResponse struct {
+	Title            string `json:"title"`
+	Description      string `json:"description"`
+	SupersedeComment string `json:"supersedeComment"`
+}
+
 type ticketProjectResponse struct {
-	ID                 string          `json:"id"`
-	IntegrationID      string          `json:"integrationId"`
-	ExternalProjectID  string          `json:"externalProjectId"`
-	Name               string          `json:"name"`
-	CreateConfig       json.RawMessage `json:"createConfig"`
-	StatusMapping      json.RawMessage `json:"statusMapping"`
-	OnOpenTicketPolicy string          `json:"onOpenTicketPolicy"`
-	CreatedAt          string          `json:"createdAt"`
-	UpdatedAt          string          `json:"updatedAt"`
+	ID                 string                  `json:"id"`
+	IntegrationID      string                  `json:"integrationId"`
+	ExternalProjectID  string                  `json:"externalProjectId"`
+	Name               string                  `json:"name"`
+	CreateConfig       json.RawMessage         `json:"createConfig"`
+	StatusMapping      json.RawMessage         `json:"statusMapping"`
+	ContentTemplates   contentTemplatesResponse `json:"contentTemplates"`
+	OnOpenTicketPolicy string                  `json:"onOpenTicketPolicy"`
+	CreatedAt          string                  `json:"createdAt"`
+	UpdatedAt          string                  `json:"updatedAt"`
 }
 
 type createTicketProjectRequest struct {
@@ -41,6 +52,7 @@ type createTicketProjectRequest struct {
 	Name               string          `json:"name"`
 	CreateConfig       json.RawMessage `json:"createConfig"`
 	StatusMapping      json.RawMessage `json:"statusMapping"`
+	ContentTemplates   json.RawMessage `json:"contentTemplates"`
 	OnOpenTicketPolicy string          `json:"onOpenTicketPolicy"`
 }
 
@@ -48,6 +60,7 @@ type patchTicketProjectRequest struct {
 	Name               string          `json:"name"`
 	CreateConfig       json.RawMessage `json:"createConfig"`
 	StatusMapping      json.RawMessage `json:"statusMapping"`
+	ContentTemplates   json.RawMessage `json:"contentTemplates"`
 	OnOpenTicketPolicy string          `json:"onOpenTicketPolicy"`
 }
 
@@ -108,6 +121,11 @@ func (h *TicketProjectHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
 		return
 	}
+	contentTemplates, err := validateContentTemplates(req.ContentTemplates, true)
+	if err != nil {
+		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	policy := req.OnOpenTicketPolicy
 	if policy == "" {
@@ -124,6 +142,7 @@ func (h *TicketProjectHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		Name:               req.Name,
 		CreateConfig:       createConfig,
 		StatusMapping:      statusMapping,
+		ContentTemplates:   contentTemplates,
 		OnOpenTicketPolicy: policy,
 	})
 	if err != nil {
@@ -156,6 +175,16 @@ func (h *TicketProjectHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	existing, err := h.TicketProjects.Get(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			auth.WriteError(w, "NOT_FOUND", "ticket project not found", http.StatusNotFound)
+			return
+		}
+		auth.WriteError(w, "INTERNAL_ERROR", "failed to load ticket project", http.StatusInternalServerError)
+		return
+	}
+
 	createConfig, err := validateJSONField(req.CreateConfig, "createConfig")
 	if err != nil {
 		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
@@ -166,6 +195,16 @@ func (h *TicketProjectHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	contentTemplates := existing.ContentTemplates
+	if len(req.ContentTemplates) > 0 {
+		contentTemplates, err = mergeContentTemplates(existing.ContentTemplates, req.ContentTemplates)
+		if err != nil {
+			auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
 	if req.OnOpenTicketPolicy == "" {
 		auth.WriteError(w, "VALIDATION_ERROR", "onOpenTicketPolicy is required", http.StatusBadRequest)
 		return
@@ -179,6 +218,7 @@ func (h *TicketProjectHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 		Name:               req.Name,
 		CreateConfig:       createConfig,
 		StatusMapping:      statusMapping,
+		ContentTemplates:   contentTemplates,
 		OnOpenTicketPolicy: req.OnOpenTicketPolicy,
 	})
 	if err != nil {
@@ -229,6 +269,13 @@ func (h *TicketProjectHandlers) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 func ticketProjectFromStore(item *store.TicketProject) ticketProjectResponse {
+	contentTemplates := contentTemplatesResponse{}
+	raw := item.ContentTemplates
+	if raw == "" {
+		raw = defaultContentTemplatesJSON
+	}
+	_ = json.Unmarshal([]byte(raw), &contentTemplates)
+
 	return ticketProjectResponse{
 		ID:                 item.ID,
 		IntegrationID:      item.IntegrationID,
@@ -236,6 +283,7 @@ func ticketProjectFromStore(item *store.TicketProject) ticketProjectResponse {
 		Name:               item.Name,
 		CreateConfig:       json.RawMessage(item.CreateConfig),
 		StatusMapping:      json.RawMessage(item.StatusMapping),
+		ContentTemplates:   contentTemplates,
 		OnOpenTicketPolicy: item.OnOpenTicketPolicy,
 		CreatedAt:          item.CreatedAt,
 		UpdatedAt:          item.UpdatedAt,
@@ -254,6 +302,102 @@ func validateJSONField(raw json.RawMessage, fieldName string) (string, error) {
 		return "", errors.New(fieldName + " must be a JSON object")
 	}
 	return string(raw), nil
+}
+
+func validateContentTemplates(raw json.RawMessage, requireAllKeys bool) (string, error) {
+	if len(raw) == 0 {
+		return "", errors.New("contentTemplates is required")
+	}
+	if !json.Valid(raw) {
+		return "", errors.New("contentTemplates must be valid JSON")
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return "", errors.New("contentTemplates must be a JSON object")
+	}
+
+	if requireAllKeys {
+		for _, key := range requiredContentTemplateKeys {
+			if _, ok := obj[key]; !ok {
+				return "", errors.New("contentTemplates." + key + " is required")
+			}
+		}
+	}
+
+	for key, value := range obj {
+		if !isContentTemplateKey(key) {
+			continue
+		}
+		if _, err := parseContentTemplateStringValue(key, value); err != nil {
+			return "", err
+		}
+	}
+
+	if requireAllKeys {
+		return string(raw), nil
+	}
+
+	merged, err := mergeContentTemplates(defaultContentTemplatesJSON, raw)
+	if err != nil {
+		return "", err
+	}
+	return merged, nil
+}
+
+func mergeContentTemplates(existingJSON string, patch json.RawMessage) (string, error) {
+	base := contentTemplatesResponse{}
+	if existingJSON == "" {
+		existingJSON = defaultContentTemplatesJSON
+	}
+	if err := json.Unmarshal([]byte(existingJSON), &base); err != nil {
+		return "", errors.New("contentTemplates must be valid JSON")
+	}
+
+	patchObj := map[string]json.RawMessage{}
+	if err := json.Unmarshal(patch, &patchObj); err != nil {
+		return "", errors.New("contentTemplates must be a JSON object")
+	}
+
+	for key, value := range patchObj {
+		if !isContentTemplateKey(key) {
+			continue
+		}
+		strVal, err := parseContentTemplateStringValue(key, value)
+		if err != nil {
+			return "", err
+		}
+		switch key {
+		case "title":
+			base.Title = strVal
+		case "description":
+			base.Description = strVal
+		case "supersedeComment":
+			base.SupersedeComment = strVal
+		}
+	}
+
+	out, err := json.Marshal(base)
+	if err != nil {
+		return "", errors.New("contentTemplates must be valid JSON")
+	}
+	return string(out), nil
+}
+
+func isContentTemplateKey(key string) bool {
+	switch key {
+	case "title", "description", "supersedeComment":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseContentTemplateStringValue(key string, raw json.RawMessage) (string, error) {
+	var str string
+	if err := json.Unmarshal(raw, &str); err != nil {
+		return "", errors.New("contentTemplates." + key + " must be a string")
+	}
+	return str, nil
 }
 
 func validateOnOpenTicketPolicy(policy string) error {
