@@ -3,6 +3,7 @@
 import { useTranslations } from "next-intl";
 import { useEffect, useId, useMemo, useState } from "react";
 import { CreateConfigTabs } from "@/components/ticket-projects/create-config-tabs";
+import { ContentTemplateForm } from "@/components/ticket-projects/content-template-form";
 import { MetadataSelect } from "@/components/ticket-projects/metadata-select";
 import {
   ON_OPEN_TICKET_POLICIES,
@@ -44,12 +45,20 @@ import {
   defaultCreateConfig,
 } from "@/lib/ticket-projects/create-config";
 import {
+  contentTemplatesFromRecord,
+  defaultContentTemplates,
+} from "@/lib/ticket-projects/content-templates";
+import {
   defaultStatusMapping,
   statusMappingFromRecord,
   statusMappingToRecord,
   type StatusMappingValues,
 } from "@/lib/ticket-projects/status-mapping";
-import type { Integration, TicketProject } from "@/lib/query/types";
+import type {
+  ContentTemplates,
+  Integration,
+  TicketProject,
+} from "@/lib/query/types";
 
 type ProjectDrawerMode = "create" | "edit";
 
@@ -65,6 +74,7 @@ type ProjectDrawerProps = {
     name: string;
     createConfig: Record<string, unknown>;
     statusMapping: Record<string, unknown>;
+    contentTemplates: ContentTemplates;
     onOpenTicketPolicy: string;
   }) => Promise<TicketProject>;
   onUpdate: (
@@ -73,6 +83,7 @@ type ProjectDrawerProps = {
       name: string;
       createConfig: Record<string, unknown>;
       statusMapping: Record<string, unknown>;
+      contentTemplates: ContentTemplates;
       onOpenTicketPolicy: string;
     },
   ) => Promise<TicketProject>;
@@ -169,6 +180,9 @@ export function ProjectDrawer({
   const [createConfig, setCreateConfig] = useState<Record<string, unknown>>({});
   const [statusMapping, setStatusMapping] =
     useState<StatusMappingValues>(defaultStatusMapping);
+  const [contentTemplates, setContentTemplates] = useState<ContentTemplates>(
+    defaultContentTemplates(),
+  );
   const [formError, setFormError] = useState<string | null>(null);
 
   const selectedIntegration =
@@ -226,6 +240,7 @@ export function ProjectDrawer({
           : project.createConfig,
       );
       setStatusMapping(statusMappingFromRecord(project.statusMapping));
+      setContentTemplates(contentTemplatesFromRecord(project.contentTemplates));
       return;
     }
 
@@ -239,6 +254,7 @@ export function ProjectDrawer({
     setPolicy("supersede");
     setCreateConfig(kind ? defaultCreateConfig(kind) : {});
     setStatusMapping(defaultStatusMapping());
+    setContentTemplates(defaultContentTemplates());
   }, [open, mode, project, integrations, ticketIntegrations]);
 
   useEffect(() => {
@@ -307,6 +323,7 @@ export function ProjectDrawer({
       name: trimmedName,
       createConfig: serializeCreateConfig(activeKind, createConfig),
       statusMapping: statusMappingToRecord(statusMapping),
+      contentTemplates,
       onOpenTicketPolicy: policy,
     };
 
@@ -460,6 +477,11 @@ export function ProjectDrawer({
               integrationId={activeIntegrationId}
               onChange={setStatusMapping}
               values={statusMapping}
+            />
+
+            <ContentTemplateForm
+              onChange={setContentTemplates}
+              values={contentTemplates}
             />
           </SheetPanel>
           <SheetFooter variant="bare">

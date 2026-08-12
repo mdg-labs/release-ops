@@ -334,6 +334,76 @@
       "statusDoneRequired": "At least one done status is required.",
       "statusCancelledRequired": "At least one cancelled status is required.",
       "statusSupersededRequired": "Superseded status is required."
+    },
+    "templates": {
+      "title": "Content templates",
+      "noteTitle": "Per-project templates",
+      "noteDescription": "Templates differ per project. Leave a field empty to use the integration default.",
+      "placeholder": "'{{' .Release.Tag '}}'",
+      "supersedeHint": "Used when commenting on the old ticket during supersede.",
+      "variablesTitle": "Template variables",
+      "variablesDescription": "Go text/template paths available when tickets are created or superseded.",
+      "variablePath": "Path",
+      "variableDescription": "Description",
+      "fields": {
+        "title": "Title template",
+        "description": "Description template",
+        "supersedeComment": "Supersede comment template"
+      },
+      "variables": {
+        "repoSourceKind": {
+          "path": ".Repo.SourceKind",
+          "description": "Monitored repo source kind (github, gitlab, etc.)"
+        },
+        "repoProjectPath": {
+          "path": ".Repo.ProjectPath",
+          "description": "Monitored repo project path"
+        },
+        "repoUrl": {
+          "path": ".Repo.URL",
+          "description": "Repository web URL"
+        },
+        "releaseTag": {
+          "path": ".Release.Tag",
+          "description": "Latest release tag"
+        },
+        "releaseName": {
+          "path": ".Release.Name",
+          "description": "Release name from the source API"
+        },
+        "releaseUrl": {
+          "path": ".Release.URL",
+          "description": "Release page URL"
+        },
+        "releaseNotes": {
+          "path": ".Release.Notes",
+          "description": "Release body or changelog text"
+        },
+        "releasePublishedAt": {
+          "path": ".Release.PublishedAt",
+          "description": "Release timestamp (RFC3339 UTC)"
+        },
+        "releaseIsPrerelease": {
+          "path": ".Release.IsPrerelease",
+          "description": "Whether the release is a pre-release (true/false)"
+        },
+        "previousTag": {
+          "path": ".Previous.Tag",
+          "description": "Last known tag before this poll action"
+        },
+        "supersedeOldTag": {
+          "path": ".Supersede.OldTag",
+          "description": "Tag on the open ticket being superseded"
+        },
+        "supersedeNewTag": {
+          "path": ".Supersede.NewTag",
+          "description": "New release tag"
+        },
+        "supersedeNewTicketUrl": {
+          "path": ".Supersede.NewTicketURL",
+          "description": "Provider web URL for the new ticket created during supersede"
+        }
+      }
     }
   },
   "notifications": {

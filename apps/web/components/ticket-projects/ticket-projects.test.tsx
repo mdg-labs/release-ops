@@ -52,6 +52,12 @@ const sampleProjects = [
       cancelled: ["Cancelled"],
       superseded: "Cancelled",
     },
+    contentTemplates: {
+      title: "Release: {{ .Release.Tag }}",
+      description: "**Release:** {{ .Release.Name }}",
+      supersedeComment:
+        "Superseded: {{ .Supersede.OldTag }} → {{ .Supersede.NewTag }}",
+    },
     onOpenTicketPolicy: "supersede",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -287,5 +293,90 @@ describe("TicketProjectsView", () => {
       "Jira — DEV",
     );
     expect(within(dialog).getByText("DEV")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Title template")).toHaveValue(
+      "Release: {{ .Release.Tag }}",
+    );
+    expect(within(dialog).getByLabelText("Description template")).toHaveValue(
+      "**Release:** {{ .Release.Name }}",
+    );
+    expect(
+      within(dialog).getByLabelText("Supersede comment template"),
+    ).toHaveValue(
+      "Superseded: {{ .Supersede.OldTag }} → {{ .Supersede.NewTag }}",
+    );
+    expect(
+      within(dialog).getByText(".Supersede.NewTicketURL"),
+    ).toBeInTheDocument();
+  });
+
+  it("saves edited content templates", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/ticket-projects",
+        method: "GET",
+      })
+      .reply(200, sampleProjects);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/integrations",
+        method: "GET",
+      })
+      .reply(200, ticketIntegrations);
+    pool
+      .intercept({
+        path: /\/api\/go\/api\/v1\/integrations\/int-jira\/ticket-metadata\/.*/,
+        method: "GET",
+      })
+      .reply(200, {
+        items: [
+          { id: "To Do", name: "To Do" },
+          { id: "In Progress", name: "In Progress" },
+          { id: "Done", name: "Done" },
+          { id: "Cancelled", name: "Cancelled" },
+        ],
+      });
+
+    let patchBody: Record<string, unknown> | undefined;
+    pool
+      .intercept({
+        path: "/api/go/api/v1/ticket-projects/tp-1",
+        method: "PATCH",
+      })
+      .reply(200, (opts) => {
+        patchBody = JSON.parse(opts.body as string) as Record<string, unknown>;
+        return {
+          ...sampleProjects[0],
+          contentTemplates: {
+            title: "Updated: {{ .Release.Tag }}",
+            description: sampleProjects[0].contentTemplates.description,
+            supersedeComment:
+              sampleProjects[0].contentTemplates.supersedeComment,
+          },
+        };
+      });
+
+    renderTicketProjectsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit Jira — DEV" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Title template"), {
+      target: { value: "Updated: {{ .Release.Tag }}" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await vi.waitFor(() => {
+      expect(patchBody).toBeDefined();
+    });
+
+    expect(patchBody?.contentTemplates).toEqual({
+      title: "Updated: {{ .Release.Tag }}",
+      description: "**Release:** {{ .Release.Name }}",
+      supersedeComment:
+        "Superseded: {{ .Supersede.OldTag }} → {{ .Supersede.NewTag }}",
+    });
   });
 });

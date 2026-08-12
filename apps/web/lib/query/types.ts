@@ -156,6 +156,12 @@ export type TicketMetadataResponse = {
   message?: string;
 };
 
+export type ContentTemplates = {
+  title: string;
+  description: string;
+  supersedeComment: string;
+};
+
 export type TicketProject = {
   id: string;
   integrationId: string;
@@ -163,6 +169,7 @@ export type TicketProject = {
   name: string;
   createConfig: Record<string, unknown>;
   statusMapping: Record<string, unknown>;
+  contentTemplates: ContentTemplates;
   onOpenTicketPolicy: string;
   createdAt: string;
   updatedAt: string;
@@ -174,6 +181,7 @@ export type CreateTicketProjectInput = {
   name: string;
   createConfig: Record<string, unknown>;
   statusMapping: Record<string, unknown>;
+  contentTemplates: ContentTemplates;
   onOpenTicketPolicy: string;
 };
 
@@ -181,6 +189,7 @@ export type UpdateTicketProjectInput = {
   name: string;
   createConfig: Record<string, unknown>;
   statusMapping: Record<string, unknown>;
+  contentTemplates: ContentTemplates;
   onOpenTicketPolicy: string;
 };
 
