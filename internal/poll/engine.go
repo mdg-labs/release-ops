@@ -9,6 +9,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/providers/source"
 	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 	"github.com/mdg-labs/release-ops/internal/store"
+	"github.com/mdg-labs/release-ops/internal/tickettemplate"
 )
 
 // Poll actions recorded in poll_run_events (specs §4.6).
@@ -47,6 +48,7 @@ func (e *Engine) EvaluateRepo(
 	fetchErr error,
 	project ticket.TicketProject,
 	provider ticket.TicketProvider,
+	repoWebURL string,
 ) (*RepoEvaluation, error) {
 	if fetchErr != nil {
 		return e.recordError(ctx, repo, fetchErr)
@@ -59,14 +61,14 @@ func (e *Engine) EvaluateRepo(
 	case tagActionSkip:
 		return e.applySkip(ctx, repo)
 	case tagActionNewTag:
-		return e.applyNewTag(ctx, repo, release, project, provider)
+		return e.applyNewTag(ctx, repo, release, project, provider, repoWebURL)
 	default:
 		return e.recordError(ctx, repo, fmt.Errorf("unexpected tag decision"))
 	}
 }
 
 // TicketProjectFromStore converts a store row to ticket.TicketProject for EvaluateRepo.
-func TicketProjectFromStore(row store.TicketProject) (ticket.TicketProject, error) {
+func TicketProjectFromStore(row store.TicketProject, integrationKind, contentTemplatesJSON string) (ticket.TicketProject, error) {
 	mapping, err := ticket.ParseStatusMapping(row.StatusMapping)
 	if err != nil {
 		return ticket.TicketProject{}, err
@@ -79,6 +81,11 @@ func TicketProjectFromStore(row store.TicketProject) (ticket.TicketProject, erro
 		}
 	}
 
+	templates, err := tickettemplate.ParseContentTemplates(contentTemplatesJSON)
+	if err != nil {
+		return ticket.TicketProject{}, err
+	}
+
 	policy := row.OnOpenTicketPolicy
 	if policy == "" {
 		policy = ticket.PolicySupersede
@@ -87,9 +94,15 @@ func TicketProjectFromStore(row store.TicketProject) (ticket.TicketProject, erro
 	return ticket.TicketProject{
 		ID:                 row.ID,
 		IntegrationID:      row.IntegrationID,
+		IntegrationKind:    integrationKind,
 		ExternalProjectID:  row.ExternalProjectID,
 		CreateConfig:       createConfig,
 		StatusMapping:      mapping,
+		ContentTemplates: ticket.ContentTemplates{
+			Title:            templates.Title,
+			Description:      templates.Description,
+			SupersedeComment: templates.SupersedeComment,
+		},
 		OnOpenTicketPolicy: policy,
 	}, nil
 }
@@ -174,6 +187,7 @@ func (e *Engine) applyNewTag(
 	release *source.Release,
 	project ticket.TicketProject,
 	provider ticket.TicketProvider,
+	repoWebURL string,
 ) (*RepoEvaluation, error) {
 	if release == nil {
 		return e.recordError(ctx, repo, fmt.Errorf("new tag decision without release"))
@@ -190,13 +204,13 @@ func (e *Engine) applyNewTag(
 		case ticket.StatusDone, ticket.StatusCancelled:
 			repoForPolicy = clearOpenTicketFields(repo)
 		case ticket.StatusOpen:
-			return e.applyOpenTicketPolicy(ctx, repo, release, project, provider)
+			return e.applyOpenTicketPolicy(ctx, repo, release, project, provider, repoWebURL)
 		default:
 			return e.recordError(ctx, repo, fmt.Errorf("unknown ticket status %q", rawStatus))
 		}
 	}
 
-	return e.applyCreate(ctx, repoForPolicy, release, project, provider)
+	return e.applyCreate(ctx, repoForPolicy, release, project, provider, repoWebURL)
 }
 
 func clearOpenTicketFields(repo store.MonitoredRepo) store.MonitoredRepo {
@@ -224,6 +238,7 @@ func (e *Engine) applyOpenTicketPolicy(
 	release *source.Release,
 	project ticket.TicketProject,
 	provider ticket.TicketProvider,
+	repoWebURL string,
 ) (*RepoEvaluation, error) {
 	policy := project.OnOpenTicketPolicy
 	if policy == "" {
@@ -232,9 +247,9 @@ func (e *Engine) applyOpenTicketPolicy(
 
 	switch policy {
 	case ticket.PolicySupersede:
-		return e.applySupersede(ctx, repo, release, project, provider)
+		return e.applySupersede(ctx, repo, release, project, provider, repoWebURL)
 	case ticket.PolicyMerge:
-		return e.applyMerge(ctx, repo, release, project, provider)
+		return e.applyMerge(ctx, repo, release, project, provider, repoWebURL)
 	case ticket.PolicySkipIfOpen:
 		return e.applySkipIfOpen(ctx, repo, release)
 	default:
@@ -248,8 +263,14 @@ func (e *Engine) applyCreate(
 	release *source.Release,
 	project ticket.TicketProject,
 	provider ticket.TicketProvider,
+	repoWebURL string,
 ) (*RepoEvaluation, error) {
-	externalID, err := provider.CreateTicket(ctx, ticketInput(repo, release, project))
+	input, err := e.ticketInput(ctx, repo, release, project, repoWebURL, nil)
+	if err != nil {
+		return e.recordError(ctx, repo, err)
+	}
+
+	externalID, err := provider.CreateTicket(ctx, input)
 	if err != nil {
 		return e.recordError(ctx, repo, fmt.Errorf("create ticket: %w", err))
 	}
@@ -276,6 +297,7 @@ func (e *Engine) applySupersede(
 	release *source.Release,
 	project ticket.TicketProject,
 	provider ticket.TicketProvider,
+	repoWebURL string,
 ) (*RepoEvaluation, error) {
 	oldID := *repo.OpenTicketExternalID
 	oldTag := supersedeOldTag(repo)
@@ -284,18 +306,37 @@ func (e *Engine) applySupersede(
 		return e.recordError(ctx, repo, fmt.Errorf("status_mapping.superseded is required for supersede policy"))
 	}
 
+	input, err := e.ticketInput(ctx, repo, release, project, repoWebURL, nil)
+	if err != nil {
+		return e.recordError(ctx, repo, err)
+	}
+
+	externalID, err := provider.CreateTicket(ctx, input)
+	if err != nil {
+		return e.recordError(ctx, repo, fmt.Errorf("create ticket after supersede: %w", err))
+	}
+
+	newTicketURL, err := provider.TicketWebURL(externalID)
+	if err != nil {
+		return e.recordError(ctx, repo, fmt.Errorf("resolve new ticket web url: %w", err))
+	}
+
+	supersedeCtx := &tickettemplate.SupersedeContext{
+		OldTag:       oldTag,
+		NewTag:       release.Tag,
+		NewTicketURL: newTicketURL,
+	}
+	comment, err := e.renderSupersedeComment(repo, release, project, repoWebURL, supersedeCtx)
+	if err != nil {
+		return e.recordError(ctx, repo, fmt.Errorf("render supersede comment: %w", err))
+	}
+
 	if err := provider.UpdateTicketStatus(ctx, oldID, project.StatusMapping.Superseded); err != nil {
 		return e.recordError(ctx, repo, fmt.Errorf("supersede ticket status: %w", err))
 	}
 
-	comment := buildSupersedeComment(oldTag, release.Tag, release.URL)
 	if err := provider.AddTicketComment(ctx, oldID, comment); err != nil {
 		return e.recordError(ctx, repo, fmt.Errorf("supersede ticket comment: %w", err))
-	}
-
-	externalID, err := provider.CreateTicket(ctx, ticketInput(repo, release, project))
-	if err != nil {
-		return e.recordError(ctx, repo, fmt.Errorf("create ticket after supersede: %w", err))
 	}
 
 	now := pollNowUTC()
@@ -320,12 +361,16 @@ func (e *Engine) applyMerge(
 	release *source.Release,
 	project ticket.TicketProject,
 	provider ticket.TicketProvider,
+	repoWebURL string,
 ) (*RepoEvaluation, error) {
 	oldID := *repo.OpenTicketExternalID
-	title := ticket.BuildTitle(repo.SourceKind, repo.ProjectPath, release.Tag)
-	description := ticket.BuildDescription(*release)
 
-	if err := provider.UpdateTicket(ctx, oldID, title, description); err != nil {
+	input, err := e.ticketInput(ctx, repo, release, project, repoWebURL, nil)
+	if err != nil {
+		return e.recordError(ctx, repo, err)
+	}
+
+	if err := provider.UpdateTicket(ctx, oldID, input.Title, input.Description); err != nil {
 		return e.recordError(ctx, repo, fmt.Errorf("merge ticket: %w", err))
 	}
 
@@ -380,12 +425,64 @@ func (e *Engine) recordError(ctx context.Context, repo store.MonitoredRepo, err 
 	}, nil
 }
 
-func ticketInput(repo store.MonitoredRepo, release *source.Release, project ticket.TicketProject) ticket.TicketInput {
-	return ticket.TicketInput{
-		Title:       ticket.BuildTitle(repo.SourceKind, repo.ProjectPath, release.Tag),
-		Description: ticket.BuildDescription(*release),
-		Project:     project,
+func (e *Engine) ticketInput(
+	_ context.Context,
+	repo store.MonitoredRepo,
+	release *source.Release,
+	project ticket.TicketProject,
+	repoWebURL string,
+	supersede *tickettemplate.SupersedeContext,
+) (ticket.TicketInput, error) {
+	renderer := newTemplateRenderer(project)
+	if err := renderer.Validate(); err != nil {
+		return ticket.TicketInput{}, err
 	}
+
+	tmplCtx := tickettemplate.BuildContext(repo, release, repoWebURL, supersede)
+	title, err := renderer.RenderTitle(tmplCtx)
+	if err != nil {
+		return ticket.TicketInput{}, fmt.Errorf("render title template: %w", err)
+	}
+	description, err := renderer.RenderDescription(tmplCtx)
+	if err != nil {
+		return ticket.TicketInput{}, fmt.Errorf("render description template: %w", err)
+	}
+
+	return ticket.TicketInput{
+		Title:       title,
+		Description: description,
+		Project:     project,
+	}, nil
+}
+
+func (e *Engine) renderSupersedeComment(
+	repo store.MonitoredRepo,
+	release *source.Release,
+	project ticket.TicketProject,
+	repoWebURL string,
+	supersede *tickettemplate.SupersedeContext,
+) (string, error) {
+	renderer := newTemplateRenderer(project)
+	if err := renderer.Validate(); err != nil {
+		return "", err
+	}
+	tmplCtx := tickettemplate.BuildContext(repo, release, repoWebURL, supersede)
+	comment, err := renderer.RenderSupersedeComment(tmplCtx)
+	if err != nil {
+		return "", err
+	}
+	if comment == "" {
+		return "", fmt.Errorf("supersede comment template rendered empty body")
+	}
+	return comment, nil
+}
+
+func newTemplateRenderer(project ticket.TicketProject) *tickettemplate.Renderer {
+	return tickettemplate.NewRenderer(project.IntegrationKind, tickettemplate.ContentTemplates{
+		Title:            project.ContentTemplates.Title,
+		Description:      project.ContentTemplates.Description,
+		SupersedeComment: project.ContentTemplates.SupersedeComment,
+	})
 }
 
 func supersedeOldTag(repo store.MonitoredRepo) string {
@@ -398,10 +495,15 @@ func supersedeOldTag(repo store.MonitoredRepo) string {
 	return ""
 }
 
-func buildSupersedeComment(oldTag, newTag, releaseURL string) string {
-	return fmt.Sprintf("Superseded: %s → %s\n%s", oldTag, newTag, releaseURL)
-}
-
 func pollNowUTC() string {
 	return time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+}
+
+// ResolveRepoWebURL derives the repository browser URL for template context (specs §5.4).
+func ResolveRepoWebURL(repo store.MonitoredRepo, sourceIntegrationBaseURL *string) (string, error) {
+	baseURL := ""
+	if sourceIntegrationBaseURL != nil {
+		baseURL = *sourceIntegrationBaseURL
+	}
+	return source.BuildRepoWebURL(repo.SourceKind, baseURL, repo.ProjectPath)
 }

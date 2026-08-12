@@ -97,6 +97,10 @@ func (m *integrationTicketProvider) UpdateTicket(_ context.Context, externalID, 
 	return fmt.Errorf("UpdateTicket not expected in integration flow: %s", externalID)
 }
 
+func (m *integrationTicketProvider) TicketWebURL(externalID string) (string, error) {
+	return "https://tickets.example/" + externalID, nil
+}
+
 type pollIntegrationEnv struct {
 	store    *store.Store
 	scheduler *poll.Scheduler
@@ -250,19 +254,24 @@ func newPollIntegrationEnv(t *testing.T, tags []string) *pollIntegrationEnv {
 		PollRepo: func(ctx context.Context, _ string, repo store.MonitoredRepo) (*poll.RepoEvaluation, error) {
 			release, fetchErr := seqSource.GetLatestRelease(ctx, repo.ProjectPath, source.ReleaseOptions{})
 			if fetchErr != nil {
-				return engine.EvaluateRepo(ctx, repo, nil, fetchErr, ticket.TicketProject{}, ticketProvider)
+				return engine.EvaluateRepo(ctx, repo, nil, fetchErr, ticket.TicketProject{}, ticketProvider, "")
 			}
 
 			tpRow, err := s.TicketProjects().Get(ctx, repo.TicketProjectID)
 			if err != nil {
 				return nil, fmt.Errorf("load ticket project: %w", err)
 			}
-			ticketProject, err := poll.TicketProjectFromStore(*tpRow)
+			ticketProject, err := poll.TicketProjectFromStore(*tpRow, integration.Kind, "")
 			if err != nil {
 				return nil, err
 			}
 
-			return engine.EvaluateRepo(ctx, repo, release, nil, ticketProject, ticketProvider)
+			repoWebURL, err := poll.ResolveRepoWebURL(repo, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			return engine.EvaluateRepo(ctx, repo, release, nil, ticketProject, ticketProvider, repoWebURL)
 		},
 	})
 	if err != nil {

@@ -261,6 +261,15 @@ func (j *JiraProvider) UpdateTicket(ctx context.Context, externalID, title, desc
 	return nil
 }
 
+// TicketWebURL implements TicketProvider.
+func (j *JiraProvider) TicketWebURL(externalID string) (string, error) {
+	externalID = strings.TrimSpace(externalID)
+	if externalID == "" {
+		return "", errors.New("jira: external id is required")
+	}
+	return j.baseURL + "/browse/" + url.PathEscape(externalID), nil
+}
+
 func (j *JiraProvider) findTransitionID(ctx context.Context, issueKey, targetStatus string) (string, error) {
 	var transitions jiraTransitionsResponse
 	path := "/rest/api/3/issue/" + url.PathEscape(issueKey) + "/transitions"
