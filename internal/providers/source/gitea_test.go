@@ -35,7 +35,9 @@ func TestGiteaSourceGetLatestRelease(t *testing.T) {
 			"tag_name": "v3.0.0",
 			"name": "Widget 3.0",
 			"html_url": "https://gitea.example/acme/widget/releases/tag/v3.0.0",
-			"published_at": "` + publishedAt + `"
+			"published_at": "` + publishedAt + `",
+			"body": "Gitea release notes",
+			"prerelease": false
 		}`))
 	}))
 	t.Cleanup(srv.Close)
@@ -63,6 +65,12 @@ func TestGiteaSourceGetLatestRelease(t *testing.T) {
 	}
 	if !release.PublishedAt.Equal(expectedTime) {
 		t.Fatalf("publishedAt = %v, want %v", release.PublishedAt, expectedTime)
+	}
+	if release.Notes != "Gitea release notes" {
+		t.Fatalf("notes = %q", release.Notes)
+	}
+	if release.IsPrerelease {
+		t.Fatal("IsPrerelease = true, want false")
 	}
 }
 

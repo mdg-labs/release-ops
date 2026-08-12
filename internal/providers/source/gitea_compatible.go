@@ -85,17 +85,11 @@ func (g *GiteaCompatibleSource) getLatestStableRelease(ctx context.Context, proj
 		return nil, fmt.Errorf("gitea-compatible: decode response: %w", err)
 	}
 
-	publishedAt, err := time.Parse(time.RFC3339, payload.PublishedAt)
+	release, err := releaseFromGitea(payload)
 	if err != nil {
-		return nil, fmt.Errorf("gitea-compatible: parse published_at: %w", err)
+		return nil, fmt.Errorf("gitea-compatible: %w", err)
 	}
-
-	return &Release{
-		Tag:         payload.TagName,
-		Name:        payload.Name,
-		URL:         payload.HTMLURL,
-		PublishedAt: publishedAt,
-	}, nil
+	return &release, nil
 }
 
 func (g *GiteaCompatibleSource) getLatestReleaseIncludingPrereleases(ctx context.Context, projectPath string) (*Release, error) {
@@ -143,16 +137,11 @@ func (g *GiteaCompatibleSource) getLatestReleaseIncludingPrereleases(ctx context
 		if payload.Draft {
 			continue
 		}
-		publishedAt, err := time.Parse(time.RFC3339, payload.PublishedAt)
+		release, err := releaseFromGitea(payload)
 		if err != nil {
-			return nil, fmt.Errorf("gitea-compatible: parse published_at: %w", err)
+			return nil, fmt.Errorf("gitea-compatible: %w", err)
 		}
-		candidates = append(candidates, Release{
-			Tag:         payload.TagName,
-			Name:        payload.Name,
-			URL:         payload.HTMLURL,
-			PublishedAt: publishedAt,
-		})
+		candidates = append(candidates, release)
 	}
 
 	return pickNewestRelease(candidates), nil
@@ -164,6 +153,23 @@ type giteaRelease struct {
 	HTMLURL     string `json:"html_url"`
 	PublishedAt string `json:"published_at"`
 	Draft       bool   `json:"draft"`
+	Body        string `json:"body"`
+	Prerelease  bool   `json:"prerelease"`
+}
+
+func releaseFromGitea(payload giteaRelease) (Release, error) {
+	publishedAt, err := time.Parse(time.RFC3339, payload.PublishedAt)
+	if err != nil {
+		return Release{}, fmt.Errorf("parse published_at: %w", err)
+	}
+	return Release{
+		Tag:          payload.TagName,
+		Name:         payload.Name,
+		URL:          payload.HTMLURL,
+		PublishedAt:  publishedAt,
+		Notes:        payload.Body,
+		IsPrerelease: payload.Prerelease,
+	}, nil
 }
 
 func normalizeBaseURL(raw string) (string, error) {

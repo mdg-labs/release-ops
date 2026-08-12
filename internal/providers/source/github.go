@@ -46,6 +46,23 @@ type githubReleaseResponse struct {
 	HTMLURL     string `json:"html_url"`
 	PublishedAt string `json:"published_at"`
 	Draft       bool   `json:"draft"`
+	Body        string `json:"body"`
+	Prerelease  bool   `json:"prerelease"`
+}
+
+func releaseFromGitHub(payload githubReleaseResponse) (Release, error) {
+	publishedAt, err := parsePublishedAt(payload.PublishedAt)
+	if err != nil {
+		return Release{}, err
+	}
+	return Release{
+		Tag:          payload.TagName,
+		Name:         payload.Name,
+		URL:          payload.HTMLURL,
+		PublishedAt:  publishedAt,
+		Notes:        payload.Body,
+		IsPrerelease: payload.Prerelease,
+	}, nil
 }
 
 // GetLatestRelease implements SourceProvider.
@@ -98,17 +115,11 @@ func (g *GitHubSource) getLatestStableRelease(ctx context.Context, projectPath s
 		return nil, fmt.Errorf("github: decode response: %w", err)
 	}
 
-	publishedAt, err := parsePublishedAt(payload.PublishedAt)
+	release, err := releaseFromGitHub(payload)
 	if err != nil {
 		return nil, fmt.Errorf("github: %w", err)
 	}
-
-	return &Release{
-		Tag:         payload.TagName,
-		Name:        payload.Name,
-		URL:         payload.HTMLURL,
-		PublishedAt: publishedAt,
-	}, nil
+	return &release, nil
 }
 
 func (g *GitHubSource) getLatestReleaseIncludingPrereleases(ctx context.Context, projectPath string) (*Release, error) {
@@ -158,16 +169,11 @@ func (g *GitHubSource) getLatestReleaseIncludingPrereleases(ctx context.Context,
 		if payload.Draft {
 			continue
 		}
-		publishedAt, err := parsePublishedAt(payload.PublishedAt)
+		release, err := releaseFromGitHub(payload)
 		if err != nil {
 			return nil, fmt.Errorf("github: %w", err)
 		}
-		candidates = append(candidates, Release{
-			Tag:         payload.TagName,
-			Name:        payload.Name,
-			URL:         payload.HTMLURL,
-			PublishedAt: publishedAt,
-		})
+		candidates = append(candidates, release)
 	}
 
 	return pickNewestRelease(candidates), nil

@@ -34,11 +34,13 @@ func TestGitHubSourceGetLatestReleaseSuccess(t *testing.T) {
 		}
 		gotAuth = r.Header.Get("Authorization")
 
-		_ = json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"tag_name":     "v2.0.0",
 			"name":         "Widget 2.0",
 			"html_url":     "https://github.com/acme/widget/releases/tag/v2.0.0",
 			"published_at": "2026-08-07T10:00:00Z",
+			"body":         "## Changelog\n\n- feature",
+			"prerelease":   false,
 		})
 	}))
 	t.Cleanup(server.Close)
@@ -65,6 +67,12 @@ func TestGitHubSourceGetLatestReleaseSuccess(t *testing.T) {
 	wantPublished := time.Date(2026, 8, 7, 10, 0, 0, 0, time.UTC)
 	if !release.PublishedAt.Equal(wantPublished) {
 		t.Fatalf("publishedAt = %v, want %v", release.PublishedAt, wantPublished)
+	}
+	if release.Notes != "## Changelog\n\n- feature" {
+		t.Fatalf("notes = %q", release.Notes)
+	}
+	if release.IsPrerelease {
+		t.Fatal("IsPrerelease = true, want false for stable release")
 	}
 }
 
@@ -296,6 +304,9 @@ func TestGitHubSourceIncludePrereleasesPicksNewestByPublishedAt(t *testing.T) {
 	}
 	if release.Tag != "v2.0.0-beta.1" {
 		t.Fatalf("tag = %q, want v2.0.0-beta.1", release.Tag)
+	}
+	if !release.IsPrerelease {
+		t.Fatal("IsPrerelease = false, want true for pre-release payload")
 	}
 }
 
