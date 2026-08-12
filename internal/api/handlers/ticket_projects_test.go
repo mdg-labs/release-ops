@@ -20,8 +20,10 @@ import (
 )
 
 const (
-	validCreateConfig  = `{"issueType":"Task","priority":"Medium"}`
-	validStatusMapping = `{"open":["To Do","In Progress"],"done":["Done"],"cancelled":["Cancelled"],"superseded":"Cancelled"}`
+	validCreateConfig       = `{"issueType":"Task","priority":"Medium"}`
+	validStatusMapping      = `{"open":["To Do","In Progress"],"done":["Done"],"cancelled":["Cancelled"],"superseded":"Cancelled"}`
+	validContentTemplates   = `{"title":"","description":"","supersedeComment":""}`
+	customContentTemplates  = `{"title":"Release: {{ .Release.Tag }}","description":"Notes","supersedeComment":"Superseded"}`
 )
 
 type mockTicketProjectRepo struct {
@@ -66,6 +68,7 @@ func (m *mockTicketProjectRepo) Create(_ context.Context, input store.CreateTick
 		Name:               input.Name,
 		CreateConfig:       input.CreateConfig,
 		StatusMapping:      input.StatusMapping,
+		ContentTemplates:   input.ContentTemplates,
 		OnOpenTicketPolicy: policy,
 		CreatedAt:          "2026-08-07T10:00:00.000Z",
 		UpdatedAt:          "2026-08-07T10:00:00.000Z",
@@ -125,6 +128,7 @@ func (m *mockTicketProjectRepo) Update(_ context.Context, id string, input store
 	item.Name = input.Name
 	item.CreateConfig = input.CreateConfig
 	item.StatusMapping = input.StatusMapping
+	item.ContentTemplates = input.ContentTemplates
 	item.OnOpenTicketPolicy = input.OnOpenTicketPolicy
 	item.UpdatedAt = "2026-08-07T12:00:00.000Z"
 	return item, nil
@@ -174,7 +178,7 @@ func ticketProjectResponseShape(t *testing.T, body []byte) map[string]any {
 	}
 	for _, key := range []string{
 		"id", "integrationId", "externalProjectId", "name",
-		"createConfig", "statusMapping", "onOpenTicketPolicy", "createdAt", "updatedAt",
+		"createConfig", "statusMapping", "contentTemplates", "onOpenTicketPolicy", "createdAt", "updatedAt",
 	} {
 		if _, ok := resp[key]; !ok {
 			t.Fatalf("response missing %q: %s", key, body)
@@ -195,6 +199,7 @@ func TestListTicketProjects(t *testing.T) {
 				Name:               "Jira DEV",
 				CreateConfig:       validCreateConfig,
 				StatusMapping:      validStatusMapping,
+				ContentTemplates:   validContentTemplates,
 				OnOpenTicketPolicy: "supersede",
 				CreatedAt:          "2026-08-07T10:00:00.000Z",
 				UpdatedAt:          "2026-08-07T10:00:00.000Z",
@@ -206,6 +211,7 @@ func TestListTicketProjects(t *testing.T) {
 				Name:               "Jira OPS",
 				CreateConfig:       validCreateConfig,
 				StatusMapping:      validStatusMapping,
+				ContentTemplates:   validContentTemplates,
 				OnOpenTicketPolicy: "merge",
 				CreatedAt:          "2026-08-07T10:00:00.000Z",
 				UpdatedAt:          "2026-08-07T10:00:00.000Z",
@@ -245,6 +251,7 @@ func TestListTicketProjectsFilteredByIntegrationID(t *testing.T) {
 				Name:               "Jira DEV",
 				CreateConfig:       validCreateConfig,
 				StatusMapping:      validStatusMapping,
+				ContentTemplates:   validContentTemplates,
 				OnOpenTicketPolicy: "supersede",
 				CreatedAt:          "2026-08-07T10:00:00.000Z",
 				UpdatedAt:          "2026-08-07T10:00:00.000Z",
@@ -256,6 +263,7 @@ func TestListTicketProjectsFilteredByIntegrationID(t *testing.T) {
 				Name:               "Jira OPS",
 				CreateConfig:       validCreateConfig,
 				StatusMapping:      validStatusMapping,
+				ContentTemplates:   validContentTemplates,
 				OnOpenTicketPolicy: "merge",
 				CreatedAt:          "2026-08-07T10:00:00.000Z",
 				UpdatedAt:          "2026-08-07T10:00:00.000Z",
@@ -299,8 +307,9 @@ func TestCreateTicketProjectPassesFieldsToStore(t *testing.T) {
 		"name":"Jira DEV",
 		"createConfig":%s,
 		"statusMapping":%s,
+		"contentTemplates":%s,
 		"onOpenTicketPolicy":"skip_if_open"
-	}`, validCreateConfig, validStatusMapping)
+	}`, validCreateConfig, validStatusMapping, validContentTemplates)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ticket-projects", strings.NewReader(body))
 	req.AddCookie(cookie)
 	rec := httptest.NewRecorder()
@@ -321,6 +330,9 @@ func TestCreateTicketProjectPassesFieldsToStore(t *testing.T) {
 	if repo.createInput.OnOpenTicketPolicy != "skip_if_open" {
 		t.Fatalf("policy = %q, want skip_if_open", repo.createInput.OnOpenTicketPolicy)
 	}
+	if repo.createInput.ContentTemplates != validContentTemplates {
+		t.Fatalf("contentTemplates = %q, want %q", repo.createInput.ContentTemplates, validContentTemplates)
+	}
 
 	resp := ticketProjectResponseShape(t, rec.Body.Bytes())
 	if resp["onOpenTicketPolicy"] != "skip_if_open" {
@@ -340,8 +352,9 @@ func TestCreateTicketProjectDefaultsPolicyToSupersede(t *testing.T) {
 		"externalProjectId":"DEV",
 		"name":"Jira DEV",
 		"createConfig":%s,
-		"statusMapping":%s
-	}`, validCreateConfig, validStatusMapping)
+		"statusMapping":%s,
+		"contentTemplates":%s
+	}`, validCreateConfig, validStatusMapping, validContentTemplates)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ticket-projects", strings.NewReader(body))
 	req.AddCookie(cookie)
 	rec := httptest.NewRecorder()
@@ -374,8 +387,9 @@ func TestCreateTicketProjectAcceptsAllPolicies(t *testing.T) {
 				"name":"Policy Test",
 				"createConfig":%s,
 				"statusMapping":%s,
+				"contentTemplates":%s,
 				"onOpenTicketPolicy":%q
-			}`, policy, validCreateConfig, validStatusMapping, policy)
+			}`, policy, validCreateConfig, validStatusMapping, validContentTemplates, policy)
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/ticket-projects", strings.NewReader(body))
 			req.AddCookie(cookie)
 			rec := httptest.NewRecorder()
@@ -402,8 +416,9 @@ func TestCreateTicketProjectRejectsInvalidJSONConfigs(t *testing.T) {
 				"externalProjectId":"DEV",
 				"name":"Jira DEV",
 				"createConfig":{bad},
-				"statusMapping":%s
-			}`, validStatusMapping),
+				"statusMapping":%s,
+				"contentTemplates":%s
+			}`, validStatusMapping, validContentTemplates),
 		},
 		{
 			name: "createConfig not an object",
@@ -412,8 +427,9 @@ func TestCreateTicketProjectRejectsInvalidJSONConfigs(t *testing.T) {
 				"externalProjectId":"DEV",
 				"name":"Jira DEV",
 				"createConfig":"not-an-object",
-				"statusMapping":%s
-			}`, validStatusMapping),
+				"statusMapping":%s,
+				"contentTemplates":%s
+			}`, validStatusMapping, validContentTemplates),
 		},
 		{
 			name: "statusMapping not an object",
@@ -422,8 +438,9 @@ func TestCreateTicketProjectRejectsInvalidJSONConfigs(t *testing.T) {
 				"externalProjectId":"DEV",
 				"name":"Jira DEV",
 				"createConfig":%s,
-				"statusMapping":"not-an-object"
-			}`, validCreateConfig),
+				"statusMapping":"not-an-object",
+				"contentTemplates":%s
+			}`, validCreateConfig, validContentTemplates),
 		},
 	}
 
@@ -464,8 +481,9 @@ func TestCreateTicketProjectRejectsInvalidPolicy(t *testing.T) {
 		"name":"Jira DEV",
 		"createConfig":%s,
 		"statusMapping":%s,
+		"contentTemplates":%s,
 		"onOpenTicketPolicy":"replace"
-	}`, validCreateConfig, validStatusMapping)
+	}`, validCreateConfig, validStatusMapping, validContentTemplates)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ticket-projects", strings.NewReader(body))
 	req.AddCookie(cookie)
 	rec := httptest.NewRecorder()
@@ -488,6 +506,7 @@ func TestCreateTicketProjectConflictOnDuplicateExternalProject(t *testing.T) {
 				Name:               "Existing",
 				CreateConfig:       validCreateConfig,
 				StatusMapping:      validStatusMapping,
+				ContentTemplates:   validContentTemplates,
 				OnOpenTicketPolicy: "supersede",
 				CreatedAt:          "2026-08-07T10:00:00.000Z",
 				UpdatedAt:          "2026-08-07T10:00:00.000Z",
@@ -502,8 +521,9 @@ func TestCreateTicketProjectConflictOnDuplicateExternalProject(t *testing.T) {
 		"externalProjectId":"DEV",
 		"name":"Duplicate",
 		"createConfig":%s,
-		"statusMapping":%s
-	}`, validCreateConfig, validStatusMapping)
+		"statusMapping":%s,
+		"contentTemplates":%s
+	}`, validCreateConfig, validStatusMapping, validContentTemplates)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ticket-projects", strings.NewReader(body))
 	req.AddCookie(cookie)
 	rec := httptest.NewRecorder()
@@ -529,6 +549,7 @@ func TestPatchTicketProjectUpdatesFields(t *testing.T) {
 				Name:               "Old Name",
 				CreateConfig:       validCreateConfig,
 				StatusMapping:      validStatusMapping,
+				ContentTemplates:   validContentTemplates,
 				OnOpenTicketPolicy: "supersede",
 				CreatedAt:          "2026-08-07T10:00:00.000Z",
 				UpdatedAt:          "2026-08-07T10:00:00.000Z",
@@ -562,6 +583,9 @@ func TestPatchTicketProjectUpdatesFields(t *testing.T) {
 	}
 	if repo.updateInput.OnOpenTicketPolicy != "merge" {
 		t.Fatalf("policy = %q, want merge", repo.updateInput.OnOpenTicketPolicy)
+	}
+	if repo.updateInput.ContentTemplates != validContentTemplates {
+		t.Fatalf("contentTemplates = %q, want unchanged %q", repo.updateInput.ContentTemplates, validContentTemplates)
 	}
 }
 
@@ -600,6 +624,7 @@ func TestDeleteTicketProjectConflictWhenReferenced(t *testing.T) {
 				Name:               "Jira DEV",
 				CreateConfig:       validCreateConfig,
 				StatusMapping:      validStatusMapping,
+				ContentTemplates:   validContentTemplates,
 				OnOpenTicketPolicy: "supersede",
 				CreatedAt:          "2026-08-07T10:00:00.000Z",
 				UpdatedAt:          "2026-08-07T10:00:00.000Z",
@@ -640,6 +665,7 @@ func TestDeleteTicketProjectSucceedsWhenUnreferenced(t *testing.T) {
 				Name:               "Jira DEV",
 				CreateConfig:       validCreateConfig,
 				StatusMapping:      validStatusMapping,
+				ContentTemplates:   validContentTemplates,
 				OnOpenTicketPolicy: "supersede",
 				CreatedAt:          "2026-08-07T10:00:00.000Z",
 				UpdatedAt:          "2026-08-07T10:00:00.000Z",
@@ -677,5 +703,229 @@ func TestTicketProjectsRequireSession(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestCreateTicketProjectAcceptsEmptyContentTemplateStrings(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockTicketProjectRepo{}
+	router, sm := newTicketProjectsTestRouter(t, repo)
+	cookie := seedSession(t, sm)
+
+	body := fmt.Sprintf(`{
+		"integrationId":"int-1",
+		"externalProjectId":"DEV",
+		"name":"Jira DEV",
+		"createConfig":%s,
+		"statusMapping":%s,
+		"contentTemplates":%s
+	}`, validCreateConfig, validStatusMapping, validContentTemplates)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/ticket-projects", strings.NewReader(body))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	resp := ticketProjectResponseShape(t, rec.Body.Bytes())
+	ct, ok := resp["contentTemplates"].(map[string]any)
+	if !ok {
+		t.Fatalf("contentTemplates = %T, want map", resp["contentTemplates"])
+	}
+	if ct["title"] != "" || ct["description"] != "" || ct["supersedeComment"] != "" {
+		t.Fatalf("contentTemplates = %v, want empty strings", ct)
+	}
+}
+
+func TestCreateTicketProjectRejectsMissingContentTemplates(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockTicketProjectRepo{}
+	router, sm := newTicketProjectsTestRouter(t, repo)
+	cookie := seedSession(t, sm)
+
+	body := fmt.Sprintf(`{
+		"integrationId":"int-1",
+		"externalProjectId":"DEV",
+		"name":"Jira DEV",
+		"createConfig":%s,
+		"statusMapping":%s
+	}`, validCreateConfig, validStatusMapping)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/ticket-projects", strings.NewReader(body))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestCreateTicketProjectRejectsInvalidContentTemplates(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "missing title key",
+			body: fmt.Sprintf(`{
+				"integrationId":"int-1",
+				"externalProjectId":"DEV",
+				"name":"Jira DEV",
+				"createConfig":%s,
+				"statusMapping":%s,
+				"contentTemplates":{"description":"","supersedeComment":""}
+			}`, validCreateConfig, validStatusMapping),
+		},
+		{
+			name: "title not a string",
+			body: fmt.Sprintf(`{
+				"integrationId":"int-1",
+				"externalProjectId":"DEV",
+				"name":"Jira DEV",
+				"createConfig":%s,
+				"statusMapping":%s,
+				"contentTemplates":{"title":1,"description":"","supersedeComment":""}
+			}`, validCreateConfig, validStatusMapping),
+		},
+		{
+			name: "contentTemplates not an object",
+			body: fmt.Sprintf(`{
+				"integrationId":"int-1",
+				"externalProjectId":"DEV",
+				"name":"Jira DEV",
+				"createConfig":%s,
+				"statusMapping":%s,
+				"contentTemplates":"not-an-object"
+			}`, validCreateConfig, validStatusMapping),
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			repo := &mockTicketProjectRepo{}
+			router, sm := newTicketProjectsTestRouter(t, repo)
+			cookie := seedSession(t, sm)
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/ticket-projects", strings.NewReader(tc.body))
+			req.AddCookie(cookie)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestPatchTicketProjectMergesPartialContentTemplates(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockTicketProjectRepo{
+		items: map[string]*store.TicketProject{
+			"tp-1": {
+				ID:                 "tp-1",
+				IntegrationID:      "int-1",
+				ExternalProjectID:  "DEV",
+				Name:               "Old Name",
+				CreateConfig:       validCreateConfig,
+				StatusMapping:      validStatusMapping,
+				ContentTemplates:   customContentTemplates,
+				OnOpenTicketPolicy: "supersede",
+				CreatedAt:          "2026-08-07T10:00:00.000Z",
+				UpdatedAt:          "2026-08-07T10:00:00.000Z",
+			},
+		},
+	}
+	router, sm := newTicketProjectsTestRouter(t, repo)
+	cookie := seedSession(t, sm)
+
+	body := fmt.Sprintf(`{
+		"name":"Updated Name",
+		"createConfig":%s,
+		"statusMapping":%s,
+		"contentTemplates":{"title":"New title"},
+		"onOpenTicketPolicy":"merge"
+	}`, validCreateConfig, validStatusMapping)
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/ticket-projects/tp-1", strings.NewReader(body))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if repo.updateInput == nil {
+		t.Fatal("expected Update to be called")
+	}
+
+	expected := `{"title":"New title","description":"Notes","supersedeComment":"Superseded"}`
+	if repo.updateInput.ContentTemplates != expected {
+		t.Fatalf("contentTemplates = %q, want %q", repo.updateInput.ContentTemplates, expected)
+	}
+
+	resp := ticketProjectResponseShape(t, rec.Body.Bytes())
+	ct, ok := resp["contentTemplates"].(map[string]any)
+	if !ok {
+		t.Fatalf("contentTemplates = %T, want map", resp["contentTemplates"])
+	}
+	if ct["title"] != "New title" {
+		t.Fatalf("title = %v, want New title", ct["title"])
+	}
+	if ct["description"] != "Notes" {
+		t.Fatalf("description = %v, want Notes", ct["description"])
+	}
+}
+
+func TestListTicketProjectsIncludesContentTemplates(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockTicketProjectRepo{
+		items: map[string]*store.TicketProject{
+			"tp-1": {
+				ID:                 "tp-1",
+				IntegrationID:      "int-1",
+				ExternalProjectID:  "DEV",
+				Name:               "Jira DEV",
+				CreateConfig:       validCreateConfig,
+				StatusMapping:      validStatusMapping,
+				ContentTemplates:   customContentTemplates,
+				OnOpenTicketPolicy: "supersede",
+				CreatedAt:          "2026-08-07T10:00:00.000Z",
+				UpdatedAt:          "2026-08-07T10:00:00.000Z",
+			},
+		},
+	}
+	router, sm := newTicketProjectsTestRouter(t, repo)
+	cookie := seedSession(t, sm)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ticket-projects", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var items []map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&items); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	ct, ok := items[0]["contentTemplates"].(map[string]any)
+	if !ok {
+		t.Fatalf("contentTemplates = %T, want map", items[0]["contentTemplates"])
+	}
+	if ct["title"] != "Release: {{ .Release.Tag }}" {
+		t.Fatalf("title = %v, want template string", ct["title"])
 	}
 }

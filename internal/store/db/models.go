@@ -106,6 +106,7 @@ type TicketProject struct {
 	Name               string `json:"name"`
 	CreateConfig       string `json:"create_config"`
 	StatusMapping      string `json:"status_mapping"`
+	ContentTemplates   string `json:"content_templates"`
 	OnOpenTicketPolicy string `json:"on_open_ticket_policy"`
 	CreatedAt          string `json:"created_at"`
 	UpdatedAt          string `json:"updated_at"`

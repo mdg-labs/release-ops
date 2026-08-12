@@ -30,10 +30,12 @@ INSERT INTO ticket_projects (
   name,
   create_config,
   status_mapping,
+  content_templates,
   on_open_ticket_policy,
   created_at,
   updated_at
 ) VALUES (
+  ?,
   ?,
   ?,
   ?,
@@ -51,6 +53,7 @@ RETURNING
   name,
   create_config,
   status_mapping,
+  content_templates,
   on_open_ticket_policy,
   created_at,
   updated_at
@@ -63,6 +66,7 @@ type CreateTicketProjectParams struct {
 	Name               string `json:"name"`
 	CreateConfig       string `json:"create_config"`
 	StatusMapping      string `json:"status_mapping"`
+	ContentTemplates   string `json:"content_templates"`
 	OnOpenTicketPolicy string `json:"on_open_ticket_policy"`
 	CreatedAt          string `json:"created_at"`
 	UpdatedAt          string `json:"updated_at"`
@@ -76,6 +80,7 @@ func (q *Queries) CreateTicketProject(ctx context.Context, arg CreateTicketProje
 		arg.Name,
 		arg.CreateConfig,
 		arg.StatusMapping,
+		arg.ContentTemplates,
 		arg.OnOpenTicketPolicy,
 		arg.CreatedAt,
 		arg.UpdatedAt,
@@ -88,6 +93,7 @@ func (q *Queries) CreateTicketProject(ctx context.Context, arg CreateTicketProje
 		&i.Name,
 		&i.CreateConfig,
 		&i.StatusMapping,
+		&i.ContentTemplates,
 		&i.OnOpenTicketPolicy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -113,6 +119,7 @@ SELECT
   name,
   create_config,
   status_mapping,
+  content_templates,
   on_open_ticket_policy,
   created_at,
   updated_at
@@ -131,6 +138,7 @@ func (q *Queries) GetTicketProject(ctx context.Context, id string) (TicketProjec
 		&i.Name,
 		&i.CreateConfig,
 		&i.StatusMapping,
+		&i.ContentTemplates,
 		&i.OnOpenTicketPolicy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -146,6 +154,7 @@ SELECT
   name,
   create_config,
   status_mapping,
+  content_templates,
   on_open_ticket_policy,
   created_at,
   updated_at
@@ -169,6 +178,7 @@ func (q *Queries) ListTicketProjects(ctx context.Context) ([]TicketProject, erro
 			&i.Name,
 			&i.CreateConfig,
 			&i.StatusMapping,
+			&i.ContentTemplates,
 			&i.OnOpenTicketPolicy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -194,6 +204,7 @@ SELECT
   name,
   create_config,
   status_mapping,
+  content_templates,
   on_open_ticket_policy,
   created_at,
   updated_at
@@ -218,6 +229,7 @@ func (q *Queries) ListTicketProjectsByIntegration(ctx context.Context, integrati
 			&i.Name,
 			&i.CreateConfig,
 			&i.StatusMapping,
+			&i.ContentTemplates,
 			&i.OnOpenTicketPolicy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -241,6 +253,7 @@ SET
   name = ?,
   create_config = ?,
   status_mapping = ?,
+  content_templates = ?,
   on_open_ticket_policy = ?,
   updated_at = ?
 WHERE id = ?
@@ -251,6 +264,7 @@ RETURNING
   name,
   create_config,
   status_mapping,
+  content_templates,
   on_open_ticket_policy,
   created_at,
   updated_at
@@ -260,6 +274,7 @@ type UpdateTicketProjectParams struct {
 	Name               string `json:"name"`
 	CreateConfig       string `json:"create_config"`
 	StatusMapping      string `json:"status_mapping"`
+	ContentTemplates   string `json:"content_templates"`
 	OnOpenTicketPolicy string `json:"on_open_ticket_policy"`
 	UpdatedAt          string `json:"updated_at"`
 	ID                 string `json:"id"`
@@ -270,6 +285,7 @@ func (q *Queries) UpdateTicketProject(ctx context.Context, arg UpdateTicketProje
 		arg.Name,
 		arg.CreateConfig,
 		arg.StatusMapping,
+		arg.ContentTemplates,
 		arg.OnOpenTicketPolicy,
 		arg.UpdatedAt,
 		arg.ID,
@@ -282,6 +298,7 @@ func (q *Queries) UpdateTicketProject(ctx context.Context, arg UpdateTicketProje
 		&i.Name,
 		&i.CreateConfig,
 		&i.StatusMapping,
+		&i.ContentTemplates,
 		&i.OnOpenTicketPolicy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -297,10 +314,12 @@ INSERT INTO ticket_projects (
   name,
   create_config,
   status_mapping,
+  content_templates,
   on_open_ticket_policy,
   created_at,
   updated_at
 ) VALUES (
+  ?,
   ?,
   ?,
   ?,
@@ -315,6 +334,7 @@ ON CONFLICT (integration_id, external_project_id) DO UPDATE SET
   name = excluded.name,
   create_config = excluded.create_config,
   status_mapping = excluded.status_mapping,
+  content_templates = excluded.content_templates,
   on_open_ticket_policy = excluded.on_open_ticket_policy,
   updated_at = excluded.updated_at
 RETURNING
@@ -324,6 +344,7 @@ RETURNING
   name,
   create_config,
   status_mapping,
+  content_templates,
   on_open_ticket_policy,
   created_at,
   updated_at
@@ -336,6 +357,7 @@ type UpsertTicketProjectParams struct {
 	Name               string `json:"name"`
 	CreateConfig       string `json:"create_config"`
 	StatusMapping      string `json:"status_mapping"`
+	ContentTemplates   string `json:"content_templates"`
 	OnOpenTicketPolicy string `json:"on_open_ticket_policy"`
 	CreatedAt          string `json:"created_at"`
 	UpdatedAt          string `json:"updated_at"`
@@ -349,6 +371,7 @@ func (q *Queries) UpsertTicketProject(ctx context.Context, arg UpsertTicketProje
 		arg.Name,
 		arg.CreateConfig,
 		arg.StatusMapping,
+		arg.ContentTemplates,
 		arg.OnOpenTicketPolicy,
 		arg.CreatedAt,
 		arg.UpdatedAt,
@@ -361,6 +384,7 @@ func (q *Queries) UpsertTicketProject(ctx context.Context, arg UpsertTicketProje
 		&i.Name,
 		&i.CreateConfig,
 		&i.StatusMapping,
+		&i.ContentTemplates,
 		&i.OnOpenTicketPolicy,
 		&i.CreatedAt,
 		&i.UpdatedAt,

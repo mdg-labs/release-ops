@@ -14,6 +14,7 @@ type TicketProject struct {
 	Name               string
 	CreateConfig       string
 	StatusMapping      string
+	ContentTemplates   string
 	OnOpenTicketPolicy string
 	CreatedAt          string
 	UpdatedAt          string
@@ -26,6 +27,7 @@ type CreateTicketProjectInput struct {
 	Name               string
 	CreateConfig       string
 	StatusMapping      string
+	ContentTemplates   string
 	OnOpenTicketPolicy string
 }
 
@@ -34,6 +36,7 @@ type UpdateTicketProjectInput struct {
 	Name               string
 	CreateConfig       string
 	StatusMapping      string
+	ContentTemplates   string
 	OnOpenTicketPolicy string
 }
 
@@ -59,6 +62,11 @@ func (r ticketProjectRepo) Create(ctx context.Context, input CreateTicketProject
 	}
 
 	now := nowUTC()
+	contentTemplates := input.ContentTemplates
+	if contentTemplates == "" {
+		contentTemplates = defaultContentTemplatesJSON
+	}
+
 	row, err := r.store.q.CreateTicketProject(ctx, db.CreateTicketProjectParams{
 		ID:                 newID(),
 		IntegrationID:      input.IntegrationID,
@@ -66,6 +74,7 @@ func (r ticketProjectRepo) Create(ctx context.Context, input CreateTicketProject
 		Name:               input.Name,
 		CreateConfig:       input.CreateConfig,
 		StatusMapping:      input.StatusMapping,
+		ContentTemplates:   contentTemplates,
 		OnOpenTicketPolicy: policy,
 		CreatedAt:          now,
 		UpdatedAt:          now,
@@ -101,10 +110,16 @@ func (r ticketProjectRepo) ListByIntegration(ctx context.Context, integrationID 
 }
 
 func (r ticketProjectRepo) Update(ctx context.Context, id string, input UpdateTicketProjectInput) (*TicketProject, error) {
+	contentTemplates := input.ContentTemplates
+	if contentTemplates == "" {
+		contentTemplates = defaultContentTemplatesJSON
+	}
+
 	row, err := r.store.q.UpdateTicketProject(ctx, db.UpdateTicketProjectParams{
 		Name:               input.Name,
 		CreateConfig:       input.CreateConfig,
 		StatusMapping:      input.StatusMapping,
+		ContentTemplates:   contentTemplates,
 		OnOpenTicketPolicy: input.OnOpenTicketPolicy,
 		UpdatedAt:          nowUTC(),
 		ID:                 id,
@@ -123,6 +138,8 @@ func (r ticketProjectRepo) CountMonitoredRepos(ctx context.Context, id string) (
 	return r.store.q.CountMonitoredReposByTicketProject(ctx, id)
 }
 
+const defaultContentTemplatesJSON = `{"title":"","description":"","supersedeComment":""}`
+
 func ticketProjectFromRow(row db.TicketProject) *TicketProject {
 	return &TicketProject{
 		ID:                 row.ID,
@@ -131,6 +148,7 @@ func ticketProjectFromRow(row db.TicketProject) *TicketProject {
 		Name:               row.Name,
 		CreateConfig:       row.CreateConfig,
 		StatusMapping:      row.StatusMapping,
+		ContentTemplates:   row.ContentTemplates,
 		OnOpenTicketPolicy: row.OnOpenTicketPolicy,
 		CreatedAt:          row.CreatedAt,
 		UpdatedAt:          row.UpdatedAt,
