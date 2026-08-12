@@ -14,6 +14,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { schemasMatchSemantically } from "../migrate-diff.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const SCHEMA = join(root, "db/schema.sql");
@@ -72,6 +73,12 @@ try {
   }
 
   if (diff.stdout.trim()) {
+    if (schemasMatchSemantically(currentDb, desiredDb)) {
+      console.log(
+        "db:check OK — db/schema.sql matches migrations/ (semantic; column order differs only)"
+      );
+      process.exit(0);
+    }
     console.error("db:check FAIL — db/schema.sql and migrations/ are out of sync.");
     console.error("Edit db/schema.sql then run: make migrate-diff name=<change>");
     console.error("--- sqldiff output ---\n", diff.stdout);

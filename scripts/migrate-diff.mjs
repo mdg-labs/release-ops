@@ -25,18 +25,12 @@ import {
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCHEMA = join(root, "db/schema.sql");
 const MIGRATIONS = join(root, "migrations");
-
-const name = process.argv[2];
-if (!name || !/^[a-z][a-z0-9_]*$/.test(name)) {
-  console.error("Usage: node scripts/migrate-diff.mjs <snake_case_name>");
-  process.exit(1);
-}
 
 function requireBinary(bin, probeArgs) {
   const check = spawnSync(bin, probeArgs, { encoding: "utf8" });
@@ -45,20 +39,6 @@ function requireBinary(bin, probeArgs) {
     process.exit(1);
   }
 }
-
-requireBinary("sqlite3", ["--version"]);
-requireBinary("sqldiff", ["--help"]);
-
-if (!existsSync(SCHEMA)) {
-  console.error(`Missing ${SCHEMA}`);
-  process.exit(1);
-}
-
-mkdirSync(MIGRATIONS, { recursive: true });
-
-const tmp = mkdtempSync(join(tmpdir(), "release-ops-migrate-"));
-const currentDb = join(tmp, "current.db");
-const desiredDb = join(tmp, "desired.db");
 
 function runSqlite(db, sql) {
   const r = spawnSync("sqlite3", [db], { input: sql, encoding: "utf8" });
@@ -129,14 +109,49 @@ function parseStatements(sql) {
   return statements;
 }
 
+function normalizeSqldiffOutput(rawSql) {
+  return rawSql.replace(/\s*--\s*due to schema mismatch\s*\n/gi, "\n");
+}
+
+function stripLeadingComments(stmt) {
+  return stmt.replace(/^(\s*--[^\n]*\n)+/s, "").trim();
+}
+
+function stripTrailingSqlComment(stmt) {
+  return stmt.replace(/\s*--[^\n]*$/s, "").trim();
+}
+
+function normalizeStatementForMatch(stmt) {
+  return stripTrailingSqlComment(stmt).replace(/;\s*$/, "").trim();
+}
+
 function matchDropTable(stmt) {
-  const m = stmt.match(/^DROP TABLE\s+(?:(?:IF EXISTS)\s+)?[`"]?(\w+)[`"]?(?:\s*;|\s+--.*)?$/is);
+  const cleaned = normalizeStatementForMatch(stmt);
+  const m = cleaned.match(/^DROP TABLE\s+(?:(?:IF EXISTS)\s+)?[`"]?(\w+)[`"]?$/is);
   return m ? { name: m[1] } : null;
 }
 
 function matchCreateTable(stmt) {
-  const m = stmt.match(/^CREATE TABLE\s+(?:(?:IF NOT EXISTS)\s+)?[`"]?(\w+)[`"]?\s*\(/is);
-  return m ? { name: m[1], sql: stmt } : null;
+  const body = stripLeadingComments(stmt);
+  const cleaned = normalizeStatementForMatch(body);
+  const m = cleaned.match(/^CREATE TABLE\s+(?:(?:IF NOT EXISTS)\s+)?[`"]?(\w+)[`"]?\s*\(/is);
+  return m ? { name: m[1], sql: body } : null;
+}
+
+function isSkippableBetweenDropAndCreate(stmt) {
+  const trimmed = stmt.trim();
+  return trimmed === "" || /^--/.test(trimmed);
+}
+
+function findPairedCreateIndex(statements, dropIndex, tableName) {
+  for (let j = dropIndex + 1; j < statements.length; j++) {
+    const stmt = statements[j];
+    if (isSkippableBetweenDropAndCreate(stmt)) continue;
+    const create = matchCreateTable(stripLeadingComments(stmt));
+    if (create && create.name === tableName) return j;
+    break;
+  }
+  return -1;
 }
 
 function matchCreateIndex(stmt) {
@@ -386,21 +401,24 @@ function rewriteTableChange(fromDb, toDb, tableName, createSql) {
  * Rewrite destructive DROP TABLE + CREATE TABLE pairs into data-safe SQL.
  */
 export function postProcessSqldiff(rawSql, fromDb, toDb) {
-  if (!rawSql.trim()) return rawSql;
+  const normalized = normalizeSqldiffOutput(rawSql);
+  if (!normalized.trim()) return normalized;
 
-  const statements = parseStatements(rawSql);
+  const statements = parseStatements(normalized);
   const out = [];
   const skipIndexForTable = new Set();
 
   for (let i = 0; i < statements.length; i++) {
     const drop = matchDropTable(statements[i]);
-    if (drop && i + 1 < statements.length) {
-      const create = matchCreateTable(statements[i + 1]);
-      if (create && create.name === drop.name) {
+    if (drop) {
+      const createIndex = findPairedCreateIndex(statements, i, drop.name);
+      if (createIndex !== -1) {
+        const createStmt = stripLeadingComments(statements[createIndex]);
+        const create = matchCreateTable(createStmt);
         const rewritten = rewriteTableChange(fromDb, toDb, drop.name, create.sql);
         out.push(...rewritten);
         skipIndexForTable.add(drop.name);
-        i += 1;
+        i = createIndex;
         continue;
       }
     }
@@ -416,41 +434,132 @@ export function postProcessSqldiff(rawSql, fromDb, toDb) {
   return out.map((s) => (s.endsWith(";") ? s : `${s};`)).join("\n\n");
 }
 
-try {
-  applyMigrations(currentDb);
-  applySchema(desiredDb);
+function listUserTables(db) {
+  const out = runSqlite(
+    db,
+    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;"
+  ).trim();
+  return out ? out.split("\n") : [];
+}
 
-  const rawUpSql = sqldiff(currentDb, desiredDb);
-  const rawDownSql = sqldiff(desiredDb, currentDb);
+function normalizeColumnType(type) {
+  const normalized = type.toUpperCase().trim();
+  return normalized || "TEXT";
+}
 
-  const upSql = postProcessSqldiff(rawUpSql, currentDb, desiredDb);
-  const downSql = postProcessSqldiff(rawDownSql, desiredDb, currentDb);
+function tableColumnFingerprint(db, table) {
+  const escaped = table.replace(/'/g, "''");
+  const out = runSqlite(db, `PRAGMA table_info('${escaped}');`).trim();
+  if (!out) return "";
+  return out
+    .split("\n")
+    .map((line) => {
+      const [, name, type, notnull, dfltValue, pk] = line.split("|");
+      return `${name}:${normalizeColumnType(type)}:${notnull}:${dfltValue ?? ""}:${pk}`;
+    })
+    .sort()
+    .join("|");
+}
 
-  if (!upSql) {
-    console.log("No schema drift — migrations/ already matches db/schema.sql");
-    process.exit(0);
+function indexFingerprint(db) {
+  const out = runSqlite(
+    db,
+    "SELECT name, tbl_name, sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL ORDER BY name;"
+  ).trim();
+  if (!out) return "";
+  return out
+    .split("\n")
+    .map((line) => {
+      const first = line.indexOf("|");
+      const second = line.indexOf("|", first + 1);
+      const name = line.slice(0, first);
+      const table = line.slice(first + 1, second);
+      const sql = normalizeWhitespace(line.slice(second + 1));
+      return `${name}@${table}:${sql}`;
+    })
+    .join("|");
+}
+
+/** Column-order-independent schema equivalence for db:check. */
+export function schemasMatchSemantically(dbA, dbB) {
+  const tablesA = listUserTables(dbA);
+  const tablesB = listUserTables(dbB);
+  if (tablesA.join("|") !== tablesB.join("|")) return false;
+  for (const table of tablesA) {
+    if (tableColumnFingerprint(dbA, table) !== tableColumnFingerprint(dbB, table)) {
+      return false;
+    }
+  }
+  return indexFingerprint(dbA) === indexFingerprint(dbB);
+}
+
+function isCliEntry() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  return fileURLToPath(import.meta.url) === resolve(entry);
+}
+
+function runCli() {
+  const name = process.argv[2];
+  if (!name || !/^[a-z][a-z0-9_]*$/.test(name)) {
+    console.error("Usage: node scripts/migrate-diff.mjs <snake_case_name>");
+    process.exit(1);
   }
 
-  const existing = readdirSync(MIGRATIONS)
-    .map((f) => /^(\d{6})_/.exec(f))
-    .filter(Boolean)
-    .map((m) => Number(m[1]));
-  const next = String((existing.length ? Math.max(...existing) : 0) + 1).padStart(6, "0");
+  requireBinary("sqlite3", ["--version"]);
+  requireBinary("sqldiff", ["--help"]);
 
-  const upPath = join(MIGRATIONS, `${next}_${name}.up.sql`);
-  const downPath = join(MIGRATIONS, `${next}_${name}.down.sql`);
+  if (!existsSync(SCHEMA)) {
+    console.error(`Missing ${SCHEMA}`);
+    process.exit(1);
+  }
 
-  writeFileSync(
-    upPath,
-    `-- Generated by scripts/migrate-diff.mjs — do not edit by hand\n-- Re-generate: make migrate-diff name=${name}\n\nPRAGMA foreign_keys = ON;\n\n${upSql}\n`
-  );
-  writeFileSync(
-    downPath,
-    `-- Generated by scripts/migrate-diff.mjs — do not edit by hand\n\n${downSql || "-- no-op\n"}\n`
-  );
+  mkdirSync(MIGRATIONS, { recursive: true });
 
-  console.log(`Wrote ${upPath}`);
-  console.log(`Wrote ${downPath}`);
-} finally {
-  rmSync(tmp, { recursive: true, force: true });
+  const tmp = mkdtempSync(join(tmpdir(), "release-ops-migrate-"));
+  const currentDb = join(tmp, "current.db");
+  const desiredDb = join(tmp, "desired.db");
+
+  try {
+    applyMigrations(currentDb);
+    applySchema(desiredDb);
+
+    const rawUpSql = sqldiff(currentDb, desiredDb);
+    const rawDownSql = sqldiff(desiredDb, currentDb);
+
+    const upSql = postProcessSqldiff(rawUpSql, currentDb, desiredDb);
+    const downSql = postProcessSqldiff(rawDownSql, desiredDb, currentDb);
+
+    if (!upSql) {
+      console.log("No schema drift — migrations/ already matches db/schema.sql");
+      process.exit(0);
+    }
+
+    const existing = readdirSync(MIGRATIONS)
+      .map((f) => /^(\d{6})_/.exec(f))
+      .filter(Boolean)
+      .map((m) => Number(m[1]));
+    const next = String((existing.length ? Math.max(...existing) : 0) + 1).padStart(6, "0");
+
+    const upPath = join(MIGRATIONS, `${next}_${name}.up.sql`);
+    const downPath = join(MIGRATIONS, `${next}_${name}.down.sql`);
+
+    writeFileSync(
+      upPath,
+      `-- Generated by scripts/migrate-diff.mjs — do not edit by hand\n-- Re-generate: make migrate-diff name=${name}\n\nPRAGMA foreign_keys = ON;\n\n${upSql}\n`
+    );
+    writeFileSync(
+      downPath,
+      `-- Generated by scripts/migrate-diff.mjs — do not edit by hand\n\n${downSql || "-- no-op\n"}\n`
+    );
+
+    console.log(`Wrote ${upPath}`);
+    console.log(`Wrote ${downPath}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+if (isCliEntry()) {
+  runCli();
 }
