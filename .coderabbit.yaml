@@ -1,0 +1,226 @@
+# CodeRabbit configuration for Release Ops
+# https://docs.coderabbit.ai/reference/configuration
+#
+# Self-hosted release monitor: Go API + Next.js web UI in one Docker image.
+# Spec precedence: docs/specs.html > db/schema.sql > docs/stack.html
+
+language: en-US
+
+tone_instructions: >
+  Be direct and specific. Focus on correctness, security, and spec compliance.
+  Skip praise. Prefer concrete fixes over generic advice. When behaviour is
+  undefined in docs/specs.html, flag it instead of inventing requirements.
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  poem: false
+  review_status: true
+  review_details: false
+  collapse_walkthrough: true
+  sequence_diagrams: true
+  estimate_code_review_effort: true
+  suggested_labels: true
+  auto_apply_labels: false
+  suggested_reviewers: true
+  auto_assign_reviewers: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - dev
+      - main
+
+  path_filters:
+  # Generated / vendored / build output
+  - "!internal/store/db/*.sql.go"
+  - "!**/node_modules/**"
+  - "!**/.next/**"
+  - "!**/dist/**"
+  - "!package-lock.json"
+  - "!apps/docs/public/**"
+  - "!docs/kaneo.openapi.json"
+  # Agent/orchestrator config (not application code)
+  - "!.agents/**"
+  - "!.cursor/**"
+
+  path_instructions:
+  - path: "**/*"
+    instructions: |
+      Release Ops polls GitHub, GitLab, Gitea, Forgejo, and Codeberg for new
+      releases and creates tickets in configured integrations. Single-container
+      app: Go API (cmd/server, internal/) + Next.js UI (apps/web). Auth lives
+      in Go; the web app proxies API calls. Do not invent endpoints, fields, or
+      IDs not defined in docs/specs.html. Prefer minimal, focused diffs.
+
+  - path: "internal/api/**"
+    instructions: |
+      Go HTTP API (chi router). Review auth/session handling, input validation,
+      error responses, and SQL injection risks. Credentials and integration
+      tokens must never be logged. Handlers should stay thin; business logic
+      belongs in internal/ packages. Match existing handler patterns and tests.
+
+  - path: "internal/providers/**"
+    instructions: |
+      Source and ticket provider integrations. Check API error handling, rate
+      limits, pagination, and idempotency for ticket creation. Validate that
+      provider-specific quirks (GitLab vs GitHub vs Gitea-compatible) are handled
+      correctly. Never persist or log raw API tokens.
+
+  - path: "internal/poll/**"
+    instructions: |
+      Release polling scheduler and run logic. Watch for race conditions,
+      duplicate ticket creation, missed releases, and incorrect semver/pre-release
+      handling. Scheduler changes should be covered by tests.
+
+  - path: "internal/store/**"
+    instructions: |
+      SQLite persistence via sqlc. Edit queries in queries/*.sql, not generated
+      internal/store/db/*.sql.go. Review transaction boundaries, nullable
+      columns, and encryption of stored credentials.
+
+  - path: "queries/**"
+    instructions: |
+      sqlc query definitions. Ensure SQL matches db/schema.sql types and
+      constraints. Prefer explicit column lists over SELECT *.
+
+  - path: "db/schema.sql"
+    instructions: |
+      Canonical DDL — source of truth for the database. Schema changes must be
+      followed by `make migrate-diff`; never hand-write migrations. Flag any
+      breaking column/type changes and missing indexes on foreign keys.
+
+  - path: "migrations/**"
+    instructions: |
+      Migrations must be sqldiff-generated from db/schema.sql via
+      `make migrate-diff`. Flag hand-edited or copy-pasted migration SQL.
+      Verify up/down symmetry and that CI `npm run db:check` would pass.
+
+  - path: "apps/web/**"
+    instructions: |
+      Next.js App Router + COSS UI + next-intl. Zero hardcoded user-facing
+      strings — all copy via message keys in apps/web/messages/en.json
+      (eslint-plugin-i18next enforces this). Use existing hooks/components
+      patterns. Client components only when needed. API calls go through the
+      Go proxy route, not direct external calls.
+
+  - path: "apps/web/messages/**"
+    instructions: |
+      next-intl message files. Keys use namespace.feature.element naming.
+      Namespaces: common, auth, dashboard, repos, integrations, ticket-projects,
+      notifications, settings. Keep keys stable; avoid duplicate strings.
+
+  - path: "Dockerfile"
+    instructions: |
+      Single-image build for Go + Next.js. Check layer caching, non-root user,
+      minimal attack surface, and that secrets are not baked into layers.
+
+  - path: "docs/**"
+    instructions: |
+      Product spec and roadmap docs. Focus on accuracy vs implementation,
+      broken links, and contradictions with docs/specs.html or db/schema.sql.
+      Do not nitpick prose style.
+
+  - path: ".github/**"
+    instructions: |
+      CI/CD workflows. Verify jobs match the local gate (go test/lint, web
+      test/lint/typecheck, db:check). Avoid redundant or missing checks.
+
+  labeling_instructions:
+  - label: api
+    instructions: Go API, handlers, auth, polling, or provider changes under internal/ or cmd/.
+  - label: web
+    instructions: Next.js UI changes under apps/web/.
+  - label: db
+    instructions: Schema, migrations, or sqlc query changes.
+  - label: docs
+    instructions: Documentation-only changes under docs/ or apps/docs/.
+  - label: ci
+    instructions: GitHub Actions or CI script changes.
+  - label: deps
+    instructions: Dependency version bumps in go.mod, go.sum, or package.json.
+
+  pre_merge_checks:
+    title:
+      mode: warning
+      requirements: |
+        Conventional Commits: <type>(<scope>)[#N]: <imperative summary>
+        Allowed types: feat, fix, chore, refactor, docs, test, ci, build, perf
+        Allowed scopes: release-ops, api, db, config, ci, docs, deps
+        Subject ≤72 chars. Include [#N] GitHub issue number when task-linked.
+    custom_checks:
+    - name: Web i18n compliance
+      mode: warning
+      instructions: |
+        If the PR changes files under apps/web/ (excluding messages/** and
+        test files), verify no new hardcoded user-facing strings appear in JSX
+        or component props (labels, titles, placeholders, toasts, aria-labels).
+        All copy must use next-intl keys. Fail if literal English UI strings
+        are introduced outside allowed cases (class names, routes, test IDs).
+    - name: Migration workflow
+      mode: warning
+      instructions: |
+        If migrations/*.sql or db/schema.sql changed, verify migrations look
+        sqldiff-generated (versioned up/down pair) and schema.sql was updated
+        as the canonical source. Fail if migration SQL appears hand-written or
+        if only migrations changed without a matching schema.sql update.
+
+  tools:
+    golangci-lint:
+      enabled: true
+    eslint:
+      enabled: true
+    hadolint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    markdownlint:
+      enabled: true
+    shellcheck:
+      enabled: true
+
+  finishing_touches:
+    docstrings:
+      enabled: true
+    unit_tests:
+      enabled: true
+    simplify:
+      enabled: false
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    file_patterns:
+    - "**/.cursor/rules/**"
+    - "docs/specs.html"
+    - "db/schema.sql"
+    - "docs/stack.html"
+  learnings:
+    scope: local
+  pull_requests:
+    scope: local
+
+code_generation:
+  docstrings:
+    language: en-US
+    path_instructions:
+    - path: "internal/**/*.go"
+      instructions: |
+        Go doc comments on exported symbols. Keep concise; document non-obvious
+        behaviour, error conditions, and security constraints.
+  unit_tests:
+    path_instructions:
+    - path: "internal/**/*.go"
+      instructions: |
+        Use table-driven tests with t.Parallel() where safe. Mock external
+        providers; do not hit live APIs. Follow existing *_test.go patterns.
+    - path: "apps/web/**/*.{ts,tsx}"
+      instructions: |
+        Vitest + Testing Library. Test user-visible behaviour, not implementation
+        details. Use next-intl test helpers for translated UI.
