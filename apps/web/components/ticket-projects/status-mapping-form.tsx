@@ -67,71 +67,75 @@ export function StatusMappingForm({
 
       {metadataEnabled && statuses.length > 0 ? (
         <>
-          <Field name="statusOpen">
-            <FieldLabel>
-              {t("statusOpen")} <span aria-hidden="true">*</span>
-            </FieldLabel>
-            <CheckboxGroup
-              aria-label={t("statusOpen")}
-              onValueChange={(next) => onChange({ ...values, open: next })}
-              value={values.open}
-            >
-              {statuses.map((status) => (
-                <Label key={status.id}>
-                  <Checkbox
-                    aria-label={status.label?.trim() || status.name}
-                    value={status.id}
-                  />
-                  {status.label?.trim() || status.name}
-                </Label>
-              ))}
-            </CheckboxGroup>
-            <FieldDescription>{t("statusListHint")}</FieldDescription>
-          </Field>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field name="statusOpen">
+              <FieldLabel>
+                {t("statusOpen")} <span aria-hidden="true">*</span>
+              </FieldLabel>
+              <CheckboxGroup
+                aria-label={t("statusOpen")}
+                onValueChange={(next) => onChange({ ...values, open: next })}
+                value={values.open}
+              >
+                {statuses.map((status) => (
+                  <Label key={status.id}>
+                    <Checkbox
+                      aria-label={status.label?.trim() || status.name}
+                      value={status.id}
+                    />
+                    {status.label?.trim() || status.name}
+                  </Label>
+                ))}
+              </CheckboxGroup>
+              <FieldDescription>{t("statusListHint")}</FieldDescription>
+            </Field>
 
-          <Field name="statusDone">
-            <FieldLabel>
-              {t("statusDone")} <span aria-hidden="true">*</span>
-            </FieldLabel>
-            <CheckboxGroup
-              aria-label={t("statusDone")}
-              onValueChange={(next) => onChange({ ...values, done: next })}
-              value={values.done}
-            >
-              {statuses.map((status) => (
-                <Label key={status.id}>
-                  <Checkbox
-                    aria-label={status.label?.trim() || status.name}
-                    value={status.id}
-                  />
-                  {status.label?.trim() || status.name}
-                </Label>
-              ))}
-            </CheckboxGroup>
-            <FieldDescription>{t("statusListHint")}</FieldDescription>
-          </Field>
+            <Field name="statusDone">
+              <FieldLabel>
+                {t("statusDone")} <span aria-hidden="true">*</span>
+              </FieldLabel>
+              <CheckboxGroup
+                aria-label={t("statusDone")}
+                onValueChange={(next) => onChange({ ...values, done: next })}
+                value={values.done}
+              >
+                {statuses.map((status) => (
+                  <Label key={status.id}>
+                    <Checkbox
+                      aria-label={status.label?.trim() || status.name}
+                      value={status.id}
+                    />
+                    {status.label?.trim() || status.name}
+                  </Label>
+                ))}
+              </CheckboxGroup>
+              <FieldDescription>{t("statusListHint")}</FieldDescription>
+            </Field>
 
-          <Field name="statusCancelled">
-            <FieldLabel>
-              {t("statusCancelled")} <span aria-hidden="true">*</span>
-            </FieldLabel>
-            <CheckboxGroup
-              aria-label={t("statusCancelled")}
-              onValueChange={(next) => onChange({ ...values, cancelled: next })}
-              value={values.cancelled}
-            >
-              {statuses.map((status) => (
-                <Label key={status.id}>
-                  <Checkbox
-                    aria-label={status.label?.trim() || status.name}
-                    value={status.id}
-                  />
-                  {status.label?.trim() || status.name}
-                </Label>
-              ))}
-            </CheckboxGroup>
-            <FieldDescription>{t("statusListHint")}</FieldDescription>
-          </Field>
+            <Field className="md:col-span-2" name="statusCancelled">
+              <FieldLabel>
+                {t("statusCancelled")} <span aria-hidden="true">*</span>
+              </FieldLabel>
+              <CheckboxGroup
+                aria-label={t("statusCancelled")}
+                onValueChange={(next) =>
+                  onChange({ ...values, cancelled: next })
+                }
+                value={values.cancelled}
+              >
+                {statuses.map((status) => (
+                  <Label key={status.id}>
+                    <Checkbox
+                      aria-label={status.label?.trim() || status.name}
+                      value={status.id}
+                    />
+                    {status.label?.trim() || status.name}
+                  </Label>
+                ))}
+              </CheckboxGroup>
+              <FieldDescription>{t("statusListHint")}</FieldDescription>
+            </Field>
+          </div>
 
           <MetadataSelect
             description={t("statusSupersededHint")}

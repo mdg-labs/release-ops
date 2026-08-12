@@ -191,6 +191,105 @@ describe("TicketProjectsView", () => {
     expect(within(dialog).queryByText("GitHub Org")).not.toBeInTheDocument();
   });
 
+  it("shows top-level form tabs in create drawer", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/ticket-projects",
+        method: "GET",
+      })
+      .reply(200, []);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/integrations",
+        method: "GET",
+      })
+      .reply(200, ticketIntegrations);
+
+    renderTicketProjectsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Add ticket project" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByRole("tab", { name: "General" }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("tab", { name: "Create config" }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("tab", { name: "Status mapping" }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("tab", { name: "Content templates" }),
+    ).toBeInTheDocument();
+  });
+
+  it("uses a wider drawer for ticket projects", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/ticket-projects",
+        method: "GET",
+      })
+      .reply(200, []);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/integrations",
+        method: "GET",
+      })
+      .reply(200, ticketIntegrations);
+
+    renderTicketProjectsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Add ticket project" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.className).toContain("max-w-4xl");
+  });
+
+  it("switches to the tab with validation errors on save", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/ticket-projects",
+        method: "GET",
+      })
+      .reply(200, sampleProjects);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/integrations",
+        method: "GET",
+      })
+      .reply(200, ticketIntegrations);
+
+    renderTicketProjectsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit Jira — DEV" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/Display name/), {
+      target: { value: "" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("tab", { name: "Content templates" }),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(
+      await within(dialog).findByText("Display name is required."),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("tab", { name: "General" }),
+    ).toHaveAttribute("data-active");
+  });
+
   it("shows API validation errors on save", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool
@@ -293,6 +392,11 @@ describe("TicketProjectsView", () => {
       "Jira — DEV",
     );
     expect(within(dialog).getByText("DEV")).toBeInTheDocument();
+
+    fireEvent.click(
+      within(dialog).getByRole("tab", { name: "Content templates" }),
+    );
+
     expect(within(dialog).getByLabelText("Title template")).toHaveValue(
       "Release: {{ .Release.Tag }}",
     );
@@ -363,6 +467,9 @@ describe("TicketProjectsView", () => {
     );
 
     const dialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(dialog).getByRole("tab", { name: "Content templates" }),
+    );
     fireEvent.change(within(dialog).getByLabelText("Title template"), {
       target: { value: "Updated: {{ .Release.Tag }}" },
     });

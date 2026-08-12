@@ -270,6 +270,12 @@
     "name": "Display name",
     "policy": "Open ticket policy",
     "policyPlaceholder": "Select policy",
+    "tabs": {
+      "general": "General",
+      "createConfig": "Create config",
+      "statusMapping": "Status mapping",
+      "contentTemplates": "Content templates"
+    },
     "createConfigTitle": "Create defaults",
     "mappingNoteTitle": "Per-project mapping",
     "mappingNoteDescription": "Status values differ per project. Choose from the provider options below.",

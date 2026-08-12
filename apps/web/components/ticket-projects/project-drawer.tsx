@@ -31,6 +31,7 @@ import {
   SheetPopup,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
 import { ApiError } from "@/lib/api/client";
 import {
   useTicketMetadataProjects,
@@ -54,6 +55,7 @@ import {
   statusMappingToRecord,
   type StatusMappingValues,
 } from "@/lib/ticket-projects/status-mapping";
+import { cn } from "@/lib/utils";
 import type {
   ContentTemplates,
   Integration,
@@ -61,6 +63,16 @@ import type {
 } from "@/lib/query/types";
 
 type ProjectDrawerMode = "create" | "edit";
+
+type DrawerTab =
+  "general" | "createConfig" | "statusMapping" | "contentTemplates";
+
+const DRAWER_TABS: DrawerTab[] = [
+  "general",
+  "createConfig",
+  "statusMapping",
+  "contentTemplates",
+];
 
 type ProjectDrawerProps = {
   mode: ProjectDrawerMode;
@@ -91,6 +103,11 @@ type ProjectDrawerProps = {
 };
 
 type IntegrationOption = { label: string; value: string; kind: string };
+
+type TabValidationError = {
+  tab: DrawerTab;
+  message: string;
+};
 
 function serializeCreateConfig(
   kind: TicketIntegrationKind,
@@ -183,6 +200,8 @@ export function ProjectDrawer({
   const [contentTemplates, setContentTemplates] = useState<ContentTemplates>(
     defaultContentTemplates(),
   );
+  const [activeTab, setActiveTab] = useState<DrawerTab>("general");
+  const [invalidTabs, setInvalidTabs] = useState<Set<DrawerTab>>(new Set());
   const [formError, setFormError] = useState<string | null>(null);
 
   const selectedIntegration =
@@ -216,6 +235,8 @@ export function ProjectDrawer({
     }
 
     setFormError(null);
+    setInvalidTabs(new Set());
+    setActiveTab("general");
 
     if (mode === "edit" && project) {
       const integration = integrations.find(
@@ -277,45 +298,97 @@ export function ProjectDrawer({
     setStatusMapping(defaultStatusMapping());
   }, [open, mode, externalProjectId, activeKind]);
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setFormError(null);
-
+  function validateAllTabs(): TabValidationError | null {
     const trimmedName = name.trim();
+    const trimmedExternalProjectId = externalProjectId.trim();
+    const nextInvalidTabs = new Set<DrawerTab>();
+
     if (!trimmedName) {
-      setFormError(t("validation.nameRequired"));
-      return;
+      nextInvalidTabs.add("general");
     }
 
-    const trimmedExternalProjectId = externalProjectId.trim();
     if (!trimmedExternalProjectId) {
-      setFormError(t("validation.externalProjectIdRequired"));
-      return;
+      nextInvalidTabs.add("general");
     }
 
     if (mode === "create" && !integrationId) {
-      setFormError(t("validation.integrationRequired"));
-      return;
+      nextInvalidTabs.add("general");
     }
 
     if (mode === "create" && activeKind === "phasical" && !workspaceId.trim()) {
-      setFormError(t("validation.workspaceRequired"));
-      return;
+      nextInvalidTabs.add("general");
     }
 
     if (!activeKind) {
-      setFormError(t("validation.integrationRequired"));
-      return;
+      nextInvalidTabs.add("general");
+    }
+
+    if (activeKind && !validateCreateConfig(activeKind, createConfig)) {
+      nextInvalidTabs.add("createConfig");
     }
 
     const mappingError = validateStatusMapping(statusMapping);
     if (mappingError) {
-      setFormError(t(`validation.${mappingError}`));
-      return;
+      nextInvalidTabs.add("statusMapping");
+    }
+
+    setInvalidTabs(nextInvalidTabs);
+
+    if (!trimmedName) {
+      return { tab: "general", message: t("validation.nameRequired") };
+    }
+
+    if (!trimmedExternalProjectId) {
+      return {
+        tab: "general",
+        message: t("validation.externalProjectIdRequired"),
+      };
+    }
+
+    if (mode === "create" && !integrationId) {
+      return { tab: "general", message: t("validation.integrationRequired") };
+    }
+
+    if (mode === "create" && activeKind === "phasical" && !workspaceId.trim()) {
+      return { tab: "general", message: t("validation.workspaceRequired") };
+    }
+
+    if (!activeKind) {
+      return { tab: "general", message: t("validation.integrationRequired") };
     }
 
     if (!validateCreateConfig(activeKind, createConfig)) {
-      setFormError(t("validation.createConfigRequired"));
+      return {
+        tab: "createConfig",
+        message: t("validation.createConfigRequired"),
+      };
+    }
+
+    if (mappingError) {
+      return {
+        tab: "statusMapping",
+        message: t(`validation.${mappingError}`),
+      };
+    }
+
+    return null;
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFormError(null);
+
+    const validationError = validateAllTabs();
+    if (validationError) {
+      setActiveTab(validationError.tab);
+      setFormError(validationError.message);
+      return;
+    }
+
+    const trimmedName = name.trim();
+    const trimmedExternalProjectId = externalProjectId.trim();
+
+    if (!activeKind) {
       return;
     }
 
@@ -347,12 +420,18 @@ export function ProjectDrawer({
     }
   }
 
+  function handleTabChange(value: string | number | null) {
+    if (value && DRAWER_TABS.includes(value as DrawerTab)) {
+      setActiveTab(value as DrawerTab);
+    }
+  }
+
   const projects = projectsQuery.data?.items ?? [];
   const workspaces = workspacesQuery.data?.items ?? [];
 
   return (
     <Sheet onOpenChange={onOpenChange} open={open}>
-      <SheetPopup side="right">
+      <SheetPopup className="max-w-4xl" side="right">
         <SheetHeader>
           <SheetTitle>
             {mode === "create" ? t("createTitle") : t("editTitle")}
@@ -369,120 +448,156 @@ export function ProjectDrawer({
               </p>
             ) : null}
 
-            {mode === "create" ? (
-              <Field name="integrationId">
-                <FieldLabel htmlFor={integrationIdField}>
-                  {t("integration")} <span aria-hidden="true">*</span>
-                </FieldLabel>
-                {ticketIntegrations.length === 0 ? (
-                  <p className="text-muted-foreground text-sm">
-                    {t("noTicketIntegrations")}
-                  </p>
-                ) : (
-                  <Select
-                    itemToStringValue={(item) => item.value}
-                    items={integrationItems}
-                    onValueChange={(value) => {
-                      if (value) {
-                        setIntegrationId(value.value);
-                      }
-                    }}
-                    value={
-                      integrationItems.find(
-                        (item) => item.value === integrationId,
-                      ) ?? null
-                    }
+            <Tabs onValueChange={handleTabChange} value={activeTab}>
+              <TabsList className="w-full max-w-full flex-wrap">
+                {DRAWER_TABS.map((tab) => (
+                  <TabsTab
+                    className={cn(
+                      invalidTabs.has(tab) &&
+                        "text-destructive-foreground data-active:text-destructive-foreground",
+                    )}
+                    key={tab}
+                    value={tab}
                   >
-                    <SelectTrigger id={integrationIdField}>
-                      <SelectValue placeholder={t("integrationPlaceholder")} />
-                    </SelectTrigger>
-                    <SelectPopup>
-                      {integrationItems.map((item) => (
-                        <SelectItem key={item.value} value={item}>
-                          {item.label}
-                        </SelectItem>
-                      ))}
-                    </SelectPopup>
-                  </Select>
+                    {t(`tabs.${tab}`)}
+                  </TabsTab>
+                ))}
+              </TabsList>
+
+              <TabsPanel className="flex flex-col gap-4 pt-2" value="general">
+                {mode === "create" ? (
+                  <Field name="integrationId">
+                    <FieldLabel htmlFor={integrationIdField}>
+                      {t("integration")} <span aria-hidden="true">*</span>
+                    </FieldLabel>
+                    {ticketIntegrations.length === 0 ? (
+                      <p className="text-muted-foreground text-sm">
+                        {t("noTicketIntegrations")}
+                      </p>
+                    ) : (
+                      <Select
+                        itemToStringValue={(item) => item.value}
+                        items={integrationItems}
+                        onValueChange={(value) => {
+                          if (value) {
+                            setIntegrationId(value.value);
+                          }
+                        }}
+                        value={
+                          integrationItems.find(
+                            (item) => item.value === integrationId,
+                          ) ?? null
+                        }
+                      >
+                        <SelectTrigger id={integrationIdField}>
+                          <SelectValue
+                            placeholder={t("integrationPlaceholder")}
+                          />
+                        </SelectTrigger>
+                        <SelectPopup>
+                          {integrationItems.map((item) => (
+                            <SelectItem key={item.value} value={item}>
+                              {item.label}
+                            </SelectItem>
+                          ))}
+                        </SelectPopup>
+                      </Select>
+                    )}
+                  </Field>
+                ) : (
+                  <Field name="integration">
+                    <FieldLabel>{t("integration")}</FieldLabel>
+                    <Input
+                      disabled
+                      readOnly
+                      value={selectedIntegration?.name ?? ""}
+                    />
+                  </Field>
                 )}
-              </Field>
-            ) : (
-              <Field name="integration">
-                <FieldLabel>{t("integration")}</FieldLabel>
-                <Input
-                  disabled
-                  readOnly
-                  value={selectedIntegration?.name ?? ""}
+
+                {activeKind === "phasical" && mode === "create" ? (
+                  <MetadataSelect
+                    disabled={!metadataEnabled}
+                    errorMessage={workspacesQuery.data?.message}
+                    id={workspaceIdField}
+                    isError={workspacesQuery.isError}
+                    isLoading={workspacesQuery.isLoading}
+                    items={workspaces}
+                    label={t("phasical.workspace")}
+                    name="workspaceId"
+                    onValueChange={setWorkspaceId}
+                    placeholder={t("metadata.workspacePlaceholder")}
+                    required
+                    value={workspaceId}
+                  />
+                ) : null}
+
+                <MetadataSelect
+                  disabled={mode === "edit" || !metadataEnabled}
+                  errorMessage={projectsQuery.data?.message}
+                  id={externalProjectIdField}
+                  includeMissingValue={mode === "edit"}
+                  isError={projectsQuery.isError}
+                  isLoading={projectsQuery.isLoading}
+                  items={projects}
+                  label={t("externalProjectId")}
+                  name="externalProjectId"
+                  onValueChange={setExternalProjectId}
+                  placeholder={t("metadata.projectPlaceholder")}
+                  required
+                  value={activeExternalProjectId}
                 />
-              </Field>
-            )}
 
-            {activeKind === "phasical" && mode === "create" ? (
-              <MetadataSelect
-                disabled={!metadataEnabled}
-                errorMessage={workspacesQuery.data?.message}
-                id={workspaceIdField}
-                isError={workspacesQuery.isError}
-                isLoading={workspacesQuery.isLoading}
-                items={workspaces}
-                label={t("phasical.workspace")}
-                name="workspaceId"
-                onValueChange={setWorkspaceId}
-                placeholder={t("metadata.workspacePlaceholder")}
-                required
-                value={workspaceId}
-              />
-            ) : null}
+                <Field name="name">
+                  <FieldLabel htmlFor={nameField}>
+                    {t("name")} <span aria-hidden="true">*</span>
+                  </FieldLabel>
+                  <Input
+                    id={nameField}
+                    onChange={(event) => setName(event.target.value)}
+                    required
+                    value={name}
+                  />
+                </Field>
 
-            <MetadataSelect
-              disabled={mode === "edit" || !metadataEnabled}
-              errorMessage={projectsQuery.data?.message}
-              id={externalProjectIdField}
-              includeMissingValue={mode === "edit"}
-              isError={projectsQuery.isError}
-              isLoading={projectsQuery.isLoading}
-              items={projects}
-              label={t("externalProjectId")}
-              name="externalProjectId"
-              onValueChange={setExternalProjectId}
-              placeholder={t("metadata.projectPlaceholder")}
-              required
-              value={activeExternalProjectId}
-            />
+                <PolicySelect onValueChange={setPolicy} value={policy} />
+              </TabsPanel>
 
-            <Field name="name">
-              <FieldLabel htmlFor={nameField}>
-                {t("name")} <span aria-hidden="true">*</span>
-              </FieldLabel>
-              <Input
-                id={nameField}
-                onChange={(event) => setName(event.target.value)}
-                required
-                value={name}
-              />
-            </Field>
+              <TabsPanel
+                className="flex flex-col gap-4 pt-2"
+                value="createConfig"
+              >
+                <CreateConfigTabs
+                  externalProjectId={activeExternalProjectId}
+                  integrationId={activeIntegrationId}
+                  kind={activeKind ?? null}
+                  onChange={setCreateConfig}
+                  values={createConfig}
+                />
+              </TabsPanel>
 
-            <PolicySelect onValueChange={setPolicy} value={policy} />
+              <TabsPanel
+                className="flex flex-col gap-4 pt-2"
+                value="statusMapping"
+              >
+                <StatusMappingForm
+                  externalProjectId={activeExternalProjectId}
+                  integrationId={activeIntegrationId}
+                  onChange={setStatusMapping}
+                  values={statusMapping}
+                />
+              </TabsPanel>
 
-            <CreateConfigTabs
-              externalProjectId={activeExternalProjectId}
-              integrationId={activeIntegrationId}
-              kind={activeKind ?? null}
-              onChange={setCreateConfig}
-              values={createConfig}
-            />
-
-            <StatusMappingForm
-              externalProjectId={activeExternalProjectId}
-              integrationId={activeIntegrationId}
-              onChange={setStatusMapping}
-              values={statusMapping}
-            />
-
-            <ContentTemplateForm
-              onChange={setContentTemplates}
-              values={contentTemplates}
-            />
+              <TabsPanel
+                className="flex flex-col gap-4 pt-2"
+                value="contentTemplates"
+              >
+                <ContentTemplateForm
+                  onChange={setContentTemplates}
+                  values={contentTemplates}
+                />
+              </TabsPanel>
+            </Tabs>
           </SheetPanel>
           <SheetFooter variant="bare">
             <SheetClose render={<Button variant="ghost" type="button" />}>
