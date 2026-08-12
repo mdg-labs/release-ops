@@ -3,6 +3,7 @@ package source
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -45,6 +46,32 @@ func BuildRepoWebURL(sourceKind, integrationBaseURL, projectPath string) (string
 			return "", fmt.Errorf("integration base_url: %w", err)
 		}
 		return base + "/" + projectPath, nil
+	default:
+		return "", fmt.Errorf("%w: %q", ErrUnknownKind, sourceKind)
+	}
+}
+
+// BuildReleaseWebURL returns the browser URL for a release tag on the source host.
+// repoURL must be the repository web URL from BuildRepoWebURL.
+func BuildReleaseWebURL(sourceKind, repoURL, tag string) (string, error) {
+	repoURL = strings.TrimRight(strings.TrimSpace(repoURL), "/")
+	tag = strings.TrimSpace(tag)
+	if repoURL == "" {
+		return "", fmt.Errorf("repo url is required")
+	}
+	if tag == "" {
+		return "", fmt.Errorf("tag is required")
+	}
+	if !IsValidKind(sourceKind) {
+		return "", fmt.Errorf("%w: %q", ErrUnknownKind, sourceKind)
+	}
+
+	escapedTag := url.PathEscape(tag)
+	switch sourceKind {
+	case KindGitLab:
+		return repoURL + "/-/releases/" + escapedTag, nil
+	case KindGitHub, KindGitea, KindForgejo, KindCodeberg:
+		return repoURL + "/releases/tag/" + escapedTag, nil
 	default:
 		return "", fmt.Errorf("%w: %q", ErrUnknownKind, sourceKind)
 	}

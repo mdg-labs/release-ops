@@ -203,7 +203,20 @@ func TestGetStatusReturnsReposWithTicketProjectName(t *testing.T) {
 		},
 		TicketProjects: &mockStatusTicketProjectRepo{
 			items: []store.TicketProject{
-				{ID: "tp-1", Name: "Phasical — Release Ops"},
+				{ID: "tp-1", Name: "Phasical — Release Ops", IntegrationID: "int-phasical"},
+			},
+		},
+		Integrations: &mockIntegrationRepo{
+			items: map[string]*store.Integration{
+				"int-phasical": {
+					ID:      "int-phasical",
+					Kind:    "phasical",
+					Name:    "Phasical",
+					BaseURL: strPtr("https://phasical.example/api"),
+				},
+			},
+			secrets: map[string][]byte{
+				"int-phasical": []byte(`{"api_key":"test-key"}`),
 			},
 		},
 		Poll: &mockStatusPollRepo{},
@@ -232,6 +245,9 @@ func TestGetStatusReturnsReposWithTicketProjectName(t *testing.T) {
 			TicketProjectID   string  `json:"ticketProjectId"`
 			TicketProjectName string  `json:"ticketProjectName"`
 			OpenTicketTag     *string `json:"openTicketTag"`
+			RepoURL           *string `json:"repoUrl"`
+			ReleaseURL        *string `json:"releaseUrl"`
+			OpenTicketURL     *string `json:"openTicketUrl"`
 		} `json:"repos"`
 		IsPolling bool `json:"isPolling"`
 	}
@@ -251,9 +267,114 @@ func TestGetStatusReturnsReposWithTicketProjectName(t *testing.T) {
 	if resp.Repos[0].TicketProjectName != "Phasical — Release Ops" {
 		t.Fatalf("ticketProjectName = %q, want %q", resp.Repos[0].TicketProjectName, "Phasical — Release Ops")
 	}
+	if resp.Repos[0].RepoURL == nil || *resp.Repos[0].RepoURL != "https://github.com/FreshRSS/FreshRSS" {
+		t.Fatalf("repoUrl = %v, want https://github.com/FreshRSS/FreshRSS", resp.Repos[0].RepoURL)
+	}
+	if resp.Repos[0].ReleaseURL == nil || *resp.Repos[0].ReleaseURL != "https://github.com/FreshRSS/FreshRSS/releases/tag/1.26.0" {
+		t.Fatalf("releaseUrl = %v", resp.Repos[0].ReleaseURL)
+	}
+	if resp.Repos[0].OpenTicketURL == nil || *resp.Repos[0].OpenTicketURL != "https://phasical.example/task/task-uuid" {
+		t.Fatalf("openTicketUrl = %v", resp.Repos[0].OpenTicketURL)
+	}
 	if resp.IsPolling {
 		t.Fatal("isPolling = true, want false")
 	}
+}
+
+func TestGetStatusOmitsReleaseAndTicketURLsWhenMissing(t *testing.T) {
+	t.Parallel()
+
+	lastKnownTag := "1.0.0"
+	h := &handlers.StatusHandlers{
+		Settings: &mockStatusSettingsRepo{
+			settings: &store.AppSettings{ID: 1, PollIntervalMinutes: 360},
+		},
+		Repos: &mockStatusRepoRepo{
+			items: []store.MonitoredRepo{
+				{
+					ID:              "repo-no-ticket",
+					SourceKind:      "github",
+					ProjectPath:     "acme/widget",
+					Enabled:         true,
+					TicketProjectID: "tp-1",
+					LastKnownTag:    nil,
+				},
+				{
+					ID:              "repo-no-tag",
+					SourceKind:      "github",
+					ProjectPath:     "acme/other",
+					Enabled:         true,
+					TicketProjectID: "tp-1",
+					LastKnownTag:    &lastKnownTag,
+				},
+			},
+		},
+		TicketProjects: &mockStatusTicketProjectRepo{
+			items: []store.TicketProject{
+				{ID: "tp-1", Name: "Tickets", IntegrationID: "int-phasical"},
+			},
+		},
+		Integrations: &mockIntegrationRepo{
+			items: map[string]*store.Integration{
+				"int-phasical": {
+					ID:      "int-phasical",
+					Kind:    "phasical",
+					Name:    "Phasical",
+					BaseURL: strPtr("https://phasical.example/api"),
+				},
+			},
+			secrets: map[string][]byte{
+				"int-phasical": []byte(`{"api_key":"test-key"}`),
+			},
+		},
+		Poll: &mockStatusPollRepo{},
+	}
+
+	router, sm := newStatusTestRouter(t, h)
+	cookie := seedSession(t, sm)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Repos []struct {
+			ID            string  `json:"id"`
+			RepoURL       *string `json:"repoUrl"`
+			ReleaseURL    *string `json:"releaseUrl"`
+			OpenTicketURL *string `json:"openTicketUrl"`
+		} `json:"repos"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Repos) != 2 {
+		t.Fatalf("repos len = %d, want 2", len(resp.Repos))
+	}
+	if resp.Repos[0].RepoURL == nil {
+		t.Fatal("repoUrl is null, want value")
+	}
+	if resp.Repos[0].ReleaseURL != nil {
+		t.Fatalf("releaseUrl = %v, want null", resp.Repos[0].ReleaseURL)
+	}
+	if resp.Repos[0].OpenTicketURL != nil {
+		t.Fatalf("openTicketUrl = %v, want null", resp.Repos[0].OpenTicketURL)
+	}
+	if resp.Repos[1].ReleaseURL == nil {
+		t.Fatal("releaseUrl is null, want value")
+	}
+	if resp.Repos[1].OpenTicketURL != nil {
+		t.Fatalf("openTicketUrl = %v, want null", resp.Repos[1].OpenTicketURL)
+	}
+}
+
+func strPtr(s string) *string {
+	return &s
 }
 
 func TestGetStatusIncludesLastRunAndIsPolling(t *testing.T) {

@@ -75,6 +75,7 @@ func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appPubli
 		Settings:       st.Settings(),
 		Repos:          st.Repos(),
 		TicketProjects: st.TicketProjects(),
+		Integrations:   st.Integrations(),
 		Poll:           st.Poll(),
 		Runner:         pollRunner,
 	}
