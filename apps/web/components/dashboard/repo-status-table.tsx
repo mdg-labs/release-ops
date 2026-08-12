@@ -111,6 +111,17 @@ export function RepoStatusTable({
     [format, tRepos],
   );
 
+  const formatLastReleasePublishedAt = useCallback(
+    (value: string | null): string => {
+      if (!value) {
+        return t("noTag");
+      }
+
+      return formatAppDateTime(format, value, t("noTag"));
+    },
+    [format, t],
+  );
+
   const columns = useMemo<ColumnDef<StatusRepo>[]>(
     () => [
       {
@@ -142,6 +153,32 @@ export function RepoStatusTable({
         ),
         header: t("columns.lastTag"),
         size: 120,
+      },
+      {
+        accessorKey: "lastReleasePublishedAt",
+        cell: ({ row }) => (
+          <span className="text-muted-foreground text-sm">
+            {formatLastReleasePublishedAt(row.original.lastReleasePublishedAt)}
+          </span>
+        ),
+        header: t("columns.lastReleasePublishedAt"),
+        size: 160,
+        sortingFn: (rowA, rowB, columnId) => {
+          const left = rowA.getValue(columnId) as string | null;
+          const right = rowB.getValue(columnId) as string | null;
+
+          if (!left && !right) {
+            return 0;
+          }
+          if (!left) {
+            return 1;
+          }
+          if (!right) {
+            return -1;
+          }
+
+          return new Date(left).getTime() - new Date(right).getTime();
+        },
       },
       {
         accessorKey: "openTicketExternalId",
@@ -196,7 +233,7 @@ export function RepoStatusTable({
         },
       },
     ],
-    [formatLastPolledAt, t, tIntegrations],
+    [formatLastPolledAt, formatLastReleasePublishedAt, t, tIntegrations],
   );
 
   const table = useReactTable({

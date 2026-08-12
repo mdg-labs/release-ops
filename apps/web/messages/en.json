@@ -76,6 +76,7 @@
       "source": "Source",
       "path": "Path",
       "lastTag": "Last tag",
+      "lastReleasePublishedAt": "Release date",
       "openTicket": "Open ticket",
       "lastPolledAt": "Last polled"
     },

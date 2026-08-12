@@ -221,8 +221,9 @@ func TestUpdatePollStateOnMonitoredRepo(t *testing.T) {
 	openTag := "v1.2.2"
 
 	updated, err := s.Poll().UpdatePollState(ctx, fixture.repoID, store.PollStateUpdate{
-		LastKnownTag:         &tag,
-		LastPolledAt:         &polledAt,
+		LastKnownTag:           &tag,
+		LastReleasePublishedAt: &polledAt,
+		LastPolledAt:           &polledAt,
 		OpenTicketExternalID: &ticketID,
 		OpenTicketTag:        &openTag,
 		LastError:            nil,
@@ -232,6 +233,9 @@ func TestUpdatePollStateOnMonitoredRepo(t *testing.T) {
 	}
 	if updated.LastKnownTag == nil || *updated.LastKnownTag != tag {
 		t.Fatalf("LastKnownTag = %v, want %q", updated.LastKnownTag, tag)
+	}
+	if updated.LastReleasePublishedAt == nil || *updated.LastReleasePublishedAt != polledAt {
+		t.Fatalf("LastReleasePublishedAt = %v, want %q", updated.LastReleasePublishedAt, polledAt)
 	}
 	if updated.OpenTicketExternalID == nil || *updated.OpenTicketExternalID != ticketID {
 		t.Fatalf("OpenTicketExternalID = %v, want %q", updated.OpenTicketExternalID, ticketID)

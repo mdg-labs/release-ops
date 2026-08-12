@@ -47,8 +47,9 @@ type MonitoredRepo struct {
 	TicketProjectID      string         `json:"ticket_project_id"`
 	OpenTicketExternalID sql.NullString `json:"open_ticket_external_id"`
 	OpenTicketTag        sql.NullString `json:"open_ticket_tag"`
-	LastKnownTag         sql.NullString `json:"last_known_tag"`
-	LastPolledAt         sql.NullString `json:"last_polled_at"`
+	LastKnownTag             sql.NullString `json:"last_known_tag"`
+	LastReleasePublishedAt   sql.NullString `json:"last_release_published_at"`
+	LastPolledAt             sql.NullString `json:"last_polled_at"`
 	LastError            sql.NullString `json:"last_error"`
 	CreatedAt            string         `json:"created_at"`
 	UpdatedAt            string         `json:"updated_at"`

@@ -55,7 +55,7 @@ func (e *Engine) EvaluateRepo(
 	tagAction, tag := decideTagChange(repo.LastKnownTag, release)
 	switch tagAction {
 	case tagActionBaseline:
-		return e.applyBaseline(ctx, repo, tag)
+		return e.applyBaseline(ctx, repo, release, tag)
 	case tagActionSkip:
 		return e.applySkip(ctx, repo)
 	case tagActionNewTag:
@@ -122,21 +122,31 @@ func decideTagChange(lastKnown *string, release *source.Release) (tagDecision, s
 
 func basePollUpdate(repo store.MonitoredRepo) store.PollStateUpdate {
 	return store.PollStateUpdate{
-		OpenTicketExternalID: repo.OpenTicketExternalID,
-		OpenTicketTag:        repo.OpenTicketTag,
-		LastKnownTag:         repo.LastKnownTag,
-		LastPolledAt:         repo.LastPolledAt,
-		LastError:            repo.LastError,
+		OpenTicketExternalID:   repo.OpenTicketExternalID,
+		OpenTicketTag:          repo.OpenTicketTag,
+		LastKnownTag:           repo.LastKnownTag,
+		LastReleasePublishedAt: repo.LastReleasePublishedAt,
+		LastPolledAt:           repo.LastPolledAt,
+		LastError:              repo.LastError,
 	}
 }
 
-func (e *Engine) applyBaseline(ctx context.Context, repo store.MonitoredRepo, tag string) (*RepoEvaluation, error) {
+func releasePublishedAtPtr(release *source.Release) *string {
+	if release == nil || release.PublishedAt.IsZero() {
+		return nil
+	}
+	formatted := release.PublishedAt.UTC().Format("2006-01-02T15:04:05.000Z")
+	return &formatted
+}
+
+func (e *Engine) applyBaseline(ctx context.Context, repo store.MonitoredRepo, release *source.Release, tag string) (*RepoEvaluation, error) {
 	now := pollNowUTC()
 	update := basePollUpdate(repo)
 	update.LastPolledAt = &now
 	update.LastError = nil
 	if tag != "" {
 		update.LastKnownTag = &tag
+		update.LastReleasePublishedAt = releasePublishedAtPtr(release)
 	}
 
 	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
@@ -250,6 +260,7 @@ func (e *Engine) applyCreate(
 	update.OpenTicketExternalID = &externalID
 	update.OpenTicketTag = &tag
 	update.LastKnownTag = &tag
+	update.LastReleasePublishedAt = releasePublishedAtPtr(release)
 	update.LastPolledAt = &now
 	update.LastError = nil
 	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
@@ -293,6 +304,7 @@ func (e *Engine) applySupersede(
 	update.OpenTicketExternalID = &externalID
 	update.OpenTicketTag = &tag
 	update.LastKnownTag = &tag
+	update.LastReleasePublishedAt = releasePublishedAtPtr(release)
 	update.LastPolledAt = &now
 	update.LastError = nil
 	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
@@ -322,6 +334,7 @@ func (e *Engine) applyMerge(
 	update := basePollUpdate(repo)
 	update.OpenTicketTag = &tag
 	update.LastKnownTag = &tag
+	update.LastReleasePublishedAt = releasePublishedAtPtr(release)
 	update.LastPolledAt = &now
 	update.LastError = nil
 	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
@@ -340,6 +353,7 @@ func (e *Engine) applySkipIfOpen(
 	tag := release.Tag
 	update := basePollUpdate(repo)
 	update.LastKnownTag = &tag
+	update.LastReleasePublishedAt = releasePublishedAtPtr(release)
 	update.LastPolledAt = &now
 	update.LastError = nil
 	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)

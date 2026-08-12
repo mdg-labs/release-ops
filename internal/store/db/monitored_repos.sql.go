@@ -21,11 +21,13 @@ INSERT INTO monitored_repos (
   open_ticket_external_id,
   open_ticket_tag,
   last_known_tag,
+  last_release_published_at,
   last_polled_at,
   last_error,
   created_at,
   updated_at
 ) VALUES (
+  ?,
   ?,
   ?,
   ?,
@@ -50,6 +52,7 @@ RETURNING
   open_ticket_external_id,
   open_ticket_tag,
   last_known_tag,
+  last_release_published_at,
   last_polled_at,
   last_error,
   created_at,
@@ -65,8 +68,9 @@ type CreateMonitoredRepoParams struct {
 	TicketProjectID      string         `json:"ticket_project_id"`
 	OpenTicketExternalID sql.NullString `json:"open_ticket_external_id"`
 	OpenTicketTag        sql.NullString `json:"open_ticket_tag"`
-	LastKnownTag         sql.NullString `json:"last_known_tag"`
-	LastPolledAt         sql.NullString `json:"last_polled_at"`
+	LastKnownTag           sql.NullString `json:"last_known_tag"`
+	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
+	LastPolledAt           sql.NullString `json:"last_polled_at"`
 	LastError            sql.NullString `json:"last_error"`
 	CreatedAt            string         `json:"created_at"`
 	UpdatedAt            string         `json:"updated_at"`
@@ -83,6 +87,7 @@ func (q *Queries) CreateMonitoredRepo(ctx context.Context, arg CreateMonitoredRe
 		arg.OpenTicketExternalID,
 		arg.OpenTicketTag,
 		arg.LastKnownTag,
+		arg.LastReleasePublishedAt,
 		arg.LastPolledAt,
 		arg.LastError,
 		arg.CreatedAt,
@@ -99,6 +104,7 @@ func (q *Queries) CreateMonitoredRepo(ctx context.Context, arg CreateMonitoredRe
 		&i.OpenTicketExternalID,
 		&i.OpenTicketTag,
 		&i.LastKnownTag,
+		&i.LastReleasePublishedAt,
 		&i.LastPolledAt,
 		&i.LastError,
 		&i.CreatedAt,
@@ -128,6 +134,7 @@ SELECT
   open_ticket_external_id,
   open_ticket_tag,
   last_known_tag,
+  last_release_published_at,
   last_polled_at,
   last_error,
   created_at,
@@ -150,6 +157,7 @@ func (q *Queries) GetMonitoredRepo(ctx context.Context, id string) (MonitoredRep
 		&i.OpenTicketExternalID,
 		&i.OpenTicketTag,
 		&i.LastKnownTag,
+		&i.LastReleasePublishedAt,
 		&i.LastPolledAt,
 		&i.LastError,
 		&i.CreatedAt,
@@ -169,6 +177,7 @@ SELECT
   mr.open_ticket_external_id,
   mr.open_ticket_tag,
   mr.last_known_tag,
+  mr.last_release_published_at,
   mr.last_polled_at,
   mr.last_error,
   mr.created_at,
@@ -190,12 +199,13 @@ type ListEnabledRow struct {
 	TicketProjectID       string         `json:"ticket_project_id"`
 	OpenTicketExternalID  sql.NullString `json:"open_ticket_external_id"`
 	OpenTicketTag         sql.NullString `json:"open_ticket_tag"`
-	LastKnownTag          sql.NullString `json:"last_known_tag"`
-	LastPolledAt          sql.NullString `json:"last_polled_at"`
-	LastError             sql.NullString `json:"last_error"`
-	CreatedAt             string         `json:"created_at"`
-	UpdatedAt             string         `json:"updated_at"`
-	NotificationTargetIds interface{}    `json:"notification_target_ids"`
+	LastKnownTag           sql.NullString `json:"last_known_tag"`
+	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
+	LastPolledAt           sql.NullString `json:"last_polled_at"`
+	LastError              sql.NullString `json:"last_error"`
+	CreatedAt              string         `json:"created_at"`
+	UpdatedAt              string         `json:"updated_at"`
+	NotificationTargetIds  interface{}    `json:"notification_target_ids"`
 }
 
 func (q *Queries) ListEnabled(ctx context.Context) ([]ListEnabledRow, error) {
@@ -217,6 +227,7 @@ func (q *Queries) ListEnabled(ctx context.Context) ([]ListEnabledRow, error) {
 			&i.OpenTicketExternalID,
 			&i.OpenTicketTag,
 			&i.LastKnownTag,
+			&i.LastReleasePublishedAt,
 			&i.LastPolledAt,
 			&i.LastError,
 			&i.CreatedAt,
@@ -247,6 +258,7 @@ SELECT
   open_ticket_external_id,
   open_ticket_tag,
   last_known_tag,
+  last_release_published_at,
   last_polled_at,
   last_error,
   created_at,
@@ -274,6 +286,7 @@ func (q *Queries) ListMonitoredRepos(ctx context.Context) ([]MonitoredRepo, erro
 			&i.OpenTicketExternalID,
 			&i.OpenTicketTag,
 			&i.LastKnownTag,
+			&i.LastReleasePublishedAt,
 			&i.LastPolledAt,
 			&i.LastError,
 			&i.CreatedAt,
@@ -308,6 +321,7 @@ RETURNING
   open_ticket_external_id,
   open_ticket_tag,
   last_known_tag,
+  last_release_published_at,
   last_polled_at,
   last_error,
   created_at,
@@ -333,6 +347,7 @@ func (q *Queries) SetMonitoredRepoEnabled(ctx context.Context, arg SetMonitoredR
 		&i.OpenTicketExternalID,
 		&i.OpenTicketTag,
 		&i.LastKnownTag,
+		&i.LastReleasePublishedAt,
 		&i.LastPolledAt,
 		&i.LastError,
 		&i.CreatedAt,
@@ -361,6 +376,7 @@ RETURNING
   open_ticket_external_id,
   open_ticket_tag,
   last_known_tag,
+  last_release_published_at,
   last_polled_at,
   last_error,
   created_at,
@@ -398,6 +414,7 @@ func (q *Queries) UpdateMonitoredRepo(ctx context.Context, arg UpdateMonitoredRe
 		&i.OpenTicketExternalID,
 		&i.OpenTicketTag,
 		&i.LastKnownTag,
+		&i.LastReleasePublishedAt,
 		&i.LastPolledAt,
 		&i.LastError,
 		&i.CreatedAt,
@@ -412,6 +429,7 @@ SET
   open_ticket_external_id = ?,
   open_ticket_tag = ?,
   last_known_tag = ?,
+  last_release_published_at = ?,
   last_polled_at = ?,
   last_error = ?,
   updated_at = ?
@@ -426,6 +444,7 @@ RETURNING
   open_ticket_external_id,
   open_ticket_tag,
   last_known_tag,
+  last_release_published_at,
   last_polled_at,
   last_error,
   created_at,
@@ -435,8 +454,9 @@ RETURNING
 type UpdatePollStateParams struct {
 	OpenTicketExternalID sql.NullString `json:"open_ticket_external_id"`
 	OpenTicketTag        sql.NullString `json:"open_ticket_tag"`
-	LastKnownTag         sql.NullString `json:"last_known_tag"`
-	LastPolledAt         sql.NullString `json:"last_polled_at"`
+	LastKnownTag           sql.NullString `json:"last_known_tag"`
+	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
+	LastPolledAt           sql.NullString `json:"last_polled_at"`
 	LastError            sql.NullString `json:"last_error"`
 	UpdatedAt            string         `json:"updated_at"`
 	ID                   string         `json:"id"`
@@ -447,6 +467,7 @@ func (q *Queries) UpdatePollState(ctx context.Context, arg UpdatePollStateParams
 		arg.OpenTicketExternalID,
 		arg.OpenTicketTag,
 		arg.LastKnownTag,
+		arg.LastReleasePublishedAt,
 		arg.LastPolledAt,
 		arg.LastError,
 		arg.UpdatedAt,
@@ -463,6 +484,7 @@ func (q *Queries) UpdatePollState(ctx context.Context, arg UpdatePollStateParams
 		&i.OpenTicketExternalID,
 		&i.OpenTicketTag,
 		&i.LastKnownTag,
+		&i.LastReleasePublishedAt,
 		&i.LastPolledAt,
 		&i.LastError,
 		&i.CreatedAt,

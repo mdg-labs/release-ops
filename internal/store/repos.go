@@ -16,8 +16,9 @@ type MonitoredRepo struct {
 	TicketProjectID       string
 	OpenTicketExternalID  *string
 	OpenTicketTag         *string
-	LastKnownTag          *string
-	LastPolledAt          *string
+	LastKnownTag           *string
+	LastReleasePublishedAt *string
+	LastPolledAt           *string
 	LastError             *string
 	NotificationTargetIDs []string
 	CreatedAt             string
@@ -231,8 +232,9 @@ func monitoredRepoFromRow(row db.MonitoredRepo) *MonitoredRepo {
 		TicketProjectID:      row.TicketProjectID,
 		OpenTicketExternalID: nullStringPtr(row.OpenTicketExternalID),
 		OpenTicketTag:        nullStringPtr(row.OpenTicketTag),
-		LastKnownTag:         nullStringPtr(row.LastKnownTag),
-		LastPolledAt:         nullStringPtr(row.LastPolledAt),
+		LastKnownTag:           nullStringPtr(row.LastKnownTag),
+		LastReleasePublishedAt: nullStringPtr(row.LastReleasePublishedAt),
+		LastPolledAt:           nullStringPtr(row.LastPolledAt),
 		LastError:            nullStringPtr(row.LastError),
 		CreatedAt:            row.CreatedAt,
 		UpdatedAt:            row.UpdatedAt,
@@ -249,8 +251,9 @@ func monitoredRepoFromListEnabledRow(row db.ListEnabledRow) MonitoredRepo {
 		TicketProjectID:      row.TicketProjectID,
 		OpenTicketExternalID: nullStringPtr(row.OpenTicketExternalID),
 		OpenTicketTag:        nullStringPtr(row.OpenTicketTag),
-		LastKnownTag:         nullStringPtr(row.LastKnownTag),
-		LastPolledAt:         nullStringPtr(row.LastPolledAt),
+		LastKnownTag:           nullStringPtr(row.LastKnownTag),
+		LastReleasePublishedAt: nullStringPtr(row.LastReleasePublishedAt),
+		LastPolledAt:           nullStringPtr(row.LastPolledAt),
 		LastError:            nullStringPtr(row.LastError),
 		CreatedAt:            row.CreatedAt,
 		UpdatedAt:            row.UpdatedAt,

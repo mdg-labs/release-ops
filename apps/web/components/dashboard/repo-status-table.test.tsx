@@ -22,6 +22,7 @@ function createRepos(count: number): StatusRepo[] {
     id: `repo-${index}`,
     lastError: null,
     lastKnownTag: `v1.${index}.0`,
+    lastReleasePublishedAt: "2026-08-06T12:00:00.000Z",
     lastPolledAt: "2026-08-07T10:05:00.000Z",
     openTicketExternalId: null,
     openTicketTag: null,
@@ -132,6 +133,27 @@ describe("RepoStatusTable", () => {
       );
     });
     expect(screen.getAllByText(/org\/repo-/)).toHaveLength(25);
+  });
+
+  it("renders release date column with fallback when absent", () => {
+    renderRepoStatusTable([
+      {
+        ...createRepos(1)[0],
+        lastKnownTag: "v1.0.0",
+        lastReleasePublishedAt: null,
+        openTicketExternalId: "TICKET-1",
+      },
+    ]);
+
+    expect(screen.getByText("Release date")).toBeTruthy();
+    expect(screen.getAllByText("—")).toHaveLength(1);
+  });
+
+  it("renders formatted release date when present", () => {
+    renderRepoStatusTable(createRepos(1));
+
+    expect(screen.getByText("Release date")).toBeTruthy();
+    expect(screen.getByText(/Aug 6, 2026/)).toBeTruthy();
   });
 
   it("resets to the first page when page size changes", async () => {

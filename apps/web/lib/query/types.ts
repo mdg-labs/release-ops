@@ -53,6 +53,7 @@ export type StatusRepo = {
   openTicketExternalId: string | null;
   openTicketTag: string | null;
   lastKnownTag: string | null;
+  lastReleasePublishedAt: string | null;
   lastPolledAt: string | null;
   lastError: string | null;
 };

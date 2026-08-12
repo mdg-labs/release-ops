@@ -105,6 +105,7 @@ CREATE TABLE monitored_repos (
   open_ticket_external_id TEXT,
   open_ticket_tag TEXT,
   last_known_tag TEXT,
+  last_release_published_at TEXT,
   last_polled_at TEXT,
   last_error TEXT,
   created_at TEXT NOT NULL,

@@ -47,6 +47,10 @@ func (m *mockPollRepo) UpdatePollState(_ context.Context, repoID string, update 
 		v := *update.LastKnownTag
 		repo.LastKnownTag = &v
 	}
+	if update.LastReleasePublishedAt != nil {
+		v := *update.LastReleasePublishedAt
+		repo.LastReleasePublishedAt = &v
+	}
 	if update.LastPolledAt != nil {
 		v := *update.LastPolledAt
 		repo.LastPolledAt = &v
@@ -203,6 +207,10 @@ func TestEvaluateRepoBaselineOnFirstPoll(t *testing.T) {
 	}
 	if got.Repo.LastKnownTag == nil || *got.Repo.LastKnownTag != "v1.0.0" {
 		t.Fatalf("LastKnownTag = %v, want v1.0.0", got.Repo.LastKnownTag)
+	}
+	wantPublished := "2026-08-06T12:00:00.000Z"
+	if got.Repo.LastReleasePublishedAt == nil || *got.Repo.LastReleasePublishedAt != wantPublished {
+		t.Fatalf("LastReleasePublishedAt = %v, want %s", got.Repo.LastReleasePublishedAt, wantPublished)
 	}
 	if provider.createCalls != 0 {
 		t.Fatalf("CreateTicket calls = %d, want 0", provider.createCalls)

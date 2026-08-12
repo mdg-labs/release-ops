@@ -11,8 +11,9 @@ import (
 type PollStateUpdate struct {
 	OpenTicketExternalID *string
 	OpenTicketTag        *string
-	LastKnownTag         *string
-	LastPolledAt         *string
+	LastKnownTag           *string
+	LastReleasePublishedAt *string
+	LastPolledAt           *string
 	LastError            *string
 }
 
@@ -64,8 +65,9 @@ func (r pollRepo) UpdatePollState(ctx context.Context, repoID string, update Pol
 	row, err := r.store.q.UpdatePollState(ctx, db.UpdatePollStateParams{
 		OpenTicketExternalID: stringPtrToNull(update.OpenTicketExternalID),
 		OpenTicketTag:        stringPtrToNull(update.OpenTicketTag),
-		LastKnownTag:         stringPtrToNull(update.LastKnownTag),
-		LastPolledAt:         stringPtrToNull(update.LastPolledAt),
+		LastKnownTag:           stringPtrToNull(update.LastKnownTag),
+		LastReleasePublishedAt: stringPtrToNull(update.LastReleasePublishedAt),
+		LastPolledAt:           stringPtrToNull(update.LastPolledAt),
 		LastError:            stringPtrToNull(update.LastError),
 		UpdatedAt:            nowUTC(),
 		ID:                   repoID,

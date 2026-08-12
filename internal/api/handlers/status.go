@@ -33,8 +33,9 @@ type statusRepoResponse struct {
 	Enabled              bool    `json:"enabled"`
 	OpenTicketExternalID *string `json:"openTicketExternalId"`
 	OpenTicketTag        *string `json:"openTicketTag"`
-	LastKnownTag         *string `json:"lastKnownTag"`
-	LastPolledAt         *string `json:"lastPolledAt"`
+	LastKnownTag           *string `json:"lastKnownTag"`
+	LastReleasePublishedAt *string `json:"lastReleasePublishedAt"`
+	LastPolledAt           *string `json:"lastPolledAt"`
 	LastError            *string `json:"lastError"`
 }
 
@@ -107,8 +108,9 @@ func statusRepoFromStore(repo *store.MonitoredRepo, ticketProjectName string) st
 		Enabled:              repo.Enabled,
 		OpenTicketExternalID: repo.OpenTicketExternalID,
 		OpenTicketTag:        repo.OpenTicketTag,
-		LastKnownTag:         repo.LastKnownTag,
-		LastPolledAt:         repo.LastPolledAt,
+		LastKnownTag:           repo.LastKnownTag,
+		LastReleasePublishedAt: repo.LastReleasePublishedAt,
+		LastPolledAt:           repo.LastPolledAt,
 		LastError:            repo.LastError,
 	}
 }
