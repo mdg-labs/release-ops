@@ -3,9 +3,23 @@ package tickettemplate
 const (
 	defaultTitleMarkdown = "Release: {{ .Repo.SourceKind }} {{ .Repo.ProjectPath }} {{ .Release.Tag }}"
 
-	defaultDescriptionMarkdown = "**Release name:** {{ .Release.Name }}\n\n**URL:** {{ .Release.URL }}\n\n**Published:** {{ .Release.PublishedAt }}"
+	defaultDescriptionMarkdown = "**Source:** {{ .Repo.SourceKind }}\n" +
+		"**Repository:** {{ .Repo.ProjectPath }} ({{ .Repo.URL }})\n\n" +
+		"**Release:** {{ .Release.Tag }} — {{ .Release.Name }}\n" +
+		"**URL:** {{ .Release.URL }}\n" +
+		"**Published:** {{ .Release.PublishedAt }}\n" +
+		"**Pre-release:** {{ yesNo .Release.IsPrerelease }}\n\n" +
+		"**Previous tag:** {{ .Previous.Tag }}\n\n" +
+		"**Release notes:**\n{{ .Release.Notes }}"
 
-	defaultDescriptionPlain = "Release name: {{ .Release.Name }}\n\nURL: {{ .Release.URL }}\n\nPublished: {{ .Release.PublishedAt }}"
+	defaultDescriptionPlain = "Source: {{ .Repo.SourceKind }}\n" +
+		"Repository: {{ .Repo.ProjectPath }} ({{ .Repo.URL }})\n\n" +
+		"Release: {{ .Release.Tag }} — {{ .Release.Name }}\n" +
+		"URL: {{ .Release.URL }}\n" +
+		"Published: {{ .Release.PublishedAt }}\n" +
+		"Pre-release: {{ yesNo .Release.IsPrerelease }}\n\n" +
+		"Previous tag: {{ .Previous.Tag }}\n\n" +
+		"Release notes:\n{{ .Release.Notes }}"
 
 	defaultSupersedeCommentMarkdown = "Superseded: {{ .Supersede.OldTag }} → {{ .Supersede.NewTag }}\n{{ .Release.URL }}\n\nNew ticket: {{ .Supersede.NewTicketURL }}"
 

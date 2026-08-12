@@ -101,6 +101,7 @@ type mockTicketProvider struct {
 	updates        []ticketUpdate
 	createCalls    int
 	callLog        []string
+	lastCreateInput ticket.TicketInput
 }
 
 type statusUpdate struct {
@@ -122,6 +123,7 @@ type ticketUpdate struct {
 func (m *mockTicketProvider) CreateTicket(_ context.Context, input ticket.TicketInput) (string, error) {
 	m.createCalls++
 	m.callLog = append(m.callLog, "create")
+	m.lastCreateInput = input
 	if m.createID == "" {
 		return "new-ticket-id", nil
 	}
@@ -387,6 +389,47 @@ func TestEvaluateRepoSupersedePolicy(t *testing.T) {
 	}
 	if got.Repo.OpenTicketExternalID == nil || *got.Repo.OpenTicketExternalID != "new-ticket" {
 		t.Fatalf("OpenTicketExternalID = %v, want new-ticket", got.Repo.OpenTicketExternalID)
+	}
+}
+
+func TestEvaluateRepoSupersedeRendersOldTagInNewTicketTemplate(t *testing.T) {
+	t.Parallel()
+
+	repo := baseRepo()
+	last := "v1.0.0"
+	openID := "old-ticket"
+	openTag := "v1.0.0"
+	repo.LastKnownTag = &last
+	repo.OpenTicketExternalID = &openID
+	repo.OpenTicketTag = &openTag
+
+	pollRepo := newMockPollRepo(repo)
+	engine := poll.NewEngine(pollRepo)
+	provider := &mockTicketProvider{
+		statuses: map[string]string{openID: "in-progress"},
+		createID: "new-ticket",
+	}
+	project := testTicketProject(ticket.PolicySupersede)
+	project.ContentTemplates.Title = "Supersede from {{ .Supersede.OldTag }} to {{ .Release.Tag }}"
+
+	_, err := engine.EvaluateRepo(
+		context.Background(),
+		repo,
+		testRelease("v2.0.0"),
+		nil,
+		project,
+		provider,
+		testRepoWebURL(),
+	)
+	if err != nil {
+		t.Fatalf("EvaluateRepo: %v", err)
+	}
+	if provider.createCalls != 1 {
+		t.Fatalf("CreateTicket calls = %d, want 1", provider.createCalls)
+	}
+	wantTitle := "Supersede from v1.0.0 to v2.0.0"
+	if provider.lastCreateInput.Title != wantTitle {
+		t.Fatalf("CreateTicket title = %q, want %q", provider.lastCreateInput.Title, wantTitle)
 	}
 }
 

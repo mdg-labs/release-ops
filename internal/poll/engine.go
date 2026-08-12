@@ -68,7 +68,7 @@ func (e *Engine) EvaluateRepo(
 }
 
 // TicketProjectFromStore converts a store row to ticket.TicketProject for EvaluateRepo.
-func TicketProjectFromStore(row store.TicketProject, integrationKind, contentTemplatesJSON string) (ticket.TicketProject, error) {
+func TicketProjectFromStore(row store.TicketProject, integrationKind string) (ticket.TicketProject, error) {
 	mapping, err := ticket.ParseStatusMapping(row.StatusMapping)
 	if err != nil {
 		return ticket.TicketProject{}, err
@@ -81,7 +81,7 @@ func TicketProjectFromStore(row store.TicketProject, integrationKind, contentTem
 		}
 	}
 
-	templates, err := tickettemplate.ParseContentTemplates(contentTemplatesJSON)
+	templates, err := tickettemplate.ParseContentTemplates(row.ContentTemplates)
 	if err != nil {
 		return ticket.TicketProject{}, err
 	}
@@ -306,7 +306,11 @@ func (e *Engine) applySupersede(
 		return e.recordError(ctx, repo, fmt.Errorf("status_mapping.superseded is required for supersede policy"))
 	}
 
-	input, err := e.ticketInput(ctx, repo, release, project, repoWebURL, nil)
+	supersedeCtx := &tickettemplate.SupersedeContext{
+		OldTag: oldTag,
+		NewTag: release.Tag,
+	}
+	input, err := e.ticketInput(ctx, repo, release, project, repoWebURL, supersedeCtx)
 	if err != nil {
 		return e.recordError(ctx, repo, err)
 	}
@@ -321,11 +325,7 @@ func (e *Engine) applySupersede(
 		return e.recordError(ctx, repo, fmt.Errorf("resolve new ticket web url: %w", err))
 	}
 
-	supersedeCtx := &tickettemplate.SupersedeContext{
-		OldTag:       oldTag,
-		NewTag:       release.Tag,
-		NewTicketURL: newTicketURL,
-	}
+	supersedeCtx.NewTicketURL = newTicketURL
 	comment, err := e.renderSupersedeComment(repo, release, project, repoWebURL, supersedeCtx)
 	if err != nil {
 		return e.recordError(ctx, repo, fmt.Errorf("render supersede comment: %w", err))

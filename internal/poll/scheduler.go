@@ -210,7 +210,7 @@ func (s *Scheduler) defaultPollRepo(ctx context.Context, _ string, repo store.Mo
 		return nil, fmt.Errorf("load ticket integration: %w", err)
 	}
 
-	ticketProject, err := TicketProjectFromStore(*tpRow, ticketIntegration.Kind, "")
+	ticketProject, err := TicketProjectFromStore(*tpRow, ticketIntegration.Kind)
 	if err != nil {
 		return nil, err
 	}

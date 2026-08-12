@@ -95,9 +95,15 @@ func TestDefaultTemplatesWhenKeysEmpty(t *testing.T) {
 		t.Fatalf("RenderDescription: %v", err)
 	}
 	for _, want := range []string{
-		"**Release name:** Summer Release",
+		"**Source:** github",
+		"**Repository:** org/repo (https://github.com/org/repo)",
+		"**Release:** v2.0.0 — Summer Release",
 		"**URL:** https://github.com/org/repo/releases/tag/v2.0.0",
 		"**Published:** 2026-08-07T10:30:00Z",
+		"**Pre-release:** yes",
+		"**Previous tag:** v1.0.0",
+		"**Release notes:**",
+		"Changelog body",
 	} {
 		if !strings.Contains(description, want) {
 			t.Fatalf("description missing %q:\n%s", want, description)
@@ -129,8 +135,17 @@ func TestJiraDefaultsUsePlainText(t *testing.T) {
 	if strings.Contains(description, "**Release name:**") {
 		t.Fatalf("jira default should be plain text:\n%s", description)
 	}
-	if !strings.Contains(description, "Release name: Summer Release") {
-		t.Fatalf("description = %q", description)
+	for _, want := range []string{
+		"Source: github",
+		"Repository: org/repo (https://github.com/org/repo)",
+		"Release: v2.0.0 — Summer Release",
+		"Pre-release: yes",
+		"Previous tag: v1.0.0",
+		"Changelog body",
+	} {
+		if !strings.Contains(description, want) {
+			t.Fatalf("description missing %q:\n%s", want, description)
+		}
 	}
 }
 

@@ -471,7 +471,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <h4><code>content_templates</code> JSON shape</h4>
   <pre><code>{
   "title": "Release: {{ .Repo.SourceKind }} {{ .Repo.ProjectPath }} {{ .Release.Tag }}",
-  "description": "**Release name:** {{ .Release.Name }}\n\n**URL:** {{ .Release.URL }}\n\n**Published:** {{ .Release.PublishedAt }}",
+  "description": "**Source:** {{ .Repo.SourceKind }}\n**Repository:** {{ .Repo.ProjectPath }} ({{ .Repo.URL }})\n\n**Release:** {{ .Release.Tag }} — {{ .Release.Name }}\n**URL:** {{ .Release.URL }}\n**Published:** {{ .Release.PublishedAt }}\n**Pre-release:** {{ yesNo .Release.IsPrerelease }}\n\n**Previous tag:** {{ .Previous.Tag }}\n\n**Release notes:**\n{{ .Release.Notes }}",
   "supersedeComment": "Superseded: {{ .Supersede.OldTag }} → {{ .Supersede.NewTag }}\n{{ .Release.URL }}\n\nNew ticket: {{ .Supersede.NewTicketURL }}"
 }</code></pre>
   <table>
@@ -499,7 +499,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <tr><td><code>.Release.PublishedAt</code></td><td>Release timestamp (RFC3339 UTC string in templates)</td><td>create, merge, supersede</td></tr>
     <tr><td><code>.Release.IsPrerelease</code></td><td>Whether the release is a pre-release (<code>true</code>/<code>false</code>)</td><td>create, merge, supersede</td></tr>
     <tr><td><code>.Previous.Tag</code></td><td><code>last_known_tag</code> before this poll action</td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Supersede.OldTag</code></td><td>Tag on the open ticket being superseded</td><td>supersede comment only</td></tr>
+    <tr><td><code>.Supersede.OldTag</code></td><td>Tag on the open ticket being superseded</td><td>supersede comment; also populated on supersede new-ticket render (use <code>.Previous.Tag</code> for create/merge)</td></tr>
     <tr><td><code>.Supersede.NewTag</code></td><td>New release tag</td><td>supersede comment only</td></tr>
     <tr><td><code>.Supersede.NewTicketURL</code></td><td>Provider web URL for the ticket created during supersede</td><td>supersede comment only (after step 1 in §5.2.1)</td></tr>
   </table>
@@ -518,8 +518,8 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <table>
     <tr><th>Field</th><th>Default value</th></tr>
     <tr><td><code>title</code></td><td><code>Release: {source_kind} {project_path} {tag}</code></td></tr>
-    <tr><td><code>description</code></td><td>Markdown: release name, URL, <code>publishedAt</code></td></tr>
-    <tr><td><code>supersedeComment</code></td><td>Old tag → new tag plus release URL</td></tr>
+    <tr><td><code>description</code></td><td>Markdown (Phasical/Linear) or plain text (Jira): repo source/path/URL, release tag/name/URL/notes/publishedAt/isPrerelease, previous tag</td></tr>
+    <tr><td><code>supersedeComment</code></td><td>Old tag → new tag, release URL, new ticket URL</td></tr>
   </table>
 
   <h4>API calls (verify implementation)</h4>

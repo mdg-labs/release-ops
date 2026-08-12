@@ -56,6 +56,7 @@ type integrationTicketProvider struct {
 
 	createCalls  int
 	createdIDs   []string
+	createInputs []ticket.TicketInput
 	updateStatus []statusUpdate
 	comments     []ticketComment
 }
@@ -66,8 +67,9 @@ func newIntegrationTicketProvider() *integrationTicketProvider {
 	}
 }
 
-func (m *integrationTicketProvider) CreateTicket(_ context.Context, _ ticket.TicketInput) (string, error) {
+func (m *integrationTicketProvider) CreateTicket(_ context.Context, input ticket.TicketInput) (string, error) {
 	m.createCalls++
+	m.createInputs = append(m.createInputs, input)
 	id := fmt.Sprintf("ticket-%d", m.createCalls)
 	m.createdIDs = append(m.createdIDs, id)
 	m.statuses[id] = "in-progress"
@@ -113,7 +115,7 @@ func TestIntegrationBaselineCreateSupersede(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	env := newPollIntegrationEnv(t, []string{"v1.0.0", "v1.0.0", "v2.0.0", "v3.0.0"})
+	env := newPollIntegrationEnv(t, []string{"v1.0.0", "v1.0.0", "v2.0.0", "v3.0.0"}, "")
 
 	// Poll 1: baseline — first sight of v1.0.0, no ticket.
 	run1 := env.runPollCycle(t, ctx)
@@ -192,7 +194,36 @@ func TestIntegrationBaselineCreateSupersede(t *testing.T) {
 	}
 }
 
-func newPollIntegrationEnv(t *testing.T, tags []string) *pollIntegrationEnv {
+func TestIntegrationCustomContentTemplatesApplied(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	customTemplates := `{"title":"CUSTOM {{ .Release.Tag }}","description":"Repo: {{ .Repo.URL }}","supersedeComment":""}`
+	env := newPollIntegrationEnv(t, []string{"v1.0.0", "v2.0.0"}, customTemplates)
+
+	// Baseline first sight of v1.0.0.
+	run1 := env.runPollCycle(t, ctx)
+	assertRunSuccess(t, ctx, env, run1, 0, 0)
+	assertEventActions(t, ctx, env, run1, []string{poll.ActionBaseline})
+
+	// Create on v2.0.0 should use stored templates from ticket_projects.content_templates.
+	run2 := env.runPollCycle(t, ctx)
+	assertRunSuccess(t, ctx, env, run2, 1, 0)
+	assertEventActions(t, ctx, env, run2, []string{poll.ActionCreate})
+
+	if len(env.tickets.createInputs) != 1 {
+		t.Fatalf("createInputs = %d, want 1", len(env.tickets.createInputs))
+	}
+	input := env.tickets.createInputs[0]
+	if input.Title != "CUSTOM v2.0.0" {
+		t.Fatalf("CreateTicket title = %q, want CUSTOM v2.0.0", input.Title)
+	}
+	if !strings.Contains(input.Description, "Repo: https://github.com/org/integration-repo") {
+		t.Fatalf("CreateTicket description = %q, want repo URL from custom template", input.Description)
+	}
+}
+
+func newPollIntegrationEnv(t *testing.T, tags []string, contentTemplates string) *pollIntegrationEnv {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -227,6 +258,7 @@ func newPollIntegrationEnv(t *testing.T, tags []string) *pollIntegrationEnv {
 		Name:               "Integration Project",
 		CreateConfig:       `{"status":"ready"}`,
 		StatusMapping:      `{"open":["ready","in-progress"],"done":["done"],"cancelled":["cancelled"],"superseded":"cancelled"}`,
+		ContentTemplates:   contentTemplates,
 		OnOpenTicketPolicy: ticket.PolicySupersede,
 	})
 	if err != nil {
@@ -261,7 +293,7 @@ func newPollIntegrationEnv(t *testing.T, tags []string) *pollIntegrationEnv {
 			if err != nil {
 				return nil, fmt.Errorf("load ticket project: %w", err)
 			}
-			ticketProject, err := poll.TicketProjectFromStore(*tpRow, integration.Kind, "")
+			ticketProject, err := poll.TicketProjectFromStore(*tpRow, integration.Kind)
 			if err != nil {
 				return nil, err
 			}
