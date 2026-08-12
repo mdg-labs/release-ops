@@ -84,6 +84,7 @@ CREATE TABLE ticket_projects (
   name TEXT NOT NULL,
   create_config TEXT NOT NULL,
   status_mapping TEXT NOT NULL,
+  content_templates TEXT NOT NULL DEFAULT '{"title":"","description":"","supersedeComment":""}' CHECK (json_valid(content_templates)),
   on_open_ticket_policy TEXT NOT NULL DEFAULT 'supersede' CHECK (
     on_open_ticket_policy IN ('supersede', 'merge', 'skip_if_open')
   ),
@@ -100,17 +101,17 @@ CREATE TABLE monitored_repos (
   ),
   project_path TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
-  include_prereleases INTEGER NOT NULL DEFAULT 0 CHECK (include_prereleases IN (0, 1)),
   source_integration_id TEXT REFERENCES integrations(id),
   ticket_project_id TEXT NOT NULL REFERENCES ticket_projects(id) ON DELETE RESTRICT,
   open_ticket_external_id TEXT,
   open_ticket_tag TEXT,
   last_known_tag TEXT,
-  last_release_published_at TEXT,
   last_polled_at TEXT,
   last_error TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  last_release_published_at TEXT,
+  include_prereleases INTEGER NOT NULL DEFAULT 0 CHECK (include_prereleases IN (0, 1)),
   UNIQUE (source_kind, project_path)
 );
 
