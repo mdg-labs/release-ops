@@ -185,6 +185,24 @@ func (p *PhasicalProvider) UpdateTicket(ctx context.Context, externalID, title, 
 	return nil
 }
 
+// TicketWebURL implements TicketProvider.
+func (p *PhasicalProvider) TicketWebURL(externalID string) (string, error) {
+	externalID = strings.TrimSpace(externalID)
+	if externalID == "" {
+		return "", errors.New("phasical: external id is required")
+	}
+	webBase := phasicalWebBase(p.baseURL)
+	return webBase + "/task/" + url.PathEscape(externalID), nil
+}
+
+func phasicalWebBase(apiBase string) string {
+	base := strings.TrimRight(strings.TrimSpace(apiBase), "/")
+	if strings.HasSuffix(base, "/api") {
+		return strings.TrimSuffix(base, "/api")
+	}
+	return base
+}
+
 func phasicalCreateDefaults(createConfig map[string]any) (status, priority string) {
 	status = "ready"
 	priority = "medium"

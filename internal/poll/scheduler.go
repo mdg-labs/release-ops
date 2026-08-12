@@ -205,7 +205,12 @@ func (s *Scheduler) defaultPollRepo(ctx context.Context, _ string, repo store.Mo
 		return nil, fmt.Errorf("load ticket project: %w", err)
 	}
 
-	ticketProject, err := TicketProjectFromStore(*tpRow)
+	ticketIntegration, err := s.integrations.Get(ctx, tpRow.IntegrationID)
+	if err != nil {
+		return nil, fmt.Errorf("load ticket integration: %w", err)
+	}
+
+	ticketProject, err := TicketProjectFromStore(*tpRow, ticketIntegration.Kind, "")
 	if err != nil {
 		return nil, err
 	}
@@ -213,6 +218,16 @@ func (s *Scheduler) defaultPollRepo(ctx context.Context, _ string, repo store.Mo
 	ticketProvider, err := s.resolveTicketProvider(ctx, tpRow.IntegrationID)
 	if err != nil {
 		return nil, err
+	}
+
+	sourceIntegrationBaseURL, err := s.sourceIntegrationBaseURL(ctx, repo)
+	if err != nil {
+		return nil, err
+	}
+
+	repoWebURL, err := ResolveRepoWebURL(repo, sourceIntegrationBaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("resolve repo web url: %w", err)
 	}
 
 	sourceProvider, err := s.resolveSourceProvider(ctx, repo)
@@ -223,7 +238,7 @@ func (s *Scheduler) defaultPollRepo(ctx context.Context, _ string, repo store.Mo
 	release, fetchErr := sourceProvider.GetLatestRelease(ctx, repo.ProjectPath, source.ReleaseOptions{
 		IncludePrereleases: repo.IncludePrereleases,
 	})
-	return s.engine.EvaluateRepo(ctx, repo, release, fetchErr, ticketProject, ticketProvider)
+	return s.engine.EvaluateRepo(ctx, repo, release, fetchErr, ticketProject, ticketProvider, repoWebURL)
 }
 
 func (s *Scheduler) recordEvaluation(
@@ -367,6 +382,20 @@ type jiraPayload struct {
 
 type linearPayload struct {
 	APIKey string `json:"api_key"`
+}
+
+func (s *Scheduler) sourceIntegrationBaseURL(ctx context.Context, repo store.MonitoredRepo) (*string, error) {
+	if repo.SourceIntegrationID == nil || *repo.SourceIntegrationID == "" {
+		return nil, nil
+	}
+	integration, err := s.integrations.Get(ctx, *repo.SourceIntegrationID)
+	if err != nil {
+		return nil, fmt.Errorf("load source integration: %w", err)
+	}
+	if integration.Kind != repo.SourceKind {
+		return nil, fmt.Errorf("integration kind %q does not match repo source_kind %q", integration.Kind, repo.SourceKind)
+	}
+	return integration.BaseURL, nil
 }
 
 func (s *Scheduler) resolveSourceProvider(ctx context.Context, repo store.MonitoredRepo) (source.SourceProvider, error) {

@@ -21,6 +21,20 @@ const (
 	PolicySkipIfOpen = "skip_if_open"
 )
 
+// Ticket integration kinds (specs §6.4).
+const (
+	IntegrationKindPhasical = "phasical"
+	IntegrationKindJira     = "jira"
+	IntegrationKindLinear   = "linear"
+)
+
+// ContentTemplates mirrors ticket_projects.content_templates JSON (specs §5.4).
+type ContentTemplates struct {
+	Title            string
+	Description      string
+	SupersedeComment string
+}
+
 // StatusMapping mirrors ticket_projects.status_mapping JSON (specs §5.3).
 type StatusMapping struct {
 	Open       []string `json:"open"`
@@ -33,9 +47,11 @@ type StatusMapping struct {
 type TicketProject struct {
 	ID                 string
 	IntegrationID      string
+	IntegrationKind    string
 	ExternalProjectID  string
 	CreateConfig       map[string]any
 	StatusMapping      StatusMapping
+	ContentTemplates   ContentTemplates
 	OnOpenTicketPolicy string // supersede | merge | skip_if_open
 }
 
@@ -53,6 +69,7 @@ type TicketProvider interface {
 	UpdateTicketStatus(ctx context.Context, externalID, status string) error
 	AddTicketComment(ctx context.Context, externalID, body string) error
 	UpdateTicket(ctx context.Context, externalID string, title, description string) error
+	TicketWebURL(externalID string) (string, error)
 }
 
 // ParseStatusMapping unmarshals a ticket_projects.status_mapping JSON blob.

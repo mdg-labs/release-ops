@@ -93,12 +93,14 @@ func (m *mockPollRepo) ListEventsByRunID(context.Context, string) ([]store.PollR
 type mockTicketProvider struct {
 	statuses map[string]string
 	createID string
+	webURL   string
 
 	getStatusCalls []string
 	updateStatus   []statusUpdate
 	comments       []ticketComment
 	updates        []ticketUpdate
 	createCalls    int
+	callLog        []string
 }
 
 type statusUpdate struct {
@@ -119,6 +121,7 @@ type ticketUpdate struct {
 
 func (m *mockTicketProvider) CreateTicket(_ context.Context, input ticket.TicketInput) (string, error) {
 	m.createCalls++
+	m.callLog = append(m.callLog, "create")
 	if m.createID == "" {
 		return "new-ticket-id", nil
 	}
@@ -135,11 +138,13 @@ func (m *mockTicketProvider) GetTicketStatus(_ context.Context, externalID strin
 }
 
 func (m *mockTicketProvider) UpdateTicketStatus(_ context.Context, externalID, status string) error {
+	m.callLog = append(m.callLog, "updateStatus")
 	m.updateStatus = append(m.updateStatus, statusUpdate{externalID: externalID, status: status})
 	return nil
 }
 
 func (m *mockTicketProvider) AddTicketComment(_ context.Context, externalID, body string) error {
+	m.callLog = append(m.callLog, "addComment")
 	m.comments = append(m.comments, ticketComment{externalID: externalID, body: body})
 	return nil
 }
@@ -147,6 +152,13 @@ func (m *mockTicketProvider) AddTicketComment(_ context.Context, externalID, bod
 func (m *mockTicketProvider) UpdateTicket(_ context.Context, externalID, title, description string) error {
 	m.updates = append(m.updates, ticketUpdate{externalID: externalID, title: title, description: description})
 	return nil
+}
+
+func (m *mockTicketProvider) TicketWebURL(externalID string) (string, error) {
+	if m.webURL != "" {
+		return m.webURL, nil
+	}
+	return "https://tickets.example/" + externalID, nil
 }
 
 func testRelease(tag string) *source.Release {
@@ -160,10 +172,11 @@ func testRelease(tag string) *source.Release {
 
 func testTicketProject(policy string) ticket.TicketProject {
 	return ticket.TicketProject{
-		ID:                 "tp-1",
-		IntegrationID:      "int-1",
-		ExternalProjectID:  "proj-1",
-		CreateConfig:       map[string]any{"status": "ready"},
+		ID:                "tp-1",
+		IntegrationID:     "int-1",
+		IntegrationKind:   ticket.IntegrationKindPhasical,
+		ExternalProjectID: "proj-1",
+		CreateConfig:      map[string]any{"status": "ready"},
 		StatusMapping: ticket.StatusMapping{
 			Open:       []string{"ready", "in-progress"},
 			Done:       []string{"done"},
@@ -172,6 +185,10 @@ func testTicketProject(policy string) ticket.TicketProject {
 		},
 		OnOpenTicketPolicy: policy,
 	}
+}
+
+func testRepoWebURL() string {
+	return "https://github.com/org/repo"
 }
 
 func baseRepo() store.MonitoredRepo {
@@ -198,6 +215,7 @@ func TestEvaluateRepoBaselineOnFirstPoll(t *testing.T) {
 		nil,
 		testTicketProject(ticket.PolicySupersede),
 		provider,
+		testRepoWebURL(),
 	)
 	if err != nil {
 		t.Fatalf("EvaluateRepo: %v", err)
@@ -233,6 +251,7 @@ func TestEvaluateRepoSkipWhenTagMatches(t *testing.T) {
 		nil,
 		testTicketProject(ticket.PolicySupersede),
 		&mockTicketProvider{},
+		testRepoWebURL(),
 	)
 	if err != nil {
 		t.Fatalf("EvaluateRepo: %v", err)
@@ -262,6 +281,7 @@ func TestEvaluateRepoCreateWhenNoOpenTicket(t *testing.T) {
 		nil,
 		testTicketProject(ticket.PolicySupersede),
 		provider,
+		testRepoWebURL(),
 	)
 	if err != nil {
 		t.Fatalf("EvaluateRepo: %v", err)
@@ -304,6 +324,7 @@ func TestEvaluateRepoLiveGetTicketStatusBeforePolicy(t *testing.T) {
 		nil,
 		testTicketProject(ticket.PolicySkipIfOpen),
 		provider,
+		testRepoWebURL(),
 	)
 	if err != nil {
 		t.Fatalf("EvaluateRepo: %v", err)
@@ -338,6 +359,7 @@ func TestEvaluateRepoSupersedePolicy(t *testing.T) {
 		nil,
 		testTicketProject(ticket.PolicySupersede),
 		provider,
+		testRepoWebURL(),
 	)
 	if err != nil {
 		t.Fatalf("EvaluateRepo: %v", err)
@@ -359,6 +381,9 @@ func TestEvaluateRepoSupersedePolicy(t *testing.T) {
 	}
 	if provider.createCalls != 1 {
 		t.Fatalf("CreateTicket calls = %d, want 1", provider.createCalls)
+	}
+	if len(provider.callLog) < 3 || provider.callLog[0] != "create" {
+		t.Fatalf("call order = %v, want create before status update", provider.callLog)
 	}
 	if got.Repo.OpenTicketExternalID == nil || *got.Repo.OpenTicketExternalID != "new-ticket" {
 		t.Fatalf("OpenTicketExternalID = %v, want new-ticket", got.Repo.OpenTicketExternalID)
@@ -389,6 +414,7 @@ func TestEvaluateRepoMergePolicyUpdatesTicket(t *testing.T) {
 		nil,
 		testTicketProject(ticket.PolicyMerge),
 		provider,
+		testRepoWebURL(),
 	)
 	if err != nil {
 		t.Fatalf("EvaluateRepo: %v", err)
@@ -438,6 +464,7 @@ func TestEvaluateRepoSkipIfOpenPolicy(t *testing.T) {
 		nil,
 		testTicketProject(ticket.PolicySkipIfOpen),
 		provider,
+		testRepoWebURL(),
 	)
 	if err != nil {
 		t.Fatalf("EvaluateRepo: %v", err)
@@ -482,6 +509,7 @@ func TestEvaluateRepoCreateWhenTicketClosedExternally(t *testing.T) {
 		nil,
 		testTicketProject(ticket.PolicySupersede),
 		provider,
+		testRepoWebURL(),
 	)
 	if err != nil {
 		t.Fatalf("EvaluateRepo: %v", err)
@@ -491,6 +519,34 @@ func TestEvaluateRepoCreateWhenTicketClosedExternally(t *testing.T) {
 	}
 	if len(provider.updateStatus) != 0 {
 		t.Fatal("closed ticket should not trigger supersede status update")
+	}
+}
+
+func TestEvaluateRepoInvalidTemplateRecordsError(t *testing.T) {
+	t.Parallel()
+
+	repo := baseRepo()
+	last := "v1.0.0"
+	repo.LastKnownTag = &last
+	pollRepo := newMockPollRepo(repo)
+	engine := poll.NewEngine(pollRepo)
+	project := testTicketProject(ticket.PolicySupersede)
+	project.ContentTemplates.Title = "{{ .Release.Tag "
+
+	got, err := engine.EvaluateRepo(
+		context.Background(),
+		repo,
+		testRelease("v2.0.0"),
+		nil,
+		project,
+		&mockTicketProvider{},
+		testRepoWebURL(),
+	)
+	if err != nil {
+		t.Fatalf("EvaluateRepo: %v", err)
+	}
+	if got.Actions[0] != poll.ActionError {
+		t.Fatalf("actions = %v, want [error]", got.Actions)
 	}
 }
 
@@ -508,6 +564,7 @@ func TestEvaluateRepoFetchError(t *testing.T) {
 		errors.New("network down"),
 		testTicketProject(ticket.PolicySupersede),
 		&mockTicketProvider{},
+		testRepoWebURL(),
 	)
 	if err != nil {
 		t.Fatalf("EvaluateRepo: %v", err)

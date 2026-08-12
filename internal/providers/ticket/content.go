@@ -8,14 +8,12 @@ import (
 	"github.com/mdg-labs/release-ops/internal/providers/source"
 )
 
-// BuildTitle returns the ticket title per specs §5.4:
-// Release: {source_kind} {project_path} {tag}
+// BuildTitle returns the default ticket title (specs §5.4 legacy default).
 func BuildTitle(sourceKind, projectPath, tag string) string {
 	return fmt.Sprintf("Release: %s %s %s", sourceKind, projectPath, tag)
 }
 
-// BuildDescription returns markdown ticket body per specs §5.4:
-// release name, URL, and publishedAt.
+// BuildDescription returns markdown ticket body per specs §5.4 legacy default.
 func BuildDescription(release source.Release) string {
 	var b strings.Builder
 

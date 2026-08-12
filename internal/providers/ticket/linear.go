@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -269,6 +270,15 @@ func (l *LinearProvider) UpdateTicket(ctx context.Context, externalID, title, de
 		return errors.New("linear: update issue: mutation returned success=false")
 	}
 	return nil
+}
+
+// TicketWebURL implements TicketProvider.
+func (l *LinearProvider) TicketWebURL(externalID string) (string, error) {
+	externalID = strings.TrimSpace(externalID)
+	if externalID == "" {
+		return "", errors.New("linear: external id is required")
+	}
+	return "https://linear.app/issue/" + url.PathEscape(externalID), nil
 }
 
 func linearCreateDefaults(createConfig map[string]any) (priority *int, stateID string) {
