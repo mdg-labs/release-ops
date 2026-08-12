@@ -155,6 +155,8 @@
     "notificationTargetsHint": "Optional. Leave empty to use all globally enabled targets.",
     "enabled": "Enabled",
     "enabledHint": "Disabled repos are skipped during polling.",
+    "includePrereleases": "Include pre-releases",
+    "includePrereleasesHint": "When enabled, polling treats pre-releases as new releases. Changes apply on the next poll only.",
     "enabledOn": "Enabled",
     "enabledOff": "Disabled",
     "lastPolledNever": "Never",

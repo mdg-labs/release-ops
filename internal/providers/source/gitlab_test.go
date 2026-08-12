@@ -45,7 +45,7 @@ func TestGitLabSourceGetLatestRelease(t *testing.T) {
 		t.Fatalf("NewGitLabSource: %v", err)
 	}
 
-	release, err := provider.GetLatestRelease(context.Background(), "group/subgroup/repo")
+	release, err := provider.GetLatestRelease(context.Background(), "group/subgroup/repo", source.ReleaseOptions{})
 	if err != nil {
 		t.Fatalf("GetLatestRelease: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestGitLabSourceGetLatestReleaseNotFound(t *testing.T) {
 		t.Fatalf("NewGitLabSource: %v", err)
 	}
 
-	release, err := provider.GetLatestRelease(context.Background(), "group/repo")
+	release, err := provider.GetLatestRelease(context.Background(), "group/repo", source.ReleaseOptions{})
 	if err != nil {
 		t.Fatalf("GetLatestRelease: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestGitLabSourceRespectsContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err = provider.GetLatestRelease(ctx, "group/repo")
+	_, err = provider.GetLatestRelease(ctx, "group/repo", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected context error")
 	}
@@ -130,7 +130,7 @@ func TestGitLabSourceInvalidProjectPath(t *testing.T) {
 		t.Fatalf("NewGitLabSource: %v", err)
 	}
 
-	_, err = provider.GetLatestRelease(context.Background(), "   ")
+	_, err = provider.GetLatestRelease(context.Background(), "   ", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected error for empty project_path")
 	}
@@ -153,7 +153,7 @@ func TestGitLabSourceServerError(t *testing.T) {
 		t.Fatalf("NewGitLabSource: %v", err)
 	}
 
-	_, err = provider.GetLatestRelease(context.Background(), "group/repo")
+	_, err = provider.GetLatestRelease(context.Background(), "group/repo", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected error for 502 response")
 	}
@@ -176,7 +176,7 @@ func TestGitLabSourceMalformedJSON(t *testing.T) {
 		t.Fatalf("NewGitLabSource: %v", err)
 	}
 
-	_, err = provider.GetLatestRelease(context.Background(), "group/repo")
+	_, err = provider.GetLatestRelease(context.Background(), "group/repo", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected decode error")
 	}
@@ -204,7 +204,7 @@ func TestGitLabSourceInvalidReleasedAt(t *testing.T) {
 		t.Fatalf("NewGitLabSource: %v", err)
 	}
 
-	_, err = provider.GetLatestRelease(context.Background(), "group/repo")
+	_, err = provider.GetLatestRelease(context.Background(), "group/repo", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected released_at parse error")
 	}
@@ -242,7 +242,7 @@ func TestGitLabSourceReleaseURLFromAssetsLink(t *testing.T) {
 		t.Fatalf("NewGitLabSource: %v", err)
 	}
 
-	release, err := provider.GetLatestRelease(context.Background(), "group/repo")
+	release, err := provider.GetLatestRelease(context.Background(), "group/repo", source.ReleaseOptions{})
 	if err != nil {
 		t.Fatalf("GetLatestRelease: %v", err)
 	}

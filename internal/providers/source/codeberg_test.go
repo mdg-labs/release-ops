@@ -40,7 +40,7 @@ func TestCodebergSourceGetLatestReleaseSuccess(t *testing.T) {
 	client := newHostRewritingClient(server, "codeberg.org")
 	provider := source.NewCodebergSource(token, client)
 
-	release, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	release, err := provider.GetLatestRelease(context.Background(), "acme/widget", source.ReleaseOptions{})
 	if err != nil {
 		t.Fatalf("GetLatestRelease: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestCodebergSourceNoReleasesReturnsNil(t *testing.T) {
 	client := newHostRewritingClient(server, "codeberg.org")
 	provider := source.NewCodebergSource("", client)
 
-	release, err := provider.GetLatestRelease(context.Background(), "acme/empty")
+	release, err := provider.GetLatestRelease(context.Background(), "acme/empty", source.ReleaseOptions{})
 	if err != nil {
 		t.Fatalf("GetLatestRelease: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestCodebergSourceRateLimitSurfaced(t *testing.T) {
 	client := newHostRewritingClient(server, "codeberg.org")
 	provider := source.NewCodebergSource("cb_test", client)
 
-	_, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	_, err := provider.GetLatestRelease(context.Background(), "acme/widget", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected rate limit error")
 	}
@@ -107,7 +107,7 @@ func TestCodebergSourceInvalidProjectPath(t *testing.T) {
 
 	provider := source.NewCodebergSource("", nil)
 
-	_, err := provider.GetLatestRelease(context.Background(), "missing-repo-segment")
+	_, err := provider.GetLatestRelease(context.Background(), "missing-repo-segment", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected error for invalid project_path")
 	}
@@ -126,7 +126,7 @@ func TestCodebergSourceRespectsContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := provider.GetLatestRelease(ctx, "acme/widget")
+	_, err := provider.GetLatestRelease(ctx, "acme/widget", source.ReleaseOptions{})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}
@@ -150,7 +150,7 @@ func TestCodebergSourceWorksWithoutToken(t *testing.T) {
 	client := newHostRewritingClient(server, "codeberg.org")
 	provider := source.NewCodebergSource("", client)
 
-	release, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	release, err := provider.GetLatestRelease(context.Background(), "acme/widget", source.ReleaseOptions{})
 	if err != nil {
 		t.Fatalf("GetLatestRelease: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestCodebergSourceServerError(t *testing.T) {
 	client := newHostRewritingClient(server, "codeberg.org")
 	provider := source.NewCodebergSource("", client)
 
-	_, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	_, err := provider.GetLatestRelease(context.Background(), "acme/widget", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected error for 500 response")
 	}
@@ -192,7 +192,7 @@ func TestCodebergSourceMalformedJSON(t *testing.T) {
 	client := newHostRewritingClient(server, "codeberg.org")
 	provider := source.NewCodebergSource("", client)
 
-	_, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	_, err := provider.GetLatestRelease(context.Background(), "acme/widget", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected decode error")
 	}

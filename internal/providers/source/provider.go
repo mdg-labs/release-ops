@@ -14,6 +14,11 @@ type Release struct {
 	PublishedAt time.Time
 }
 
+// ReleaseOptions configures how GetLatestRelease resolves the newest release.
+type ReleaseOptions struct {
+	IncludePrereleases bool
+}
+
 // SourceProvider fetches the latest release for a monitored repository.
 //
 // GetLatestRelease returns:
@@ -21,7 +26,11 @@ type Release struct {
 //   - (non-nil Release, nil) when a release exists
 //   - (nil, err) on transport, auth, or other operational errors
 //
+// When opts.IncludePrereleases is false (default), providers use each host's "latest"
+// endpoint, which excludes pre-releases. When true, providers list releases and return
+// the newest non-draft release by published_at (including pre-releases).
+//
 // Implementations must respect ctx cancellation and return ctx.Err() promptly.
 type SourceProvider interface {
-	GetLatestRelease(ctx context.Context, projectPath string) (*Release, error)
+	GetLatestRelease(ctx context.Context, projectPath string, opts ReleaseOptions) (*Release, error)
 }

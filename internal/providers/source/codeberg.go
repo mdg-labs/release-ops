@@ -35,10 +35,18 @@ type giteaReleaseResponse struct {
 	Name        string `json:"name"`
 	HTMLURL     string `json:"html_url"`
 	PublishedAt string `json:"published_at"`
+	Draft       bool   `json:"draft"`
 }
 
 // GetLatestRelease implements SourceProvider.
-func (c *CodebergSource) GetLatestRelease(ctx context.Context, projectPath string) (*Release, error) {
+func (c *CodebergSource) GetLatestRelease(ctx context.Context, projectPath string, opts ReleaseOptions) (*Release, error) {
+	if opts.IncludePrereleases {
+		return c.getLatestReleaseIncludingPrereleases(ctx, projectPath)
+	}
+	return c.getLatestStableRelease(ctx, projectPath)
+}
+
+func (c *CodebergSource) getLatestStableRelease(ctx context.Context, projectPath string) (*Release, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -90,6 +98,67 @@ func (c *CodebergSource) GetLatestRelease(ctx context.Context, projectPath strin
 		URL:         payload.HTMLURL,
 		PublishedAt: publishedAt,
 	}, nil
+}
+
+func (c *CodebergSource) getLatestReleaseIncludingPrereleases(ctx context.Context, projectPath string) (*Release, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	owner, repo, err := splitProjectPath(projectPath)
+	if err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/repos/%s/%s/releases", codebergBaseURL, owner, repo)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("codeberg: build request: %w", err)
+	}
+	req.Header.Set("User-Agent", githubUserAgent)
+	if c.token != "" {
+		req.Header.Set("Authorization", "token "+c.token)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("codeberg: request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, fmt.Errorf("codeberg: %w", ErrRateLimited)
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("codeberg: unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var payloads []giteaReleaseResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payloads); err != nil {
+		return nil, fmt.Errorf("codeberg: decode response: %w", err)
+	}
+
+	candidates := make([]Release, 0, len(payloads))
+	for _, payload := range payloads {
+		if payload.Draft {
+			continue
+		}
+		publishedAt, err := parsePublishedAt(payload.PublishedAt)
+		if err != nil {
+			return nil, fmt.Errorf("codeberg: %w", err)
+		}
+		candidates = append(candidates, Release{
+			Tag:         payload.TagName,
+			Name:        payload.Name,
+			URL:         payload.HTMLURL,
+			PublishedAt: publishedAt,
+		})
+	}
+
+	return pickNewestRelease(candidates), nil
 }
 
 func splitProjectPath(projectPath string) (owner, repo string, err error) {

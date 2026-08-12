@@ -18,7 +18,7 @@ func TestGiteaCompatibleSourceInvalidProjectPath(t *testing.T) {
 		t.Fatalf("NewGiteaCompatibleSource: %v", err)
 	}
 
-	_, err = provider.GetLatestRelease(context.Background(), "not-valid")
+	_, err = provider.GetLatestRelease(context.Background(), "not-valid", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected error for invalid project_path")
 	}
@@ -41,7 +41,7 @@ func TestGiteaCompatibleSourceServerError(t *testing.T) {
 		t.Fatalf("NewGiteaCompatibleSource: %v", err)
 	}
 
-	_, err = provider.GetLatestRelease(context.Background(), "acme/widget")
+	_, err = provider.GetLatestRelease(context.Background(), "acme/widget", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected error for 500 response")
 	}
@@ -64,7 +64,7 @@ func TestGiteaCompatibleSourceMalformedJSON(t *testing.T) {
 		t.Fatalf("NewGiteaCompatibleSource: %v", err)
 	}
 
-	_, err = provider.GetLatestRelease(context.Background(), "acme/widget")
+	_, err = provider.GetLatestRelease(context.Background(), "acme/widget", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected decode error")
 	}
@@ -92,7 +92,7 @@ func TestGiteaCompatibleSourceInvalidPublishedAt(t *testing.T) {
 		t.Fatalf("NewGiteaCompatibleSource: %v", err)
 	}
 
-	_, err = provider.GetLatestRelease(context.Background(), "acme/widget")
+	_, err = provider.GetLatestRelease(context.Background(), "acme/widget", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected published_at parse error")
 	}
@@ -117,7 +117,7 @@ func TestGiteaCompatibleSourceRespectsContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err = provider.GetLatestRelease(ctx, "acme/widget")
+	_, err = provider.GetLatestRelease(ctx, "acme/widget", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected context error")
 	}

@@ -37,7 +37,14 @@ func NewGitLabSource(baseURL, token string, client *http.Client) (*GitLabSource,
 }
 
 // GetLatestRelease fetches the latest release for a GitLab project path (namespace/project).
-func (g *GitLabSource) GetLatestRelease(ctx context.Context, projectPath string) (*Release, error) {
+func (g *GitLabSource) GetLatestRelease(ctx context.Context, projectPath string, opts ReleaseOptions) (*Release, error) {
+	if opts.IncludePrereleases {
+		return g.getLatestReleaseIncludingPrereleases(ctx, projectPath)
+	}
+	return g.getLatestStableRelease(ctx, projectPath)
+}
+
+func (g *GitLabSource) getLatestStableRelease(ctx context.Context, projectPath string) (*Release, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -97,6 +104,66 @@ func (g *GitLabSource) GetLatestRelease(ctx context.Context, projectPath string)
 		URL:         releaseURL,
 		PublishedAt: publishedAt,
 	}, nil
+}
+
+func (g *GitLabSource) getLatestReleaseIncludingPrereleases(ctx context.Context, projectPath string) (*Release, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	projectPath = strings.TrimSpace(projectPath)
+	if projectPath == "" {
+		return nil, fmt.Errorf("gitlab: project path is required")
+	}
+
+	encodedPath := url.PathEscape(projectPath)
+	apiPath := fmt.Sprintf("/api/v4/projects/%s/releases", encodedPath)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, g.baseURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("gitlab: build request: %w", err)
+	}
+	req.URL.Opaque = "//" + req.URL.Host + apiPath
+	req.Header.Set("User-Agent", gitLabUserAgent)
+	if g.token != "" {
+		req.Header.Set("PRIVATE-TOKEN", g.token)
+	}
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("gitlab: request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("gitlab: unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var payloads []gitLabRelease
+	if err := json.NewDecoder(resp.Body).Decode(&payloads); err != nil {
+		return nil, fmt.Errorf("gitlab: decode response: %w", err)
+	}
+
+	candidates := make([]Release, 0, len(payloads))
+	for _, payload := range payloads {
+		publishedAt, err := time.Parse(time.RFC3339, payload.ReleasedAt)
+		if err != nil {
+			return nil, fmt.Errorf("gitlab: parse released_at: %w", err)
+		}
+		releaseURL := payload.releaseURL()
+		candidates = append(candidates, Release{
+			Tag:         payload.TagName,
+			Name:        payload.Name,
+			URL:         releaseURL,
+			PublishedAt: publishedAt,
+		})
+	}
+
+	return pickNewestRelease(candidates), nil
 }
 
 type gitLabRelease struct {

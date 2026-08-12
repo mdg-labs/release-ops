@@ -29,7 +29,7 @@ type sequentialSource struct {
 	index int
 }
 
-func (s *sequentialSource) GetLatestRelease(ctx context.Context, _ string) (*source.Release, error) {
+func (s *sequentialSource) GetLatestRelease(ctx context.Context, _ string, _ source.ReleaseOptions) (*source.Release, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -248,7 +248,7 @@ func newPollIntegrationEnv(t *testing.T, tags []string) *pollIntegrationEnv {
 		Repos:  s.Repos(),
 		Poll:   s.Poll(),
 		PollRepo: func(ctx context.Context, _ string, repo store.MonitoredRepo) (*poll.RepoEvaluation, error) {
-			release, fetchErr := seqSource.GetLatestRelease(ctx, repo.ProjectPath)
+			release, fetchErr := seqSource.GetLatestRelease(ctx, repo.ProjectPath, source.ReleaseOptions{})
 			if fetchErr != nil {
 				return engine.EvaluateRepo(ctx, repo, nil, fetchErr, ticket.TicketProject{}, ticketProvider)
 			}

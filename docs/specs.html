@@ -337,6 +337,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <tr><td><code>source_kind</code></td><td>TEXT</td><td><code>github</code> | <code>gitlab</code> | <code>gitea</code> | <code>forgejo</code> | <code>codeberg</code></td></tr>
     <tr><td><code>project_path</code></td><td>TEXT</td><td>GitHub/Gitea/Forgejo/Codeberg: <code>owner/repo</code> · GitLab: <code>namespace/project</code></td></tr>
     <tr><td><code>enabled</code></td><td>INTEGER 0/1</td><td>Disabled = no poll</td></tr>
+    <tr><td><code>include_prereleases</code></td><td>INTEGER 0/1</td><td>Default <code>0</code> — when <code>1</code>, poll lists releases and picks newest by <code>published_at</code> (including pre-releases); when <code>0</code>, uses each host's latest non–pre-release endpoint</td></tr>
     <tr><td><code>source_integration_id</code></td><td>TEXT FK NULL</td><td>GitHub/Codeberg optional; GitLab/Gitea/Forgejo <strong>required</strong> (instance + token)</td></tr>
     <tr><td><code>ticket_project_id</code></td><td>TEXT FK</td><td>Required — references <code>ticket_projects</code></td></tr>
     <tr><td><code>open_ticket_external_id</code></td><td>TEXT NULL</td><td>ID of the currently open ticket in the target system</td></tr>
@@ -494,8 +495,12 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
 }
 
 type SourceProvider interface {
-    GetLatestRelease(ctx context.Context, projectPath string) (*Release, error)
+    GetLatestRelease(ctx context.Context, projectPath string, opts ReleaseOptions) (*Release, error)
     // (*Release, nil) = no release; (nil, err) = real error
+}
+
+type ReleaseOptions struct {
+    IncludePrereleases bool // from monitored_repos.include_prereleases
 }
 
 // Source factory: github | gitlab | gitea-compatible (gitea, forgejo, codeberg)</code></pre>
@@ -537,7 +542,8 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
 
   <h3>6.1 Source: GitHub</h3>
   <ul>
-    <li><code>GET https://api.github.com/repos/{projectPath}/releases/latest</code></li>
+    <li>Default (<code>include_prereleases = 0</code>): <code>GET https://api.github.com/repos/{projectPath}/releases/latest</code></li>
+    <li>When <code>include_prereleases = 1</code>: <code>GET .../releases?per_page=100</code> — exclude drafts; pick newest by <code>published_at</code> (pre-releases included)</li>
     <li>Headers: <code>Accept: application/vnd.github+json</code>, <code>X-GitHub-Api-Version: 2022-11-28</code>, <code>User-Agent: release-ops</code></li>
     <li><code>Authorization: Bearer</code> when token in integration</li>
     <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>html_url</code>→<code>URL</code>, <code>published_at</code>→<code>PublishedAt</code></li>
@@ -545,7 +551,8 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
 
   <h3>6.2 Source: GitLab</h3>
   <ul>
-    <li><code>GET {base_url}/api/v4/projects/{urlencoded_path}/releases/permalink/latest</code></li>
+    <li>Default: <code>GET {base_url}/api/v4/projects/{urlencoded_path}/releases/permalink/latest</code></li>
+    <li>When <code>include_prereleases = 1</code>: <code>GET .../releases</code> — pick newest by <code>released_at</code></li>
     <li><code>projectPath</code> → URL-encode (<code>/</code> → <code>%2F</code>)</li>
     <li>Header: <code>PRIVATE-TOKEN: {token}</code></li>
     <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>_links.self</code> or <code>assets.links</code>→<code>URL</code>, <code>released_at</code>→<code>PublishedAt</code></li>
@@ -561,7 +568,8 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><code>codeberg</code></td><td><code>https://codeberg.org</code> (fixed)</td><td>optional (token recommended)</td></tr>
   </table>
   <ul>
-    <li><code>GET {base_url}/api/v1/repos/{owner}/{repo}/releases/latest</code></li>
+    <li>Default: <code>GET {base_url}/api/v1/repos/{owner}/{repo}/releases/latest</code></li>
+    <li>When <code>include_prereleases = 1</code>: <code>GET .../releases</code> — exclude drafts; pick newest by <code>published_at</code></li>
     <li><code>projectPath</code> = <code>owner/repo</code> (like GitHub)</li>
     <li>Header with token: <code>Authorization: token {token}</code> (Gitea standard)</li>
     <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>html_url</code>→<code>URL</code>, <code>published_at</code>→<code>PublishedAt</code></li>
@@ -821,6 +829,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   "sourceKind": "github",
   "projectPath": "FreshRSS/FreshRSS",
   "enabled": true,
+  "includePrereleases": false,
   "sourceIntegrationId": "uuid-or-null",
   "ticketProjectId": "uuid",
   "notificationTargetIds": ["uuid-optional"]
@@ -917,7 +926,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><a href="https://coss.com/ui/r/p-alert-dialog-1.json">p-alert-dialog-1</a></td><td>Delete confirmation</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td>Source kind, source integration, <strong>ticket project</strong></td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-checkbox-group-1.json">p-checkbox-group-1</a></td><td>Optional: notification targets per repo</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-switch-1.json">p-switch-1</a></td><td>Enabled toggle in form</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-switch-1.json">p-switch-1</a></td><td>Enabled toggle; <strong>Include pre-releases</strong> toggle (default off)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-badge-1.json">p-badge-1</a></td><td>source_kind + ticket project name in tables</td></tr>
   </table>
 
@@ -1222,7 +1231,7 @@ jobs:
   <ul>
     <li>Bitbucket, Azure DevOps, more Git hosts.</li>
     <li>Per-repo poll interval.</li>
-    <li>Release filters (pre-releases, regex on tags).</li>
+    <li>Release filters (regex on tags). Pre-releases: per-repo <code>include_prereleases</code> (§4.4).</li>
     <li>Webhook instead of poll.</li>
     <li>Multi-user with roles (RBAC).</li>
     <li>OAuth/social login (COSS: <a href="https://coss.com/ui/r/p-button-38.json">p-button-38</a>).</li>

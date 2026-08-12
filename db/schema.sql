@@ -100,6 +100,7 @@ CREATE TABLE monitored_repos (
   ),
   project_path TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+  include_prereleases INTEGER NOT NULL DEFAULT 0 CHECK (include_prereleases IN (0, 1)),
   source_integration_id TEXT REFERENCES integrations(id),
   ticket_project_id TEXT NOT NULL REFERENCES ticket_projects(id) ON DELETE RESTRICT,
   open_ticket_external_id TEXT,

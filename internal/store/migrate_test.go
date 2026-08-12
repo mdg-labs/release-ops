@@ -39,8 +39,8 @@ func TestMigrateUpCreatesSchema(t *testing.T) {
 	if dirty {
 		t.Fatal("migration version is dirty")
 	}
-	if version != 4 {
-		t.Fatalf("migration version = %d, want 4", version)
+	if version != 5 {
+		t.Fatalf("migration version = %d, want 5", version)
 	}
 
 	db, err := store.OpenPath(dbPath)
@@ -96,6 +96,16 @@ func TestMigrateUpCreatesSchema(t *testing.T) {
 	}
 	if releasePublishedAtExists != 1 {
 		t.Fatal("monitored_repos.last_release_published_at column missing after migrate up")
+	}
+
+	var includePrereleasesExists int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('monitored_repos') WHERE name = 'include_prereleases'`,
+	).Scan(&includePrereleasesExists); err != nil {
+		t.Fatalf("monitored_repos.include_prereleases column lookup: %v", err)
+	}
+	if includePrereleasesExists != 1 {
+		t.Fatal("monitored_repos.include_prereleases column missing after migrate up")
 	}
 }
 

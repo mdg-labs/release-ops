@@ -45,7 +45,7 @@ func TestGiteaSourceGetLatestRelease(t *testing.T) {
 		t.Fatalf("NewGiteaSource: %v", err)
 	}
 
-	release, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	release, err := provider.GetLatestRelease(context.Background(), "acme/widget", source.ReleaseOptions{})
 	if err != nil {
 		t.Fatalf("GetLatestRelease: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestGiteaSourceGetLatestReleaseNotFound(t *testing.T) {
 		t.Fatalf("NewGiteaSource: %v", err)
 	}
 
-	release, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	release, err := provider.GetLatestRelease(context.Background(), "acme/widget", source.ReleaseOptions{})
 	if err != nil {
 		t.Fatalf("GetLatestRelease: %v", err)
 	}

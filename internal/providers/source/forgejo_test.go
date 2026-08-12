@@ -45,7 +45,7 @@ func TestForgejoSourceGetLatestRelease(t *testing.T) {
 		t.Fatalf("NewForgejoSource: %v", err)
 	}
 
-	release, err := provider.GetLatestRelease(context.Background(), "lib/core")
+	release, err := provider.GetLatestRelease(context.Background(), "lib/core", source.ReleaseOptions{})
 	if err != nil {
 		t.Fatalf("GetLatestRelease: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestForgejoSourceGetLatestReleaseNotFound(t *testing.T) {
 		t.Fatalf("NewForgejoSource: %v", err)
 	}
 
-	release, err := provider.GetLatestRelease(context.Background(), "lib/core")
+	release, err := provider.GetLatestRelease(context.Background(), "lib/core", source.ReleaseOptions{})
 	if err != nil {
 		t.Fatalf("GetLatestRelease: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestGiteaCompatibleSourceNormalizesTrailingSlash(t *testing.T) {
 		t.Fatalf("NewGiteaCompatibleSource: %v", err)
 	}
 
-	_, err = provider.GetLatestRelease(context.Background(), "owner/repo")
+	_, err = provider.GetLatestRelease(context.Background(), "owner/repo", source.ReleaseOptions{})
 	if err != nil {
 		t.Fatalf("GetLatestRelease: %v", err)
 	}

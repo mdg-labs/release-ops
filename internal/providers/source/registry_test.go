@@ -29,7 +29,7 @@ func TestRegistryGetReturnsProviderByKind(t *testing.T) {
 		t.Fatalf("Get: %v", err)
 	}
 
-	release, err := provider.GetLatestRelease(context.Background(), "owner/repo")
+	release, err := provider.GetLatestRelease(context.Background(), "owner/repo", source.ReleaseOptions{})
 	if err != nil {
 		t.Fatalf("GetLatestRelease: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestMockSourceProviderRespectsContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := mock.GetLatestRelease(ctx, "owner/repo")
+	_, err := mock.GetLatestRelease(ctx, "owner/repo", source.ReleaseOptions{})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}
@@ -100,7 +100,7 @@ func TestMockSourceProviderReturnsConfiguredError(t *testing.T) {
 	wantErr := errors.New("provider unavailable")
 	mock := &source.MockSourceProvider{Err: wantErr}
 
-	_, err := mock.GetLatestRelease(context.Background(), "owner/repo")
+	_, err := mock.GetLatestRelease(context.Background(), "owner/repo", source.ReleaseOptions{})
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("error = %v, want %v", err, wantErr)
 	}
@@ -141,7 +141,7 @@ func TestRegistryAllSourceKindsRoundTrip(t *testing.T) {
 				t.Fatalf("Get(%q): %v", kind, err)
 			}
 
-			got, err := provider.GetLatestRelease(context.Background(), "owner/repo")
+			got, err := provider.GetLatestRelease(context.Background(), "owner/repo", source.ReleaseOptions{})
 			if err != nil {
 				t.Fatalf("GetLatestRelease: %v", err)
 			}

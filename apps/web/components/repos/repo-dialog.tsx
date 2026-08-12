@@ -77,6 +77,7 @@ export function RepoDialog({
 
   const projectPathId = useId();
   const enabledId = useId();
+  const includePrereleasesId = useId();
 
   const [sourceKind, setSourceKind] = useState<SourceKind>("github");
   const [projectPath, setProjectPath] = useState("");
@@ -86,6 +87,7 @@ export function RepoDialog({
     [],
   );
   const [enabled, setEnabled] = useState(true);
+  const [includePrereleases, setIncludePrereleases] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const sourceKindItems: SourceKindOption[] = SOURCE_KINDS.map((value) => ({
@@ -141,6 +143,7 @@ export function RepoDialog({
       setSourceIntegrationId(repo.sourceIntegrationId ?? "");
       setNotificationTargetIds(repo.notificationTargetIds);
       setEnabled(repo.enabled);
+      setIncludePrereleases(repo.includePrereleases);
       return;
     }
 
@@ -150,6 +153,7 @@ export function RepoDialog({
     setSourceIntegrationId("");
     setNotificationTargetIds([]);
     setEnabled(true);
+    setIncludePrereleases(false);
   }, [open, mode, repo, ticketProjects]);
 
   useEffect(() => {
@@ -185,6 +189,7 @@ export function RepoDialog({
       sourceKind,
       projectPath: trimmedPath,
       enabled,
+      includePrereleases,
       sourceIntegrationId: sourceIntegrationId || null,
       ticketProjectId,
       notificationTargetIds,
@@ -389,6 +394,24 @@ export function RepoDialog({
                   checked={enabled}
                   id={enabledId}
                   onCheckedChange={setEnabled}
+                />
+              </div>
+            </Field>
+
+            <Field name="includePrereleases">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col gap-1">
+                  <FieldLabel htmlFor={includePrereleasesId}>
+                    {t("includePrereleases")}
+                  </FieldLabel>
+                  <FieldDescription>
+                    {t("includePrereleasesHint")}
+                  </FieldDescription>
+                </div>
+                <Switch
+                  checked={includePrereleases}
+                  id={includePrereleasesId}
+                  onCheckedChange={setIncludePrereleases}
                 />
               </div>
             </Field>

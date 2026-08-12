@@ -9,7 +9,7 @@ type MockSourceProvider struct {
 }
 
 // GetLatestRelease returns the configured release or error after checking ctx.
-func (m *MockSourceProvider) GetLatestRelease(ctx context.Context, projectPath string) (*Release, error) {
+func (m *MockSourceProvider) GetLatestRelease(ctx context.Context, projectPath string, _ ReleaseOptions) (*Release, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

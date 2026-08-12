@@ -16,6 +16,7 @@ INSERT INTO monitored_repos (
   source_kind,
   project_path,
   enabled,
+  include_prereleases,
   source_integration_id,
   ticket_project_id,
   open_ticket_external_id,
@@ -40,6 +41,7 @@ INSERT INTO monitored_repos (
   ?,
   ?,
   ?,
+  ?,
   ?
 )
 RETURNING
@@ -47,6 +49,7 @@ RETURNING
   source_kind,
   project_path,
   enabled,
+  include_prereleases,
   source_integration_id,
   ticket_project_id,
   open_ticket_external_id,
@@ -60,20 +63,21 @@ RETURNING
 `
 
 type CreateMonitoredRepoParams struct {
-	ID                   string         `json:"id"`
-	SourceKind           string         `json:"source_kind"`
-	ProjectPath          string         `json:"project_path"`
-	Enabled              int64          `json:"enabled"`
-	SourceIntegrationID  sql.NullString `json:"source_integration_id"`
-	TicketProjectID      string         `json:"ticket_project_id"`
-	OpenTicketExternalID sql.NullString `json:"open_ticket_external_id"`
-	OpenTicketTag        sql.NullString `json:"open_ticket_tag"`
+	ID                     string         `json:"id"`
+	SourceKind             string         `json:"source_kind"`
+	ProjectPath            string         `json:"project_path"`
+	Enabled                int64          `json:"enabled"`
+	IncludePrereleases     int64          `json:"include_prereleases"`
+	SourceIntegrationID    sql.NullString `json:"source_integration_id"`
+	TicketProjectID        string         `json:"ticket_project_id"`
+	OpenTicketExternalID   sql.NullString `json:"open_ticket_external_id"`
+	OpenTicketTag          sql.NullString `json:"open_ticket_tag"`
 	LastKnownTag           sql.NullString `json:"last_known_tag"`
 	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
 	LastPolledAt           sql.NullString `json:"last_polled_at"`
-	LastError            sql.NullString `json:"last_error"`
-	CreatedAt            string         `json:"created_at"`
-	UpdatedAt            string         `json:"updated_at"`
+	LastError              sql.NullString `json:"last_error"`
+	CreatedAt              string         `json:"created_at"`
+	UpdatedAt              string         `json:"updated_at"`
 }
 
 func (q *Queries) CreateMonitoredRepo(ctx context.Context, arg CreateMonitoredRepoParams) (MonitoredRepo, error) {
@@ -82,6 +86,7 @@ func (q *Queries) CreateMonitoredRepo(ctx context.Context, arg CreateMonitoredRe
 		arg.SourceKind,
 		arg.ProjectPath,
 		arg.Enabled,
+		arg.IncludePrereleases,
 		arg.SourceIntegrationID,
 		arg.TicketProjectID,
 		arg.OpenTicketExternalID,
@@ -99,6 +104,7 @@ func (q *Queries) CreateMonitoredRepo(ctx context.Context, arg CreateMonitoredRe
 		&i.SourceKind,
 		&i.ProjectPath,
 		&i.Enabled,
+		&i.IncludePrereleases,
 		&i.SourceIntegrationID,
 		&i.TicketProjectID,
 		&i.OpenTicketExternalID,
@@ -129,6 +135,7 @@ SELECT
   source_kind,
   project_path,
   enabled,
+  include_prereleases,
   source_integration_id,
   ticket_project_id,
   open_ticket_external_id,
@@ -152,6 +159,7 @@ func (q *Queries) GetMonitoredRepo(ctx context.Context, id string) (MonitoredRep
 		&i.SourceKind,
 		&i.ProjectPath,
 		&i.Enabled,
+		&i.IncludePrereleases,
 		&i.SourceIntegrationID,
 		&i.TicketProjectID,
 		&i.OpenTicketExternalID,
@@ -172,6 +180,7 @@ SELECT
   mr.source_kind,
   mr.project_path,
   mr.enabled,
+  mr.include_prereleases,
   mr.source_integration_id,
   mr.ticket_project_id,
   mr.open_ticket_external_id,
@@ -191,14 +200,15 @@ ORDER BY mr.project_path
 `
 
 type ListEnabledRow struct {
-	ID                    string         `json:"id"`
-	SourceKind            string         `json:"source_kind"`
-	ProjectPath           string         `json:"project_path"`
-	Enabled               int64          `json:"enabled"`
-	SourceIntegrationID   sql.NullString `json:"source_integration_id"`
-	TicketProjectID       string         `json:"ticket_project_id"`
-	OpenTicketExternalID  sql.NullString `json:"open_ticket_external_id"`
-	OpenTicketTag         sql.NullString `json:"open_ticket_tag"`
+	ID                     string         `json:"id"`
+	SourceKind             string         `json:"source_kind"`
+	ProjectPath            string         `json:"project_path"`
+	Enabled                int64          `json:"enabled"`
+	IncludePrereleases     int64          `json:"include_prereleases"`
+	SourceIntegrationID    sql.NullString `json:"source_integration_id"`
+	TicketProjectID        string         `json:"ticket_project_id"`
+	OpenTicketExternalID   sql.NullString `json:"open_ticket_external_id"`
+	OpenTicketTag          sql.NullString `json:"open_ticket_tag"`
 	LastKnownTag           sql.NullString `json:"last_known_tag"`
 	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
 	LastPolledAt           sql.NullString `json:"last_polled_at"`
@@ -222,6 +232,7 @@ func (q *Queries) ListEnabled(ctx context.Context) ([]ListEnabledRow, error) {
 			&i.SourceKind,
 			&i.ProjectPath,
 			&i.Enabled,
+			&i.IncludePrereleases,
 			&i.SourceIntegrationID,
 			&i.TicketProjectID,
 			&i.OpenTicketExternalID,
@@ -253,6 +264,7 @@ SELECT
   source_kind,
   project_path,
   enabled,
+  include_prereleases,
   source_integration_id,
   ticket_project_id,
   open_ticket_external_id,
@@ -281,6 +293,7 @@ func (q *Queries) ListMonitoredRepos(ctx context.Context) ([]MonitoredRepo, erro
 			&i.SourceKind,
 			&i.ProjectPath,
 			&i.Enabled,
+			&i.IncludePrereleases,
 			&i.SourceIntegrationID,
 			&i.TicketProjectID,
 			&i.OpenTicketExternalID,
@@ -316,6 +329,7 @@ RETURNING
   source_kind,
   project_path,
   enabled,
+  include_prereleases,
   source_integration_id,
   ticket_project_id,
   open_ticket_external_id,
@@ -342,6 +356,7 @@ func (q *Queries) SetMonitoredRepoEnabled(ctx context.Context, arg SetMonitoredR
 		&i.SourceKind,
 		&i.ProjectPath,
 		&i.Enabled,
+		&i.IncludePrereleases,
 		&i.SourceIntegrationID,
 		&i.TicketProjectID,
 		&i.OpenTicketExternalID,
@@ -362,6 +377,7 @@ SET
   source_kind = ?,
   project_path = ?,
   enabled = ?,
+  include_prereleases = ?,
   source_integration_id = ?,
   ticket_project_id = ?,
   updated_at = ?
@@ -371,6 +387,7 @@ RETURNING
   source_kind,
   project_path,
   enabled,
+  include_prereleases,
   source_integration_id,
   ticket_project_id,
   open_ticket_external_id,
@@ -387,6 +404,7 @@ type UpdateMonitoredRepoParams struct {
 	SourceKind          string         `json:"source_kind"`
 	ProjectPath         string         `json:"project_path"`
 	Enabled             int64          `json:"enabled"`
+	IncludePrereleases  int64          `json:"include_prereleases"`
 	SourceIntegrationID sql.NullString `json:"source_integration_id"`
 	TicketProjectID     string         `json:"ticket_project_id"`
 	UpdatedAt           string         `json:"updated_at"`
@@ -398,6 +416,7 @@ func (q *Queries) UpdateMonitoredRepo(ctx context.Context, arg UpdateMonitoredRe
 		arg.SourceKind,
 		arg.ProjectPath,
 		arg.Enabled,
+		arg.IncludePrereleases,
 		arg.SourceIntegrationID,
 		arg.TicketProjectID,
 		arg.UpdatedAt,
@@ -409,6 +428,7 @@ func (q *Queries) UpdateMonitoredRepo(ctx context.Context, arg UpdateMonitoredRe
 		&i.SourceKind,
 		&i.ProjectPath,
 		&i.Enabled,
+		&i.IncludePrereleases,
 		&i.SourceIntegrationID,
 		&i.TicketProjectID,
 		&i.OpenTicketExternalID,
@@ -439,6 +459,7 @@ RETURNING
   source_kind,
   project_path,
   enabled,
+  include_prereleases,
   source_integration_id,
   ticket_project_id,
   open_ticket_external_id,
@@ -452,14 +473,14 @@ RETURNING
 `
 
 type UpdatePollStateParams struct {
-	OpenTicketExternalID sql.NullString `json:"open_ticket_external_id"`
-	OpenTicketTag        sql.NullString `json:"open_ticket_tag"`
+	OpenTicketExternalID   sql.NullString `json:"open_ticket_external_id"`
+	OpenTicketTag          sql.NullString `json:"open_ticket_tag"`
 	LastKnownTag           sql.NullString `json:"last_known_tag"`
 	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
 	LastPolledAt           sql.NullString `json:"last_polled_at"`
-	LastError            sql.NullString `json:"last_error"`
-	UpdatedAt            string         `json:"updated_at"`
-	ID                   string         `json:"id"`
+	LastError              sql.NullString `json:"last_error"`
+	UpdatedAt              string         `json:"updated_at"`
+	ID                     string         `json:"id"`
 }
 
 func (q *Queries) UpdatePollState(ctx context.Context, arg UpdatePollStateParams) (MonitoredRepo, error) {
@@ -479,6 +500,7 @@ func (q *Queries) UpdatePollState(ctx context.Context, arg UpdatePollStateParams
 		&i.SourceKind,
 		&i.ProjectPath,
 		&i.Enabled,
+		&i.IncludePrereleases,
 		&i.SourceIntegrationID,
 		&i.TicketProjectID,
 		&i.OpenTicketExternalID,

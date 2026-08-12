@@ -117,6 +117,7 @@ func (m *mockRepoRepo) Update(_ context.Context, id string, input store.UpdateMo
 	item.SourceKind = input.SourceKind
 	item.ProjectPath = input.ProjectPath
 	item.Enabled = input.Enabled
+	item.IncludePrereleases = input.IncludePrereleases
 	item.SourceIntegrationID = input.SourceIntegrationID
 	item.TicketProjectID = input.TicketProjectID
 	item.NotificationTargetIDs = append([]string(nil), input.NotificationTargetIDs...)
@@ -170,7 +171,7 @@ func repoResponseShape(t *testing.T, body []byte) map[string]any {
 		t.Fatalf("decode response: %v; body = %s", err, body)
 	}
 	for _, key := range []string{
-		"id", "sourceKind", "projectPath", "enabled", "sourceIntegrationId",
+		"id", "sourceKind", "projectPath", "enabled", "includePrereleases", "sourceIntegrationId",
 		"ticketProjectId", "notificationTargetIds", "openTicketExternalId", "openTicketTag",
 		"lastKnownTag", "lastPolledAt", "lastError", "createdAt", "updatedAt",
 	} {
@@ -412,6 +413,57 @@ func TestCreateRepoConflictOnDuplicateSourceKindProjectPath(t *testing.T) {
 	}
 }
 
+func TestCreateRepoDefaultsIncludePrereleasesToFalse(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockRepoRepo{}
+	router, sm := newReposTestRouter(t, repo)
+	cookie := seedSession(t, sm)
+
+	body := `{
+		"sourceKind":"github",
+		"projectPath":"org/repo",
+		"ticketProjectId":"tp-1"
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/repos", strings.NewReader(body))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	if repo.createInput == nil || repo.createInput.IncludePrereleases {
+		t.Fatalf("createInput includePrereleases = %+v, want false", repo.createInput)
+	}
+}
+
+func TestCreateRepoPassesIncludePrereleasesToStore(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockRepoRepo{}
+	router, sm := newReposTestRouter(t, repo)
+	cookie := seedSession(t, sm)
+
+	body := `{
+		"sourceKind":"github",
+		"projectPath":"org/repo",
+		"includePrereleases":true,
+		"ticketProjectId":"tp-1"
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/repos", strings.NewReader(body))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	if repo.createInput == nil || !repo.createInput.IncludePrereleases {
+		t.Fatalf("createInput includePrereleases = %+v, want true", repo.createInput)
+	}
+}
+
 func TestPatchRepoUpdatesFieldsAndNotificationTargets(t *testing.T) {
 	t.Parallel()
 
@@ -436,6 +488,7 @@ func TestPatchRepoUpdatesFieldsAndNotificationTargets(t *testing.T) {
 		"sourceKind":"github",
 		"projectPath":"org/new",
 		"enabled":false,
+		"includePrereleases":true,
 		"ticketProjectId":"tp-2",
 		"notificationTargetIds":["nt-2","nt-3"]
 	}`
@@ -452,6 +505,9 @@ func TestPatchRepoUpdatesFieldsAndNotificationTargets(t *testing.T) {
 	}
 	if repo.updateInput.Enabled {
 		t.Fatal("enabled = true, want false")
+	}
+	if !repo.updateInput.IncludePrereleases {
+		t.Fatal("includePrereleases = false, want true")
 	}
 	if len(repo.updateInput.NotificationTargetIDs) != 2 {
 		t.Fatalf("notificationTargetIds = %v, want 2 items", repo.updateInput.NotificationTargetIDs)

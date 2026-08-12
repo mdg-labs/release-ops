@@ -46,7 +46,7 @@ func TestGitHubSourceGetLatestReleaseSuccess(t *testing.T) {
 	client := newHostRewritingClient(server, "api.github.com")
 	provider := source.NewGitHubSource(token, client)
 
-	release, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	release, err := provider.GetLatestRelease(context.Background(), "acme/widget", source.ReleaseOptions{})
 	if err != nil {
 		t.Fatalf("GetLatestRelease: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestGitHubSourceNoReleasesReturnsNil(t *testing.T) {
 	client := newHostRewritingClient(server, "api.github.com")
 	provider := source.NewGitHubSource("", client)
 
-	release, err := provider.GetLatestRelease(context.Background(), "acme/empty")
+	release, err := provider.GetLatestRelease(context.Background(), "acme/empty", source.ReleaseOptions{})
 	if err != nil {
 		t.Fatalf("GetLatestRelease: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestGitHubSourceRateLimitSurfaced(t *testing.T) {
 			client := newHostRewritingClient(server, "api.github.com")
 			provider := source.NewGitHubSource("ghp_test", client)
 
-			_, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+			_, err := provider.GetLatestRelease(context.Background(), "acme/widget", source.ReleaseOptions{})
 			if err == nil {
 				t.Fatal("expected rate limit error")
 			}
@@ -140,7 +140,7 @@ func TestGitHubSourceInvalidProjectPath(t *testing.T) {
 
 	provider := source.NewGitHubSource("", nil)
 
-	_, err := provider.GetLatestRelease(context.Background(), "not-a-valid-path")
+	_, err := provider.GetLatestRelease(context.Background(), "not-a-valid-path", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected error for invalid project_path")
 	}
@@ -159,7 +159,7 @@ func TestGitHubSourceRespectsContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := provider.GetLatestRelease(ctx, "acme/widget")
+	_, err := provider.GetLatestRelease(ctx, "acme/widget", source.ReleaseOptions{})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}
@@ -177,7 +177,7 @@ func TestGitHubSourceServerError(t *testing.T) {
 	client := newHostRewritingClient(server, "api.github.com")
 	provider := source.NewGitHubSource("", client)
 
-	_, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	_, err := provider.GetLatestRelease(context.Background(), "acme/widget", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected error for 500 response")
 	}
@@ -198,7 +198,7 @@ func TestGitHubSourceMalformedJSON(t *testing.T) {
 	client := newHostRewritingClient(server, "api.github.com")
 	provider := source.NewGitHubSource("", client)
 
-	_, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	_, err := provider.GetLatestRelease(context.Background(), "acme/widget", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected decode error")
 	}
@@ -222,7 +222,7 @@ func TestGitHubSourceInvalidPublishedAt(t *testing.T) {
 	client := newHostRewritingClient(server, "api.github.com")
 	provider := source.NewGitHubSource("", client)
 
-	_, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	_, err := provider.GetLatestRelease(context.Background(), "acme/widget", source.ReleaseOptions{})
 	if err == nil {
 		t.Fatal("expected published_at parse error")
 	}
@@ -245,7 +245,7 @@ func TestGitHubSourceEmptyPublishedAtAllowed(t *testing.T) {
 	client := newHostRewritingClient(server, "api.github.com")
 	provider := source.NewGitHubSource("", client)
 
-	release, err := provider.GetLatestRelease(context.Background(), "acme/widget")
+	release, err := provider.GetLatestRelease(context.Background(), "acme/widget", source.ReleaseOptions{})
 	if err != nil {
 		t.Fatalf("GetLatestRelease: %v", err)
 	}
@@ -254,6 +254,48 @@ func TestGitHubSourceEmptyPublishedAtAllowed(t *testing.T) {
 	}
 	if !release.PublishedAt.IsZero() {
 		t.Fatalf("publishedAt = %v, want zero time", release.PublishedAt)
+	}
+}
+
+func TestGitHubSourceIncludePrereleasesPicksNewestByPublishedAt(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/acme/widget/releases" {
+			t.Fatalf("path = %q, want /repos/acme/widget/releases", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{
+				"tag_name":     "v1.0.0",
+				"name":         "Stable",
+				"html_url":     "https://github.com/acme/widget/releases/tag/v1.0.0",
+				"published_at": "2026-08-01T10:00:00Z",
+				"draft":        false,
+				"prerelease":   false,
+			},
+			{
+				"tag_name":     "v2.0.0-beta.1",
+				"name":         "Beta",
+				"html_url":     "https://github.com/acme/widget/releases/tag/v2.0.0-beta.1",
+				"published_at": "2026-08-07T10:00:00Z",
+				"draft":        false,
+				"prerelease":   true,
+			},
+		})
+	}))
+	t.Cleanup(server.Close)
+
+	client := newHostRewritingClient(server, "api.github.com")
+	provider := source.NewGitHubSource("", client)
+
+	release, err := provider.GetLatestRelease(context.Background(), "acme/widget", source.ReleaseOptions{
+		IncludePrereleases: true,
+	})
+	if err != nil {
+		t.Fatalf("GetLatestRelease: %v", err)
+	}
+	if release.Tag != "v2.0.0-beta.1" {
+		t.Fatalf("tag = %q, want v2.0.0-beta.1", release.Tag)
 	}
 }
 

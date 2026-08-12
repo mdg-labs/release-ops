@@ -39,20 +39,21 @@ type Integration struct {
 }
 
 type MonitoredRepo struct {
-	ID                   string         `json:"id"`
-	SourceKind           string         `json:"source_kind"`
-	ProjectPath          string         `json:"project_path"`
-	Enabled              int64          `json:"enabled"`
-	SourceIntegrationID  sql.NullString `json:"source_integration_id"`
-	TicketProjectID      string         `json:"ticket_project_id"`
-	OpenTicketExternalID sql.NullString `json:"open_ticket_external_id"`
-	OpenTicketTag        sql.NullString `json:"open_ticket_tag"`
-	LastKnownTag             sql.NullString `json:"last_known_tag"`
-	LastReleasePublishedAt   sql.NullString `json:"last_release_published_at"`
-	LastPolledAt             sql.NullString `json:"last_polled_at"`
-	LastError            sql.NullString `json:"last_error"`
-	CreatedAt            string         `json:"created_at"`
-	UpdatedAt            string         `json:"updated_at"`
+	ID                     string         `json:"id"`
+	SourceKind             string         `json:"source_kind"`
+	ProjectPath            string         `json:"project_path"`
+	Enabled                int64          `json:"enabled"`
+	IncludePrereleases     int64          `json:"include_prereleases"`
+	SourceIntegrationID    sql.NullString `json:"source_integration_id"`
+	TicketProjectID        string         `json:"ticket_project_id"`
+	OpenTicketExternalID   sql.NullString `json:"open_ticket_external_id"`
+	OpenTicketTag          sql.NullString `json:"open_ticket_tag"`
+	LastKnownTag           sql.NullString `json:"last_known_tag"`
+	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
+	LastPolledAt           sql.NullString `json:"last_polled_at"`
+	LastError              sql.NullString `json:"last_error"`
+	CreatedAt              string         `json:"created_at"`
+	UpdatedAt              string         `json:"updated_at"`
 }
 
 type MonitoredRepoNotification struct {
@@ -75,11 +76,11 @@ type PollRun struct {
 	StartedAt         string         `json:"started_at"`
 	FinishedAt        sql.NullString `json:"finished_at"`
 	Status            string         `json:"status"`
-	TriggerSource     string         `json:"trigger_source"`
 	ReposChecked      int64          `json:"repos_checked"`
 	TicketsCreated    int64          `json:"tickets_created"`
 	TicketsSuperseded int64          `json:"tickets_superseded"`
 	ErrorsJson        string         `json:"errors_json"`
+	TriggerSource     string         `json:"trigger_source"`
 }
 
 type PollRunEvent struct {

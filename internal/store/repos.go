@@ -12,6 +12,7 @@ type MonitoredRepo struct {
 	SourceKind            string
 	ProjectPath           string
 	Enabled               bool
+	IncludePrereleases    bool
 	SourceIntegrationID   *string
 	TicketProjectID       string
 	OpenTicketExternalID  *string
@@ -30,6 +31,7 @@ type CreateMonitoredRepoInput struct {
 	SourceKind            string
 	ProjectPath           string
 	Enabled               bool
+	IncludePrereleases    bool
 	SourceIntegrationID   *string
 	TicketProjectID       string
 	NotificationTargetIDs []string
@@ -40,6 +42,7 @@ type UpdateMonitoredRepoInput struct {
 	SourceKind            string
 	ProjectPath           string
 	Enabled               bool
+	IncludePrereleases    bool
 	SourceIntegrationID   *string
 	TicketProjectID       string
 	NotificationTargetIDs []string
@@ -78,6 +81,7 @@ func (r monitoredRepoRepo) Create(ctx context.Context, input CreateMonitoredRepo
 		SourceKind:          input.SourceKind,
 		ProjectPath:         input.ProjectPath,
 		Enabled:             boolToInt64(input.Enabled),
+		IncludePrereleases:  boolToInt64(input.IncludePrereleases),
 		SourceIntegrationID: stringPtrToNull(input.SourceIntegrationID),
 		TicketProjectID:     input.TicketProjectID,
 		CreatedAt:           now,
@@ -141,6 +145,7 @@ func (r monitoredRepoRepo) Update(ctx context.Context, id string, input UpdateMo
 		SourceKind:          input.SourceKind,
 		ProjectPath:         input.ProjectPath,
 		Enabled:             boolToInt64(input.Enabled),
+		IncludePrereleases:  boolToInt64(input.IncludePrereleases),
 		SourceIntegrationID: stringPtrToNull(input.SourceIntegrationID),
 		TicketProjectID:     input.TicketProjectID,
 		UpdatedAt:           nowUTC(),
@@ -228,6 +233,7 @@ func monitoredRepoFromRow(row db.MonitoredRepo) *MonitoredRepo {
 		SourceKind:           row.SourceKind,
 		ProjectPath:          row.ProjectPath,
 		Enabled:              int64ToBool(row.Enabled),
+		IncludePrereleases:   int64ToBool(row.IncludePrereleases),
 		SourceIntegrationID:  nullStringPtr(row.SourceIntegrationID),
 		TicketProjectID:      row.TicketProjectID,
 		OpenTicketExternalID: nullStringPtr(row.OpenTicketExternalID),
@@ -247,6 +253,7 @@ func monitoredRepoFromListEnabledRow(row db.ListEnabledRow) MonitoredRepo {
 		SourceKind:           row.SourceKind,
 		ProjectPath:          row.ProjectPath,
 		Enabled:              int64ToBool(row.Enabled),
+		IncludePrereleases:   int64ToBool(row.IncludePrereleases),
 		SourceIntegrationID:  nullStringPtr(row.SourceIntegrationID),
 		TicketProjectID:      row.TicketProjectID,
 		OpenTicketExternalID: nullStringPtr(row.OpenTicketExternalID),

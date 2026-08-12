@@ -45,10 +45,18 @@ type githubReleaseResponse struct {
 	Name        string `json:"name"`
 	HTMLURL     string `json:"html_url"`
 	PublishedAt string `json:"published_at"`
+	Draft       bool   `json:"draft"`
 }
 
 // GetLatestRelease implements SourceProvider.
-func (g *GitHubSource) GetLatestRelease(ctx context.Context, projectPath string) (*Release, error) {
+func (g *GitHubSource) GetLatestRelease(ctx context.Context, projectPath string, opts ReleaseOptions) (*Release, error) {
+	if opts.IncludePrereleases {
+		return g.getLatestReleaseIncludingPrereleases(ctx, projectPath)
+	}
+	return g.getLatestStableRelease(ctx, projectPath)
+}
+
+func (g *GitHubSource) getLatestStableRelease(ctx context.Context, projectPath string) (*Release, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -101,6 +109,68 @@ func (g *GitHubSource) GetLatestRelease(ctx context.Context, projectPath string)
 		URL:         payload.HTMLURL,
 		PublishedAt: publishedAt,
 	}, nil
+}
+
+func (g *GitHubSource) getLatestReleaseIncludingPrereleases(ctx context.Context, projectPath string) (*Release, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := validateProjectPath(projectPath); err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/repos/%s/releases?per_page=100", githubAPIBase, projectPath)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("github: build request: %w", err)
+	}
+	req.Header.Set("Accept", githubAcceptMedia)
+	req.Header.Set("X-GitHub-Api-Version", githubAPIVersion)
+	req.Header.Set("User-Agent", githubUserAgent)
+	if g.token != "" {
+		req.Header.Set("Authorization", "Bearer "+g.token)
+	}
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("github: request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if err := checkGitHubRateLimit(resp); err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("github: unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var payloads []githubReleaseResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payloads); err != nil {
+		return nil, fmt.Errorf("github: decode response: %w", err)
+	}
+
+	candidates := make([]Release, 0, len(payloads))
+	for _, payload := range payloads {
+		if payload.Draft {
+			continue
+		}
+		publishedAt, err := parsePublishedAt(payload.PublishedAt)
+		if err != nil {
+			return nil, fmt.Errorf("github: %w", err)
+		}
+		candidates = append(candidates, Release{
+			Tag:         payload.TagName,
+			Name:        payload.Name,
+			URL:         payload.HTMLURL,
+			PublishedAt: publishedAt,
+		})
+	}
+
+	return pickNewestRelease(candidates), nil
 }
 
 func checkGitHubRateLimit(resp *http.Response) error {

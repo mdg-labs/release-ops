@@ -35,6 +35,7 @@ type repoResponse struct {
 	SourceKind            string   `json:"sourceKind"`
 	ProjectPath           string   `json:"projectPath"`
 	Enabled               bool     `json:"enabled"`
+	IncludePrereleases    bool     `json:"includePrereleases"`
 	SourceIntegrationID   *string  `json:"sourceIntegrationId"`
 	TicketProjectID       string   `json:"ticketProjectId"`
 	NotificationTargetIDs []string `json:"notificationTargetIds"`
@@ -51,6 +52,7 @@ type createRepoRequest struct {
 	SourceKind            string   `json:"sourceKind"`
 	ProjectPath           string   `json:"projectPath"`
 	Enabled               *bool    `json:"enabled"`
+	IncludePrereleases    *bool    `json:"includePrereleases"`
 	SourceIntegrationID   *string  `json:"sourceIntegrationId"`
 	TicketProjectID       string   `json:"ticketProjectId"`
 	NotificationTargetIDs []string `json:"notificationTargetIds"`
@@ -60,6 +62,7 @@ type patchRepoRequest struct {
 	SourceKind            string   `json:"sourceKind"`
 	ProjectPath           string   `json:"projectPath"`
 	Enabled               bool     `json:"enabled"`
+	IncludePrereleases    bool     `json:"includePrereleases"`
 	SourceIntegrationID   *string  `json:"sourceIntegrationId"`
 	TicketProjectID       string   `json:"ticketProjectId"`
 	NotificationTargetIDs []string `json:"notificationTargetIds"`
@@ -110,11 +113,16 @@ func (h *RepoHandlers) Create(w http.ResponseWriter, r *http.Request) {
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
+	includePrereleases := false
+	if req.IncludePrereleases != nil {
+		includePrereleases = *req.IncludePrereleases
+	}
 
 	created, err := h.Repos.Create(r.Context(), store.CreateMonitoredRepoInput{
 		SourceKind:            req.SourceKind,
 		ProjectPath:           req.ProjectPath,
 		Enabled:               enabled,
+		IncludePrereleases:    includePrereleases,
 		SourceIntegrationID:   req.SourceIntegrationID,
 		TicketProjectID:       req.TicketProjectID,
 		NotificationTargetIDs: req.NotificationTargetIDs,
@@ -175,6 +183,7 @@ func (h *RepoHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 		SourceKind:            req.SourceKind,
 		ProjectPath:           req.ProjectPath,
 		Enabled:               req.Enabled,
+		IncludePrereleases:    req.IncludePrereleases,
 		SourceIntegrationID:   req.SourceIntegrationID,
 		TicketProjectID:       req.TicketProjectID,
 		NotificationTargetIDs: req.NotificationTargetIDs,
@@ -230,6 +239,7 @@ func repoFromStore(item *store.MonitoredRepo) repoResponse {
 		SourceKind:            item.SourceKind,
 		ProjectPath:           item.ProjectPath,
 		Enabled:               item.Enabled,
+		IncludePrereleases:    item.IncludePrereleases,
 		SourceIntegrationID:   item.SourceIntegrationID,
 		TicketProjectID:       item.TicketProjectID,
 		NotificationTargetIDs: notificationTargetIDs,

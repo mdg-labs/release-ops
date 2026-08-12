@@ -189,6 +189,7 @@ export type Repo = {
   sourceKind: string;
   projectPath: string;
   enabled: boolean;
+  includePrereleases: boolean;
   sourceIntegrationId: string | null;
   ticketProjectId: string;
   notificationTargetIds: string[];
@@ -205,6 +206,7 @@ export type CreateRepoInput = {
   sourceKind: string;
   projectPath: string;
   enabled?: boolean;
+  includePrereleases?: boolean;
   sourceIntegrationId?: string | null;
   ticketProjectId: string;
   notificationTargetIds?: string[];
@@ -214,6 +216,7 @@ export type UpdateRepoInput = {
   sourceKind: string;
   projectPath: string;
   enabled: boolean;
+  includePrereleases: boolean;
   sourceIntegrationId?: string | null;
   ticketProjectId: string;
   notificationTargetIds?: string[];

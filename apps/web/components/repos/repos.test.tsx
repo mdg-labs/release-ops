@@ -68,6 +68,7 @@ const sampleRepos = [
     sourceKind: "github",
     projectPath: "org/app",
     enabled: true,
+    includePrereleases: false,
     sourceIntegrationId: null,
     ticketProjectId: "tp-1",
     notificationTargetIds: [],
@@ -84,6 +85,7 @@ const sampleRepos = [
     sourceKind: "gitlab",
     projectPath: "group/service",
     enabled: false,
+    includePrereleases: true,
     sourceIntegrationId: "int-gitlab",
     ticketProjectId: "tp-1",
     notificationTargetIds: ["nt-1"],
@@ -404,6 +406,81 @@ describe("ReposView", () => {
     });
   });
 
+  it("shows include pre-releases switch default off on create", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    mockListEndpoints(pool, []);
+
+    renderReposPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add repo" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByRole("switch", { name: "Include pre-releases" }),
+    ).toHaveAttribute("aria-checked", "false");
+    expect(
+      within(dialog).getByText(
+        "When enabled, polling treats pre-releases as new releases. Changes apply on the next poll only.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("preserves includePrereleases when editing repo", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    mockListEndpoints(pool);
+
+    renderReposPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit group/service" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+
+    let patchBody: string | undefined;
+    pool
+      .intercept({
+        path: "/api/go/api/v1/repos/repo-2",
+        method: "PATCH",
+      })
+      .reply((opts) => {
+        patchBody = opts.body?.toString();
+        return {
+          statusCode: 200,
+          data: JSON.stringify({
+            ...sampleRepos[1],
+            updatedAt: "2026-01-03T00:00:00.000Z",
+          }),
+          responseOptions: {
+            headers: { "content-type": "application/json" },
+          },
+        };
+      });
+
+    pool
+      .intercept({ path: "/api/go/api/v1/repos", method: "GET" })
+      .reply(200, sampleRepos);
+
+    pool
+      .intercept({ path: "/api/go/api/v1/status", method: "GET" })
+      .reply(200, {
+        pollIntervalMinutes: 360,
+        lastRun: null,
+        repos: [],
+        isPolling: false,
+      });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchBody).toBeDefined();
+    });
+    expect(JSON.parse(patchBody ?? "{}")).toMatchObject({
+      includePrereleases: true,
+      projectPath: "group/service",
+    });
+  });
+
   it("opens edit dialog with existing repo values", async () => {
     const pool = mockAgent.get(ORIGIN);
     mockListEndpoints(pool);
@@ -422,6 +499,9 @@ describe("ReposView", () => {
     expect(
       within(dialog).getByRole("switch", { name: "Enabled" }),
     ).toHaveAttribute("aria-checked", "false");
+    expect(
+      within(dialog).getByRole("switch", { name: "Include pre-releases" }),
+    ).toHaveAttribute("aria-checked", "true");
     expect(within(dialog).getByText("Slack alerts")).toBeInTheDocument();
   });
 

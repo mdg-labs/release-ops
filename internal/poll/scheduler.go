@@ -220,7 +220,9 @@ func (s *Scheduler) defaultPollRepo(ctx context.Context, _ string, repo store.Mo
 		return nil, err
 	}
 
-	release, fetchErr := sourceProvider.GetLatestRelease(ctx, repo.ProjectPath)
+	release, fetchErr := sourceProvider.GetLatestRelease(ctx, repo.ProjectPath, source.ReleaseOptions{
+		IncludePrereleases: repo.IncludePrereleases,
+	})
 	return s.engine.EvaluateRepo(ctx, repo, release, fetchErr, ticketProject, ticketProvider)
 }
 
