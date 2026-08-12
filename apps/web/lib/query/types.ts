@@ -56,6 +56,9 @@ export type StatusRepo = {
   lastReleasePublishedAt: string | null;
   lastPolledAt: string | null;
   lastError: string | null;
+  repoUrl: string | null;
+  releaseUrl: string | null;
+  openTicketUrl: string | null;
 };
 
 export type StatusResponse = {

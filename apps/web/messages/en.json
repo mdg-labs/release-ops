@@ -80,6 +80,11 @@
       "openTicket": "Open ticket",
       "lastPolledAt": "Last polled"
     },
+    "links": {
+      "repo": "Open repository {path}",
+      "release": "View release {tag}",
+      "openTicket": "Open ticket {ticketId}"
+    },
     "runStatus": {
       "never": "No runs",
       "polling": "Polling",

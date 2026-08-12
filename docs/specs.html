@@ -959,7 +959,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <table>
     <tr><th>Route</th><th>Page</th><th>Description</th></tr>
     <tr><td><code>/login</code></td><td>Login</td><td>Unauthenticated</td></tr>
-    <tr><td><code>/</code></td><td>Dashboard</td><td>Status, last run, quick actions</td></tr>
+    <tr><td><code>/</code></td><td>Dashboard</td><td>Status, last run, quick actions; repo status table linkifies path → <code>repoUrl</code>, last tag → <code>releaseUrl</code> (when present), open ticket ID → <code>openTicketUrl</code> (when present); external links open in a new tab</td></tr>
     <tr><td><code>/poll-runs</code></td><td>Poll runs</td><td>Paginated poll run history with per-run detail drawer</td></tr>
     <tr><td><code>/repos</code></td><td>Repos</td><td>CRUD monitored repos</td></tr>
     <tr><td><code>/integrations</code></td><td>Integrations</td><td>CRUD credentials (sources + ticket providers)</td></tr>

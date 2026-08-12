@@ -47,6 +47,32 @@ type RepoStatusTableProps = {
   isLoading: boolean;
 };
 
+const externalLinkClassName = "text-primary underline-offset-4 hover:underline";
+
+function ExternalTableLink({
+  ariaLabel,
+  children,
+  className,
+  href,
+}: {
+  ariaLabel: string;
+  children: React.ReactNode;
+  className?: string;
+  href: string;
+}): React.ReactElement {
+  return (
+    <a
+      aria-label={ariaLabel}
+      className={className}
+      href={href}
+      rel="noopener noreferrer"
+      target="_blank"
+    >
+      {children}
+    </a>
+  );
+}
+
 function ReposEmptyState(): React.ReactElement {
   const t = useTranslations("dashboard");
 
@@ -136,21 +162,51 @@ export function RepoStatusTable({
       },
       {
         accessorKey: "projectPath",
-        cell: ({ row }) => (
-          <span className="font-medium font-mono text-sm">
-            {row.original.projectPath}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const { projectPath, repoUrl } = row.original;
+
+          if (repoUrl) {
+            return (
+              <ExternalTableLink
+                ariaLabel={t("links.repo", { path: projectPath })}
+                className={`font-medium font-mono text-sm ${externalLinkClassName}`}
+                href={repoUrl}
+              >
+                {projectPath}
+              </ExternalTableLink>
+            );
+          }
+
+          return (
+            <span className="font-medium font-mono text-sm">{projectPath}</span>
+          );
+        },
         header: t("columns.path"),
         size: 220,
       },
       {
         accessorKey: "lastKnownTag",
-        cell: ({ row }) => (
-          <span className="text-muted-foreground">
-            {row.original.lastKnownTag ?? t("noTag")}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const { lastKnownTag, releaseUrl } = row.original;
+
+          if (!lastKnownTag) {
+            return <span className="text-muted-foreground">{t("noTag")}</span>;
+          }
+
+          if (releaseUrl) {
+            return (
+              <ExternalTableLink
+                ariaLabel={t("links.release", { tag: lastKnownTag })}
+                className={`text-muted-foreground ${externalLinkClassName}`}
+                href={releaseUrl}
+              >
+                {lastKnownTag}
+              </ExternalTableLink>
+            );
+          }
+
+          return <span className="text-muted-foreground">{lastKnownTag}</span>;
+        },
         header: t("columns.lastTag"),
         size: 120,
       },
@@ -185,6 +241,7 @@ export function RepoStatusTable({
         cell: ({ row }) => {
           const ticketId = row.original.openTicketExternalId;
           const ticketTag = row.original.openTicketTag;
+          const openTicketUrl = row.original.openTicketUrl;
 
           if (!ticketId) {
             return (
@@ -194,7 +251,17 @@ export function RepoStatusTable({
 
           return (
             <div className="flex flex-col gap-0.5">
-              <span className="font-mono text-sm">{ticketId}</span>
+              {openTicketUrl ? (
+                <ExternalTableLink
+                  ariaLabel={t("links.openTicket", { ticketId })}
+                  className={`font-mono text-sm ${externalLinkClassName}`}
+                  href={openTicketUrl}
+                >
+                  {ticketId}
+                </ExternalTableLink>
+              ) : (
+                <span className="font-mono text-sm">{ticketId}</span>
+              )}
               {ticketTag ? (
                 <span className="text-muted-foreground text-xs">
                   {ticketTag}

@@ -26,7 +26,10 @@ function createRepos(count: number): StatusRepo[] {
     lastPolledAt: "2026-08-07T10:05:00.000Z",
     openTicketExternalId: null,
     openTicketTag: null,
+    openTicketUrl: null,
     projectPath: `org/repo-${index}`,
+    releaseUrl: `https://github.com/org/repo-${index}/releases/tag/v1.${index}.0`,
+    repoUrl: `https://github.com/org/repo-${index}`,
     sourceKind: "github",
     ticketProjectId: "tp-1",
     ticketProjectName: "Jira — DEV",
@@ -172,6 +175,61 @@ describe("RepoStatusTable", () => {
       expect(screen.getByText("org/repo-0")).toBeTruthy();
     });
     expect(screen.queryByText("org/repo-25")).toBeNull();
+  });
+
+  it("renders outbound links when URLs are present", () => {
+    renderRepoStatusTable([
+      {
+        ...createRepos(1)[0],
+        openTicketExternalId: "TASK-42",
+        openTicketTag: "v1.0.0",
+        openTicketUrl: "https://phasical.example/task/task-42",
+      },
+    ]);
+
+    const repoLink = screen.getByRole("link", {
+      name: "Open repository org/repo-0",
+    });
+    expect(repoLink.getAttribute("href")).toBe("https://github.com/org/repo-0");
+    expect(repoLink.getAttribute("target")).toBe("_blank");
+    expect(repoLink.getAttribute("rel")).toBe("noopener noreferrer");
+
+    const releaseLink = screen.getByRole("link", {
+      name: "View release v1.0.0",
+    });
+    expect(releaseLink.getAttribute("href")).toBe(
+      "https://github.com/org/repo-0/releases/tag/v1.0.0",
+    );
+    expect(releaseLink.getAttribute("target")).toBe("_blank");
+    expect(releaseLink.getAttribute("rel")).toBe("noopener noreferrer");
+
+    const ticketLink = screen.getByRole("link", {
+      name: "Open ticket TASK-42",
+    });
+    expect(ticketLink.getAttribute("href")).toBe(
+      "https://phasical.example/task/task-42",
+    );
+    expect(ticketLink.getAttribute("target")).toBe("_blank");
+    expect(ticketLink.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  it("renders plain text when outbound URLs are absent", () => {
+    renderRepoStatusTable([
+      {
+        ...createRepos(1)[0],
+        lastKnownTag: null,
+        openTicketExternalId: "TASK-42",
+        openTicketTag: "v1.0.0",
+        openTicketUrl: null,
+        releaseUrl: null,
+        repoUrl: null,
+      },
+    ]);
+
+    expect(screen.getByText("org/repo-0")).toBeTruthy();
+    expect(screen.getAllByText("—")).toHaveLength(1);
+    expect(screen.getByText("TASK-42")).toBeTruthy();
+    expect(screen.queryByRole("link")).toBeNull();
   });
 });
 
