@@ -225,6 +225,16 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   </ol>
   <p>CI runs <code>npm run db:check</code> — fails if <code>db/schema.sql</code> drifts from applied migrations. Agents: see <code>.cursor/rules/11-db-migrations.mdc</code>.</p>
 
+  <h4>Data-loss-safe upgrades</h4>
+  <p>Production <code>app.db</code> files may already contain rows. Migrations must <strong>preserve existing data</strong> on upgrade — never emit a bare <code>DROP TABLE</code> on a table that already has rows unless the table is genuinely new.</p>
+  <p>Raw <code>sqldiff</code> output often uses <code>DROP TABLE …; CREATE TABLE …</code> when column order differs or <code>CHECK</code> constraints change. <code>scripts/migrate-diff.mjs</code> post-processes that output:</p>
+  <ul>
+    <li><strong>Tables referenced by foreign keys</strong> (e.g. <code>poll_runs</code> ← <code>poll_run_events</code>) — use <code>ALTER TABLE … ADD COLUMN</code> at the end; <code>DROP TABLE</code> rebuilds are unsafe with <code>modernc.org/sqlite</code> <code>_foreign_keys=on</code> (child rows CASCADE-delete even when migration SQL sets <code>PRAGMA foreign_keys=OFF</code>). Place new columns at the <strong>end</strong> of the table in <code>db/schema.sql</code> so <code>db:check</code> stays in sync.</li>
+    <li><strong>Constraint or type changes</strong> on existing columns → SQLite <strong>table rebuild</strong>: <code>CREATE &lt;t&gt;_new</code>, <code>INSERT INTO &lt;t&gt;_new SELECT … FROM &lt;t&gt;</code>, <code>DROP &lt;t&gt;</code>, <code>ALTER TABLE &lt;t&gt;_new RENAME TO &lt;t&gt;</code>, recreate indexes. Uses <code>PRAGMA foreign_keys=OFF</code> during rebuild when required.</li>
+    <li><strong>Ambiguous diffs</strong> (e.g. column rename vs add+drop) → generator fails loudly; resolve manually in <code>db/schema.sql</code> or split the change.</li>
+  </ul>
+  <p><code>internal/store/migrate_test.go</code> includes seed-data tests: rows in <code>app_settings</code>, <code>poll_runs</code>, and <code>poll_run_events</code> must survive <code>migrate up</code> from version 1.</p>
+
   <h3>4.0.1 <code>users</code> &amp; <code>sessions</code></h3>
   <p>Auth tables — written only by Go.</p>
   <table>

@@ -89,6 +89,100 @@ func TestMigrateUpCreatesSchema(t *testing.T) {
 	}
 }
 
+func TestMigrateUpPreservesSeedData(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "app.db")
+	migrationsURL := migrationSourceURL(t)
+
+	m, err := newMigrator(t, dbPath, migrationsURL)
+	if err != nil {
+		t.Fatalf("newMigrator: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = m.Close()
+	})
+
+	if err := m.Migrate(1); err != nil && err != migrate.ErrNoChange {
+		t.Fatalf("migrate to version 1: %v", err)
+	}
+
+	db, err := store.OpenPath(dbPath)
+	if err != nil {
+		t.Fatalf("open db at version 1: %v", err)
+	}
+
+	const (
+		settingsUpdatedAt = "2026-01-01T00:00:00Z"
+		pollRunID         = "run-seed-1"
+		pollEventID       = "evt-seed-1"
+	)
+	if _, err := db.Exec(
+		`INSERT INTO app_settings (id, poll_interval_minutes, updated_at) VALUES (1, 120, ?)`,
+		settingsUpdatedAt,
+	); err != nil {
+		t.Fatalf("seed app_settings: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO poll_runs (
+			id, started_at, status, repos_checked, tickets_created, tickets_superseded, errors_json
+		) VALUES (?, ?, 'success', 2, 1, 0, '[]')`,
+		pollRunID,
+		settingsUpdatedAt,
+	); err != nil {
+		t.Fatalf("seed poll_runs: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO poll_run_events (id, poll_run_id, action, created_at) VALUES (?, ?, 'baseline', ?)`,
+		pollEventID,
+		pollRunID,
+		settingsUpdatedAt,
+	); err != nil {
+		t.Fatalf("seed poll_run_events: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close seeded db: %v", err)
+	}
+
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		t.Fatalf("migrate up from version 1: %v", err)
+	}
+
+	db, err = store.OpenPath(dbPath)
+	if err != nil {
+		t.Fatalf("open migrated db: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	assertRowCount(t, db, "app_settings", 1)
+	assertRowCount(t, db, "poll_runs", 1)
+	assertRowCount(t, db, "poll_run_events", 1)
+
+	var pollInterval int
+	if err := db.QueryRow(
+		`SELECT poll_interval_minutes FROM app_settings WHERE id = 1`,
+	).Scan(&pollInterval); err != nil {
+		t.Fatalf("read app_settings: %v", err)
+	}
+	if pollInterval != 120 {
+		t.Fatalf("poll_interval_minutes = %d, want 120", pollInterval)
+	}
+
+	var triggerSource string
+	if err := db.QueryRow(
+		`SELECT trigger_source FROM poll_runs WHERE id = ?`,
+		pollRunID,
+	).Scan(&triggerSource); err != nil {
+		t.Fatalf("read poll_runs.trigger_source: %v", err)
+	}
+	if triggerSource != "scheduled" {
+		t.Fatalf("trigger_source = %q, want scheduled", triggerSource)
+	}
+}
+
 func TestOpenUsesAppDBPathEnv(t *testing.T) {
 	t.Setenv("APP_DB_PATH", filepath.Join(t.TempDir(), "env.db"))
 
@@ -136,6 +230,18 @@ func newMigrator(t *testing.T, dbPath, migrationsURL string) (*migrate.Migrate, 
 	}
 
 	return migrate.NewWithDatabaseInstance(migrationsURL, "sqlite", driver)
+}
+
+func assertRowCount(t *testing.T, db *sql.DB, table string, want int) {
+	t.Helper()
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil {
+		t.Fatalf("count %s: %v", table, err)
+	}
+	if count != want {
+		t.Fatalf("%s row count = %d, want %d", table, count, want)
+	}
 }
 
 func tableExists(t *testing.T, db *sql.DB, name string) bool {

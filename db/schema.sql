@@ -136,11 +136,11 @@ CREATE TABLE poll_runs (
   started_at TEXT NOT NULL,
   finished_at TEXT,
   status TEXT NOT NULL CHECK (status IN ('running', 'success', 'partial', 'failed')),
-  trigger_source TEXT NOT NULL DEFAULT 'scheduled' CHECK (trigger_source IN ('manual', 'scheduled')),
   repos_checked INTEGER NOT NULL DEFAULT 0,
   tickets_created INTEGER NOT NULL DEFAULT 0,
   tickets_superseded INTEGER NOT NULL DEFAULT 0,
-  errors_json TEXT NOT NULL DEFAULT '[]'
+  errors_json TEXT NOT NULL DEFAULT '[]',
+  trigger_source TEXT NOT NULL DEFAULT 'scheduled' CHECK (trigger_source IN ('manual', 'scheduled'))
 );
 
 CREATE TABLE poll_run_events (
