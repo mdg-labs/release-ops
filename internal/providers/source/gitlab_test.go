@@ -34,6 +34,7 @@ func TestGitLabSourceGetLatestRelease(t *testing.T) {
 		_, _ = w.Write([]byte(`{
 			"tag_name": "v2.1.0",
 			"name": "Release 2.1",
+			"description": "Release notes for 2.1",
 			"released_at": "` + publishedAt + `",
 			"_links": { "self": "https://gitlab.example/group/subgroup/repo/-/releases/v2.1.0" }
 		}`))
@@ -63,6 +64,12 @@ func TestGitLabSourceGetLatestRelease(t *testing.T) {
 	}
 	if !release.PublishedAt.Equal(expectedTime) {
 		t.Fatalf("publishedAt = %v, want %v", release.PublishedAt, expectedTime)
+	}
+	if release.Notes != "Release notes for 2.1" {
+		t.Fatalf("notes = %q", release.Notes)
+	}
+	if release.IsPrerelease {
+		t.Fatal("IsPrerelease = true, want false for GitLab release")
 	}
 }
 

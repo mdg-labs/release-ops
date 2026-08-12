@@ -2,16 +2,52 @@ package source
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
+)
+
+const (
+	githubWebBase   = "https://github.com"
+	codebergWebBase = "https://codeberg.org"
 )
 
 // Release is the normalized latest-release payload from a source provider.
 // See specs §6 Provider interfaces (Go).
 type Release struct {
-	Tag         string
-	Name        string
-	URL         string
-	PublishedAt time.Time
+	Tag          string
+	Name         string
+	URL          string
+	PublishedAt  time.Time
+	Notes        string
+	IsPrerelease bool
+}
+
+// BuildRepoWebURL returns the browser URL for a monitored repository.
+// integrationBaseURL is the source integration base_url (ignored for github and codeberg).
+func BuildRepoWebURL(sourceKind, integrationBaseURL, projectPath string) (string, error) {
+	projectPath = strings.TrimSpace(projectPath)
+	if projectPath == "" {
+		return "", fmt.Errorf("project path is required")
+	}
+	if !IsValidKind(sourceKind) {
+		return "", fmt.Errorf("%w: %q", ErrUnknownKind, sourceKind)
+	}
+
+	switch sourceKind {
+	case KindGitHub:
+		return githubWebBase + "/" + projectPath, nil
+	case KindCodeberg:
+		return codebergWebBase + "/" + projectPath, nil
+	case KindGitLab, KindGitea, KindForgejo:
+		base, err := normalizeBaseURL(integrationBaseURL)
+		if err != nil {
+			return "", fmt.Errorf("integration base_url: %w", err)
+		}
+		return base + "/" + projectPath, nil
+	default:
+		return "", fmt.Errorf("%w: %q", ErrUnknownKind, sourceKind)
+	}
 }
 
 // ReleaseOptions configures how GetLatestRelease resolves the newest release.

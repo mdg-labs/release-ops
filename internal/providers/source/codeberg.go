@@ -30,13 +30,7 @@ func NewCodebergSource(token string, client *http.Client) *CodebergSource {
 	}
 }
 
-type giteaReleaseResponse struct {
-	TagName     string `json:"tag_name"`
-	Name        string `json:"name"`
-	HTMLURL     string `json:"html_url"`
-	PublishedAt string `json:"published_at"`
-	Draft       bool   `json:"draft"`
-}
+type giteaReleaseResponse = giteaRelease
 
 // GetLatestRelease implements SourceProvider.
 func (c *CodebergSource) GetLatestRelease(ctx context.Context, projectPath string, opts ReleaseOptions) (*Release, error) {
@@ -87,17 +81,11 @@ func (c *CodebergSource) getLatestStableRelease(ctx context.Context, projectPath
 		return nil, fmt.Errorf("codeberg: decode response: %w", err)
 	}
 
-	publishedAt, err := parsePublishedAt(payload.PublishedAt)
+	release, err := releaseFromGitea(payload)
 	if err != nil {
 		return nil, fmt.Errorf("codeberg: %w", err)
 	}
-
-	return &Release{
-		Tag:         payload.TagName,
-		Name:        payload.Name,
-		URL:         payload.HTMLURL,
-		PublishedAt: publishedAt,
-	}, nil
+	return &release, nil
 }
 
 func (c *CodebergSource) getLatestReleaseIncludingPrereleases(ctx context.Context, projectPath string) (*Release, error) {
@@ -146,16 +134,11 @@ func (c *CodebergSource) getLatestReleaseIncludingPrereleases(ctx context.Contex
 		if payload.Draft {
 			continue
 		}
-		publishedAt, err := parsePublishedAt(payload.PublishedAt)
+		release, err := releaseFromGitea(payload)
 		if err != nil {
 			return nil, fmt.Errorf("codeberg: %w", err)
 		}
-		candidates = append(candidates, Release{
-			Tag:         payload.TagName,
-			Name:        payload.Name,
-			URL:         payload.HTMLURL,
-			PublishedAt: publishedAt,
-		})
+		candidates = append(candidates, release)
 	}
 
 	return pickNewestRelease(candidates), nil

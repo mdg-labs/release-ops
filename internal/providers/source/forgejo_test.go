@@ -35,7 +35,9 @@ func TestForgejoSourceGetLatestRelease(t *testing.T) {
 			"tag_name": "v1.4.2",
 			"name": "Core 1.4.2",
 			"html_url": "https://forgejo.example/lib/core/releases/tag/v1.4.2",
-			"published_at": "` + publishedAt + `"
+			"published_at": "` + publishedAt + `",
+			"body": "Forgejo notes",
+			"prerelease": false
 		}`))
 	}))
 	t.Cleanup(srv.Close)
@@ -57,6 +59,12 @@ func TestForgejoSourceGetLatestRelease(t *testing.T) {
 	}
 	if !release.PublishedAt.Equal(expectedTime) {
 		t.Fatalf("publishedAt = %v, want %v", release.PublishedAt, expectedTime)
+	}
+	if release.Notes != "Forgejo notes" {
+		t.Fatalf("notes = %q", release.Notes)
+	}
+	if release.IsPrerelease {
+		t.Fatal("IsPrerelease = true, want false")
 	}
 }
 

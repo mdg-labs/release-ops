@@ -28,11 +28,13 @@ func TestCodebergSourceGetLatestReleaseSuccess(t *testing.T) {
 		}
 		gotAuth = r.Header.Get("Authorization")
 
-		_ = json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"tag_name":     "v1.5.0",
 			"name":         "Widget 1.5",
 			"html_url":     "https://codeberg.org/acme/widget/releases/tag/v1.5.0",
 			"published_at": "2026-08-06T15:30:00Z",
+			"body":         "Codeberg notes",
+			"prerelease":   false,
 		})
 	}))
 	t.Cleanup(server.Close)
@@ -59,6 +61,12 @@ func TestCodebergSourceGetLatestReleaseSuccess(t *testing.T) {
 	wantPublished := time.Date(2026, 8, 6, 15, 30, 0, 0, time.UTC)
 	if !release.PublishedAt.Equal(wantPublished) {
 		t.Fatalf("publishedAt = %v, want %v", release.PublishedAt, wantPublished)
+	}
+	if release.Notes != "Codeberg notes" {
+		t.Fatalf("notes = %q", release.Notes)
+	}
+	if release.IsPrerelease {
+		t.Fatal("IsPrerelease = true, want false")
 	}
 }
 

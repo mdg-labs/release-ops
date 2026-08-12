@@ -93,17 +93,11 @@ func (g *GitLabSource) getLatestStableRelease(ctx context.Context, projectPath s
 		releaseURL = endpoint
 	}
 
-	publishedAt, err := time.Parse(time.RFC3339, payload.ReleasedAt)
+	release, err := releaseFromGitLab(payload, releaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("gitlab: parse released_at: %w", err)
+		return nil, fmt.Errorf("gitlab: %w", err)
 	}
-
-	return &Release{
-		Tag:         payload.TagName,
-		Name:        payload.Name,
-		URL:         releaseURL,
-		PublishedAt: publishedAt,
-	}, nil
+	return &release, nil
 }
 
 func (g *GitLabSource) getLatestReleaseIncludingPrereleases(ctx context.Context, projectPath string) (*Release, error) {
@@ -150,27 +144,23 @@ func (g *GitLabSource) getLatestReleaseIncludingPrereleases(ctx context.Context,
 
 	candidates := make([]Release, 0, len(payloads))
 	for _, payload := range payloads {
-		publishedAt, err := time.Parse(time.RFC3339, payload.ReleasedAt)
-		if err != nil {
-			return nil, fmt.Errorf("gitlab: parse released_at: %w", err)
-		}
 		releaseURL := payload.releaseURL()
-		candidates = append(candidates, Release{
-			Tag:         payload.TagName,
-			Name:        payload.Name,
-			URL:         releaseURL,
-			PublishedAt: publishedAt,
-		})
+		release, err := releaseFromGitLab(payload, releaseURL)
+		if err != nil {
+			return nil, fmt.Errorf("gitlab: %w", err)
+		}
+		candidates = append(candidates, release)
 	}
 
 	return pickNewestRelease(candidates), nil
 }
 
 type gitLabRelease struct {
-	TagName    string `json:"tag_name"`
-	Name       string `json:"name"`
-	ReleasedAt string `json:"released_at"`
-	Links      struct {
+	TagName     string `json:"tag_name"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	ReleasedAt  string `json:"released_at"`
+	Links       struct {
 		Self string `json:"self"`
 	} `json:"_links"`
 	Assets struct {
@@ -178,6 +168,21 @@ type gitLabRelease struct {
 			URL string `json:"url"`
 		} `json:"links"`
 	} `json:"assets"`
+}
+
+func releaseFromGitLab(payload gitLabRelease, releaseURL string) (Release, error) {
+	publishedAt, err := time.Parse(time.RFC3339, payload.ReleasedAt)
+	if err != nil {
+		return Release{}, fmt.Errorf("parse released_at: %w", err)
+	}
+	return Release{
+		Tag:          payload.TagName,
+		Name:         payload.Name,
+		URL:          releaseURL,
+		PublishedAt:  publishedAt,
+		Notes:        payload.Description,
+		IsPrerelease: false,
+	}, nil
 }
 
 func (r gitLabRelease) releaseURL() string {
