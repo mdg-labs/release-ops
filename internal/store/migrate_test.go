@@ -39,8 +39,8 @@ func TestMigrateUpCreatesSchema(t *testing.T) {
 	if dirty {
 		t.Fatal("migration version is dirty")
 	}
-	if version != 5 {
-		t.Fatalf("migration version = %d, want 5", version)
+	if version != 6 {
+		t.Fatalf("migration version = %d, want 6", version)
 	}
 
 	db, err := store.OpenPath(dbPath)
@@ -106,6 +106,16 @@ func TestMigrateUpCreatesSchema(t *testing.T) {
 	}
 	if includePrereleasesExists != 1 {
 		t.Fatal("monitored_repos.include_prereleases column missing after migrate up")
+	}
+
+	var contentTemplatesExists int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('ticket_projects') WHERE name = 'content_templates'`,
+	).Scan(&contentTemplatesExists); err != nil {
+		t.Fatalf("ticket_projects.content_templates column lookup: %v", err)
+	}
+	if contentTemplatesExists != 1 {
+		t.Fatal("ticket_projects.content_templates column missing after migrate up")
 	}
 }
 

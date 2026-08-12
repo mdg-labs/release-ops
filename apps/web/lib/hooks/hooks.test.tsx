@@ -241,6 +241,7 @@ describe("React Query hooks", () => {
         sourceKind: "github",
         projectPath: "org/repo",
         enabled: false,
+        includePrereleases: false,
         ticketProjectId: "tp-1",
         notificationTargetIds: [],
       },
