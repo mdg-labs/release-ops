@@ -27,7 +27,7 @@ RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server && \
 
 FROM node:22-bookworm-slim AS runtime
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends bash ca-certificates && \
+    apt-get install -y --no-install-recommends bash ca-certificates curl wget && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
