@@ -11,11 +11,11 @@ import (
 	"github.com/mdg-labs/release-ops/internal/providers/ticket/metadata"
 )
 
-func TestPhasicalMetadataWorkspacesProjectsStatuses(t *testing.T) {
+func TestKaneoMetadataWorkspacesProjectsStatuses(t *testing.T) {
 	t.Parallel()
 
 	const (
-		apiKey      = "phasical-key"
+		apiKey      = "kaneo-key"
 		workspaceID = "ws-1"
 		projectID   = "proj-1"
 	)
@@ -31,11 +31,9 @@ func TestPhasicalMetadataWorkspacesProjectsStatuses(t *testing.T) {
 				{"id": projectID, "name": "Release Ops", "slug": "release-ops"},
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/column/"+projectID:
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"columns": []map[string]string{
-					{"id": "col-1", "name": "Ready", "slug": "ready"},
-					{"id": "col-2", "name": "In Progress", "slug": "in-progress"},
-				},
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{"id": "col-1", "name": "Ready", "slug": "ready", "position": 0, "isFinal": false},
+				{"id": "col-2", "name": "In Progress", "slug": "in-progress", "position": 1, "isFinal": false},
 			})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -45,7 +43,7 @@ func TestPhasicalMetadataWorkspacesProjectsStatuses(t *testing.T) {
 
 	baseURL := server.URL
 	secret := []byte(`{"api_key":"` + apiKey + `"}`)
-	provider, err := metadata.NewProvider("phasical", &baseURL, secret, server.Client())
+	provider, err := metadata.NewProvider("kaneo", &baseURL, secret, server.Client())
 	if err != nil {
 		t.Fatalf("NewProvider: %v", err)
 	}
@@ -83,7 +81,7 @@ func TestPhasicalMetadataWorkspacesProjectsStatuses(t *testing.T) {
 	}
 }
 
-func TestPhasicalMetadataNormalizesAPIBase(t *testing.T) {
+func TestKaneoMetadataNormalizesAPIBase(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +95,7 @@ func TestPhasicalMetadataNormalizesAPIBase(t *testing.T) {
 
 	baseURL := server.URL
 	secret := []byte(`{"api_key":"key"}`)
-	provider, err := metadata.NewProvider("phasical", &baseURL, secret, server.Client())
+	provider, err := metadata.NewProvider("kaneo", &baseURL, secret, server.Client())
 	if err != nil {
 		t.Fatalf("NewProvider: %v", err)
 	}

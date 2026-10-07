@@ -6,7 +6,7 @@ export function buildIntegrationSecret(
   if (kind === "jira") {
     return JSON.stringify({ email: email ?? "", api_token: token });
   }
-  if (kind === "phasical" || kind === "linear") {
+  if (kind === "kaneo" || kind === "linear") {
     return JSON.stringify({ api_key: token });
   }
   return JSON.stringify({ token });

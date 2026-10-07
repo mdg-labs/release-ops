@@ -16,7 +16,7 @@ describe("integration kinds", () => {
       "gitea",
       "forgejo",
       "codeberg",
-      "phasical",
+      "kaneo",
       "jira",
       "linear",
     ]);
@@ -34,8 +34,8 @@ describe("integration kinds", () => {
     expect(kindIsJira("linear")).toBe(false);
   });
 
-  it("uses API key label for phasical and linear", () => {
-    expect(kindUsesApiKeyLabel("phasical")).toBe(true);
+  it("uses API key label for kaneo and linear", () => {
+    expect(kindUsesApiKeyLabel("kaneo")).toBe(true);
     expect(kindUsesApiKeyLabel("linear")).toBe(true);
     expect(kindUsesApiKeyLabel("github")).toBe(false);
   });
@@ -48,8 +48,8 @@ describe("buildIntegrationSecret", () => {
     );
   });
 
-  it("builds api_key payload for phasical and linear", () => {
-    expect(buildIntegrationSecret("phasical", "pk_test")).toBe(
+  it("builds api_key payload for kaneo and linear", () => {
+    expect(buildIntegrationSecret("kaneo", "pk_test")).toBe(
       JSON.stringify({ api_key: "pk_test" }),
     );
     expect(buildIntegrationSecret("linear", "lin_test")).toBe(

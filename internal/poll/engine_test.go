@@ -156,7 +156,7 @@ func (m *mockTicketProvider) UpdateTicket(_ context.Context, externalID, title, 
 	return nil
 }
 
-func (m *mockTicketProvider) TicketWebURL(externalID string) (string, error) {
+func (m *mockTicketProvider) TicketWebURL(_ ticket.TicketProject, externalID string) (string, error) {
 	if m.webURL != "" {
 		return m.webURL, nil
 	}
@@ -176,7 +176,7 @@ func testTicketProject(policy string) ticket.TicketProject {
 	return ticket.TicketProject{
 		ID:                "tp-1",
 		IntegrationID:     "int-1",
-		IntegrationKind:   ticket.IntegrationKindPhasical,
+		IntegrationKind:   ticket.IntegrationKindKaneo,
 		ExternalProjectID: "proj-1",
 		CreateConfig:      map[string]any{"status": "ready"},
 		StatusMapping: ticket.StatusMapping{

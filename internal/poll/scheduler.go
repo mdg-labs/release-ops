@@ -371,7 +371,7 @@ type tokenPayload struct {
 	Token string `json:"token"`
 }
 
-type phasicalPayload struct {
+type kaneoPayload struct {
 	APIKey string `json:"api_key"`
 }
 
@@ -459,15 +459,15 @@ func (s *Scheduler) resolveTicketProvider(ctx context.Context, integrationID str
 	}
 
 	switch integration.Kind {
-	case "phasical":
+	case "kaneo":
 		if integration.BaseURL == nil || *integration.BaseURL == "" {
-			return nil, errors.New("phasical integration requires base_url")
+			return nil, errors.New("kaneo integration requires base_url")
 		}
-		var creds phasicalPayload
+		var creds kaneoPayload
 		if err := json.Unmarshal(payload, &creds); err != nil {
-			return nil, fmt.Errorf("parse phasical payload: %w", err)
+			return nil, fmt.Errorf("parse kaneo payload: %w", err)
 		}
-		return ticket.NewPhasicalProvider(*integration.BaseURL, creds.APIKey, s.httpClient)
+		return ticket.NewKaneoProvider(*integration.BaseURL, creds.APIKey, s.httpClient)
 	case "jira":
 		if integration.BaseURL == nil || *integration.BaseURL == "" {
 			return nil, errors.New("jira integration requires base_url")

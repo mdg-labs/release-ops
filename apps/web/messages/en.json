@@ -204,6 +204,8 @@
     "name": "Name",
     "baseUrl": "Base URL",
     "baseUrlPlaceholder": "https://example.com",
+    "baseUrlPlaceholderKaneo": "https://cloud.kaneo.app",
+    "baseUrlHintKaneo": "Kaneo cloud: https://cloud.kaneo.app. For self-hosted Kaneo, use your instance URL (/api is added automatically).",
     "baseUrlDefault": "—",
     "jiraEmail": "Email",
     "jiraEmailEditHint": "Leave blank when not replacing Jira credentials.",
@@ -246,7 +248,7 @@
       "gitea": "Gitea",
       "forgejo": "Forgejo",
       "codeberg": "Codeberg",
-      "phasical": "Phasical",
+      "kaneo": "Kaneo",
       "jira": "Jira",
       "linear": "Linear"
     }
@@ -265,7 +267,7 @@
     "saveFailed": "Failed to save ticket project.",
     "integration": "Integration",
     "integrationPlaceholder": "Select integration",
-    "noTicketIntegrations": "Add a Phasical, Jira, or Linear integration first.",
+    "noTicketIntegrations": "Add a Kaneo, Jira, or Linear integration first.",
     "externalProjectId": "External project ID",
     "name": "Display name",
     "policy": "Open ticket policy",
@@ -304,11 +306,11 @@
       "skip_if_open": "Skip if open"
     },
     "kinds": {
-      "phasical": "Phasical",
+      "kaneo": "Kaneo",
       "jira": "Jira",
       "linear": "Linear"
     },
-    "phasical": {
+    "kaneo": {
       "workspace": "Workspace",
       "status": "Default status",
       "priority": "Default priority"

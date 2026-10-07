@@ -18,7 +18,7 @@ var validIntegrationKinds = map[string]struct{}{
 	"gitea":    {},
 	"forgejo":  {},
 	"codeberg": {},
-	"phasical": {},
+	"kaneo":    {},
 	"jira":     {},
 	"linear":   {},
 }
@@ -268,13 +268,13 @@ func integrationFromStore(item *store.Integration) integrationResponse {
 
 func validateIntegrationKind(kind string) error {
 	if _, ok := validIntegrationKinds[kind]; !ok {
-		return errors.New("kind must be one of: github, gitlab, gitea, forgejo, codeberg, phasical, jira, linear")
+		return errors.New("kind must be one of: github, gitlab, gitea, forgejo, codeberg, kaneo, jira, linear")
 	}
 	return nil
 }
 
 func validateBaseURL(kind string, baseURL *string) error {
-	requiresURL := kind == "gitlab" || kind == "gitea" || kind == "forgejo" || kind == "phasical" || kind == "jira"
+	requiresURL := kind == "gitlab" || kind == "gitea" || kind == "forgejo" || kind == "kaneo" || kind == "jira"
 	hasURL := baseURL != nil && *baseURL != ""
 	switch {
 	case requiresURL && !hasURL:

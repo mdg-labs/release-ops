@@ -12,7 +12,7 @@ import (
 
 var errStatusIntegrationUnavailable = errors.New("integration unavailable")
 
-type statusPhasicalPayload struct {
+type statusKaneoPayload struct {
 	APIKey string `json:"api_key"`
 }
 
@@ -27,15 +27,15 @@ type statusLinearPayload struct {
 
 func newTicketProvider(integration store.Integration, payload []byte, httpClient *http.Client) (ticket.TicketProvider, error) {
 	switch integration.Kind {
-	case "phasical":
+	case "kaneo":
 		if integration.BaseURL == nil || *integration.BaseURL == "" {
-			return nil, errors.New("phasical integration requires base_url")
+			return nil, errors.New("kaneo integration requires base_url")
 		}
-		var creds statusPhasicalPayload
+		var creds statusKaneoPayload
 		if err := json.Unmarshal(payload, &creds); err != nil {
-			return nil, fmt.Errorf("parse phasical payload: %w", err)
+			return nil, fmt.Errorf("parse kaneo payload: %w", err)
 		}
-		return ticket.NewPhasicalProvider(*integration.BaseURL, creds.APIKey, httpClient)
+		return ticket.NewKaneoProvider(*integration.BaseURL, creds.APIKey, httpClient)
 	case "jira":
 		if integration.BaseURL == nil || *integration.BaseURL == "" {
 			return nil, errors.New("jira integration requires base_url")

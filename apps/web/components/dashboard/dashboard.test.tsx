@@ -41,7 +41,8 @@ const sampleStatus = {
       enabled: true,
       openTicketExternalId: "TASK-42",
       openTicketTag: "v2.0.0",
-      openTicketUrl: "https://phasical.example/task/task-42",
+      openTicketUrl:
+        "https://cloud.kaneo.app/dashboard/workspace/ws-1/project/proj-1/task/task-42",
       lastKnownTag: "v2.0.0",
       lastReleasePublishedAt: "2026-08-06T12:00:00.000Z",
       lastPolledAt: "2026-08-07T10:05:00.000Z",

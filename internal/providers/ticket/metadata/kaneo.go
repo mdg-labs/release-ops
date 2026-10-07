@@ -11,29 +11,29 @@ import (
 	"strings"
 )
 
-type phasicalProvider struct {
+type kaneoProvider struct {
 	baseURL string
 	apiKey  string
 	client  *http.Client
 }
 
-func newPhasicalProvider(baseURL *string, secret []byte, client *http.Client) (*phasicalProvider, error) {
-	root, err := requireBaseURL(baseURL, "phasical")
+func newKaneoProvider(baseURL *string, secret []byte, client *http.Client) (*kaneoProvider, error) {
+	root, err := requireBaseURL(baseURL, "kaneo")
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := parsePhasicalSecret(secret)
+	apiKey, err := parseKaneoSecret(secret)
 	if err != nil {
 		return nil, err
 	}
-	return &phasicalProvider{
-		baseURL: normalizePhasicalAPIBase(root),
+	return &kaneoProvider{
+		baseURL: normalizeKaneoAPIBase(root),
 		apiKey:  apiKey,
 		client:  client,
 	}, nil
 }
 
-func (p *phasicalProvider) ListWorkspaces(ctx context.Context) ([]Item, error) {
+func (p *kaneoProvider) ListWorkspaces(ctx context.Context) ([]Item, error) {
 	var workspaces []struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
@@ -61,10 +61,10 @@ func (p *phasicalProvider) ListWorkspaces(ctx context.Context) ([]Item, error) {
 	return items, nil
 }
 
-func (p *phasicalProvider) ListProjects(ctx context.Context, workspaceID string) ([]Item, error) {
+func (p *kaneoProvider) ListProjects(ctx context.Context, workspaceID string) ([]Item, error) {
 	workspaceID = strings.TrimSpace(workspaceID)
 	if workspaceID == "" {
-		return nil, errors.New("phasical: workspaceId query parameter is required")
+		return nil, errors.New("kaneo: workspaceId query parameter is required")
 	}
 
 	path := "/project?workspaceId=" + url.QueryEscape(workspaceID)
@@ -99,10 +99,10 @@ func (p *phasicalProvider) ListProjects(ctx context.Context, workspaceID string)
 	return items, nil
 }
 
-func (p *phasicalProvider) ListStatuses(ctx context.Context, externalProjectID string) ([]Item, error) {
+func (p *kaneoProvider) ListStatuses(ctx context.Context, externalProjectID string) ([]Item, error) {
 	externalProjectID = strings.TrimSpace(externalProjectID)
 	if externalProjectID == "" {
-		return nil, errors.New("phasical: externalProjectId query parameter is required")
+		return nil, errors.New("kaneo: externalProjectId query parameter is required")
 	}
 
 	path := "/column/" + url.PathEscape(externalProjectID)
@@ -111,7 +111,7 @@ func (p *phasicalProvider) ListStatuses(ctx context.Context, externalProjectID s
 		return nil, err
 	}
 
-	columns, err := decodePhasicalColumns(body)
+	columns, err := decodeKaneoColumns(body)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +143,7 @@ func (p *phasicalProvider) ListStatuses(ctx context.Context, externalProjectID s
 	return items, nil
 }
 
-func (p *phasicalProvider) ListPriorities(_ context.Context, _ string) ([]Item, error) {
+func (p *kaneoProvider) ListPriorities(_ context.Context, _ string) ([]Item, error) {
 	return []Item{
 		{ID: "no-priority", Name: "No priority"},
 		{ID: "low", Name: "Low"},
@@ -153,61 +153,38 @@ func (p *phasicalProvider) ListPriorities(_ context.Context, _ string) ([]Item, 
 	}, nil
 }
 
-func (p *phasicalProvider) ListIssueTypes(context.Context, string) ([]Item, error) {
+func (p *kaneoProvider) ListIssueTypes(context.Context, string) ([]Item, error) {
 	return nil, ErrUnsupported
 }
 
-type phasicalColumn struct {
-	ID   string
-	Name string
-	Slug string
+// kaneoColumn is one entry of GET /column/{projectId} (Kaneo OpenAPI returns a plain array).
+type kaneoColumn struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
 }
 
-func decodePhasicalColumns(body []byte) ([]phasicalColumn, error) {
-	var direct []map[string]any
-	if err := json.Unmarshal(body, &direct); err == nil && len(direct) > 0 {
-		return mapPhasicalColumns(direct), nil
+func decodeKaneoColumns(body []byte) ([]kaneoColumn, error) {
+	var raw []kaneoColumn
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("decode kaneo columns: %w", err)
 	}
-
-	var wrapped struct {
-		Data struct {
-			Columns []map[string]any `json:"columns"`
-		} `json:"data"`
-		Columns []map[string]any `json:"columns"`
-	}
-	if err := json.Unmarshal(body, &wrapped); err != nil {
-		return nil, fmt.Errorf("decode phasical columns: %w", err)
-	}
-
-	switch {
-	case len(wrapped.Data.Columns) > 0:
-		return mapPhasicalColumns(wrapped.Data.Columns), nil
-	case len(wrapped.Columns) > 0:
-		return mapPhasicalColumns(wrapped.Columns), nil
-	default:
-		return nil, errors.New("phasical: columns response was empty")
-	}
-}
-
-func mapPhasicalColumns(raw []map[string]any) []phasicalColumn {
-	columns := make([]phasicalColumn, 0, len(raw))
-	for _, item := range raw {
-		column := phasicalColumn{
-			ID:   stringValue(item["id"]),
-			Name: stringValue(item["name"]),
-			Slug: stringValue(item["slug"]),
-		}
-		if column.Slug == "" {
-			column.Slug = stringValue(item["status"])
-		}
+	columns := make([]kaneoColumn, 0, len(raw))
+	for _, column := range raw {
+		column.ID = strings.TrimSpace(column.ID)
+		column.Name = strings.TrimSpace(column.Name)
+		column.Slug = strings.TrimSpace(column.Slug)
 		if column.Name != "" || column.Slug != "" || column.ID != "" {
 			columns = append(columns, column)
 		}
 	}
-	return columns
+	if len(columns) == 0 {
+		return nil, errors.New("kaneo: columns response was empty")
+	}
+	return columns, nil
 }
 
-func (p *phasicalProvider) doJSON(ctx context.Context, method, path string, reqBody any, respBody any) error {
+func (p *kaneoProvider) doJSON(ctx context.Context, method, path string, reqBody any, respBody any) error {
 	body, err := p.doRaw(ctx, method, path, reqBody)
 	if err != nil {
 		return err
@@ -221,7 +198,7 @@ func (p *phasicalProvider) doJSON(ctx context.Context, method, path string, reqB
 	return nil
 }
 
-func (p *phasicalProvider) doRaw(ctx context.Context, method, path string, reqBody any) ([]byte, error) {
+func (p *kaneoProvider) doRaw(ctx context.Context, method, path string, reqBody any) ([]byte, error) {
 	var bodyReader io.Reader
 	if reqBody != nil {
 		encoded, err := json.Marshal(reqBody)
@@ -257,15 +234,6 @@ func (p *phasicalProvider) doRaw(ctx context.Context, method, path string, reqBo
 		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(payload)))
 	}
 	return payload, nil
-}
-
-func stringValue(raw any) string {
-	switch value := raw.(type) {
-	case string:
-		return strings.TrimSpace(value)
-	default:
-		return ""
-	}
 }
 
 func slugify(value string) string {

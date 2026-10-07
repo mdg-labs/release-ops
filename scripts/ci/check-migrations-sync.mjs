@@ -72,17 +72,25 @@ try {
     process.exit(1);
   }
 
-  if (diff.stdout.trim()) {
-    if (schemasMatchSemantically(currentDb, desiredDb)) {
-      console.log(
-        "db:check OK — db/schema.sql matches migrations/ (semantic; column order differs only)"
-      );
-      process.exit(0);
-    }
+  // sqldiff ignores CHECK-constraint changes, so always run the semantic comparison
+  // (columns, CHECK / table-level constraints, indexes) — not only when sqldiff reports drift.
+  const semanticMatch = schemasMatchSemantically(currentDb, desiredDb);
+  if (!semanticMatch) {
     console.error("db:check FAIL — db/schema.sql and migrations/ are out of sync.");
     console.error("Edit db/schema.sql then run: make migrate-diff name=<change>");
-    console.error("--- sqldiff output ---\n", diff.stdout);
+    if (diff.stdout.trim()) {
+      console.error("--- sqldiff output ---\n", diff.stdout);
+    } else {
+      console.error("(sqldiff reports no column drift — CHECK / table-level constraints differ)");
+    }
     process.exit(1);
+  }
+
+  if (diff.stdout.trim()) {
+    console.log(
+      "db:check OK — db/schema.sql matches migrations/ (semantic; column order differs only)"
+    );
+    process.exit(0);
   }
 
   console.log("db:check OK — db/schema.sql matches migrations/");

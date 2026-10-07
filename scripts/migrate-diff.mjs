@@ -295,6 +295,19 @@ function listTableIndexes(db, table) {
   });
 }
 
+function listTableTriggers(db, table) {
+  const escaped = table.replace(/'/g, "''");
+  const out = runSqlite(
+    db,
+    `SELECT name, sql FROM sqlite_master WHERE type='trigger' AND tbl_name='${escaped}' AND sql IS NOT NULL ORDER BY name;`
+  ).trim();
+  if (!out) return [];
+  return out.split("\n").map((line) => {
+    const tab = line.indexOf("|");
+    return { name: line.slice(0, tab), sql: line.slice(tab + 1) };
+  });
+}
+
 function hasInboundForeignKeys(db, tableName) {
   const escaped = tableName.replace(/'/g, "''");
   const pattern = `%REFERENCES ${escaped}(%`;
@@ -343,7 +356,53 @@ function analyzeTableChange(fromDb, toDb, tableName) {
     }
     return { type: "add_columns", added, newSql, appendOnly: true };
   }
+  if (sameDefinitionsIgnoringOrder(oldBody.parts, newBody.parts)) {
+    return { type: "noop", reason: "column order differs only" };
+  }
   return { type: "ambiguous", reason: "DROP/CREATE pair with no detectable column changes" };
+}
+
+/** True when both table bodies hold the same column/constraint definitions (order ignored). */
+function sameDefinitionsIgnoringOrder(oldParts, newParts) {
+  const norm = (parts) =>
+    parts
+      .map(parseColumnDef)
+      .map((c) =>
+        c.kind === "column"
+          ? `${c.name} ${normalizeWhitespace(c.rawAfterName)}`
+          : normalizeWhitespace(c.raw)
+      )
+      .sort()
+      .join("|");
+  return norm(oldParts) === norm(newParts);
+}
+
+/**
+ * CHECK-constraint fingerprint of a CREATE TABLE (column-level CHECKs keyed by column name +
+ * table-level constraints), independent of column order. sqldiff ignores CHECK changes.
+ */
+function constraintFingerprint(createSql) {
+  const parts = parseCreateTableBody(createSql).parts.map(parseColumnDef);
+  const columnChecks = parts
+    .filter((c) => c.kind === "column" && c.check)
+    .map((c) => `${c.name}:${normalizeWhitespace(c.check)}`)
+    .sort();
+  const tableLevel = parts
+    .filter((c) => c.kind === "constraint")
+    .map((c) => normalizeWhitespace(c.raw))
+    .sort();
+  return [...columnChecks, "--", ...tableLevel].join("|");
+}
+
+/** Tables present in both DBs whose CHECK / table-level constraints differ. */
+export function listConstraintDriftTables(fromDb, toDb) {
+  const toTables = new Set(listUserTables(toDb));
+  return listUserTables(fromDb).filter(
+    (table) =>
+      toTables.has(table) &&
+      constraintFingerprint(getCreateSql(fromDb, table)) !==
+        constraintFingerprint(getCreateSql(toDb, table))
+  );
 }
 
 function emitAddColumns(tableName, addedCols) {
@@ -374,6 +433,12 @@ function emitTableRebuild(fromDb, toDb, tableName, newCreateSql) {
 
   const colList = commonCols.map(quoteIdent).join(", ");
   const indexes = listTableIndexes(toDb, tableName);
+  const triggers = listTableTriggers(toDb, tableName);
+  // SQLite generalized ALTER TABLE procedure (https://sqlite.org/lang_altertable.html#otheralter):
+  // FKs off, create new, copy, drop old, rename, recreate indexes/triggers, verify FKs, FKs on.
+  // PRAGMA foreign_keys is a no-op inside a transaction; if FKs are enforced there, DROP TABLE
+  // on a referenced parent fails (and the migration rolls back) instead of losing child rows.
+  const fkGuard = `${tableName}_fk_guard`;
   const lines = [
     "PRAGMA foreign_keys=OFF;",
     newSql,
@@ -381,6 +446,11 @@ function emitTableRebuild(fromDb, toDb, tableName, newCreateSql) {
     `DROP TABLE ${quoteIdent(tableName)};`,
     `ALTER TABLE ${quoteIdent(tmpTable)} RENAME TO ${quoteIdent(tableName)};`,
     ...indexes.map((idx) => idx.sql),
+    ...triggers.map((trg) => trg.sql),
+    // Abort (CHECK failure) when the rebuild left foreign key violations behind.
+    `CREATE TEMP TABLE ${quoteIdent(fkGuard)} (violations INTEGER NOT NULL CHECK (violations = 0));`,
+    `INSERT INTO ${quoteIdent(fkGuard)} (violations) SELECT COUNT(*) FROM pragma_foreign_key_check;`,
+    `DROP TABLE ${quoteIdent(fkGuard)};`,
     "PRAGMA foreign_keys=ON;",
   ];
   return lines;
@@ -394,6 +464,9 @@ function rewriteTableChange(fromDb, toDb, tableName, createSql) {
   if (analysis.type === "rebuild") {
     return emitTableRebuild(fromDb, toDb, tableName, createSql);
   }
+  if (analysis.type === "noop") {
+    return [];
+  }
   throw new Error(`migrate-diff: ambiguous rewrite for table ${tableName}: ${analysis.reason}`);
 }
 
@@ -402,9 +475,7 @@ function rewriteTableChange(fromDb, toDb, tableName, createSql) {
  */
 export function postProcessSqldiff(rawSql, fromDb, toDb) {
   const normalized = normalizeSqldiffOutput(rawSql);
-  if (!normalized.trim()) return normalized;
-
-  const statements = parseStatements(normalized);
+  const statements = normalized.trim() ? parseStatements(normalized) : [];
   const out = [];
   const skipIndexForTable = new Set();
 
@@ -429,6 +500,13 @@ export function postProcessSqldiff(rawSql, fromDb, toDb) {
     }
 
     out.push(statements[i]);
+  }
+
+  // sqldiff compares columns only; CHECK / table-level constraint changes need a rebuild.
+  for (const table of listConstraintDriftTables(fromDb, toDb)) {
+    if (skipIndexForTable.has(table)) continue;
+    out.push(...emitTableRebuild(fromDb, toDb, table, getCreateSql(toDb, table)));
+    skipIndexForTable.add(table);
   }
 
   return out.map((s) => (s.endsWith(";") ? s : `${s};`)).join("\n\n");
@@ -487,6 +565,12 @@ export function schemasMatchSemantically(dbA, dbB) {
   if (tablesA.join("|") !== tablesB.join("|")) return false;
   for (const table of tablesA) {
     if (tableColumnFingerprint(dbA, table) !== tableColumnFingerprint(dbB, table)) {
+      return false;
+    }
+    if (
+      constraintFingerprint(getCreateSql(dbA, table)) !==
+      constraintFingerprint(getCreateSql(dbB, table))
+    ) {
       return false;
     }
   }

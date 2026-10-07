@@ -203,20 +203,20 @@ func TestGetStatusReturnsReposWithTicketProjectName(t *testing.T) {
 		},
 		TicketProjects: &mockStatusTicketProjectRepo{
 			items: []store.TicketProject{
-				{ID: "tp-1", Name: "Phasical — Release Ops", IntegrationID: "int-phasical"},
+				{ID: "tp-1", Name: "Kaneo — Release Ops", IntegrationID: "int-kaneo", ExternalProjectID: "proj-1", CreateConfig: `{"workspaceId":"ws-1","status":"ready","priority":"medium"}`},
 			},
 		},
 		Integrations: &mockIntegrationRepo{
 			items: map[string]*store.Integration{
-				"int-phasical": {
-					ID:      "int-phasical",
-					Kind:    "phasical",
-					Name:    "Phasical",
-					BaseURL: strPtr("https://phasical.example/api"),
+				"int-kaneo": {
+					ID:      "int-kaneo",
+					Kind:    "kaneo",
+					Name:    "Kaneo",
+					BaseURL: strPtr("https://kaneo.example/api"),
 				},
 			},
 			secrets: map[string][]byte{
-				"int-phasical": []byte(`{"api_key":"test-key"}`),
+				"int-kaneo": []byte(`{"api_key":"test-key"}`),
 			},
 		},
 		Poll: &mockStatusPollRepo{},
@@ -264,8 +264,8 @@ func TestGetStatusReturnsReposWithTicketProjectName(t *testing.T) {
 	if len(resp.Repos) != 1 {
 		t.Fatalf("repos len = %d, want 1", len(resp.Repos))
 	}
-	if resp.Repos[0].TicketProjectName != "Phasical — Release Ops" {
-		t.Fatalf("ticketProjectName = %q, want %q", resp.Repos[0].TicketProjectName, "Phasical — Release Ops")
+	if resp.Repos[0].TicketProjectName != "Kaneo — Release Ops" {
+		t.Fatalf("ticketProjectName = %q, want %q", resp.Repos[0].TicketProjectName, "Kaneo — Release Ops")
 	}
 	if resp.Repos[0].RepoURL == nil || *resp.Repos[0].RepoURL != "https://github.com/FreshRSS/FreshRSS" {
 		t.Fatalf("repoUrl = %v, want https://github.com/FreshRSS/FreshRSS", resp.Repos[0].RepoURL)
@@ -273,7 +273,7 @@ func TestGetStatusReturnsReposWithTicketProjectName(t *testing.T) {
 	if resp.Repos[0].ReleaseURL == nil || *resp.Repos[0].ReleaseURL != "https://github.com/FreshRSS/FreshRSS/releases/tag/1.26.0" {
 		t.Fatalf("releaseUrl = %v", resp.Repos[0].ReleaseURL)
 	}
-	if resp.Repos[0].OpenTicketURL == nil || *resp.Repos[0].OpenTicketURL != "https://phasical.example/task/task-uuid" {
+	if resp.Repos[0].OpenTicketURL == nil || *resp.Repos[0].OpenTicketURL != "https://kaneo.example/dashboard/workspace/ws-1/project/proj-1/task/task-uuid" {
 		t.Fatalf("openTicketUrl = %v", resp.Repos[0].OpenTicketURL)
 	}
 	if resp.IsPolling {
@@ -311,20 +311,20 @@ func TestGetStatusOmitsReleaseAndTicketURLsWhenMissing(t *testing.T) {
 		},
 		TicketProjects: &mockStatusTicketProjectRepo{
 			items: []store.TicketProject{
-				{ID: "tp-1", Name: "Tickets", IntegrationID: "int-phasical"},
+				{ID: "tp-1", Name: "Tickets", IntegrationID: "int-kaneo"},
 			},
 		},
 		Integrations: &mockIntegrationRepo{
 			items: map[string]*store.Integration{
-				"int-phasical": {
-					ID:      "int-phasical",
-					Kind:    "phasical",
-					Name:    "Phasical",
-					BaseURL: strPtr("https://phasical.example/api"),
+				"int-kaneo": {
+					ID:      "int-kaneo",
+					Kind:    "kaneo",
+					Name:    "Kaneo",
+					BaseURL: strPtr("https://kaneo.example/api"),
 				},
 			},
 			secrets: map[string][]byte{
-				"int-phasical": []byte(`{"api_key":"test-key"}`),
+				"int-kaneo": []byte(`{"api_key":"test-key"}`),
 			},
 		},
 		Poll: &mockStatusPollRepo{},

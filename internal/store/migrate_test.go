@@ -39,8 +39,8 @@ func TestMigrateUpCreatesSchema(t *testing.T) {
 	if dirty {
 		t.Fatal("migration version is dirty")
 	}
-	if version != 6 {
-		t.Fatalf("migration version = %d, want 6", version)
+	if version != 7 {
+		t.Fatalf("migration version = %d, want 7", version)
 	}
 
 	db, err := store.OpenPath(dbPath)
@@ -211,6 +211,141 @@ func TestMigrateUpPreservesSeedData(t *testing.T) {
 	if triggerSource != "scheduled" {
 		t.Fatalf("trigger_source = %q, want scheduled", triggerSource)
 	}
+}
+
+const kaneoMigrationTS = "2026-10-07T00:00:00Z"
+
+// seedReferencedIntegrations migrates to version 6 and inserts integrations with referencing
+// ticket_projects / monitored_repos rows (parents of RESTRICT and NO ACTION foreign keys).
+func seedReferencedIntegrations(t *testing.T, dbPath, migrationsURL string) {
+	t.Helper()
+
+	m, err := newMigrator(t, dbPath, migrationsURL)
+	if err != nil {
+		t.Fatalf("newMigrator: %v", err)
+	}
+	if err := m.Migrate(6); err != nil && err != migrate.ErrNoChange {
+		t.Fatalf("migrate to version 6: %v", err)
+	}
+	_, _ = m.Close()
+
+	db, err := store.OpenPath(dbPath)
+	if err != nil {
+		t.Fatalf("open db at version 6: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	const ts = kaneoMigrationTS
+	seed := []string{
+		`INSERT INTO integrations (id, kind, name, base_url, encrypted_payload, created_at, updated_at)
+		 VALUES ('int-jira', 'jira', 'Jira', 'https://jira.example', 'x', '` + ts + `', '` + ts + `')`,
+		`INSERT INTO integrations (id, kind, name, base_url, encrypted_payload, created_at, updated_at)
+		 VALUES ('int-gitlab', 'gitlab', 'GitLab', 'https://gitlab.example', 'x', '` + ts + `', '` + ts + `')`,
+		`INSERT INTO ticket_projects (id, integration_id, external_project_id, name, create_config, status_mapping, created_at, updated_at)
+		 VALUES ('tp-1', 'int-jira', 'DEV', 'Dev', '{}', '{}', '` + ts + `', '` + ts + `')`,
+		`INSERT INTO monitored_repos (id, source_kind, source_integration_id, project_path, ticket_project_id, created_at, updated_at)
+		 VALUES ('repo-1', 'gitlab', 'int-gitlab', 'group/repo', 'tp-1', '` + ts + `', '` + ts + `')`,
+	}
+	for _, stmt := range seed {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed: %v\n%s", err, stmt)
+		}
+	}
+}
+
+// TestMigrateKaneoKindRebuildPreservesReferencingRows covers 000007 (integrations table rebuild
+// for the kind CHECK rename) on the production path (docker/entrypoint.sh / tools/migrate use a
+// plain sqlite:// URL): child rows survive, FKs stay intact, kaneo is accepted, phasical rejected.
+func TestMigrateKaneoKindRebuildPreservesReferencingRows(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "app.db")
+	migrationsURL := migrationSourceURL(t)
+	seedReferencedIntegrations(t, dbPath, migrationsURL)
+
+	m, err := migrate.New(migrationsURL, "sqlite://"+dbPath)
+	if err != nil {
+		t.Fatalf("migrate.New: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = m.Close()
+	})
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		t.Fatalf("migrate up to 7: %v", err)
+	}
+
+	db, err := store.OpenPath(dbPath)
+	if err != nil {
+		t.Fatalf("open migrated db: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	assertRowCount(t, db, "integrations", 2)
+	assertRowCount(t, db, "ticket_projects", 1)
+	assertRowCount(t, db, "monitored_repos", 1)
+
+	rows, err := db.Query(`PRAGMA foreign_key_check`)
+	if err != nil {
+		t.Fatalf("foreign_key_check: %v", err)
+	}
+	hasViolation := rows.Next()
+	_ = rows.Close()
+	if hasViolation {
+		t.Fatal("foreign key violations after migration 7")
+	}
+
+	if _, err := db.Exec(`DELETE FROM integrations WHERE id = 'int-jira'`); err == nil {
+		t.Fatal("deleting a referenced integration succeeded; ticket_projects FK lost after rebuild")
+	}
+	if _, err := db.Exec(
+		`INSERT INTO integrations (id, kind, name, base_url, encrypted_payload, created_at, updated_at)
+		 VALUES ('int-kaneo', 'kaneo', 'Kaneo', 'https://cloud.kaneo.app', 'x', ?, ?)`,
+		kaneoMigrationTS, kaneoMigrationTS,
+	); err != nil {
+		t.Fatalf("insert kaneo integration: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO integrations (id, kind, name, base_url, encrypted_payload, created_at, updated_at)
+		 VALUES ('int-phasical', 'phasical', 'Phasical', 'https://p.example', 'x', ?, ?)`,
+		kaneoMigrationTS, kaneoMigrationTS,
+	); err == nil {
+		t.Fatal("insert phasical integration succeeded; want CHECK failure")
+	}
+}
+
+// TestMigrateKaneoKindRebuildFailsSafeWithEnforcedForeignKeys: when the migration connection
+// enforces foreign keys (PRAGMA foreign_keys=OFF is a no-op inside golang-migrate's transaction),
+// rebuilding a referenced table must fail and roll back — never drop or cascade child rows.
+func TestMigrateKaneoKindRebuildFailsSafeWithEnforcedForeignKeys(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "app.db")
+	migrationsURL := migrationSourceURL(t)
+	seedReferencedIntegrations(t, dbPath, migrationsURL)
+
+	m, err := newMigrator(t, dbPath, migrationsURL)
+	if err != nil {
+		t.Fatalf("newMigrator: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = m.Close()
+	})
+	if err := m.Up(); err == nil {
+		t.Fatal("migrate up succeeded with enforced foreign keys; want rollback error")
+	}
+
+	db, err := store.OpenPath(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+	assertRowCount(t, db, "integrations", 2)
+	assertRowCount(t, db, "ticket_projects", 1)
+	assertRowCount(t, db, "monitored_repos", 1)
 }
 
 func TestOpenUsesAppDBPathEnv(t *testing.T) {

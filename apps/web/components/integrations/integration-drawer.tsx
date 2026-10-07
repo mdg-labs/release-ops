@@ -285,11 +285,18 @@ export function IntegrationDrawer({
                   id={baseUrlId}
                   name="baseUrl"
                   onChange={(event) => setBaseUrl(event.target.value)}
-                  placeholder={t("baseUrlPlaceholder")}
+                  placeholder={
+                    activeKind === "kaneo"
+                      ? t("baseUrlPlaceholderKaneo")
+                      : t("baseUrlPlaceholder")
+                  }
                   required
                   type="url"
                   value={baseUrl}
                 />
+                {activeKind === "kaneo" ? (
+                  <FieldDescription>{t("baseUrlHintKaneo")}</FieldDescription>
+                ) : null}
               </Field>
             ) : null}
 

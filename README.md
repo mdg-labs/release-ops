@@ -6,12 +6,12 @@
 [![Docker](https://img.shields.io/badge/Docker-single%20image-2496ED?logo=docker&logoColor=white)](https://github.com/mdg-labs/release-ops/pkgs/container/release-ops)
 [![GHCR](https://img.shields.io/badge/GHCR-ghcr.io%2Fmdg--labs%2Frelease--ops-333)](https://github.com/mdg-labs/release-ops/pkgs/container/release-ops)
 
-Self-hosted release monitor with a web UI. Poll releases on **GitHub**, **GitLab**, **Gitea**, **Forgejo**, and **Codeberg**; create tickets in **Phasical**, **Jira**, or **Linear** when a real new release ships. One Docker container — Go API, polling, auth, and Next.js UI in a single image.
+Self-hosted release monitor with a web UI. Poll releases on **GitHub**, **GitLab**, **Gitea**, **Forgejo**, and **Codeberg**; create tickets in **Kaneo**, **Jira**, or **Linear** when a real new release ships. One Docker container — Go API, polling, auth, and Next.js UI in a single image.
 
 ## Features
 
 - **Release polling** — scheduled and manual runs; baseline on first sight (no ticket spam)
-- **Ticket integrations** — Phasical, Jira, Linear with per-project status mapping and open-ticket policies
+- **Ticket integrations** — Kaneo, Jira, Linear with per-project status mapping and open-ticket policies
 - **Notifications** — Shoutrrr (Slack, ntfy, Discord, …) on create, error, and supersede events
 - **Admin UI** — repos, integrations, ticket projects, notifications, poll interval
 - **Single-container deploy** — SQLite on a volume; no Redis, Postgres, or multi-service Compose

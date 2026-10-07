@@ -44,6 +44,7 @@ import {
 import {
   createConfigFromRecord,
   defaultCreateConfig,
+  serializeCreateConfig,
 } from "@/lib/ticket-projects/create-config";
 import {
   contentTemplatesFromRecord,
@@ -109,21 +110,6 @@ type TabValidationError = {
   message: string;
 };
 
-function serializeCreateConfig(
-  kind: TicketIntegrationKind,
-  values: Record<string, unknown>,
-): Record<string, unknown> {
-  if (kind === "linear") {
-    const priority = Number(values.priority);
-    return {
-      priority: Number.isFinite(priority) ? priority : 2,
-      stateId: String(values.stateId ?? ""),
-    };
-  }
-
-  return createConfigFromRecord(kind, values);
-}
-
 function validateStatusMapping(values: StatusMappingValues): string | null {
   if (values.open.length === 0) {
     return "statusOpenRequired";
@@ -145,7 +131,7 @@ function validateCreateConfig(
   values: Record<string, unknown>,
 ): boolean {
   switch (kind) {
-    case "phasical":
+    case "kaneo":
       return (
         String(values.status ?? "").trim() !== "" &&
         String(values.priority ?? "").trim() !== ""
@@ -221,12 +207,12 @@ export function ProjectDrawer({
   const metadataEnabled = open && Boolean(activeIntegrationId);
   const workspacesQuery = useTicketMetadataWorkspaces(
     activeIntegrationId,
-    metadataEnabled && activeKind === "phasical",
+    metadataEnabled && activeKind === "kaneo",
   );
   const projectsQuery = useTicketMetadataProjects(
     activeIntegrationId,
-    activeKind === "phasical" ? workspaceId : null,
-    metadataEnabled && (activeKind !== "phasical" || Boolean(workspaceId)),
+    activeKind === "kaneo" ? workspaceId : null,
+    metadataEnabled && (activeKind !== "kaneo" || Boolean(workspaceId)),
   );
 
   useEffect(() => {
@@ -315,7 +301,7 @@ export function ProjectDrawer({
       nextInvalidTabs.add("general");
     }
 
-    if (mode === "create" && activeKind === "phasical" && !workspaceId.trim()) {
+    if (mode === "create" && activeKind === "kaneo" && !workspaceId.trim()) {
       nextInvalidTabs.add("general");
     }
 
@@ -349,7 +335,7 @@ export function ProjectDrawer({
       return { tab: "general", message: t("validation.integrationRequired") };
     }
 
-    if (mode === "create" && activeKind === "phasical" && !workspaceId.trim()) {
+    if (mode === "create" && activeKind === "kaneo" && !workspaceId.trim()) {
       return { tab: "general", message: t("validation.workspaceRequired") };
     }
 
@@ -394,7 +380,11 @@ export function ProjectDrawer({
 
     const payload = {
       name: trimmedName,
-      createConfig: serializeCreateConfig(activeKind, createConfig),
+      createConfig: serializeCreateConfig(
+        activeKind,
+        createConfig,
+        mode === "create" ? workspaceId : "",
+      ),
       statusMapping: statusMappingToRecord(statusMapping),
       contentTemplates,
       onOpenTicketPolicy: policy,
@@ -515,7 +505,7 @@ export function ProjectDrawer({
                   </Field>
                 )}
 
-                {activeKind === "phasical" && mode === "create" ? (
+                {activeKind === "kaneo" && mode === "create" ? (
                   <MetadataSelect
                     disabled={!metadataEnabled}
                     errorMessage={workspacesQuery.data?.message}
@@ -523,7 +513,7 @@ export function ProjectDrawer({
                     isError={workspacesQuery.isError}
                     isLoading={workspacesQuery.isLoading}
                     items={workspaces}
-                    label={t("phasical.workspace")}
+                    label={t("kaneo.workspace")}
                     name="workspaceId"
                     onValueChange={setWorkspaceId}
                     placeholder={t("metadata.workspacePlaceholder")}

@@ -4,7 +4,7 @@ export const INTEGRATION_KINDS = [
   "gitea",
   "forgejo",
   "codeberg",
-  "phasical",
+  "kaneo",
   "jira",
   "linear",
 ] as const;
@@ -15,7 +15,7 @@ const BASE_URL_KINDS = new Set<IntegrationKind>([
   "gitlab",
   "gitea",
   "forgejo",
-  "phasical",
+  "kaneo",
   "jira",
 ]);
 
@@ -24,14 +24,14 @@ export function kindRequiresBaseUrl(kind: string): boolean {
 }
 
 export function kindUsesApiKeyLabel(kind: string): boolean {
-  return kind === "phasical" || kind === "linear";
+  return kind === "kaneo" || kind === "linear";
 }
 
 export function kindIsJira(kind: string): boolean {
   return kind === "jira";
 }
 
-export const TICKET_INTEGRATION_KINDS = ["phasical", "jira", "linear"] as const;
+export const TICKET_INTEGRATION_KINDS = ["kaneo", "jira", "linear"] as const;
 
 export type TicketIntegrationKind = (typeof TICKET_INTEGRATION_KINDS)[number];
 

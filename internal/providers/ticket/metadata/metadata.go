@@ -43,8 +43,8 @@ func NewProvider(kind string, baseURL *string, secret []byte, client *http.Clien
 	}
 
 	switch kind {
-	case "phasical":
-		return newPhasicalProvider(baseURL, secret, client)
+	case "kaneo":
+		return newKaneoProvider(baseURL, secret, client)
 	case "jira":
 		return newJiraProvider(baseURL, secret, client)
 	case "linear":
@@ -54,7 +54,7 @@ func NewProvider(kind string, baseURL *string, secret []byte, client *http.Clien
 	}
 }
 
-func parsePhasicalSecret(secret []byte) (string, error) {
+func parseKaneoSecret(secret []byte) (string, error) {
 	var creds struct {
 		APIKey string `json:"api_key"`
 	}
@@ -63,7 +63,7 @@ func parsePhasicalSecret(secret []byte) (string, error) {
 	}
 	apiKey := strings.TrimSpace(creds.APIKey)
 	if apiKey == "" {
-		return "", errors.New("phasical: api_key is required in integration secret")
+		return "", errors.New("kaneo: api_key is required in integration secret")
 	}
 	return apiKey, nil
 }
@@ -120,8 +120,8 @@ func requireBaseURL(baseURL *string, kind string) (string, error) {
 	return raw, nil
 }
 
-// normalizePhasicalAPIBase appends /api when missing (Kaneo-compatible Phasical hosts).
-func normalizePhasicalAPIBase(raw string) string {
+// normalizeKaneoAPIBase appends /api when missing (Kaneo hosts).
+func normalizeKaneoAPIBase(raw string) string {
 	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
 	if raw == "" {
 		return raw

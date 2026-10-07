@@ -262,7 +262,7 @@ func (j *JiraProvider) UpdateTicket(ctx context.Context, externalID, title, desc
 }
 
 // TicketWebURL implements TicketProvider.
-func (j *JiraProvider) TicketWebURL(externalID string) (string, error) {
+func (j *JiraProvider) TicketWebURL(_ TicketProject, externalID string) (string, error) {
 	externalID = strings.TrimSpace(externalID)
 	if externalID == "" {
 		return "", errors.New("jira: external id is required")

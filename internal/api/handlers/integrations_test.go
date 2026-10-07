@@ -531,7 +531,7 @@ func TestCreateIntegrationAcceptsAllKinds(t *testing.T) {
 		{kind: "gitea", baseURL: "https://gitea.example"},
 		{kind: "forgejo", baseURL: "https://forgejo.example"},
 		{kind: "codeberg"},
-		{kind: "phasical", baseURL: "https://api.phasical.example"},
+		{kind: "kaneo", baseURL: "https://api.kaneo.example"},
 		{kind: "jira", baseURL: "https://jira.example"},
 		{kind: "linear"},
 	}

@@ -273,7 +273,7 @@ func (l *LinearProvider) UpdateTicket(ctx context.Context, externalID, title, de
 }
 
 // TicketWebURL implements TicketProvider.
-func (l *LinearProvider) TicketWebURL(externalID string) (string, error) {
+func (l *LinearProvider) TicketWebURL(_ TicketProject, externalID string) (string, error) {
 	externalID = strings.TrimSpace(externalID)
 	if externalID == "" {
 		return "", errors.New("linear: external id is required")

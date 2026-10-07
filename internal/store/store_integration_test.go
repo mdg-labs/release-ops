@@ -91,9 +91,9 @@ func TestTicketProjectCreateWithValidJSONConfigs(t *testing.T) {
 	ctx := context.Background()
 
 	integration, err := s.Integrations().Create(ctx, store.CreateIntegrationInput{
-		Kind:    "phasical",
-		Name:    "Phasical",
-		BaseURL: strPtr("https://api.phasical.example"),
+		Kind:    "kaneo",
+		Name:    "Kaneo",
+		BaseURL: strPtr("https://api.kaneo.example"),
 		Secret:  []byte(`{"api_key":"test"}`),
 	})
 	if err != nil {

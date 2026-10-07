@@ -183,7 +183,8 @@ describe("RepoStatusTable", () => {
         ...createRepos(1)[0],
         openTicketExternalId: "TASK-42",
         openTicketTag: "v1.0.0",
-        openTicketUrl: "https://phasical.example/task/task-42",
+        openTicketUrl:
+          "https://cloud.kaneo.app/dashboard/workspace/ws-1/project/proj-1/task/task-42",
       },
     ]);
 
@@ -207,7 +208,7 @@ describe("RepoStatusTable", () => {
       name: "Open ticket TASK-42",
     });
     expect(ticketLink.getAttribute("href")).toBe(
-      "https://phasical.example/task/task-42",
+      "https://cloud.kaneo.app/dashboard/workspace/ws-1/project/proj-1/task/task-42",
     );
     expect(ticketLink.getAttribute("target")).toBe("_blank");
     expect(ticketLink.getAttribute("rel")).toBe("noopener noreferrer");

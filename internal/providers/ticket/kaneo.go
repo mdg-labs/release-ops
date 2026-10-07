@@ -12,190 +12,221 @@ import (
 	"strings"
 )
 
-const phasicalUserAgent = "release-ops"
+const kaneoUserAgent = "release-ops"
 
-// PhasicalProvider creates and updates tickets via the Phasical (Kaneo-compatible) REST API.
-type PhasicalProvider struct {
+// kaneoMaxCommentLength is the Kaneo API limit for POST /comment/{taskId} content.
+const kaneoMaxCommentLength = 10000
+
+// truncateKaneoComment keeps comment content within the Kaneo API length limit.
+func truncateKaneoComment(body string) string {
+	runes := []rune(body)
+	if len(runes) <= kaneoMaxCommentLength {
+		return body
+	}
+	return string(runes[:kaneoMaxCommentLength-1]) + "…"
+}
+
+// KaneoProvider creates and updates tickets via the Kaneo REST API.
+type KaneoProvider struct {
 	baseURL string
 	apiKey  string
 	client  *http.Client
 }
 
-// NewPhasicalProvider returns a Phasical ticket provider.
-// baseURL is the integration API root (e.g. https://api.phasical.example).
-func NewPhasicalProvider(baseURL, apiKey string, client *http.Client) (*PhasicalProvider, error) {
+// NewKaneoProvider returns a Kaneo ticket provider.
+// baseURL is the Kaneo host or API root (e.g. https://cloud.kaneo.app); /api is appended when missing.
+func NewKaneoProvider(baseURL, apiKey string, client *http.Client) (*KaneoProvider, error) {
 	normalized, err := normalizeTicketBaseURL(baseURL)
 	if err != nil {
-		return nil, fmt.Errorf("phasical base_url: %w", err)
+		return nil, fmt.Errorf("kaneo base_url: %w", err)
 	}
-	normalized = normalizePhasicalAPIBase(normalized)
+	normalized = normalizeKaneoAPIBase(normalized)
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return &PhasicalProvider{
+	return &KaneoProvider{
 		baseURL: normalized,
 		apiKey:  strings.TrimSpace(apiKey),
 		client:  client,
 	}, nil
 }
 
-type phasicalCreateRequest struct {
+type kaneoCreateRequest struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	Priority    string `json:"priority"`
 	Status      string `json:"status"`
 }
 
-type phasicalTaskResponse struct {
+type kaneoTaskResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
 }
 
-type phasicalStatusRequest struct {
+type kaneoStatusRequest struct {
 	Status string `json:"status"`
 }
 
-type phasicalTitleRequest struct {
+type kaneoTitleRequest struct {
 	Title string `json:"title"`
 }
 
-type phasicalDescriptionRequest struct {
+type kaneoDescriptionRequest struct {
 	Description string `json:"description"`
 }
 
-type phasicalCommentRequest struct {
+type kaneoCommentRequest struct {
 	Content string `json:"content"`
 }
 
 // CreateTicket implements TicketProvider.
-func (p *PhasicalProvider) CreateTicket(ctx context.Context, input TicketInput) (string, error) {
+func (p *KaneoProvider) CreateTicket(ctx context.Context, input TicketInput) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 
 	projectID := strings.TrimSpace(input.Project.ExternalProjectID)
 	if projectID == "" {
-		return "", errors.New("phasical: external_project_id is required")
+		return "", errors.New("kaneo: external_project_id is required")
 	}
 
-	status, priority := phasicalCreateDefaults(input.Project.CreateConfig)
+	status, priority := kaneoCreateDefaults(input.Project.CreateConfig)
 
-	body := phasicalCreateRequest{
+	body := kaneoCreateRequest{
 		Title:       input.Title,
 		Description: input.Description,
 		Priority:    priority,
 		Status:      status,
 	}
 
-	var created phasicalTaskResponse
+	var created kaneoTaskResponse
 	if err := p.doJSON(ctx, http.MethodPost, "/task/"+url.PathEscape(projectID), body, &created); err != nil {
-		return "", fmt.Errorf("phasical: create task: %w", err)
+		return "", fmt.Errorf("kaneo: create task: %w", err)
 	}
 	if created.ID == "" {
-		return "", errors.New("phasical: create task: empty id in response")
+		return "", errors.New("kaneo: create task: empty id in response")
 	}
 	return created.ID, nil
 }
 
 // GetTicketStatus implements TicketProvider.
-func (p *PhasicalProvider) GetTicketStatus(ctx context.Context, externalID string) (string, error) {
+func (p *KaneoProvider) GetTicketStatus(ctx context.Context, externalID string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 	externalID = strings.TrimSpace(externalID)
 	if externalID == "" {
-		return "", errors.New("phasical: external id is required")
+		return "", errors.New("kaneo: external id is required")
 	}
 
-	var task phasicalTaskResponse
+	var task kaneoTaskResponse
 	if err := p.doJSON(ctx, http.MethodGet, "/task/"+url.PathEscape(externalID), nil, &task); err != nil {
-		return "", fmt.Errorf("phasical: get task: %w", err)
+		return "", fmt.Errorf("kaneo: get task: %w", err)
 	}
 	if task.Status == "" {
-		return "", errors.New("phasical: get task: empty status in response")
+		return "", errors.New("kaneo: get task: empty status in response")
 	}
 	return task.Status, nil
 }
 
 // UpdateTicketStatus implements TicketProvider.
-func (p *PhasicalProvider) UpdateTicketStatus(ctx context.Context, externalID, status string) error {
+func (p *KaneoProvider) UpdateTicketStatus(ctx context.Context, externalID, status string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	externalID = strings.TrimSpace(externalID)
 	if externalID == "" {
-		return errors.New("phasical: external id is required")
+		return errors.New("kaneo: external id is required")
 	}
 	status = strings.TrimSpace(status)
 	if status == "" {
-		return errors.New("phasical: status is required")
+		return errors.New("kaneo: status is required")
 	}
 
 	path := "/task/status/" + url.PathEscape(externalID)
-	if err := p.doJSON(ctx, http.MethodPut, path, phasicalStatusRequest{Status: status}, nil); err != nil {
-		return fmt.Errorf("phasical: update status: %w", err)
+	if err := p.doJSON(ctx, http.MethodPut, path, kaneoStatusRequest{Status: status}, nil); err != nil {
+		return fmt.Errorf("kaneo: update status: %w", err)
 	}
 	return nil
 }
 
 // AddTicketComment implements TicketProvider.
-func (p *PhasicalProvider) AddTicketComment(ctx context.Context, externalID, body string) error {
+func (p *KaneoProvider) AddTicketComment(ctx context.Context, externalID, body string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	externalID = strings.TrimSpace(externalID)
 	if externalID == "" {
-		return errors.New("phasical: external id is required")
+		return errors.New("kaneo: external id is required")
 	}
 	body = strings.TrimSpace(body)
 	if body == "" {
-		return errors.New("phasical: comment body is required")
+		return errors.New("kaneo: comment body is required")
 	}
 
 	path := "/comment/" + url.PathEscape(externalID)
-	if err := p.doJSON(ctx, http.MethodPost, path, phasicalCommentRequest{Content: body}, nil); err != nil {
-		return fmt.Errorf("phasical: add comment: %w", err)
+	if err := p.doJSON(ctx, http.MethodPost, path, kaneoCommentRequest{Content: truncateKaneoComment(body)}, nil); err != nil {
+		return fmt.Errorf("kaneo: add comment: %w", err)
 	}
 	return nil
 }
 
 // UpdateTicket implements TicketProvider.
-func (p *PhasicalProvider) UpdateTicket(ctx context.Context, externalID, title, description string) error {
+func (p *KaneoProvider) UpdateTicket(ctx context.Context, externalID, title, description string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	externalID = strings.TrimSpace(externalID)
 	if externalID == "" {
-		return errors.New("phasical: external id is required")
+		return errors.New("kaneo: external id is required")
 	}
 	title = strings.TrimSpace(title)
 	if title == "" {
-		return errors.New("phasical: title is required")
+		return errors.New("kaneo: title is required")
 	}
 
 	titlePath := "/task/title/" + url.PathEscape(externalID)
-	if err := p.doJSON(ctx, http.MethodPut, titlePath, phasicalTitleRequest{Title: title}, nil); err != nil {
-		return fmt.Errorf("phasical: update title: %w", err)
+	if err := p.doJSON(ctx, http.MethodPut, titlePath, kaneoTitleRequest{Title: title}, nil); err != nil {
+		return fmt.Errorf("kaneo: update title: %w", err)
 	}
 
 	descPath := "/task/description/" + url.PathEscape(externalID)
-	if err := p.doJSON(ctx, http.MethodPut, descPath, phasicalDescriptionRequest{Description: description}, nil); err != nil {
-		return fmt.Errorf("phasical: update description: %w", err)
+	if err := p.doJSON(ctx, http.MethodPut, descPath, kaneoDescriptionRequest{Description: description}, nil); err != nil {
+		return fmt.Errorf("kaneo: update description: %w", err)
 	}
 	return nil
 }
 
+// KaneoCreateConfigWorkspaceID is the ticket_projects.create_config key holding the
+// Kaneo workspace ID used to build task web links (specs §6.4).
+const KaneoCreateConfigWorkspaceID = "workspaceId"
+
 // TicketWebURL implements TicketProvider.
-func (p *PhasicalProvider) TicketWebURL(externalID string) (string, error) {
+// Kaneo task pages live at {web}/dashboard/workspace/{workspaceId}/project/{projectId}/task/{taskId};
+// the workspace ID comes from create_config.workspaceId and the project from external_project_id.
+func (p *KaneoProvider) TicketWebURL(project TicketProject, externalID string) (string, error) {
 	externalID = strings.TrimSpace(externalID)
 	if externalID == "" {
-		return "", errors.New("phasical: external id is required")
+		return "", errors.New("kaneo: external id is required")
 	}
-	webBase := phasicalWebBase(p.baseURL)
-	return webBase + "/task/" + url.PathEscape(externalID), nil
+	projectID := strings.TrimSpace(project.ExternalProjectID)
+	if projectID == "" {
+		return "", errors.New("kaneo: external_project_id is required for ticket web url")
+	}
+	workspaceID := ""
+	if raw, ok := project.CreateConfig[KaneoCreateConfigWorkspaceID].(string); ok {
+		workspaceID = strings.TrimSpace(raw)
+	}
+	if workspaceID == "" {
+		return "", errors.New("kaneo: create_config.workspaceId is required for ticket web url")
+	}
+	webBase := kaneoWebBase(p.baseURL)
+	return webBase + "/dashboard/workspace/" + url.PathEscape(workspaceID) +
+		"/project/" + url.PathEscape(projectID) +
+		"/task/" + url.PathEscape(externalID), nil
 }
 
-func phasicalWebBase(apiBase string) string {
+func kaneoWebBase(apiBase string) string {
 	base := strings.TrimRight(strings.TrimSpace(apiBase), "/")
 	if strings.HasSuffix(base, "/api") {
 		return strings.TrimSuffix(base, "/api")
@@ -203,7 +234,7 @@ func phasicalWebBase(apiBase string) string {
 	return base
 }
 
-func phasicalCreateDefaults(createConfig map[string]any) (status, priority string) {
+func kaneoCreateDefaults(createConfig map[string]any) (status, priority string) {
 	status = "ready"
 	priority = "medium"
 
@@ -219,7 +250,7 @@ func phasicalCreateDefaults(createConfig map[string]any) (status, priority strin
 	return status, priority
 }
 
-func (p *PhasicalProvider) doJSON(ctx context.Context, method, path string, reqBody any, respBody any) error {
+func (p *KaneoProvider) doJSON(ctx context.Context, method, path string, reqBody any, respBody any) error {
 	var bodyReader io.Reader
 	if reqBody != nil {
 		encoded, err := json.Marshal(reqBody)
@@ -236,7 +267,7 @@ func (p *PhasicalProvider) doJSON(ctx context.Context, method, path string, reqB
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", phasicalUserAgent)
+	req.Header.Set("User-Agent", kaneoUserAgent)
 	if p.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
@@ -281,8 +312,8 @@ func normalizeTicketBaseURL(raw string) (string, error) {
 	return strings.TrimRight(raw, "/"), nil
 }
 
-// normalizePhasicalAPIBase appends /api when missing (Kaneo-compatible Phasical hosts).
-func normalizePhasicalAPIBase(raw string) string {
+// normalizeKaneoAPIBase appends /api when missing (Kaneo hosts).
+func normalizeKaneoAPIBase(raw string) string {
 	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
 	if raw == "" {
 		return raw

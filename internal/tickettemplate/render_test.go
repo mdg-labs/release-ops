@@ -43,7 +43,7 @@ func TestRenderAllMVPVariables(t *testing.T) {
 		Description: `{{ .Repo.SourceKind }} {{ .Release.Tag }}`,
 		SupersedeComment: `{{ .Supersede.NewTicketURL }}`,
 	}
-	renderer := tickettemplate.NewRenderer("phasical", tmpl)
+	renderer := tickettemplate.NewRenderer("kaneo", tmpl)
 
 	title, err := renderer.RenderTitle(ctx)
 	if err != nil {
@@ -80,7 +80,7 @@ func TestDefaultTemplatesWhenKeysEmpty(t *testing.T) {
 	t.Parallel()
 
 	ctx := testContext()
-	renderer := tickettemplate.NewRenderer("phasical", tickettemplate.DefaultContentTemplates())
+	renderer := tickettemplate.NewRenderer("kaneo", tickettemplate.DefaultContentTemplates())
 
 	title, err := renderer.RenderTitle(ctx)
 	if err != nil {
@@ -152,7 +152,7 @@ func TestJiraDefaultsUsePlainText(t *testing.T) {
 func TestValidateRejectsInvalidTemplate(t *testing.T) {
 	t.Parallel()
 
-	renderer := tickettemplate.NewRenderer("phasical", tickettemplate.ContentTemplates{
+	renderer := tickettemplate.NewRenderer("kaneo", tickettemplate.ContentTemplates{
 		Title: "{{ .Release.Tag ",
 	})
 	if err := renderer.Validate(); err == nil {
@@ -163,7 +163,7 @@ func TestValidateRejectsInvalidTemplate(t *testing.T) {
 func TestRenderInvalidTemplateReturnsError(t *testing.T) {
 	t.Parallel()
 
-	renderer := tickettemplate.NewRenderer("phasical", tickettemplate.ContentTemplates{
+	renderer := tickettemplate.NewRenderer("kaneo", tickettemplate.ContentTemplates{
 		Title: "{{ .Release.Tag ",
 	})
 	_, err := renderer.RenderTitle(testContext())
@@ -175,7 +175,7 @@ func TestRenderInvalidTemplateReturnsError(t *testing.T) {
 func TestTemplateHelperFunctions(t *testing.T) {
 	t.Parallel()
 
-	renderer := tickettemplate.NewRenderer("phasical", tickettemplate.ContentTemplates{
+	renderer := tickettemplate.NewRenderer("kaneo", tickettemplate.ContentTemplates{
 		Title: `{{ formatRFC3339 .Release.PublishedAt }}|{{ formatDate .Release.PublishedAt }}|{{ yesNo .Release.IsPrerelease }}`,
 	})
 	title, err := renderer.RenderTitle(testContext())

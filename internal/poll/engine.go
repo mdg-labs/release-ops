@@ -320,7 +320,7 @@ func (e *Engine) applySupersede(
 		return e.recordError(ctx, repo, fmt.Errorf("create ticket after supersede: %w", err))
 	}
 
-	newTicketURL, err := provider.TicketWebURL(externalID)
+	newTicketURL, err := provider.TicketWebURL(project, externalID)
 	if err != nil {
 		return e.recordError(ctx, repo, fmt.Errorf("resolve new ticket web url: %w", err))
 	}

@@ -12,12 +12,12 @@ import (
 	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 )
 
-func TestPhasicalProviderCreateTicket(t *testing.T) {
+func TestKaneoProviderCreateTicket(t *testing.T) {
 	t.Parallel()
 
 	const (
 		projectID = "proj-123"
-		apiKey    = "phasical-test-key"
+		apiKey    = "kaneo-test-key"
 	)
 
 	var gotAuth string
@@ -38,9 +38,9 @@ func TestPhasicalProviderCreateTicket(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	provider, err := ticket.NewPhasicalProvider(server.URL, apiKey, server.Client())
+	provider, err := ticket.NewKaneoProvider(server.URL, apiKey, server.Client())
 	if err != nil {
-		t.Fatalf("NewPhasicalProvider: %v", err)
+		t.Fatalf("NewKaneoProvider: %v", err)
 	}
 
 	externalID, err := provider.CreateTicket(context.Background(), ticket.TicketInput{
@@ -74,7 +74,7 @@ func TestPhasicalProviderCreateTicket(t *testing.T) {
 	}
 }
 
-func TestPhasicalProviderGetTicketStatus(t *testing.T) {
+func TestKaneoProviderGetTicketStatus(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -88,9 +88,9 @@ func TestPhasicalProviderGetTicketStatus(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	provider, err := ticket.NewPhasicalProvider(server.URL, "key", server.Client())
+	provider, err := ticket.NewKaneoProvider(server.URL, "key", server.Client())
 	if err != nil {
-		t.Fatalf("NewPhasicalProvider: %v", err)
+		t.Fatalf("NewKaneoProvider: %v", err)
 	}
 
 	status, err := provider.GetTicketStatus(context.Background(), "task-abc")
@@ -102,10 +102,10 @@ func TestPhasicalProviderGetTicketStatus(t *testing.T) {
 	}
 }
 
-func TestPhasicalProviderUpdateTicketStatusViaMapping(t *testing.T) {
+func TestKaneoProviderUpdateTicketStatusViaMapping(t *testing.T) {
 	t.Parallel()
 
-	mapping := phasicalMapping()
+	mapping := kaneoMapping()
 	targetStatus := mapping.Superseded
 
 	var gotStatus string
@@ -120,9 +120,9 @@ func TestPhasicalProviderUpdateTicketStatusViaMapping(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	provider, err := ticket.NewPhasicalProvider(server.URL, "key", server.Client())
+	provider, err := ticket.NewKaneoProvider(server.URL, "key", server.Client())
 	if err != nil {
-		t.Fatalf("NewPhasicalProvider: %v", err)
+		t.Fatalf("NewKaneoProvider: %v", err)
 	}
 
 	if err := provider.UpdateTicketStatus(context.Background(), "task-abc", targetStatus); err != nil {
@@ -133,7 +133,7 @@ func TestPhasicalProviderUpdateTicketStatusViaMapping(t *testing.T) {
 	}
 }
 
-func TestPhasicalProviderAddTicketComment(t *testing.T) {
+func TestKaneoProviderAddTicketComment(t *testing.T) {
 	t.Parallel()
 
 	const commentBody = "Superseded: v1.0.0 → v2.0.0\nhttps://example.com/releases/v2.0.0"
@@ -150,9 +150,9 @@ func TestPhasicalProviderAddTicketComment(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	provider, err := ticket.NewPhasicalProvider(server.URL, "key", server.Client())
+	provider, err := ticket.NewKaneoProvider(server.URL, "key", server.Client())
 	if err != nil {
-		t.Fatalf("NewPhasicalProvider: %v", err)
+		t.Fatalf("NewKaneoProvider: %v", err)
 	}
 
 	if err := provider.AddTicketComment(context.Background(), "task-abc", commentBody); err != nil {
@@ -166,7 +166,33 @@ func TestPhasicalProviderAddTicketComment(t *testing.T) {
 	}
 }
 
-func TestPhasicalProviderUpdateTicket(t *testing.T) {
+func TestKaneoProviderAddTicketCommentTruncatesToAPILimit(t *testing.T) {
+	t.Parallel()
+
+	var gotContent string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotContent = body["content"]
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	provider, err := ticket.NewKaneoProvider(server.URL, "key", server.Client())
+	if err != nil {
+		t.Fatalf("NewKaneoProvider: %v", err)
+	}
+
+	long := strings.Repeat("é", 12000)
+	if err := provider.AddTicketComment(context.Background(), "task-abc", long); err != nil {
+		t.Fatalf("AddTicketComment: %v", err)
+	}
+	if n := len([]rune(gotContent)); n != 10000 {
+		t.Fatalf("comment length = %d runes, want 10000", n)
+	}
+}
+
+func TestKaneoProviderUpdateTicket(t *testing.T) {
 	t.Parallel()
 
 	var gotTitle, gotDescription string
@@ -188,9 +214,9 @@ func TestPhasicalProviderUpdateTicket(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	provider, err := ticket.NewPhasicalProvider(server.URL, "key", server.Client())
+	provider, err := ticket.NewKaneoProvider(server.URL, "key", server.Client())
 	if err != nil {
-		t.Fatalf("NewPhasicalProvider: %v", err)
+		t.Fatalf("NewKaneoProvider: %v", err)
 	}
 
 	if err := provider.UpdateTicket(context.Background(), "task-abc", "Release: github acme/widget v2.0.0", "updated body"); err != nil {
@@ -204,7 +230,7 @@ func TestPhasicalProviderUpdateTicket(t *testing.T) {
 	}
 }
 
-func TestPhasicalProviderAppendsAPIBaseForHostOnlyURL(t *testing.T) {
+func TestKaneoProviderAppendsAPIBaseForHostOnlyURL(t *testing.T) {
 	t.Parallel()
 
 	const projectID = "proj-123"
@@ -228,9 +254,9 @@ func TestPhasicalProviderAppendsAPIBaseForHostOnlyURL(t *testing.T) {
 		target: server.URL,
 	}
 
-	provider, err := ticket.NewPhasicalProvider("https://example.com", "key", client)
+	provider, err := ticket.NewKaneoProvider("https://example.com", "key", client)
 	if err != nil {
-		t.Fatalf("NewPhasicalProvider: %v", err)
+		t.Fatalf("NewKaneoProvider: %v", err)
 	}
 
 	_, err = provider.CreateTicket(context.Background(), ticket.TicketInput{
@@ -268,10 +294,10 @@ func (rt *rewriteHostTransport) RoundTrip(req *http.Request) (*http.Response, er
 	return rt.base.RoundTrip(req)
 }
 
-func TestPhasicalProviderRequiresBaseURL(t *testing.T) {
+func TestKaneoProviderRequiresBaseURL(t *testing.T) {
 	t.Parallel()
 
-	_, err := ticket.NewPhasicalProvider("", "key", nil)
+	_, err := ticket.NewKaneoProvider("", "key", nil)
 	if err == nil {
 		t.Fatal("expected error for empty base_url")
 	}
@@ -280,7 +306,7 @@ func TestPhasicalProviderRequiresBaseURL(t *testing.T) {
 	}
 }
 
-func TestPhasicalProviderUnauthorized(t *testing.T) {
+func TestKaneoProviderUnauthorized(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -289,9 +315,9 @@ func TestPhasicalProviderUnauthorized(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	provider, err := ticket.NewPhasicalProvider(server.URL, "bad-key", server.Client())
+	provider, err := ticket.NewKaneoProvider(server.URL, "bad-key", server.Client())
 	if err != nil {
-		t.Fatalf("NewPhasicalProvider: %v", err)
+		t.Fatalf("NewKaneoProvider: %v", err)
 	}
 
 	_, err = provider.CreateTicket(context.Background(), ticket.TicketInput{

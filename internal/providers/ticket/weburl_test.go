@@ -6,20 +6,42 @@ import (
 	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 )
 
-func TestPhasicalTicketWebURL(t *testing.T) {
+func TestKaneoTicketWebURL(t *testing.T) {
 	t.Parallel()
 
-	provider, err := ticket.NewPhasicalProvider("https://api.phasical.example", "key", nil)
-	if err != nil {
-		t.Fatalf("NewPhasicalProvider: %v", err)
+	project := ticket.TicketProject{
+		ExternalProjectID: "proj-1",
+		CreateConfig:      map[string]any{"workspaceId": "ws-1", "status": "ready"},
 	}
-	got, err := provider.TicketWebURL("task-123")
-	if err != nil {
-		t.Fatalf("TicketWebURL: %v", err)
+
+	for _, base := range []string{"https://cloud.kaneo.app", "https://cloud.kaneo.app/api", "https://cloud.kaneo.app/api/"} {
+		provider, err := ticket.NewKaneoProvider(base, "key", nil)
+		if err != nil {
+			t.Fatalf("NewKaneoProvider(%q): %v", base, err)
+		}
+		got, err := provider.TicketWebURL(project, "task-123")
+		if err != nil {
+			t.Fatalf("TicketWebURL: %v", err)
+		}
+		want := "https://cloud.kaneo.app/dashboard/workspace/ws-1/project/proj-1/task/task-123"
+		if got != want {
+			t.Fatalf("TicketWebURL(%q) = %q, want %q", base, got, want)
+		}
 	}
-	want := "https://api.phasical.example/task/task-123"
-	if got != want {
-		t.Fatalf("TicketWebURL() = %q, want %q", got, want)
+}
+
+func TestKaneoTicketWebURLRequiresWorkspace(t *testing.T) {
+	t.Parallel()
+
+	provider, err := ticket.NewKaneoProvider("https://cloud.kaneo.app", "key", nil)
+	if err != nil {
+		t.Fatalf("NewKaneoProvider: %v", err)
+	}
+	if _, err := provider.TicketWebURL(ticket.TicketProject{ExternalProjectID: "proj-1"}, "task-123"); err == nil {
+		t.Fatal("expected error when create_config.workspaceId is missing")
+	}
+	if _, err := provider.TicketWebURL(ticket.TicketProject{CreateConfig: map[string]any{"workspaceId": "ws-1"}}, "task-123"); err == nil {
+		t.Fatal("expected error when external_project_id is missing")
 	}
 }
 
@@ -30,7 +52,7 @@ func TestJiraTicketWebURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewJiraProvider: %v", err)
 	}
-	got, err := provider.TicketWebURL("PROJ-1")
+	got, err := provider.TicketWebURL(ticket.TicketProject{}, "PROJ-1")
 	if err != nil {
 		t.Fatalf("TicketWebURL: %v", err)
 	}
@@ -47,7 +69,7 @@ func TestLinearTicketWebURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewLinearProvider: %v", err)
 	}
-	got, err := provider.TicketWebURL("issue-uuid")
+	got, err := provider.TicketWebURL(ticket.TicketProject{}, "issue-uuid")
 	if err != nil {
 		t.Fatalf("TicketWebURL: %v", err)
 	}
