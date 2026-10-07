@@ -58,7 +58,7 @@ Each attacker has a capability, what it is trusted with, and what it must never 
 - **Must never reach:** a protected route without a session (the Go API enforces sessions itself, not the proxy).
 
 ### 2.8 Compromised dependency or CI step
-- **Capability:** a Go module, npm package, base image (`node:22-bookworm-slim`, `golang:1.25-bookworm`) or GitHub Action (`.github/workflows/*.yml`, pinned by tag, not SHA) runs attacker code at build or run time.
+- **Capability:** a Go module, npm package, base image (`node:22-bookworm-slim`, `golang:1.26-bookworm`) or GitHub Action (`.github/workflows/*.yml`, pinned by tag, not SHA) runs attacker code at build or run time.
 - **Must never reach:** a published GHCR image the project did not build, or a runtime secret. The image carries no secrets (T13).
 
 ---
@@ -81,7 +81,7 @@ Each attacker has a capability, what it is trusted with, and what it must never 
 | **Ticket content templates** | `internal/tickettemplate/` (`render.go`, `context.go`, `funcs.go`) | 2.2 (template source), 2.3 (data) |
 | **Outbound email** | `internal/mail/` (`smtp.go`, `templates.go`, `templates/`) | 2.6 |
 | **Secrets at rest** | `internal/crypto/aesgcm.go`, `internal/store/integrations.go`, `internal/store/notifications.go` | 2.5 |
-| **Startup, migrations, bootstrap** | `docker/entrypoint.sh`, `tools/migrate/` (`main.go`, `preflight.go`), `migrations/`, `db/schema.sql`, `internal/api/auth/bootstrap.go`, `cmd/seed-admin/main.go` | 2.5, 2.8 |
+| **Startup, migrations, bootstrap** | `cmd/server/main.go`, `internal/store/migrate.go`, `migrations/` (incl. `embed.go`), `db/schema.sql`, `internal/api/auth/bootstrap.go`, `cmd/seed-admin/main.go` | 2.5, 2.8 |
 | **Build and release** | `Dockerfile`, `.github/workflows/` (`build-and-push-image.yml`, `release.yml`, `ci.yml`, …), `go.mod`, `package-lock.json` | 2.8 |
 
 ---
@@ -107,7 +107,7 @@ Findings and verifier verdicts cite these by number (`violates T8`). An invarian
 | **T13** | Secrets are never baked into the image; they arrive only as runtime env. The container runs as `node`, data lives in the `/data` volume. | `Dockerfile` (no `.env` copied, `USER node`), `.env.example` |
 | **T14** | Startup refuses a missing, short or `.env.example` placeholder `SESSION_SECRET` or `APP_ENCRYPTION_KEY`; `SMTP_TLS=true` never falls back to plaintext. | `internal/config/config.go` (`validate`), `internal/mail/smtp.go:95-100` |
 | **T15** | Forge and ticket content is data, never template source or markup: the user-authored ticket template is parsed with `text/template` and receives a plain-string context with no methods; the web UI renders through React escaping (no `dangerouslySetInnerHTML` in `apps/web`); link URLs are built server-side with the tag path-escaped; emails use `html/template`. | `internal/tickettemplate/render.go` (`render`), `internal/tickettemplate/context.go`, `internal/providers/source/provider.go` (`BuildReleaseWebURL`), `apps/web/components/dashboard/repo-status-table.tsx`, `internal/mail/templates.go` |
-| **T16** | Schema changes are sqldiff-generated from `db/schema.sql`, never hand-written, and a migration that would fail or lose data is refused by a preflight that leaves the DB untouched. | `.claude/rules/11-db-migrations.md`, `tools/migrate/preflight.go` (`checkPhasicalIntegrations`), `docker/entrypoint.sh` (migrate before server) |
+| **T16** | Migrations are `sqlite-migrate generate` output from `db/schema.sql`, never hand-written, and a failing, edited or missing applied migration is refused and leaves the DB unchanged (single-transaction apply). | `.claude/rules/11-db-migrations.md`, `internal/store/migrate.go` (`Migrate` / `applyMigrations`), `cmd/server/main.go` (migrate before open) |
 | **T17** | An admin can be bootstrapped only while `users` is empty; there is no public sign-up. | `internal/api/auth/bootstrap.go` (`createAdminIfEmpty`, `SeedAdminUser` → `ErrUsersExist`), `internal/api/routes.go` (no register route) |
 
 ---

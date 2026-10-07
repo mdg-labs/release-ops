@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/robfig/cron/v3"
 	"github.com/mdg-labs/release-ops/internal/providers/source"
 	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 	"github.com/mdg-labs/release-ops/internal/store"
+	"github.com/robfig/cron/v3"
 )
 
 // MinPollIntervalMinutes is the minimum allowed cron interval (specs §4.1).
@@ -49,11 +49,11 @@ type Scheduler struct {
 	httpClient     *http.Client
 	pollRepoFn     func(ctx context.Context, runID string, repo store.MonitoredRepo) (*RepoEvaluation, error)
 
-	cron                 *cron.Cron
-	entryID              cron.EntryID
-	currentScheduleSpec  string
-	pollScheduleSpec     string
-	scheduleMu           sync.Mutex
+	cron                *cron.Cron
+	entryID             cron.EntryID
+	currentScheduleSpec string
+	pollScheduleSpec    string
+	scheduleMu          sync.Mutex
 
 	lifecycleCtx context.Context
 
@@ -75,14 +75,14 @@ func NewScheduler(cfg SchedulerConfig) (*Scheduler, error) {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
 	return &Scheduler{
-		engine:         cfg.Engine,
-		settings:       cfg.Settings,
-		repos:          cfg.Repos,
-		ticketProjects: cfg.TicketProjects,
-		integrations:   cfg.Integrations,
-		poll:           cfg.Poll,
-		notifier:       cfg.Notifier,
-		httpClient:     client,
+		engine:           cfg.Engine,
+		settings:         cfg.Settings,
+		repos:            cfg.Repos,
+		ticketProjects:   cfg.TicketProjects,
+		integrations:     cfg.Integrations,
+		poll:             cfg.Poll,
+		notifier:         cfg.Notifier,
+		httpClient:       client,
 		pollRepoFn:       cfg.PollRepo,
 		pollScheduleSpec: cfg.PollScheduleSpec,
 		cron:             cron.New(),

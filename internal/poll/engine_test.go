@@ -95,12 +95,12 @@ type mockTicketProvider struct {
 	createID string
 	webURL   string
 
-	getStatusCalls []string
-	updateStatus   []statusUpdate
-	comments       []ticketComment
-	updates        []ticketUpdate
-	createCalls    int
-	callLog        []string
+	getStatusCalls  []string
+	updateStatus    []statusUpdate
+	comments        []ticketComment
+	updates         []ticketUpdate
+	createCalls     int
+	callLog         []string
 	lastCreateInput ticket.TicketInput
 	updateStatusErr error
 }

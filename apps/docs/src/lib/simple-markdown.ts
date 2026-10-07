@@ -11,10 +11,11 @@ export function simpleMarkdown(md: string | undefined): string {
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
 
+  const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
   const linkMap = {
-    "specs.html": "/spec/",
-    "stack.html": "/stack/",
-    "schema.html": "/schema/",
+    "specs.html": `${base}/spec/`,
+    "stack.html": `${base}/stack/`,
+    "schema.html": `${base}/schema/`,
   };
 
   let html = esc(md)

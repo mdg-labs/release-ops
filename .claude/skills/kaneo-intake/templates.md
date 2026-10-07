@@ -70,7 +70,7 @@ See child tasks for acceptance criteria, files and tests.
 ### Acceptance criteria
 
 - [ ] <concrete, testable outcome>
-- [ ] <schema work only> Schema change in `db/schema.sql`; migration generated with `make migrate-diff name=<change>` (no hand-written `migrations/*.sql`); `npm run db:check` passes
+- [ ] <schema work only> Schema change in `db/schema.sql`; migration generated with `make db-migration name=<change>` (no hand-written `migrations/*.sql`); `npm run db:check` passes
 - [ ] <web work only> All new UI strings via next-intl keys in `apps/web/messages/en.json` (no literals)
 - [ ] Reachable via: <entry point> → <capability>   <!-- runtime behaviour: API route in internal/api/routes.go served by cmd/server, an apps/web/app page, a poll-cycle step, or the make target / CI job for a script -->
 - [ ] `go test ./...` and `golangci-lint run` pass (Go changes)
@@ -112,7 +112,7 @@ See child tasks for acceptance criteria, files and tests.
 
 Every leaf task carries `## Out of scope` and `## Scope hint`, and every task that adds or changes runtime behaviour carries a `Reachable via:` criterion with its entry-point file under `### Files` — `/orchestrate`'s readiness gate sends a task without them to its `task-refiner` first. Count "Expected files" without what `.coderabbit.yaml` `path_filters` exclude (`package-lock.json`, `internal/store/db/*.sql.go`, `.claude/**`, …); a task above ~800 changed lines is split into vertical slices that each carry their own wiring.
 
-Keep only the gate lines that apply to the touched area: Go (`cmd/`, `internal/`) → `go test ./...` + `golangci-lint run`; web/Node → `npm test` + `npm run lint`; `db/schema.sql` / `migrations/` → `make migrate-diff` + `npm run db:check`. Docs-only tasks may drop the gates.
+Keep only the gate lines that apply to the touched area: Go (`cmd/`, `internal/`) → `go test ./...` + `golangci-lint run`; web/Node → `npm test` + `npm run lint`; `db/schema.sql` / `migrations/` → `make db-migration` + `npm run db:check`. Docs-only tasks may drop the gates.
 
 ## Bug task (small, no investigation needed)
 

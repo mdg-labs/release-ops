@@ -64,7 +64,7 @@ task text may predate it. Check before you describe anything as "to build".
   read-only and only supplies `#N` for the commit subject `[#N]` and the
   `fixes #N` trailer. There is no `closesParent` flag: the orchestrator adds the
   epic's trailer at landing.
-- Schema changes go through `db/schema.sql` + `make migrate-diff`; migrations
+- Schema changes go through `db/schema.sql` + `make db-migration`; migrations
   are never hand-written. sqlc output in `internal/store/db/` is generated.
 - Every UI string goes through next-intl (`apps/web/messages/en.json`).
 - `docs/roadmap.html` is a historical plan; Kaneo is the only live plan.

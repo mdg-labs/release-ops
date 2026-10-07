@@ -39,8 +39,8 @@ func TestRenderAllMVPVariables(t *testing.T) {
 
 	ctx := testContext()
 	tmpl := tickettemplate.ContentTemplates{
-		Title: `{{ .Repo.SourceKind }}|{{ .Repo.ProjectPath }}|{{ .Repo.URL }}|{{ .Release.Tag }}|{{ .Release.Name }}|{{ .Release.URL }}|{{ .Release.Notes }}|{{ .Release.PublishedAt }}|{{ yesNo .Release.IsPrerelease }}|{{ .Previous.Tag }}|{{ .Supersede.OldTag }}|{{ .Supersede.NewTag }}|{{ .Supersede.NewTicketURL }}`,
-		Description: `{{ .Repo.SourceKind }} {{ .Release.Tag }}`,
+		Title:            `{{ .Repo.SourceKind }}|{{ .Repo.ProjectPath }}|{{ .Repo.URL }}|{{ .Release.Tag }}|{{ .Release.Name }}|{{ .Release.URL }}|{{ .Release.Notes }}|{{ .Release.PublishedAt }}|{{ yesNo .Release.IsPrerelease }}|{{ .Previous.Tag }}|{{ .Supersede.OldTag }}|{{ .Supersede.NewTag }}|{{ .Supersede.NewTicketURL }}`,
+		Description:      `{{ .Repo.SourceKind }} {{ .Release.Tag }}`,
 		SupersedeComment: `{{ .Supersede.NewTicketURL }}`,
 	}
 	renderer := tickettemplate.NewRenderer("kaneo", tmpl)

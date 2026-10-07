@@ -99,7 +99,7 @@ Triage progress:
 2. Code (read-only):
    - Go: `cmd/server`, `internal/api/` (handlers, auth, middleware), `internal/poll/` (scheduler), `internal/providers/` (release sources: GitHub, GitLab, Gitea, Forgejo, Codeberg; ticket integrations), `internal/store/` (sqlc), `internal/config/`, `internal/crypto/`, `internal/mail/`, `internal/tickettemplate/`
    - Web: `apps/web/` (`app/`, `components/`, `lib/`, `messages/en.json`)
-   - Schema: `db/schema.sql`, `migrations/` (generated — any fix goes through `db/schema.sql` + `make migrate-diff`)
+   - Schema: `db/schema.sql`, `migrations/` (generated — any fix goes through `db/schema.sql` + `make db-migration`)
    - Tests next to the code (`*_test.go`, `*.test.ts`)
 3. Related tasks: `search` (`q`), `list_tasks` `{ projectId: "z4janvyjsbbb0esishvd9gb8" }`, `get_task_relations`.
 4. Git history (`git log`, `git blame`) — read-only.
@@ -118,7 +118,7 @@ You may run read-only checks (`go test ./...`, `npm test`) to confirm a hypothes
 
 ### Step 5 — Compose
 
-Follow [description-template.md](description-template.md) (shape of RO-108). The proposed acceptance criteria must list the gates for the touched area (`go test ./...`, `golangci-lint run`, `npm test`, `npm run lint`, `npm run db:check`) and, for schema changes, "schema change via `make migrate-diff` only".
+Follow [description-template.md](description-template.md) (shape of RO-108). The proposed acceptance criteria must list the gates for the touched area (`go test ./...`, `golangci-lint run`, `npm test`, `npm run lint`, `npm run db:check`) and, for schema changes, "schema change via `make db-migration` only".
 
 ### Step 6 — Write
 

@@ -23,7 +23,7 @@ Pull requests without it can't be merged.
 
 ## Local setup
 
-Prerequisites: Go 1.25+, Node.js 22+, `sqlite3` and `sqldiff` (for `npm run db:check`), and [golangci-lint](https://golangci-lint.run/) for Go changes.
+Prerequisites: Go 1.26+, Node.js 22+, and [golangci-lint](https://golangci-lint.run/) for Go changes.
 
 ```bash
 npm install
@@ -35,7 +35,7 @@ cp .env.example .env   # set SESSION_SECRET and APP_ENCRYPTION_KEY
 | `npm run dev`         | Next.js dev server (`apps/web`, port 3000)   |
 | `go run ./cmd/server` | Go API + poll scheduler (port 8080)          |
 | `npm run dev:docs`    | Starlight docs site (`apps/docs`, port 4321) |
-| `make migrate-up`     | Apply pending migrations locally             |
+| `make db-migration name=<change>` | Generate a migration from `db/schema.sql` changes |
 | `make sqlc-generate`  | Regenerate typed SQL from `queries/`         |
 
 The local Go server expects `SESSION_SECRET`, `APP_ENCRYPTION_KEY` and `APP_DB_PATH` (see [spec §9](https://mdg-labs.github.io/release-ops/spec/#env)). To run the full stack in one container instead, use `docker compose up -d` as described in the [README](README.md#quick-start).
@@ -78,8 +78,8 @@ docs(docs): clarify bootstrap admin setup
 Never write or edit files in `migrations/` by hand. They are generated from the canonical schema:
 
 1. Edit `db/schema.sql`.
-2. Run `make migrate-diff name=<change>` (uses SQLite `sqldiff`).
-3. Review the generated `.up.sql` / `.down.sql`, then run `make migrate-up`.
+2. Run `make db-migration name=<change>` (uses [sqlite-migrate](https://github.com/mdg-labs/sqlite-migrate), pinned in `go.mod`). Every table in `db/schema.sql` must be `STRICT`.
+3. Review the generated `migrations/<timestamp>_<change>.sql` and commit it unedited. The Go server applies pending migrations when it starts.
 4. `npm run db:check` must pass.
 
 ## Web UI strings (i18n)

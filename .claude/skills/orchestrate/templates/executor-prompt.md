@@ -55,7 +55,7 @@ in full isolation from other agents working on other tasks at the same time.
 ## What the orchestrator found on this machine
 
 {{MACHINE_STATE — verbatim from the orchestrator's step-0 check, e.g.:
-"Installed: go 1.25.x, node 24.x, npm, golangci-lint –, sqlite3 yes, sqldiff yes, gh yes."}}
+"Installed: go 1.25.x, node 24.x, npm, golangci-lint –, gh yes."}}
 
 Trust this over any assumption, and over anything a doc says is installed. If a
 check you need is not installed, say so in your report — don't install anything.
@@ -119,7 +119,7 @@ report goes to the orchestrator only.
   endpoints or IDs not in the spec; auth lives in Go and the web app reaches the
   API only through the Go proxy (`apps/web/app/api/go/`); credentials and
   integration tokens are encrypted at rest and never logged; **schema changes
-  only via `db/schema.sql` + `make migrate-diff name=<change>`** — never
+  only via `db/schema.sql` + `make db-migration name=<change>`** — never
   hand-write or hand-edit `migrations/*.sql` (rule 11); queries change in
   `queries/*.sql` and `internal/store/db/` is regenerated with `make
   sqlc-generate`, never hand-edited; **zero hardcoded user-facing strings in
@@ -184,7 +184,7 @@ report goes to the orchestrator only.
   "tested", "confirmed", "covers every case" or "closes the race" only when a
   check you ran in this dispatch shows it — name the test or command.
 - **Generated output changes only deliberately.** `internal/store/db/` comes
-  from `make sqlc-generate`, `migrations/` from `make migrate-diff`,
+  from `make sqlc-generate`, `migrations/` from `make db-migration`,
   `package-lock.json` from `npm install`; the commit message says what changed
   in generated output and why.
 - **Dependency bumps** (`package.json` / `package-lock.json`, `go.mod` /
@@ -197,8 +197,8 @@ report goes to the orchestrator only.
   (rule 06), in `WORKSPACE`:
   - Web / root JS (`apps/web/**`, root `package.json`/lockfile): `npm test`,
     `npm run lint`, `npm run typecheck`
-  - DB (`db/schema.sql`, `migrations/**`): `npm run db:check` (needs `sqlite3`
-    and `sqldiff`)
+  - DB (`db/schema.sql`, `migrations/**`): `npm run db:check` (needs only
+    Go)
   - Go (`cmd/**`, `internal/**`, `queries/**`, `sqlc.yaml`, `go.mod`/`go.sum`):
     `gofmt -l .`, `go vet ./...`, `go test ./...`, `golangci-lint run` if
     installed
@@ -228,7 +228,7 @@ touched. The verifier runs on Opus and checks the test fails on the parent
 commit.
 {{END IF}}
 {{IF SCHEMA_CHANGE:}}**This task changes the schema.** Edit `db/schema.sql` only, then
-`make -C {{WORKSPACE_PATH}} migrate-diff name=<snake_case_change>`; commit the
+`make -C {{WORKSPACE_PATH}} db-migration name=<snake_case_change>`; commit the
 generated `migrations/*` unedited, plus regenerated `internal/store/db/` if
 queries change. No migration drops or rewrites data without a new home for it.
 `npm run db:check` must pass.

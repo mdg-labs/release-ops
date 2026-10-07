@@ -9,17 +9,17 @@ import (
 
 // PollStateUpdate holds monitored repo fields updated after a poll cycle.
 type PollStateUpdate struct {
-	OpenTicketExternalID *string
-	OpenTicketTag        *string
+	OpenTicketExternalID   *string
+	OpenTicketTag          *string
 	LastKnownTag           *string
 	LastReleasePublishedAt *string
 	LastPolledAt           *string
-	LastError            *string
+	LastError              *string
 }
 
 // Poll trigger provenance values (poll_runs.trigger_source).
 const (
-	PollTriggerSourceManual     = "manual"
+	PollTriggerSourceManual    = "manual"
 	PollTriggerSourceScheduled = "scheduled"
 )
 
@@ -63,20 +63,20 @@ type pollRepo struct {
 
 func (r pollRepo) UpdatePollState(ctx context.Context, repoID string, update PollStateUpdate) (*MonitoredRepo, error) {
 	row, err := r.store.q.UpdatePollState(ctx, db.UpdatePollStateParams{
-		OpenTicketExternalID: stringPtrToNull(update.OpenTicketExternalID),
-		OpenTicketTag:        stringPtrToNull(update.OpenTicketTag),
+		OpenTicketExternalID:   stringPtrToNull(update.OpenTicketExternalID),
+		OpenTicketTag:          stringPtrToNull(update.OpenTicketTag),
 		LastKnownTag:           stringPtrToNull(update.LastKnownTag),
 		LastReleasePublishedAt: stringPtrToNull(update.LastReleasePublishedAt),
 		LastPolledAt:           stringPtrToNull(update.LastPolledAt),
-		LastError:            stringPtrToNull(update.LastError),
-		UpdatedAt:            nowUTC(),
-		ID:                   repoID,
+		LastError:              stringPtrToNull(update.LastError),
+		UpdatedAt:              nowUTC(),
+		ID:                     repoID,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	repo := monitoredRepoFromRow(row)
+	repo := monitoredRepoFromRow(monitoredRepoRow(row))
 	ids, err := r.store.q.ListNotificationTargetIDsForRepo(ctx, repoID)
 	if err != nil {
 		return nil, err
@@ -94,7 +94,7 @@ func (r pollRepo) InsertRun(ctx context.Context, triggerSource string) (*PollRun
 	if err != nil {
 		return nil, err
 	}
-	return pollRunFromRow(row), nil
+	return pollRunFromRow(pollRunRow(row)), nil
 }
 
 func (r pollRepo) FinishRun(
@@ -116,7 +116,7 @@ func (r pollRepo) FinishRun(
 	if err != nil {
 		return nil, err
 	}
-	return pollRunFromRow(row), nil
+	return pollRunFromRow(pollRunRow(row)), nil
 }
 
 func (r pollRepo) GetRun(ctx context.Context, id string) (*PollRun, error) {
@@ -137,7 +137,7 @@ func (r pollRepo) ListRuns(ctx context.Context, limit, offset int64) ([]PollRun,
 	}
 	out := make([]PollRun, len(rows))
 	for i, row := range rows {
-		out[i] = *pollRunFromRow(row)
+		out[i] = *pollRunFromRow(pollRunRow(row))
 	}
 	return out, nil
 }
@@ -175,7 +175,11 @@ func (r pollRepo) ListEventsByRunID(ctx context.Context, pollRunID string) ([]Po
 	return out, nil
 }
 
-func pollRunFromRow(row db.PollRun) *PollRun {
+// pollRunRow is the shape every poll_runs query returns; sqlc emits one identical
+// row type per query, so the others convert to it.
+type pollRunRow = db.GetPollRunRow
+
+func pollRunFromRow(row pollRunRow) *PollRun {
 	return &PollRun{
 		ID:                row.ID,
 		StartedAt:         row.StartedAt,

@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DB_PATH="${APP_DB_PATH:-/data/app.db}"
-mkdir -p "$(dirname "$APP_DB_PATH")"
-
-/app/migrate -path /app/migrations -database "sqlite://${APP_DB_PATH}" up
-
 go_pid=""
 next_pid=""
 
@@ -34,7 +29,7 @@ trap cleanup EXIT INT TERM
 go_pid=$!
 
 go_ready=false
-for _ in $(seq 1 30); do
+for _ in $(seq 1 150); do
   if ! kill -0 "$go_pid" 2>/dev/null; then
     break
   fi

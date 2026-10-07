@@ -175,11 +175,11 @@ func TestListPollRunsDefaultsToLimit20(t *testing.T) {
 	for i := 0; i < 25; i++ {
 		id := fmt.Sprintf("run-%02d", i)
 		runs[id] = &store.PollRun{
-			ID:         id,
-			StartedAt:  fmt.Sprintf("2026-08-07T%02d:00:00.000Z", i),
-			Status:     "success",
+			ID:            id,
+			StartedAt:     fmt.Sprintf("2026-08-07T%02d:00:00.000Z", i),
+			Status:        "success",
 			TriggerSource: store.PollTriggerSourceScheduled,
-			ErrorsJSON: "[]",
+			ErrorsJSON:    "[]",
 		}
 	}
 

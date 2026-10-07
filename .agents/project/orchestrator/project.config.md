@@ -99,7 +99,7 @@ Used by `/orchestrate` (file scope fallback) and `/security-audit` (scope by lab
 | ----- | ----- |
 | `backend` | `cmd/`, `internal/api/`, `internal/poll/`, `internal/providers/`, `internal/mail/`, `internal/tickettemplate/`, `internal/crypto/`, `tools/` |
 | `web` | `apps/web/` |
-| `db` | `db/schema.sql`, `migrations/`, `queries/`, `internal/store/`, `sqlc.yaml`, `scripts/migrate-diff.mjs`, `scripts/ci/check-migrations-sync.mjs` |
+| `db` | `db/schema.sql`, `migrations/`, `queries/`, `internal/store/`, `sqlc.yaml` |
 | `config` | `internal/config/`, `.env.example`, `docker-compose.yml` |
 | `ci` | `.github/workflows/`, `Dockerfile`, `docker/`, `Makefile`, `scripts/ci/` |
 | `docs` | `docs/`, `apps/docs/` |
@@ -131,7 +131,7 @@ Always-shared files (any change touching them serializes against every other): `
 | Go | `go test ./... && golangci-lint run` |
 | Customer docs | `npm run docs:build` |
 | Before a push | all of the above that apply (`.claude/rules/06-local-ci-before-commit.md`) |
-| Migrations | edit `db/schema.sql` → `make migrate-diff name=<change>` |
+| Migrations | edit `db/schema.sql` → `make db-migration name=<change>` |
 
 ## Optional
 

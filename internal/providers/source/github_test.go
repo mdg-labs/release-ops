@@ -309,4 +309,3 @@ func TestGitHubSourceIncludePrereleasesPicksNewestByPublishedAt(t *testing.T) {
 		t.Fatal("IsPrerelease = false, want true for pre-release payload")
 	}
 }
-

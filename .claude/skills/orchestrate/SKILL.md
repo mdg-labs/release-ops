@@ -82,7 +82,7 @@ dispatch â€” never copy a claim from this file.** One Bash call:
 ```
 cd <real repo> && git status -sb | head -1 && git status --porcelain | head -5
 git -C <real repo> rev-parse dev origin/dev 2>&1
-command -v go node npm golangci-lint sqlite3 sqldiff gh python3 2>&1
+command -v go node npm golangci-lint gh python3 2>&1
 go version 2>&1; node --version 2>&1
 gh auth status 2>&1 | head -3
 ```
@@ -91,8 +91,8 @@ That tells you whether the real repo is on `dev` and clean (landing needs both â
 if it is dirty or on another branch, stop and tell the maintainer; never stash
 or switch their work), whether local `dev` is in sync with `origin/dev` (local
 commits ahead of `origin/dev` that this run did not land are reported, never
-pushed by you), and which checkers are installed (`sqlite3`/`sqldiff` are what
-`npm run db:check` needs).
+pushed by you), and which checkers are installed (`npm run db:check` needs only
+Go).
 
 ## 0. Resolve the target
 

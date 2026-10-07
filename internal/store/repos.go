@@ -60,6 +60,10 @@ type MonitoredRepoRepository interface {
 	Delete(ctx context.Context, id string) error
 }
 
+// monitoredRepoRow is the shape every monitored_repos query returns; sqlc emits one
+// identical row type per query, so the others convert to it.
+type monitoredRepoRow = db.GetMonitoredRepoRow
+
 type monitoredRepoRepo struct {
 	store *Store
 }
@@ -100,7 +104,7 @@ func (r monitoredRepoRepo) Create(ctx context.Context, input CreateMonitoredRepo
 		return nil, err
 	}
 
-	return r.repoWithNotificationIDs(ctx, row, input.NotificationTargetIDs)
+	return r.repoWithNotificationIDs(ctx, monitoredRepoRow(row), input.NotificationTargetIDs)
 }
 
 func (r monitoredRepoRepo) Get(ctx context.Context, id string) (*MonitoredRepo, error) {
@@ -161,7 +165,7 @@ func (r monitoredRepoRepo) Update(ctx context.Context, id string, input UpdateMo
 		return nil, err
 	}
 
-	row, err = resetPollStateOnTargetChange(ctx, q, existing, row)
+	current, err := resetPollStateOnTargetChange(ctx, q, existing, monitoredRepoRow(row))
 	if err != nil {
 		return nil, err
 	}
@@ -174,14 +178,14 @@ func (r monitoredRepoRepo) Update(ctx context.Context, id string, input UpdateMo
 		return nil, err
 	}
 
-	return r.repoWithNotificationIDs(ctx, row, input.NotificationTargetIDs)
+	return r.repoWithNotificationIDs(ctx, current, input.NotificationTargetIDs)
 }
 
 // resetPollStateOnTargetChange drops poll state that belongs to the repo's previous
 // target. A new ticket project clears the open ticket (it lives in the old project).
 // A new source (kind, path or integration) also clears the last known tag so the next
 // poll records a fresh baseline instead of ticketing the new repo's existing release.
-func resetPollStateOnTargetChange(ctx context.Context, q *db.Queries, before, after db.MonitoredRepo) (db.MonitoredRepo, error) {
+func resetPollStateOnTargetChange(ctx context.Context, q *db.Queries, before, after monitoredRepoRow) (monitoredRepoRow, error) {
 	sourceChanged := before.SourceKind != after.SourceKind ||
 		before.ProjectPath != after.ProjectPath ||
 		before.SourceIntegrationID != after.SourceIntegrationID
@@ -201,7 +205,8 @@ func resetPollStateOnTargetChange(ctx context.Context, q *db.Queries, before, af
 		params.LastKnownTag = sql.NullString{}
 		params.LastReleasePublishedAt = sql.NullString{}
 	}
-	return q.UpdatePollState(ctx, params)
+	updated, err := q.UpdatePollState(ctx, params)
+	return monitoredRepoRow(updated), err
 }
 
 func (r monitoredRepoRepo) SetEnabled(ctx context.Context, id string, enabled bool) (*MonitoredRepo, error) {
@@ -213,7 +218,7 @@ func (r monitoredRepoRepo) SetEnabled(ctx context.Context, id string, enabled bo
 	if err != nil {
 		return nil, err
 	}
-	return r.repoWithNotificationIDs(ctx, row, nil)
+	return r.repoWithNotificationIDs(ctx, monitoredRepoRow(row), nil)
 }
 
 func (r monitoredRepoRepo) Delete(ctx context.Context, id string) error {
@@ -222,7 +227,7 @@ func (r monitoredRepoRepo) Delete(ctx context.Context, id string) error {
 
 func (r monitoredRepoRepo) repoWithNotificationIDs(
 	ctx context.Context,
-	row db.MonitoredRepo,
+	row monitoredRepoRow,
 	knownIDs []string,
 ) (*MonitoredRepo, error) {
 	repo := monitoredRepoFromRow(row)
@@ -238,10 +243,10 @@ func (r monitoredRepoRepo) repoWithNotificationIDs(
 	return repo, nil
 }
 
-func (r monitoredRepoRepo) reposWithNotificationIDs(ctx context.Context, rows []db.MonitoredRepo) ([]MonitoredRepo, error) {
+func (r monitoredRepoRepo) reposWithNotificationIDs(ctx context.Context, rows []db.ListMonitoredReposRow) ([]MonitoredRepo, error) {
 	out := make([]MonitoredRepo, len(rows))
 	for i, row := range rows {
-		repo, err := r.repoWithNotificationIDs(ctx, row, nil)
+		repo, err := r.repoWithNotificationIDs(ctx, monitoredRepoRow(row), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -265,7 +270,7 @@ func replaceNotificationTargets(ctx context.Context, q *db.Queries, repoID strin
 	return nil
 }
 
-func monitoredRepoFromRow(row db.MonitoredRepo) *MonitoredRepo {
+func monitoredRepoFromRow(row monitoredRepoRow) *MonitoredRepo {
 	return &MonitoredRepo{
 		ID:                     row.ID,
 		SourceKind:             row.SourceKind,

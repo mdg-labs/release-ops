@@ -32,21 +32,21 @@ type statusResponse struct {
 }
 
 type statusRepoResponse struct {
-	ID                   string  `json:"id"`
-	SourceKind           string  `json:"sourceKind"`
-	ProjectPath          string  `json:"projectPath"`
-	TicketProjectID      string  `json:"ticketProjectId"`
-	TicketProjectName    string  `json:"ticketProjectName"`
-	Enabled              bool    `json:"enabled"`
-	OpenTicketExternalID *string `json:"openTicketExternalId"`
-	OpenTicketTag        *string `json:"openTicketTag"`
+	ID                     string  `json:"id"`
+	SourceKind             string  `json:"sourceKind"`
+	ProjectPath            string  `json:"projectPath"`
+	TicketProjectID        string  `json:"ticketProjectId"`
+	TicketProjectName      string  `json:"ticketProjectName"`
+	Enabled                bool    `json:"enabled"`
+	OpenTicketExternalID   *string `json:"openTicketExternalId"`
+	OpenTicketTag          *string `json:"openTicketTag"`
 	LastKnownTag           *string `json:"lastKnownTag"`
 	LastReleasePublishedAt *string `json:"lastReleasePublishedAt"`
 	LastPolledAt           *string `json:"lastPolledAt"`
-	LastError            *string `json:"lastError"`
-	RepoURL              *string `json:"repoUrl"`
-	ReleaseURL           *string `json:"releaseUrl"`
-	OpenTicketURL        *string `json:"openTicketUrl"`
+	LastError              *string `json:"lastError"`
+	RepoURL                *string `json:"repoUrl"`
+	ReleaseURL             *string `json:"releaseUrl"`
+	OpenTicketURL          *string `json:"openTicketUrl"`
 }
 
 // Get handles GET /api/v1/status.
@@ -144,9 +144,9 @@ type statusRepoURLs struct {
 }
 
 type statusURLResolver struct {
-	integrations   store.IntegrationRepository
-	integrationsBy map[string]store.Integration
-	httpClient     *http.Client
+	integrations    store.IntegrationRepository
+	integrationsBy  map[string]store.Integration
+	httpClient      *http.Client
 	ticketProviders map[string]ticket.TicketProvider
 }
 
@@ -244,21 +244,21 @@ func (r *statusURLResolver) ticketProvider(ctx context.Context, integrationID st
 
 func statusRepoFromStore(repo *store.MonitoredRepo, ticketProjectName string, urls statusRepoURLs) statusRepoResponse {
 	return statusRepoResponse{
-		ID:                   repo.ID,
-		SourceKind:           repo.SourceKind,
-		ProjectPath:          repo.ProjectPath,
-		TicketProjectID:      repo.TicketProjectID,
-		TicketProjectName:    ticketProjectName,
-		Enabled:              repo.Enabled,
-		OpenTicketExternalID: repo.OpenTicketExternalID,
-		OpenTicketTag:        repo.OpenTicketTag,
+		ID:                     repo.ID,
+		SourceKind:             repo.SourceKind,
+		ProjectPath:            repo.ProjectPath,
+		TicketProjectID:        repo.TicketProjectID,
+		TicketProjectName:      ticketProjectName,
+		Enabled:                repo.Enabled,
+		OpenTicketExternalID:   repo.OpenTicketExternalID,
+		OpenTicketTag:          repo.OpenTicketTag,
 		LastKnownTag:           repo.LastKnownTag,
 		LastReleasePublishedAt: repo.LastReleasePublishedAt,
 		LastPolledAt:           repo.LastPolledAt,
-		LastError:            repo.LastError,
-		RepoURL:              urls.RepoURL,
-		ReleaseURL:           urls.ReleaseURL,
-		OpenTicketURL:        urls.OpenTicketURL,
+		LastError:              repo.LastError,
+		RepoURL:                urls.RepoURL,
+		ReleaseURL:             urls.ReleaseURL,
+		OpenTicketURL:          urls.OpenTicketURL,
 	}
 }
 

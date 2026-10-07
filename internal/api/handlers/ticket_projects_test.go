@@ -20,10 +20,10 @@ import (
 )
 
 const (
-	validCreateConfig       = `{"issueType":"Task","priority":"Medium"}`
-	validStatusMapping      = `{"open":["To Do","In Progress"],"done":["Done"],"cancelled":["Cancelled"],"superseded":"Cancelled"}`
-	validContentTemplates   = `{"title":"","description":"","supersedeComment":""}`
-	customContentTemplates  = `{"title":"Release: {{ .Release.Tag }}","description":"Notes","supersedeComment":"Superseded"}`
+	validCreateConfig      = `{"issueType":"Task","priority":"Medium"}`
+	validStatusMapping     = `{"open":["To Do","In Progress"],"done":["Done"],"cancelled":["Cancelled"],"superseded":"Cancelled"}`
+	validContentTemplates  = `{"title":"","description":"","supersedeComment":""}`
+	customContentTemplates = `{"title":"Release: {{ .Release.Tag }}","description":"Notes","supersedeComment":"Superseded"}`
 )
 
 type mockTicketProjectRepo struct {

@@ -6,7 +6,7 @@ hero:
   tagline: Self-hosted release monitor — one Docker container, full control.
   actions:
     - text: Get started
-      link: /getting-started/
+      link: /release-ops/getting-started/
       icon: right-arrow
       variant: primary
     - text: View on GitHub
@@ -27,9 +27,9 @@ import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
   <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">Spec precedence</h2>
   <ol>
-    <li><a href="/spec/">specs.html</a> — MVP contract</li>
-    <li><a href="/schema/">schema.html</a> (browser view) · <a href="https://github.com/mdg-labs/release-ops/blob/dev/db/schema.sql"><code>db/schema.sql</code></a> — database</li>
-    <li><a href="/stack/">stack.html</a> — tooling</li>
+    <li><a href="/release-ops/spec/">specs.html</a> — MVP contract</li>
+    <li><a href="/release-ops/schema/">schema.html</a> (browser view) · <a href="https://github.com/mdg-labs/release-ops/blob/dev/db/schema.sql"><code>db/schema.sql</code></a> — database</li>
+    <li><a href="/release-ops/stack/">stack.html</a> — tooling</li>
   </ol>
 
   <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">MVP at a glance</h2>
@@ -61,22 +61,22 @@ import { CardGrid, LinkCard } from '@astrojs/starlight/components';
   
 
 <CardGrid>
-  <LinkCard title="Getting started" href="/getting-started/">
+  <LinkCard title="Getting started" href="/release-ops/getting-started/">
     Docker Compose setup, env vars, admin bootstrap, troubleshooting.
   </LinkCard>
-  <LinkCard title="Product specification" href="/spec/">
+  <LinkCard title="Product specification" href="/release-ops/spec/">
     Architecture, schema, APIs, providers, UI, MVP acceptance criteria.
   </LinkCard>
-  <LinkCard title="Tech stack" href="/stack/">
+  <LinkCard title="Tech stack" href="/release-ops/stack/">
     Go, Next.js, COSS, session auth, SQLite, Docker.
   </LinkCard>
-  <LinkCard title="Database schema" href="/schema/">
+  <LinkCard title="Database schema" href="/release-ops/schema/">
     SQLite app.db — HTML view; canonical DDL in db/schema.sql.
   </LinkCard>
-  <LinkCard title="MVP checklist" href="/mvp-checklist/">
+  <LinkCard title="MVP checklist" href="/release-ops/mvp-checklist/">
     Sign-off against all 15 acceptance criteria.
   </LinkCard>
-  <LinkCard title="Roadmap" href="/roadmap/">
+  <LinkCard title="Roadmap" href="/release-ops/roadmap/">
     Implementation phases — epics, leaf tasks, spec backlinks.
   </LinkCard>
 </CardGrid>

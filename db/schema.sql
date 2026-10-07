@@ -1,6 +1,6 @@
 -- Release Ops — application schema (app.db)
 -- Auth (users + sessions) in the same file — Go-only writer; see specs.html § Authentication
--- Apply via golang-migrate from container entrypoint / Go server on startup
+-- Migrations in migrations/ are generated from this file by sqlite-migrate and applied by the Go server on startup
 
 PRAGMA foreign_keys = ON;
 
@@ -10,7 +10,7 @@ CREATE TABLE users (
   password_hash TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
-);
+) STRICT;
 
 -- Server-side session store (e.g. alexedwards/scs SQLite store)
 CREATE TABLE sessions (
@@ -18,7 +18,7 @@ CREATE TABLE sessions (
   data BLOB NOT NULL,
   expiry REAL NOT NULL,
   user_id TEXT REFERENCES users(id)
-);
+) STRICT;
 
 CREATE INDEX idx_sessions_expiry ON sessions (expiry);
 CREATE INDEX idx_sessions_user_id ON sessions (user_id);
@@ -33,7 +33,7 @@ CREATE TABLE app_settings (
     password_reset_token_expiry_minutes >= 5 AND password_reset_token_expiry_minutes <= 1440
   ),
   updated_at TEXT NOT NULL
-);
+) STRICT;
 
 -- One-time tokens for invitations, password reset, and email change (raw token never stored)
 CREATE TABLE auth_tokens (
@@ -48,7 +48,7 @@ CREATE TABLE auth_tokens (
   expires_at TEXT NOT NULL,
   used_at TEXT,
   created_at TEXT NOT NULL
-);
+) STRICT;
 
 CREATE INDEX idx_auth_tokens_token_hash ON auth_tokens (token_hash);
 
@@ -73,7 +73,7 @@ CREATE TABLE integrations (
     OR (kind = 'jira' AND base_url IS NOT NULL)
     OR (kind = 'linear' AND base_url IS NULL)
   )
-);
+) STRICT;
 
 -- One row per target project/team under a ticket integration.
 -- Status mapping and create defaults are per project (workflows differ).
@@ -92,7 +92,7 @@ CREATE TABLE ticket_projects (
   updated_at TEXT NOT NULL,
   UNIQUE (integration_id, external_project_id),
   CHECK (json_valid(create_config) AND json_valid(status_mapping))
-);
+) STRICT;
 
 CREATE TABLE monitored_repos (
   id TEXT PRIMARY KEY,
@@ -113,7 +113,7 @@ CREATE TABLE monitored_repos (
   last_release_published_at TEXT,
   include_prereleases INTEGER NOT NULL DEFAULT 0 CHECK (include_prereleases IN (0, 1)),
   UNIQUE (source_kind, project_path)
-);
+) STRICT;
 
 -- Shoutrrr URL targets (slack://, ntfy://, generic://, …)
 CREATE TABLE notification_targets (
@@ -125,14 +125,14 @@ CREATE TABLE notification_targets (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   CHECK (json_valid(events_json))
-);
+) STRICT;
 
 -- Optional per-repo notification routing (empty = all global enabled targets)
 CREATE TABLE monitored_repo_notifications (
   monitored_repo_id TEXT NOT NULL REFERENCES monitored_repos(id) ON DELETE CASCADE,
   notification_target_id TEXT NOT NULL REFERENCES notification_targets(id) ON DELETE CASCADE,
   PRIMARY KEY (monitored_repo_id, notification_target_id)
-);
+) STRICT;
 
 CREATE TABLE poll_runs (
   id TEXT PRIMARY KEY,
@@ -144,7 +144,7 @@ CREATE TABLE poll_runs (
   tickets_superseded INTEGER NOT NULL DEFAULT 0,
   errors_json TEXT NOT NULL DEFAULT '[]',
   trigger_source TEXT NOT NULL DEFAULT 'scheduled' CHECK (trigger_source IN ('manual', 'scheduled'))
-);
+) STRICT;
 
 CREATE TABLE poll_run_events (
   id TEXT PRIMARY KEY,
@@ -155,7 +155,7 @@ CREATE TABLE poll_run_events (
   ),
   detail TEXT,
   created_at TEXT NOT NULL
-);
+) STRICT;
 
 CREATE INDEX idx_integrations_kind ON integrations (kind);
 CREATE INDEX idx_ticket_projects_integration ON ticket_projects (integration_id);

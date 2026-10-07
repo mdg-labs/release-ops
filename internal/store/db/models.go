@@ -43,17 +43,17 @@ type MonitoredRepo struct {
 	SourceKind             string         `json:"source_kind"`
 	ProjectPath            string         `json:"project_path"`
 	Enabled                int64          `json:"enabled"`
-	IncludePrereleases     int64          `json:"include_prereleases"`
 	SourceIntegrationID    sql.NullString `json:"source_integration_id"`
 	TicketProjectID        string         `json:"ticket_project_id"`
 	OpenTicketExternalID   sql.NullString `json:"open_ticket_external_id"`
 	OpenTicketTag          sql.NullString `json:"open_ticket_tag"`
 	LastKnownTag           sql.NullString `json:"last_known_tag"`
-	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
 	LastPolledAt           sql.NullString `json:"last_polled_at"`
 	LastError              sql.NullString `json:"last_error"`
 	CreatedAt              string         `json:"created_at"`
 	UpdatedAt              string         `json:"updated_at"`
+	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
+	IncludePrereleases     int64          `json:"include_prereleases"`
 }
 
 type MonitoredRepoNotification struct {
@@ -93,10 +93,10 @@ type PollRunEvent struct {
 }
 
 type Session struct {
-	Token  string         `json:"token"`
-	Data   []byte         `json:"data"`
-	Expiry float64        `json:"expiry"`
-	UserID sql.NullString `json:"user_id"`
+	Token  string  `json:"token"`
+	Data   []byte  `json:"data"`
+	Expiry float64 `json:"expiry"`
+	UserID string  `json:"user_id"`
 }
 
 type TicketProject struct {

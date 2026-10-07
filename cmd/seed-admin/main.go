@@ -6,8 +6,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/config"
@@ -18,37 +21,83 @@ import (
 func main() {
 	log.SetFlags(0)
 
-	emailFlag := flag.String("email", "", "admin email address")
-	passwordFlag := flag.String("password", "", "admin password")
-	flag.Parse()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	err := run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
+	stop()
+	os.Exit(exitCode(err, os.Stderr))
+}
+
+// usageError marks a flag parsing failure the FlagSet has already reported.
+type usageError struct{ error }
+
+func (e usageError) Unwrap() error { return e.error }
+
+// exitCode maps run's result to the process exit status: help requests exit 0,
+// flag errors exit 2 (as flag.ExitOnError does), every other error exits 1.
+// Errors the FlagSet already printed are not printed again.
+func exitCode(err error, stderr io.Writer) int {
+	var uerr usageError
+	switch {
+	case err == nil, errors.Is(err, flag.ErrHelp):
+		return 0
+	case errors.As(err, &uerr):
+		return 2
+	default:
+		_, _ = fmt.Fprintln(stderr, err)
+		return 1
+	}
+}
+
+func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("seed-admin", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	emailFlag := fs.String("email", "", "admin email address")
+	passwordFlag := fs.String("password", "", "admin password")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return err
+		}
+		return usageError{err}
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("config: %v", err)
+		return fmt.Errorf("config: %w", err)
 	}
 
-	email, password, err := auth.ResolveAdminCredentials(os.Stdin, os.Stdout, *emailFlag, *passwordFlag)
+	email, password, err := auth.ResolveAdminCredentials(stdin, stdout, *emailFlag, *passwordFlag)
 	if err != nil {
-		log.Fatalf("credentials: %v", err)
+		return fmt.Errorf("credentials: %w", err)
+	}
+
+	applied, err := store.Migrate(ctx, cfg.AppDBPath)
+	if err != nil {
+		return fmt.Errorf("migrations: %w", err)
+	}
+	for _, m := range applied {
+		log.Printf("migrations: applied %s_%s", m.Version, m.Slug)
 	}
 
 	db, err := store.OpenPath(cfg.AppDBPath)
 	if err != nil {
-		log.Fatalf("database: %v", err)
+		return fmt.Errorf("database: %w", err)
 	}
 	defer func() {
-		if err := db.Close(); err != nil {
-			log.Printf("database close: %v", err)
+		if cerr := db.Close(); cerr != nil {
+			log.Printf("database close: %v", cerr)
 		}
 	}()
 
 	queries := storedb.New(db)
-	if err := auth.SeedAdminUser(context.Background(), queries, email, password); err != nil {
+	if err := auth.SeedAdminUser(ctx, queries, email, password); err != nil {
 		if errors.Is(err, auth.ErrUsersExist) {
-			log.Fatal("seed-admin: users already exist")
+			return errors.New("seed-admin: users already exist")
 		}
-		log.Fatalf("seed-admin: %v", err)
+		return fmt.Errorf("seed-admin: %w", err)
 	}
 
-	fmt.Println("Admin user created.")
+	_, err = fmt.Fprintln(stdout, "Admin user created.")
+	return err
 }

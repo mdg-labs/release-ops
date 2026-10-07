@@ -10,11 +10,11 @@ import (
 )
 
 const (
-	minPollIntervalMinutes              int64 = 5
-	minInviteTokenExpiryHours           int64 = 1
-	maxInviteTokenExpiryHours           int64 = 720
-	minPasswordResetTokenExpiryMinutes  int64 = 5
-	maxPasswordResetTokenExpiryMinutes  int64 = 1440
+	minPollIntervalMinutes             int64 = 5
+	minInviteTokenExpiryHours          int64 = 1
+	maxInviteTokenExpiryHours          int64 = 720
+	minPasswordResetTokenExpiryMinutes int64 = 5
+	maxPasswordResetTokenExpiryMinutes int64 = 1440
 )
 
 // SettingsHandlers serves settings HTTP endpoints.

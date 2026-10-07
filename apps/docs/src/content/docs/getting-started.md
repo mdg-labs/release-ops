@@ -5,7 +5,7 @@ description: "Docker Compose setup, environment variables, admin bootstrap, and 
 
 # Getting started
 
-Operator guide for self-hosting Release Ops with Docker Compose. For the full product contract, see [specs.html](/spec/).
+Operator guide for self-hosting Release Ops with Docker Compose. For the full product contract, see [specs.html](/release-ops/spec/).
 
 ## Prerequisites
 
@@ -40,7 +40,7 @@ openssl rand -hex 32
 docker compose up -d
 ```
 
-This starts a **single** `release-ops` service (see [specs.html §10 Deployment](/spec/#deployment)):
+This starts a **single** `release-ops` service (see [specs.html §10 Deployment](/release-ops/spec/#deployment)):
 
 - Image: `ghcr.io/mdg-labs/release-ops:latest` (or a local build from the repo `Dockerfile`)
 - Port: `3000:3000`
@@ -66,7 +66,7 @@ BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 BOOTSTRAP_ADMIN_PASSWORD=change-me-to-a-strong-password
 ```
 
-On the **first** start, when the `users` table is empty, the server creates the admin automatically. **Remove these variables from `.env` after the first successful login** — they are one-time bootstrap only (see [specs.html §3 Authentication](/spec/#auth)).
+On the **first** start, when the `users` table is empty, the server creates the admin automatically. **Remove these variables from `.env` after the first successful login** — they are one-time bootstrap only (see [specs.html §3 Authentication](/release-ops/spec/#auth)).
 
 #### Option B — `seed-admin` CLI via `docker compose exec`
 
@@ -106,7 +106,7 @@ Open [http://localhost:3000](http://localhost:3000), sign in with your admin cre
 
 ## Environment variables
 
-All variables apply to the **single** container. Full spec reference: [specs.html §9](/spec/#env).
+All variables apply to the **single** container. Full spec reference: [specs.html §9](/release-ops/spec/#env).
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -131,7 +131,7 @@ After configuring at least one integration, ticket project, and monitored repo:
 3. Refresh or wait for the status card to update with the new run.
 4. Adjust the global poll interval under **Settings** (`/settings`).
 
-First poll on a new repo performs a **baseline** — the latest release tag is stored but **no ticket is created**. Subsequent polls create tickets only when the tag changes (see [specs.html §5.1](/spec/#domain)).
+First poll on a new repo performs a **baseline** — the latest release tag is stored but **no ticket is created**. Subsequent polls create tickets only when the tag changes (see [specs.html §5.1](/release-ops/spec/#domain)).
 
 ## Upgrading
 
@@ -142,7 +142,9 @@ docker compose pull
 docker compose up -d
 ```
 
-Migrations run automatically on container start via `golang-migrate`.
+Pending migrations run automatically when the container starts, after a snapshot of the database is saved under `/data/snapshots`.
+
+**Exception — databases from before the migration baseline reset.** The database migrations were reset to a single baseline. A `/data` volume created by an image from before that reset cannot be opened by this version: stop the container, remove the old `app.db` (or the whole volume) and start again to create a fresh database. This discards the existing data. It applies once; later releases add migrations on top of the baseline.
 
 ## Troubleshooting
 
@@ -155,6 +157,6 @@ Migrations run automatically on container start via `golang-migrate`.
 
 ## Further reading
 
-- [mvp-checklist.md](/mvp-checklist/) — MVP acceptance criteria sign-off checklist
-- [specs.html](/spec/) — architecture, APIs, providers, CI/CD
-- [schema.html](/schema/) — database tables
+- [mvp-checklist.md](/release-ops/mvp-checklist/) — MVP acceptance criteria sign-off checklist
+- [specs.html](/release-ops/spec/) — architecture, APIs, providers, CI/CD
+- [schema.html](/release-ops/schema/) — database tables

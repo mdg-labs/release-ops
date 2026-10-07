@@ -129,7 +129,7 @@ is reviewed twice by a primary unit.
 | `tickets` — ticket creation, metadata, templates, connection tests | `internal/providers/ticket/` `internal/providers/integrationtester/` `internal/tickettemplate/` | 2.2 2.4 | T10 T15 |
 | `poll` — the scheduler, run engine and notifications | `internal/poll/` `internal/store/poll.go` `queries/poll_runs.sql` `queries/monitored_repos.sql` `queries/monitored_repo_notifications.sql` | 2.3 2.4 | T3 T10 T15 |
 | `mail` — outbound email and its templates | `internal/mail/` | 2.1 2.6 | T3 T8 T14 T15 |
-| `store` — schema, queries, migrations tooling | `internal/store/` `queries/` `db/schema.sql` `tools/migrate/` `scripts/migrate-diff.mjs` `sqlc.yaml` | 2.5 | T12 T16 |
+| `store` — schema, queries, migrations tooling | `internal/store/` `queries/` `db/schema.sql` `migrations/` `sqlc.yaml` | 2.5 | T12 T16 |
 | `runtime` — server wiring, image, entrypoint | `cmd/server/` `Dockerfile` `docker/` `docker-compose.yml` | 2.7 2.8 | T4 T13 T14 T16 |
 | `web` — the rest of the web UI | `apps/web/` | 2.2 2.3 | T9 T15 |
 | `supply-chain` — dependencies, workflows, build | `go.mod` `go.sum` `package.json` `package-lock.json` `apps/docs/package.json` `.github/` `Makefile` `.golangci.yml` `.coderabbit.yaml` `.gitignore` `scripts/` | 2.8 | T13 |

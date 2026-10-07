@@ -106,12 +106,12 @@ func TicketProjectFromStore(row store.TicketProject, integrationKind string) (ti
 	}
 
 	return ticket.TicketProject{
-		ID:                 row.ID,
-		IntegrationID:      row.IntegrationID,
-		IntegrationKind:    integrationKind,
-		ExternalProjectID:  row.ExternalProjectID,
-		CreateConfig:       createConfig,
-		StatusMapping:      mapping,
+		ID:                row.ID,
+		IntegrationID:     row.IntegrationID,
+		IntegrationKind:   integrationKind,
+		ExternalProjectID: row.ExternalProjectID,
+		CreateConfig:      createConfig,
+		StatusMapping:     mapping,
 		ContentTemplates: ticket.ContentTemplates{
 			Title:            templates.Title,
 			Description:      templates.Description,
