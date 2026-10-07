@@ -195,8 +195,9 @@ function main(argv) {
   const existing = lines.slice(j + 1, k).findIndex((l) => l.startsWith('filed:'));
   if (existing !== -1) lines[j + 1 + existing] = filedLine;
   else lines.splice(k, 0, filedLine);
-  fs.writeFileSync(file, lines.join('\n'));
-  parseReport(lines.join('\n'));
+  const updated = lines.join('\n');
+  parseReport(updated);
+  fs.writeFileSync(file, updated);
   console.log(`${id} filed as ${value}`);
   return 0;
 }
