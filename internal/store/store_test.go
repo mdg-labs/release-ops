@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -229,6 +230,50 @@ func TestUpdatePollStateOnMonitoredRepo(t *testing.T) {
 	}
 	if updated.OpenTicketExternalID == nil || *updated.OpenTicketExternalID != ticketID {
 		t.Fatalf("OpenTicketExternalID = %v, want %q", updated.OpenTicketExternalID, ticketID)
+	}
+}
+
+func TestUpdatePollStateKeepsStoredStateWhenTargetReadFails(t *testing.T) {
+	t.Parallel()
+
+	s, _ := testStore(t)
+	ctx := context.Background()
+	fixture := seedRepoFixture(t, s, ctx)
+
+	// Dropping the link table fails the follow-up read of the repo's notification
+	// targets while the UPDATE on monitored_repos still succeeds.
+	if _, err := s.DB().ExecContext(ctx, `DROP TABLE monitored_repo_notifications`); err != nil {
+		t.Fatalf("drop monitored_repo_notifications: %v", err)
+	}
+
+	tag := "v1.2.3"
+	updated, err := s.Poll().UpdatePollState(ctx, fixture.repoID, store.PollStateUpdate{LastKnownTag: &tag})
+	if !errors.Is(err, store.ErrNotificationTargetsUnread) {
+		t.Fatalf("UpdatePollState error = %v, want ErrNotificationTargetsUnread", err)
+	}
+	if updated == nil || updated.LastKnownTag == nil || *updated.LastKnownTag != tag {
+		t.Fatalf("updated repo = %+v, want the stored state returned with the error", updated)
+	}
+
+	var stored sql.NullString
+	if err := s.DB().QueryRowContext(ctx, `SELECT last_known_tag FROM monitored_repos WHERE id = ?`, fixture.repoID).Scan(&stored); err != nil {
+		t.Fatalf("read last_known_tag: %v", err)
+	}
+	if stored.String != tag {
+		t.Fatalf("stored last_known_tag = %q, want %q", stored.String, tag)
+	}
+}
+
+func TestUpdatePollStateFailureStoresNothing(t *testing.T) {
+	t.Parallel()
+
+	s, _ := testStore(t)
+	ctx := context.Background()
+
+	tag := "v1.2.3"
+	updated, err := s.Poll().UpdatePollState(ctx, "missing-repo", store.PollStateUpdate{LastKnownTag: &tag})
+	if err == nil || errors.Is(err, store.ErrNotificationTargetsUnread) || updated != nil {
+		t.Fatalf("UpdatePollState = %+v, %v; want nil repo and a plain error", updated, err)
 	}
 }
 

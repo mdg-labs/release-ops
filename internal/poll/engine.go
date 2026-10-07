@@ -210,7 +210,7 @@ func (e *Engine) applyBaseline(ctx context.Context, repo store.MonitoredRepo, re
 		update.LastReleasePublishedAt = releasePublishedAtPtr(release)
 	}
 
-	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+	updated, err := e.savePollState(ctx, repo, update)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +226,7 @@ func (e *Engine) applySkip(ctx context.Context, repo store.MonitoredRepo) (*Repo
 	update := basePollUpdate(repo)
 	update.LastPolledAt = &now
 	update.LastError = nil
-	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+	updated, err := e.savePollState(ctx, repo, update)
 	if err != nil {
 		return nil, err
 	}
@@ -336,7 +336,7 @@ func (e *Engine) applyCreate(
 	update.LastReleasePublishedAt = releasePublishedAtPtr(release)
 	update.LastPolledAt = &now
 	update.LastError = nil
-	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+	updated, err := e.savePollState(ctx, repo, update)
 	if err != nil {
 		return nil, err
 	}
@@ -387,7 +387,7 @@ func (e *Engine) applySupersede(
 	update.LastReleasePublishedAt = releasePublishedAtPtr(release)
 	update.LastPolledAt = &now
 	update.LastError = nil
-	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+	updated, err := e.savePollState(ctx, repo, update)
 	if err != nil {
 		return nil, err
 	}
@@ -399,7 +399,7 @@ func (e *Engine) applySupersede(
 	if supersedeErr := e.supersedeOldTicket(ctx, repo, release, project, provider, repoWebURL, supersedeCtx, oldID, externalID); supersedeErr != nil {
 		msg := fmt.Sprintf("supersede ticket %s: %v", oldID, supersedeErr)
 		update.LastError = &msg
-		updated, err = e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+		updated, err = e.savePollState(ctx, repo, update)
 		if err != nil {
 			return nil, err
 		}
@@ -488,7 +488,7 @@ func (e *Engine) applyMerge(
 	update.LastReleasePublishedAt = releasePublishedAtPtr(release)
 	update.LastPolledAt = &now
 	update.LastError = nil
-	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+	updated, err := e.savePollState(ctx, repo, update)
 	if err != nil {
 		return nil, err
 	}
@@ -511,7 +511,7 @@ func (e *Engine) applySkipIfOpen(
 	update.LastReleasePublishedAt = releasePublishedAtPtr(release)
 	update.LastPolledAt = &now
 	update.LastError = nil
-	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+	updated, err := e.savePollState(ctx, repo, update)
 	if err != nil {
 		return nil, err
 	}
@@ -522,13 +522,31 @@ func (e *Engine) applySkipIfOpen(
 	}, nil
 }
 
+// savePollState stores update for repo. When the state was stored but the repo's
+// notification targets could not be read afterwards, the step still counts as saved:
+// the repo keeps the target selection it was loaded with, so the step's notification
+// goes to the same targets as before, and the failed read is logged.
+func (e *Engine) savePollState(ctx context.Context, repo store.MonitoredRepo, update store.PollStateUpdate) (*store.MonitoredRepo, error) {
+	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+	if err != nil {
+		if updated != nil && errors.Is(err, store.ErrNotificationTargetsUnread) {
+			slog.Warn("poll state stored but notification targets could not be re-read; using the targets loaded for this poll",
+				"repoId", repo.ID, "error", err)
+			updated.NotificationTargetIDs = repo.NotificationTargetIDs
+			return updated, nil
+		}
+		return nil, err
+	}
+	return updated, nil
+}
+
 func (e *Engine) recordError(ctx context.Context, repo store.MonitoredRepo, err error) (*RepoEvaluation, error) {
 	msg := err.Error()
 	now := pollNowUTC()
 	update := basePollUpdate(repo)
 	update.LastPolledAt = &now
 	update.LastError = &msg
-	updated, updateErr := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+	updated, updateErr := e.savePollState(ctx, repo, update)
 	if updateErr != nil {
 		return nil, updateErr
 	}

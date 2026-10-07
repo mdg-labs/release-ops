@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 
 	"github.com/mdg-labs/release-ops/internal/store/db"
 )
@@ -63,8 +65,17 @@ type PollEventRef struct {
 	ReleaseTag       *string
 }
 
+// ErrNotificationTargetsUnread is returned by UpdatePollState together with the
+// updated repo when the state was stored but the repo's notification targets could
+// not be read afterwards. The repo's NotificationTargetIDs are unset in that case:
+// callers keep the ids they already hold.
+var ErrNotificationTargetsUnread = errors.New("notification targets unread after poll state write")
+
 // PollRepository updates poll state on monitored repos and manages poll run audit rows.
 type PollRepository interface {
+	// UpdatePollState stores update and returns the repo with its notification target ids.
+	// An error that wraps ErrNotificationTargetsUnread comes with a non-nil repo and means
+	// the state is stored; any other error means nothing was stored.
 	UpdatePollState(ctx context.Context, repoID string, update PollStateUpdate) (*MonitoredRepo, error)
 	InsertRun(ctx context.Context, triggerSource string) (*PollRun, error)
 	FinishRun(ctx context.Context, id string, status string, reposChecked, ticketsCreated, ticketsSuperseded int64, errorsJSON string) (*PollRun, error)
@@ -94,9 +105,10 @@ func (r pollRepo) UpdatePollState(ctx context.Context, repoID string, update Pol
 	}
 
 	repo := monitoredRepoFromRow(monitoredRepoRow(row))
+	// The UPDATE above is already committed: a failing read must not look like a failed write.
 	ids, err := r.store.q.ListNotificationTargetIDsForRepo(ctx, repoID)
 	if err != nil {
-		return nil, err
+		return repo, fmt.Errorf("%w: %w", ErrNotificationTargetsUnread, err)
 	}
 	repo.NotificationTargetIDs = ids
 	return repo, nil

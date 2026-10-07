@@ -3,6 +3,7 @@ package poll_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -682,6 +683,65 @@ func TestEvaluateRepoSupersedeKeepsNewTicketWhenOldTicketUpdateFails(t *testing.
 	}
 	if again.Actions[0] != poll.ActionSkip || provider.createCalls != 1 {
 		t.Fatalf("second poll actions = %v, create calls = %d; want skip and 1", again.Actions, provider.createCalls)
+	}
+}
+
+// targetsUnreadPollRepo stores every update, then reports that the repo's notification
+// targets could not be read afterwards, the way the store does.
+type targetsUnreadPollRepo struct {
+	*mockPollRepo
+}
+
+func (r targetsUnreadPollRepo) UpdatePollState(ctx context.Context, repoID string, update store.PollStateUpdate) (*store.MonitoredRepo, error) {
+	updated, err := r.mockPollRepo.UpdatePollState(ctx, repoID, update)
+	if err != nil {
+		return nil, err
+	}
+	updated.NotificationTargetIDs = nil
+	return updated, fmt.Errorf("%w: database is locked", store.ErrNotificationTargetsUnread)
+}
+
+func TestEvaluateRepoSupersedeCompletesWhenTargetReadFailsAfterWrites(t *testing.T) {
+	t.Parallel()
+
+	repo := baseRepo()
+	last := "v1.0.0"
+	openID := "old-ticket"
+	repo.LastKnownTag = &last
+	repo.OpenTicketExternalID = &openID
+	repo.OpenTicketTag = &last
+	repo.NotificationTargetIDs = []string{"t1"}
+
+	pollRepo := newMockPollRepo(repo)
+	engine := poll.NewEngine(targetsUnreadPollRepo{pollRepo})
+	provider := &mockTicketProvider{
+		statuses: map[string]string{openID: "in-progress"},
+		createID: "new-ticket",
+	}
+
+	got, err := engine.EvaluateRepo(
+		context.Background(),
+		repo,
+		testRelease("v2.0.0"),
+		nil,
+		testTicketProject(ticket.PolicySupersede),
+		provider,
+		testRepoWebURL(),
+	)
+	if err != nil {
+		t.Fatalf("EvaluateRepo: %v", err)
+	}
+	if len(got.Actions) != 2 || got.Actions[0] != poll.ActionSupersede || got.Actions[1] != poll.ActionCreate {
+		t.Fatalf("actions = %v, want [supersede create]", got.Actions)
+	}
+	if len(pollRepo.updates) != 1 {
+		t.Fatalf("poll state writes = %d, want 1", len(pollRepo.updates))
+	}
+	if got.Repo.OpenTicketExternalID == nil || *got.Repo.OpenTicketExternalID != "new-ticket" {
+		t.Fatalf("OpenTicketExternalID = %v, want new-ticket", got.Repo.OpenTicketExternalID)
+	}
+	if len(got.Repo.NotificationTargetIDs) != 1 || got.Repo.NotificationTargetIDs[0] != "t1" {
+		t.Fatalf("NotificationTargetIDs = %v, want the ids the repo was loaded with", got.Repo.NotificationTargetIDs)
 	}
 }
 
