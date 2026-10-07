@@ -168,12 +168,7 @@ func TestJiraProviderAddTicketComment(t *testing.T) {
 		}
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		adf, _ := body["body"].(map[string]any)
-		content, _ := adf["content"].([]any)
-		paragraph, _ := content[0].(map[string]any)
-		textNodes, _ := paragraph["content"].([]any)
-		textNode, _ := textNodes[0].(map[string]any)
-		gotText, _ = textNode["text"].(string)
+		gotText = adfPlainText(t, body["body"])
 		w.WriteHeader(http.StatusCreated)
 	}))
 	t.Cleanup(server.Close)

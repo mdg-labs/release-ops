@@ -7,14 +7,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 const (
-	linearUserAgent        = "release-ops"
-	linearGraphQLEndpoint  = "https://api.linear.app/graphql"
+	linearUserAgent       = "release-ops"
+	linearGraphQLEndpoint = "https://api.linear.app/graphql"
 )
 
 // LinearProvider creates and updates tickets via the Linear GraphQL API.
@@ -22,6 +26,41 @@ type LinearProvider struct {
 	apiKey   string
 	endpoint string
 	client   *http.Client
+}
+
+// linearURLLookupTimeout bounds the issue url lookup TicketWebURL performs on a cache miss.
+const linearURLLookupTimeout = 5 * time.Second
+
+// linearIssueURLCacheMax bounds linearIssueURLs; the cache is reset when it fills up.
+const linearIssueURLCacheMax = 4096
+
+// linearIssueURLs caches Linear-provided issue urls (https://linear.app/<workspace>/issue/<KEY>)
+// by issue id. Issue ids are global UUIDs, so one process-wide cache serves every provider
+// instance (the poll engine and the status API each build their own provider).
+var linearIssueURLs = struct {
+	sync.Mutex
+	byID map[string]string
+}{byID: make(map[string]string)}
+
+func cachedLinearIssueURL(issueID string) (string, bool) {
+	linearIssueURLs.Lock()
+	defer linearIssueURLs.Unlock()
+	issueURL, ok := linearIssueURLs.byID[issueID]
+	return issueURL, ok
+}
+
+func storeLinearIssueURL(issueID, issueURL string) {
+	issueID = strings.TrimSpace(issueID)
+	issueURL = strings.TrimSpace(issueURL)
+	if issueID == "" || issueURL == "" {
+		return
+	}
+	linearIssueURLs.Lock()
+	defer linearIssueURLs.Unlock()
+	if len(linearIssueURLs.byID) >= linearIssueURLCacheMax {
+		linearIssueURLs.byID = make(map[string]string)
+	}
+	linearIssueURLs.byID[issueID] = issueURL
 }
 
 // NewLinearProvider returns a Linear ticket provider using the production GraphQL endpoint.
@@ -67,7 +106,8 @@ type linearIssueCreateData struct {
 	IssueCreate struct {
 		Success bool `json:"success"`
 		Issue   struct {
-			ID string `json:"id"`
+			ID  string `json:"id"`
+			URL string `json:"url"`
 		} `json:"issue"`
 	} `json:"issueCreate"`
 }
@@ -117,7 +157,7 @@ func (l *LinearProvider) CreateTicket(ctx context.Context, input TicketInput) (s
 	const query = `mutation IssueCreate($input: IssueCreateInput!) {
   issueCreate(input: $input) {
     success
-    issue { id }
+    issue { id url }
   }
 }`
 
@@ -131,6 +171,7 @@ func (l *LinearProvider) CreateTicket(ctx context.Context, input TicketInput) (s
 	if data.IssueCreate.Issue.ID == "" {
 		return "", errors.New("linear: create issue: empty id in response")
 	}
+	storeLinearIssueURL(data.IssueCreate.Issue.ID, data.IssueCreate.Issue.URL)
 	return data.IssueCreate.Issue.ID, nil
 }
 
@@ -273,30 +314,98 @@ func (l *LinearProvider) UpdateTicket(ctx context.Context, externalID, title, de
 }
 
 // TicketWebURL implements TicketProvider.
+// Linear issue links are https://linear.app/<workspace-urlKey>/issue/<IDENTIFIER>, which cannot
+// be derived from the issue id alone. The url Linear returns from issueCreate is cached; on a
+// cache miss the issue url is queried (bounded by linearURLLookupTimeout). If the lookup fails
+// the id-based form is returned so callers still get a link.
 func (l *LinearProvider) TicketWebURL(_ TicketProject, externalID string) (string, error) {
 	externalID = strings.TrimSpace(externalID)
 	if externalID == "" {
 		return "", errors.New("linear: external id is required")
 	}
+	if issueURL, ok := cachedLinearIssueURL(externalID); ok {
+		return issueURL, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), linearURLLookupTimeout)
+	defer cancel()
+	if issueURL, err := l.lookupIssueURL(ctx, externalID); err == nil {
+		storeLinearIssueURL(externalID, issueURL)
+		return issueURL, nil
+	}
 	return "https://linear.app/issue/" + url.PathEscape(externalID), nil
 }
 
+func (l *LinearProvider) lookupIssueURL(ctx context.Context, issueID string) (string, error) {
+	const query = `query IssueURL($id: String!) {
+  issue(id: $id) {
+    url
+  }
+}`
+
+	var data struct {
+		Issue struct {
+			URL string `json:"url"`
+		} `json:"issue"`
+	}
+	if err := l.doGraphQL(ctx, query, map[string]any{"id": issueID}, &data); err != nil {
+		return "", err
+	}
+	issueURL := strings.TrimSpace(data.Issue.URL)
+	if issueURL == "" {
+		return "", errors.New("linear: issue url missing in response")
+	}
+	return issueURL, nil
+}
+
+// linearCreateDefaults reads create_config (specs §5.3: { "priority": 2, "stateId": "..." }).
+// priority is accepted as a JSON number or a numeric string (ticket metadata priority ids are
+// "0".."4"); values outside Linear's 0–4 range are ignored.
 func linearCreateDefaults(createConfig map[string]any) (priority *int, stateID string) {
 	if createConfig == nil {
 		return nil, ""
 	}
 
-	switch raw := createConfig["priority"].(type) {
-	case int:
-		priority = &raw
-	case float64:
-		p := int(raw)
+	if p, ok := linearPriority(createConfig["priority"]); ok {
 		priority = &p
 	}
 	if raw, ok := createConfig["stateId"].(string); ok {
 		stateID = strings.TrimSpace(raw)
 	}
 	return priority, stateID
+}
+
+func linearPriority(raw any) (int, bool) {
+	var p int
+	switch v := raw.(type) {
+	case int:
+		p = v
+	case int64:
+		p = int(v)
+	case float64:
+		if v < 0 || v > 4 || v != math.Trunc(v) {
+			return 0, false
+		}
+		p = int(v)
+	case json.Number:
+		n, err := strconv.Atoi(v.String())
+		if err != nil {
+			return 0, false
+		}
+		p = n
+	case string:
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil {
+			return 0, false
+		}
+		p = n
+	default:
+		return 0, false
+	}
+	if p < 0 || p > 4 {
+		return 0, false
+	}
+	return p, true
 }
 
 func (l *LinearProvider) doGraphQL(ctx context.Context, query string, variables map[string]any, data any) error {

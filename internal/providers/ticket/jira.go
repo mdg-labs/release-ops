@@ -58,8 +58,15 @@ type jiraCreateFields struct {
 	Project     jiraProjectRef `json:"project"`
 	Summary     string         `json:"summary"`
 	Description jiraADF        `json:"description"`
-	IssueType   jiraNamedRef   `json:"issuetype"`
-	Priority    *jiraNamedRef  `json:"priority,omitempty"`
+	IssueType   jiraFieldRef   `json:"issuetype"`
+	Priority    *jiraFieldRef  `json:"priority,omitempty"`
+}
+
+// jiraFieldRef references a Jira field value by name (specs §5.3) or, for configs saved with
+// numeric Jira IDs before RO-106, by id.
+type jiraFieldRef struct {
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
 }
 
 type jiraProjectRef struct {
@@ -88,9 +95,14 @@ type jiraTransitionsResponse struct {
 }
 
 type jiraTransition struct {
-	ID   string       `json:"id"`
-	To   jiraNamedRef `json:"to"`
-	Name string       `json:"name"`
+	ID   string           `json:"id"`
+	To   jiraTransitionTo `json:"to"`
+	Name string           `json:"name"`
+}
+
+type jiraTransitionTo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type jiraTransitionRequest struct {
@@ -122,12 +134,13 @@ type jiraADF struct {
 
 type jiraADFBlock struct {
 	Type    string        `json:"type"`
-	Content []jiraADFText `json:"content,omitempty"`
+	Content []jiraADFNode `json:"content,omitempty"`
 }
 
-type jiraADFText struct {
+// jiraADFNode is an inline ADF node: "text" (non-empty Text) or "hardBreak".
+type jiraADFNode struct {
 	Type string `json:"type"`
-	Text string `json:"text"`
+	Text string `json:"text,omitempty"`
 }
 
 // CreateTicket implements TicketProvider.
@@ -141,21 +154,30 @@ func (j *JiraProvider) CreateTicket(ctx context.Context, input TicketInput) (str
 		return "", errors.New("jira: external_project_id (project key) is required")
 	}
 
-	issueType, priority, initialStatus := jiraCreateDefaults(input.Project.CreateConfig)
+	cfg := jiraCreateDefaults(input.Project.CreateConfig)
 
 	fields := jiraCreateFields{
 		Project:     jiraProjectRef{Key: projectKey},
 		Summary:     input.Title,
 		Description: plainTextADF(input.Description),
-		IssueType:   jiraNamedRef{Name: issueType},
+		IssueType:   jiraRef(cfg.issueType),
 	}
-	if priority != "" {
-		fields.Priority = &jiraNamedRef{Name: priority}
+	if cfg.priority != "" {
+		ref := jiraRef(cfg.priority)
+		fields.Priority = &ref
 	}
 
 	var created jiraCreateResponse
 	path := "/rest/api/3/issue"
-	if err := j.doJSON(ctx, http.MethodPost, path, jiraCreateRequest{Fields: fields}, &created); err != nil {
+	err := j.doJSON(ctx, http.MethodPost, path, jiraCreateRequest{Fields: fields}, &created)
+	if err != nil && fields.Priority != nil && isJiraPriorityFieldError(err) {
+		// Team-managed projects / create screens without a Priority field reject it outright;
+		// the ticket matters more than the priority, so retry once without it.
+		fields.Priority = nil
+		created = jiraCreateResponse{}
+		err = j.doJSON(ctx, http.MethodPost, path, jiraCreateRequest{Fields: fields}, &created)
+	}
+	if err != nil {
 		return "", fmt.Errorf("jira: create issue: %w", err)
 	}
 	if created.Key == "" {
@@ -163,25 +185,33 @@ func (j *JiraProvider) CreateTicket(ctx context.Context, input TicketInput) (str
 	}
 
 	// create_config.initialStatus (specs §5.3): move the new issue out of the workflow's
-	// default status. Best-effort — the issue exists, so a failed transition is logged
-	// and the key is still returned.
-	if initialStatus != "" {
-		if err := j.applyInitialStatus(ctx, created.Key, initialStatus); err != nil {
-			slog.Warn("jira: apply initial status", "issue", created.Key, "status", initialStatus, "error", err)
+	// default status. Best-effort — the issue already exists: a failed transition must not
+	// fail the create, otherwise the poll engine would not record the ticket and would create
+	// a duplicate next cycle.
+	if cfg.initialStatus != "" {
+		if err := j.applyInitialStatus(ctx, created.Key, cfg.initialStatus); err != nil {
+			slog.WarnContext(ctx, "jira: initial status not applied",
+				"issue", created.Key, "initialStatus", cfg.initialStatus, "error", err)
 		}
 	}
 	return created.Key, nil
 }
 
+// applyInitialStatus transitions a freshly created issue to create_config.initialStatus
+// (specs §5.3) unless it is already in that status.
 func (j *JiraProvider) applyInitialStatus(ctx context.Context, issueKey, initialStatus string) error {
 	current, err := j.GetTicketStatus(ctx, issueKey)
-	if err != nil {
-		return err
-	}
-	if strings.EqualFold(current, initialStatus) {
+	if err == nil && strings.EqualFold(current, initialStatus) {
 		return nil
 	}
 	return j.UpdateTicketStatus(ctx, issueKey, initialStatus)
+}
+
+// isJiraPriorityFieldError reports whether a create error is Jira rejecting the priority field
+// itself (e.g. "Field 'priority' cannot be set. It is not on the appropriate screen").
+func isJiraPriorityFieldError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "unexpected status 400") && strings.Contains(msg, `"priority"`)
 }
 
 // GetTicketStatus implements TicketProvider.
@@ -195,7 +225,7 @@ func (j *JiraProvider) GetTicketStatus(ctx context.Context, externalID string) (
 	}
 
 	var issue jiraIssueResponse
-	path := "/rest/api/3/issue/" + url.PathEscape(externalID)
+	path := "/rest/api/3/issue/" + url.PathEscape(externalID) + "?fields=status"
 	if err := j.doJSON(ctx, http.MethodGet, path, nil, &issue); err != nil {
 		return "", fmt.Errorf("jira: get issue: %w", err)
 	}
@@ -298,49 +328,109 @@ func (j *JiraProvider) findTransitionID(ctx context.Context, issueKey, targetSta
 		return "", fmt.Errorf("jira: list transitions: %w", err)
 	}
 
+	// Status mapping values are status names (specs §5.3); also accept a status id so
+	// mappings saved with numeric Jira ids before RO-106 still transition.
 	for _, transition := range transitions.Transitions {
-		if strings.EqualFold(strings.TrimSpace(transition.To.Name), targetStatus) {
-			if transition.ID == "" {
-				break
-			}
+		if transition.ID == "" {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(transition.To.Name), targetStatus) ||
+			strings.TrimSpace(transition.To.ID) == targetStatus {
 			return transition.ID, nil
 		}
 	}
 	return "", fmt.Errorf("jira: no transition found to status %q", targetStatus)
 }
 
-// jiraCreateDefaults reads create_config. Priority is sent only when configured: projects
-// without a priority field on the create screen reject it.
-func jiraCreateDefaults(createConfig map[string]any) (issueType, priority, initialStatus string) {
-	issueType = "Task"
-
-	if createConfig == nil {
-		return issueType, "", ""
-	}
-	if raw, ok := createConfig["issueType"].(string); ok && strings.TrimSpace(raw) != "" {
-		issueType = strings.TrimSpace(raw)
-	}
-	if raw, ok := createConfig["priority"].(string); ok {
-		priority = strings.TrimSpace(raw)
-	}
-	if raw, ok := createConfig["initialStatus"].(string); ok {
-		initialStatus = strings.TrimSpace(raw)
-	}
-	return issueType, priority, initialStatus
+type jiraCreateConfig struct {
+	issueType     string
+	priority      string
+	initialStatus string
 }
 
-// plainTextADF wraps text in an ADF document. Jira rejects empty text nodes, so empty
-// text becomes an empty paragraph.
+// jiraCreateDefaults reads create_config (specs §5.3: issueType, priority, initialStatus are
+// names). issueType defaults to "Task"; priority and initialStatus are only applied when set,
+// so projects without a Priority field on the create screen still work.
+func jiraCreateDefaults(createConfig map[string]any) jiraCreateConfig {
+	cfg := jiraCreateConfig{issueType: "Task"}
+	if createConfig == nil {
+		return cfg
+	}
+	if raw := configString(createConfig["issueType"]); raw != "" {
+		cfg.issueType = raw
+	}
+	cfg.priority = configString(createConfig["priority"])
+	cfg.initialStatus = configString(createConfig["initialStatus"])
+	return cfg
+}
+
+func configString(raw any) string {
+	s, ok := raw.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(s)
+}
+
+// jiraRef references an issue type / priority by name. All-digit values are treated as Jira
+// ids — configs saved before RO-106 stored numeric ids from ticket metadata.
+func jiraRef(value string) jiraFieldRef {
+	if isAllDigits(value) {
+		return jiraFieldRef{ID: value}
+	}
+	return jiraFieldRef{Name: value}
+}
+
+func isAllDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// plainTextADF converts plain text to an Atlassian Document Format doc: blank-line separated
+// blocks become paragraphs, single newlines become hardBreak nodes, and empty (or
+// whitespace-only) text produces a single empty paragraph (Jira rejects empty text nodes).
 func plainTextADF(text string) jiraADF {
-	paragraph := jiraADFBlock{Type: "paragraph"}
-	if text != "" {
-		paragraph.Content = []jiraADFText{{Type: "text", Text: text}}
+	doc := jiraADF{Type: "doc", Version: 1, Content: []jiraADFBlock{}}
+
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+
+	var lines []string
+	flush := func() {
+		if len(lines) == 0 {
+			return
+		}
+		nodes := make([]jiraADFNode, 0, len(lines)*2)
+		for i, line := range lines {
+			if i > 0 {
+				nodes = append(nodes, jiraADFNode{Type: "hardBreak"})
+			}
+			if line != "" {
+				nodes = append(nodes, jiraADFNode{Type: "text", Text: line})
+			}
+		}
+		doc.Content = append(doc.Content, jiraADFBlock{Type: "paragraph", Content: nodes})
+		lines = nil
 	}
-	return jiraADF{
-		Type:    "doc",
-		Version: 1,
-		Content: []jiraADFBlock{paragraph},
+	for _, line := range strings.Split(text, "\n") {
+		if strings.TrimSpace(line) == "" {
+			flush()
+			continue
+		}
+		lines = append(lines, strings.TrimRight(line, " \t"))
 	}
+	flush()
+	if len(doc.Content) == 0 {
+		doc.Content = append(doc.Content, jiraADFBlock{Type: "paragraph"})
+	}
+	return doc
 }
 
 func (j *JiraProvider) doJSON(ctx context.Context, method, path string, reqBody any, respBody any) error {
