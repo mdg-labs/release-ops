@@ -38,8 +38,8 @@ func TestMigrateCreatesStrictSchemaOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	if len(applied) != 1 {
-		t.Fatalf("applied on empty db = %d migrations, want 1", len(applied))
+	if want := len(loadEmbedded(t, ctx)); len(applied) != want {
+		t.Fatalf("applied on empty db = %d migrations, want %d", len(applied), want)
 	}
 	snapshotsAfterFirst := snapshotCount(t, dbPath)
 
@@ -79,6 +79,49 @@ func TestMigrateCreatesStrictSchemaOnce(t *testing.T) {
 	}
 	if got := snapshotCount(t, dbPath); got != snapshotsAfterFirst {
 		t.Fatalf("snapshots after no-op Migrate = %d, want %d", got, snapshotsAfterFirst)
+	}
+}
+
+func TestPollRunEventTicketRefMigrationKeepsExistingEvents(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "app.db")
+	all := loadEmbedded(t, ctx)
+	if len(all) < 2 {
+		t.Fatalf("embedded migrations = %d, want the baseline plus the ticket ref migration", len(all))
+	}
+
+	if _, err := applyMigrations(ctx, dbPath, all[:1]); err != nil {
+		t.Fatalf("apply baseline: %v", err)
+	}
+	raw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	for _, stmt := range []string{
+		`INSERT INTO poll_runs (id, started_at, status) VALUES ('run-1', 't', 'success')`,
+		`INSERT INTO poll_run_events (id, poll_run_id, action, detail, created_at) VALUES ('evt-1', 'run-1', 'create', 'legacy', 't')`,
+	} {
+		if _, err := raw.Exec(stmt); err != nil {
+			t.Fatalf("seed %q: %v", stmt, err)
+		}
+	}
+
+	if _, err := applyMigrations(ctx, dbPath, all); err != nil {
+		t.Fatalf("apply remaining migrations: %v", err)
+	}
+
+	var detail string
+	var ticketID, ticketURL, tag sql.NullString
+	if err := raw.QueryRow(
+		`SELECT detail, ticket_external_id, ticket_url, release_tag FROM poll_run_events WHERE id = 'evt-1'`,
+	).Scan(&detail, &ticketID, &ticketURL, &tag); err != nil {
+		t.Fatalf("read legacy event: %v", err)
+	}
+	if detail != "legacy" || ticketID.Valid || ticketURL.Valid || tag.Valid {
+		t.Fatalf("legacy event = %q %v %v %v, want kept with NULL ticket ref and tag", detail, ticketID, ticketURL, tag)
 	}
 }
 

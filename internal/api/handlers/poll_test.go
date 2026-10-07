@@ -69,7 +69,7 @@ func (m *mockPollRepo) ListRuns(_ context.Context, limit, offset int64) ([]store
 	return all[offset:end], nil
 }
 
-func (m *mockPollRepo) InsertEvent(_ context.Context, _ string, _ *string, _ string, _ *string) (*store.PollRunEvent, error) {
+func (m *mockPollRepo) InsertEvent(_ context.Context, _ string, _ *string, _ string, _ *string, _ store.PollEventRef) (*store.PollRunEvent, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -340,6 +340,75 @@ func TestGetPollRunIncludesEventsWithActionEnum(t *testing.T) {
 	for _, event := range resp.Events {
 		if _, ok := validPollRunActions[event.Action]; !ok {
 			t.Fatalf("action = %q, want valid poll_run_events.action enum value", event.Action)
+		}
+	}
+}
+
+func TestGetPollRunEventsCarryRepoTicketAndTag(t *testing.T) {
+	t.Parallel()
+
+	repoID := "repo-1"
+	kind := "github"
+	path := "acme/widget"
+	ticketID := "ENG-7"
+	ticketURL := "https://tracker.example/browse/ENG-7"
+	tag := "v1.2.0"
+	h := &handlers.PollHandlers{
+		Poll: &mockPollRepo{
+			runs: map[string]*store.PollRun{
+				"run-1": {ID: "run-1", StartedAt: "2026-08-07T10:00:00.000Z", Status: "success", TriggerSource: store.PollTriggerSourceManual, ErrorsJSON: "[]"},
+			},
+			events: map[string][]store.PollRunEvent{
+				"run-1": {
+					{
+						ID: "evt-1", PollRunID: "run-1", MonitoredRepoID: &repoID, Action: "create",
+						CreatedAt: "2026-08-07T10:00:01.000Z", SourceKind: &kind, ProjectPath: &path,
+						TicketExternalID: &ticketID, TicketURL: &ticketURL, ReleaseTag: &tag,
+					},
+					{ID: "evt-2", PollRunID: "run-1", Action: "skip", CreatedAt: "2026-08-07T10:00:02.000Z"},
+				},
+			},
+		},
+		Runner: &mockPollRunner{},
+	}
+	router, sm := newPollTestRouter(t, h)
+	cookie := seedSession(t, sm)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/poll/runs/run-1", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Events []map[string]any `json:"events"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Events) != 2 {
+		t.Fatalf("events len = %d, want 2", len(resp.Events))
+	}
+
+	want := map[string]any{
+		"sourceKind":       kind,
+		"projectPath":      path,
+		"ticketExternalId": ticketID,
+		"ticketUrl":        ticketURL,
+		"releaseTag":       tag,
+	}
+	for key, value := range want {
+		if got := resp.Events[0][key]; got != value {
+			t.Errorf("events[0].%s = %v, want %v", key, got, value)
+		}
+	}
+	for key := range want {
+		got, present := resp.Events[1][key]
+		if !present || got != nil {
+			t.Errorf("events[1].%s = %v (present=%v), want explicit null", key, got, present)
 		}
 	}
 }

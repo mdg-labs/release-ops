@@ -138,7 +138,7 @@ func (m *mockStatusPollRepo) ListRuns(_ context.Context, limit, offset int64) ([
 	return out, nil
 }
 
-func (m *mockStatusPollRepo) InsertEvent(_ context.Context, _ string, _ *string, _ string, _ *string) (*store.PollRunEvent, error) {
+func (m *mockStatusPollRepo) InsertEvent(_ context.Context, _ string, _ *string, _ string, _ *string, _ store.PollEventRef) (*store.PollRunEvent, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 

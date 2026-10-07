@@ -366,6 +366,12 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <ul>
     <li><code>baseline</code> · <code>skip</code> · <code>create</code> · <code>supersede</code> · <code>merge</code> · <code>skip_open</code> · <code>error</code></li>
   </ul>
+  <p><code>poll_run_events</code> also records, per event, the ticket and release it refers to. All three columns are nullable and stay NULL for events written before they existed:</p>
+  <ul>
+    <li><code>ticket_external_id</code> · <code>ticket_url</code> — set at poll time on <code>create</code> (the new ticket), <code>merge</code> (the updated, existing ticket) and <code>supersede</code> (the old, superseded ticket); NULL on <code>baseline</code>, <code>skip</code>, <code>skip_open</code> and <code>error</code>. A supersede evaluation records two events, <code>supersede</code> (old ticket) then <code>create</code> (new ticket), each with its own reference. <code>ticket_url</code> is <code>TicketProvider.TicketWebURL</code> resolved during the poll; if that lookup fails the id is kept, the URL stays NULL and the poll outcome is unchanged.</li>
+    <li><code>release_tag</code> — the triggering release's tag on <code>baseline</code> (when a release exists), <code>create</code>, <code>supersede</code>, <code>merge</code> and <code>skip_open</code>; NULL on <code>skip</code> and <code>error</code>.</li>
+  </ul>
+  <p>The repository of an event is not stored on it: <code>GET /api/v1/poll/runs/{id}</code> joins <code>monitored_repos</code> at read time, so events of a deleted repo (<code>monitored_repo_id</code> NULL) have no repo path.</p>
 
   <h3>4.7 Timestamps</h3>
   <p>All <code>TEXT</code> timestamps: RFC3339/ISO8601 UTC with milliseconds, e.g. <code>2026-08-06T12:00:00.000Z</code>.</p>
@@ -770,10 +776,19 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
       "monitoredRepoId": "...",
       "action": "create",
       "detail": "...",
-      "createdAt": "..."
+      "createdAt": "...",
+      "sourceKind": "github",
+      "projectPath": "owner/repo",
+      "ticketExternalId": "RO-42",
+      "ticketUrl": "https://tickets.example/RO-42",
+      "releaseTag": "v1.2.0"
     }
   ]
-}</code></pre>
+}
+// sourceKind, projectPath, ticketExternalId, ticketUrl, releaseTag: string | null.
+// sourceKind/projectPath come from the event's monitored repo (null once it is deleted);
+// the ticket and tag fields are null where §4.6 says so and for events recorded earlier.
+// GET /api/v1/poll/runs/{id} makes no provider call.</code></pre>
   <pre><code>// GET /api/v1/status
 {
   "pollIntervalMinutes": 360,
@@ -1002,7 +1017,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><th>Particle</th><th>Usage</th></tr>
     <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a> pagination</td><td>Poll run history table</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-badge-5.json">p-badge-5</a> (semantic)</td><td>Run status badge</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-drawer-10.json">p-drawer-10</a></td><td>Per-run detail (events, errors)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-dialog-5.json">p-dialog-5</a></td><td>Per-run detail (wide dialog, scrollable body: counters, errors, events table with repo, tag and ticket link)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-empty-1.json">p-empty-1</a></td><td>No poll runs yet</td></tr>
   </table>
 

@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -40,6 +41,14 @@ const sampleRuns = [
   },
 ];
 
+const noRef = {
+  sourceKind: null,
+  projectPath: null,
+  ticketExternalId: null,
+  ticketUrl: null,
+  releaseTag: null,
+};
+
 const sampleRunDetail = {
   id: "run-1",
   startedAt: "2026-08-07T10:00:00.000Z",
@@ -48,24 +57,54 @@ const sampleRunDetail = {
   triggerSource: "manual",
   reposChecked: 2,
   ticketsCreated: 1,
-  ticketsSuperseded: 0,
-  errors: [],
+  ticketsSuperseded: 2,
+  errors: [
+    { repoId: "repo-1", message: "timeout" },
+    { repoId: "repo-gone", message: "boom" },
+  ],
   events: [
     {
       id: "evt-1",
       pollRunId: "run-1",
       monitoredRepoId: "repo-1",
       action: "create",
-      detail: "TASK-99",
+      detail: "created ticket",
       createdAt: "2026-08-07T10:04:00.000Z",
+      sourceKind: "github",
+      projectPath: "acme/widget",
+      ticketExternalId: "TASK-99",
+      ticketUrl: "https://tracker.example/TASK-99",
+      releaseTag: "v1.2.0",
     },
     {
       id: "evt-2",
       pollRunId: "run-1",
-      monitoredRepoId: "repo-2",
+      monitoredRepoId: null,
       action: "skip",
       detail: null,
       createdAt: "2026-08-07T10:04:30.000Z",
+      ...noRef,
+    },
+    {
+      id: "evt-3",
+      pollRunId: "run-1",
+      monitoredRepoId: "repo-3",
+      action: "merge",
+      detail: null,
+      createdAt: "2026-08-07T10:04:40.000Z",
+      ...noRef,
+      ticketExternalId: "EVIL-1",
+      ticketUrl: "javascript:alert(1)",
+    },
+    {
+      id: "evt-4",
+      pollRunId: "run-1",
+      monitoredRepoId: "repo-4",
+      action: "supersede",
+      detail: null,
+      createdAt: "2026-08-07T10:04:50.000Z",
+      ...noRef,
+      ticketExternalId: "OLD-7",
     },
   ],
 };
@@ -214,7 +253,7 @@ describe("PollRunHistory", () => {
     ).toBeTruthy();
   });
 
-  it("opens drawer with events from GET /api/v1/poll/runs/{id}", async () => {
+  async function openRunDetail(): Promise<HTMLElement> {
     const pool = mockAgent.get(ORIGIN);
     pool
       .intercept({
@@ -237,13 +276,95 @@ describe("PollRunHistory", () => {
     expect(row).toBeTruthy();
     fireEvent.click(row!);
 
-    expect(await screen.findByText("Poll run details")).toBeTruthy();
-    expect(await screen.findByText("Manual")).toBeTruthy();
-    expect(await screen.findByText("Create ticket")).toBeTruthy();
-    expect(await screen.findByText("Skip")).toBeTruthy();
-    expect(await screen.findByText("TASK-99")).toBeTruthy();
-    expect(await screen.findByText("Aug 7, 2026, 10:04:00.000")).toBeTruthy();
-    expect(await screen.findByText("Aug 7, 2026, 10:04:30.000")).toBeTruthy();
+    return screen.findByRole("dialog");
+  }
+
+  it("opens a dialog with events from GET /api/v1/poll/runs/{id}", async () => {
+    const dialog = await openRunDetail();
+
+    expect(dialog.getAttribute("data-slot")).toBe("dialog-popup");
+    expect(await within(dialog).findByText("Poll run details")).toBeTruthy();
+    expect(await within(dialog).findByText("Create ticket")).toBeTruthy();
+    expect(within(dialog).getByText("Skip")).toBeTruthy();
+    expect(within(dialog).getByText("created ticket")).toBeTruthy();
+    expect(within(dialog).getByText("Aug 7, 2026, 10:04:00.000")).toBeTruthy();
+    expect(within(dialog).getByText("Aug 7, 2026, 10:04:30.000")).toBeTruthy();
+  });
+
+  it("shows repo, tag and ticket columns per event", async () => {
+    const dialog = await openRunDetail();
+    await within(dialog).findByText("Create ticket");
+
+    for (const column of [
+      "Time",
+      "Repo",
+      "Action",
+      "Tag",
+      "Ticket",
+      "Detail",
+    ]) {
+      expect(
+        within(dialog).getByRole("columnheader", { name: column }),
+      ).toBeTruthy();
+    }
+
+    const createRow = within(dialog).getByText("Create ticket").closest("tr")!;
+    expect(within(createRow).getByText("acme/widget")).toBeTruthy();
+    expect(within(createRow).getByText("github")).toBeTruthy();
+    expect(within(createRow).getByText("v1.2.0")).toBeTruthy();
+
+    const link = within(createRow).getByRole("link", { name: "TASK-99" });
+    expect(link.getAttribute("href")).toBe("https://tracker.example/TASK-99");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  it("renders a dash for repo, tag and ticket of events without them", async () => {
+    const dialog = await openRunDetail();
+    await within(dialog).findByText("Create ticket");
+
+    const skipRow = within(dialog).getByText("Skip").closest("tr")!;
+    expect(within(skipRow).queryByRole("link")).toBeNull();
+    // repo, tag, ticket and detail are all empty
+    expect(within(skipRow).getAllByText("—")).toHaveLength(4);
+  });
+
+  it("does not render a non-http(s) ticket URL as a link", async () => {
+    const dialog = await openRunDetail();
+    await within(dialog).findByText("Create ticket");
+
+    const mergeRow = within(dialog).getByText("Merge").closest("tr")!;
+    expect(within(mergeRow).getByText("EVIL-1")).toBeTruthy();
+    expect(within(mergeRow).queryByRole("link")).toBeNull();
+    expect(dialog.querySelector('a[href^="javascript:"]')).toBeNull();
+  });
+
+  it("shows the ticket id as text when only the id was recorded", async () => {
+    const dialog = await openRunDetail();
+    await within(dialog).findByText("Create ticket");
+
+    const supersedeRow = within(dialog).getByText("Supersede").closest("tr")!;
+    expect(within(supersedeRow).getByText("OLD-7")).toBeTruthy();
+    expect(within(supersedeRow).queryByRole("link")).toBeNull();
+  });
+
+  it("lists run errors by repo path and falls back to the repo id", async () => {
+    const dialog = await openRunDetail();
+    await within(dialog).findByText("Create ticket");
+
+    const errors = within(dialog).getByText("Errors").parentElement!;
+    expect(within(errors).getByText("acme/widget")).toBeTruthy();
+    expect(within(errors).queryByText("repo-1")).toBeNull();
+    expect(within(errors).getByText("repo-gone")).toBeTruthy();
+  });
+
+  it("shows the trigger once and the superseded count", async () => {
+    const dialog = await openRunDetail();
+    await within(dialog).findByText("Create ticket");
+
+    expect(within(dialog).getAllByText("Manual")).toHaveLength(1);
+    const superseded = within(dialog).getByText("Tickets superseded");
+    expect(superseded.nextElementSibling?.textContent).toBe("2");
   });
 
   it("paginates with limit and offset", async () => {

@@ -28,6 +28,11 @@ export type PollRunEvent = {
   action: string;
   detail: string | null;
   createdAt: string;
+  sourceKind: string | null;
+  projectPath: string | null;
+  ticketExternalId: string | null;
+  ticketUrl: string | null;
+  releaseTag: string | null;
 };
 
 export type PollRun = {

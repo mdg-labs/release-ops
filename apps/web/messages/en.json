@@ -58,6 +58,7 @@
     "lastRunInProgress": "In progress",
     "lastRunReposChecked": "Repos checked",
     "lastRunTicketsCreated": "Tickets created",
+    "lastRunTicketsSuperseded": "Tickets superseded",
     "pollingInProgress": "Poll in progress…",
     "lastRunErrorsTitle": "Errors in last poll run",
     "reposSectionTitle": "Monitored repos",
@@ -119,7 +120,10 @@
     },
     "pollHistoryEventColumns": {
       "time": "Time",
+      "repo": "Repo",
       "action": "Action",
+      "tag": "Tag",
+      "ticket": "Ticket",
       "detail": "Detail"
     },
     "eventActions": {

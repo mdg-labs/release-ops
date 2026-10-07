@@ -154,7 +154,10 @@ CREATE TABLE poll_run_events (
     action IN ('baseline', 'skip', 'create', 'supersede', 'merge', 'skip_open', 'error')
   ),
   detail TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  ticket_external_id TEXT,
+  ticket_url TEXT,
+  release_tag TEXT
 ) STRICT;
 
 CREATE INDEX idx_integrations_kind ON integrations (kind);

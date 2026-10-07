@@ -266,8 +266,14 @@ INSERT INTO poll_run_events (
   monitored_repo_id,
   action,
   detail,
-  created_at
+  created_at,
+  ticket_external_id,
+  ticket_url,
+  release_tag
 ) VALUES (
+  ?,
+  ?,
+  ?,
   ?,
   ?,
   ?,
@@ -281,16 +287,22 @@ RETURNING
   monitored_repo_id,
   action,
   detail,
-  created_at
+  created_at,
+  ticket_external_id,
+  ticket_url,
+  release_tag
 `
 
 type InsertEventParams struct {
-	ID              string         `json:"id"`
-	PollRunID       string         `json:"poll_run_id"`
-	MonitoredRepoID sql.NullString `json:"monitored_repo_id"`
-	Action          string         `json:"action"`
-	Detail          sql.NullString `json:"detail"`
-	CreatedAt       string         `json:"created_at"`
+	ID               string         `json:"id"`
+	PollRunID        string         `json:"poll_run_id"`
+	MonitoredRepoID  sql.NullString `json:"monitored_repo_id"`
+	Action           string         `json:"action"`
+	Detail           sql.NullString `json:"detail"`
+	CreatedAt        string         `json:"created_at"`
+	TicketExternalID sql.NullString `json:"ticket_external_id"`
+	TicketUrl        sql.NullString `json:"ticket_url"`
+	ReleaseTag       sql.NullString `json:"release_tag"`
 }
 
 func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (PollRunEvent, error) {
@@ -301,6 +313,9 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (PollR
 		arg.Action,
 		arg.Detail,
 		arg.CreatedAt,
+		arg.TicketExternalID,
+		arg.TicketUrl,
+		arg.ReleaseTag,
 	)
 	var i PollRunEvent
 	err := row.Scan(
@@ -310,6 +325,9 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (PollR
 		&i.Action,
 		&i.Detail,
 		&i.CreatedAt,
+		&i.TicketExternalID,
+		&i.TicketUrl,
+		&i.ReleaseTag,
 	)
 	return i, err
 }
@@ -375,26 +393,46 @@ func (q *Queries) InsertRun(ctx context.Context, arg InsertRunParams) (InsertRun
 
 const listPollRunEventsByRunID = `-- name: ListPollRunEventsByRunID :many
 SELECT
-  id,
-  poll_run_id,
-  monitored_repo_id,
-  action,
-  detail,
-  created_at
-FROM poll_run_events
-WHERE poll_run_id = ?
-ORDER BY created_at
+  e.id,
+  e.poll_run_id,
+  e.monitored_repo_id,
+  e.action,
+  e.detail,
+  e.created_at,
+  e.ticket_external_id,
+  e.ticket_url,
+  e.release_tag,
+  r.source_kind,
+  r.project_path
+FROM poll_run_events e
+LEFT JOIN monitored_repos r ON r.id = e.monitored_repo_id
+WHERE e.poll_run_id = ?
+ORDER BY e.created_at
 `
 
-func (q *Queries) ListPollRunEventsByRunID(ctx context.Context, pollRunID string) ([]PollRunEvent, error) {
+type ListPollRunEventsByRunIDRow struct {
+	ID               string         `json:"id"`
+	PollRunID        string         `json:"poll_run_id"`
+	MonitoredRepoID  sql.NullString `json:"monitored_repo_id"`
+	Action           string         `json:"action"`
+	Detail           sql.NullString `json:"detail"`
+	CreatedAt        string         `json:"created_at"`
+	TicketExternalID sql.NullString `json:"ticket_external_id"`
+	TicketUrl        sql.NullString `json:"ticket_url"`
+	ReleaseTag       sql.NullString `json:"release_tag"`
+	SourceKind       sql.NullString `json:"source_kind"`
+	ProjectPath      sql.NullString `json:"project_path"`
+}
+
+func (q *Queries) ListPollRunEventsByRunID(ctx context.Context, pollRunID string) ([]ListPollRunEventsByRunIDRow, error) {
 	rows, err := q.db.QueryContext(ctx, listPollRunEventsByRunID, pollRunID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []PollRunEvent
+	var items []ListPollRunEventsByRunIDRow
 	for rows.Next() {
-		var i PollRunEvent
+		var i ListPollRunEventsByRunIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.PollRunID,
@@ -402,6 +440,11 @@ func (q *Queries) ListPollRunEventsByRunID(ctx context.Context, pollRunID string
 			&i.Action,
 			&i.Detail,
 			&i.CreatedAt,
+			&i.TicketExternalID,
+			&i.TicketUrl,
+			&i.ReleaseTag,
+			&i.SourceKind,
+			&i.ProjectPath,
 		); err != nil {
 			return nil, err
 		}

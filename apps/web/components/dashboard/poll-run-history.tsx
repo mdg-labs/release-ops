@@ -13,17 +13,16 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Frame, FrameFooter, FramePanel } from "@/components/ui/frame";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Sheet,
-  SheetClose,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetPanel,
-  SheetPopup,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  Dialog,
+  DialogClose,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -58,6 +57,19 @@ function runStatusVariant(
       return "info";
     default:
       return "secondary";
+  }
+}
+
+const externalLinkClassName = "text-primary underline-offset-4 hover:underline";
+
+// Ticket URLs derive from a user-configured integration base URL, so only
+// http(s) targets are ever rendered as links.
+function isHttpUrl(value: string): boolean {
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
   }
 }
 
@@ -119,6 +131,31 @@ function RunStatusBadge({ status }: { status: string }): React.ReactElement {
   return <Badge variant={runStatusVariant(status)}>{statusLabel()}</Badge>;
 }
 
+function EventTicketCell({
+  event,
+}: {
+  event: PollRunEvent;
+}): React.ReactElement {
+  const t = useTranslations("dashboard");
+
+  if (!event.ticketExternalId) {
+    return <>{t("noEventDetail")}</>;
+  }
+  if (event.ticketUrl && isHttpUrl(event.ticketUrl)) {
+    return (
+      <a
+        className={`font-mono ${externalLinkClassName}`}
+        href={event.ticketUrl}
+        rel="noopener noreferrer"
+        target="_blank"
+      >
+        {event.ticketExternalId}
+      </a>
+    );
+  }
+  return <span className="font-mono">{event.ticketExternalId}</span>;
+}
+
 function PollRunEventsList({
   events,
 }: {
@@ -140,7 +177,10 @@ function PollRunEventsList({
       <TableHeader>
         <TableRow>
           <TableHead>{t("pollHistoryEventColumns.time")}</TableHead>
+          <TableHead>{t("pollHistoryEventColumns.repo")}</TableHead>
           <TableHead>{t("pollHistoryEventColumns.action")}</TableHead>
+          <TableHead>{t("pollHistoryEventColumns.tag")}</TableHead>
+          <TableHead>{t("pollHistoryEventColumns.ticket")}</TableHead>
           <TableHead>{t("pollHistoryEventColumns.detail")}</TableHead>
         </TableRow>
       </TableHeader>
@@ -152,17 +192,35 @@ function PollRunEventsList({
 
           return (
             <TableRow key={event.id}>
-              <TableCell className="text-muted-foreground text-sm">
+              <TableCell className="whitespace-nowrap text-muted-foreground text-sm">
                 {formatPollDiagnosticDateTime(
                   format,
                   event.createdAt,
                   t("noEventDetail"),
                 )}
               </TableCell>
+              <TableCell className="text-sm">
+                {event.projectPath ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono">{event.projectPath}</span>
+                    {event.sourceKind ? (
+                      <Badge variant="outline">{event.sourceKind}</Badge>
+                    ) : null}
+                  </div>
+                ) : (
+                  t("noEventDetail")
+                )}
+              </TableCell>
               <TableCell>
                 <Badge variant="outline">{actionLabel}</Badge>
               </TableCell>
-              <TableCell className="max-w-xs truncate text-sm">
+              <TableCell className="font-mono text-sm">
+                {event.releaseTag ?? t("noEventDetail")}
+              </TableCell>
+              <TableCell className="text-sm">
+                <EventTicketCell event={event} />
+              </TableCell>
+              <TableCell className="whitespace-normal break-words text-sm">
                 {event.detail ?? t("noEventDetail")}
               </TableCell>
             </TableRow>
@@ -173,7 +231,7 @@ function PollRunEventsList({
   );
 }
 
-function PollRunDetailDrawer({
+function PollRunDetailDialog({
   runId,
   open,
   onOpenChange,
@@ -187,16 +245,23 @@ function PollRunDetailDrawer({
   const format = useFormatter();
   const { data: run, isLoading, isError } = usePollRun(runId ?? undefined);
 
+  const repoPathById = new Map<string, string>();
+  for (const event of run?.events ?? []) {
+    if (event.monitoredRepoId && event.projectPath) {
+      repoPathById.set(event.monitoredRepoId, event.projectPath);
+    }
+  }
+
   return (
-    <Sheet onOpenChange={onOpenChange} open={open}>
-      <SheetPopup side="right">
-        <SheetHeader>
-          <SheetTitle>{t("pollHistoryDetailTitle")}</SheetTitle>
-          <SheetDescription>
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      <DialogPopup className="max-w-5xl">
+        <DialogHeader>
+          <DialogTitle>{t("pollHistoryDetailTitle")}</DialogTitle>
+          <DialogDescription>
             {t("pollHistoryDetailDescription")}
-          </SheetDescription>
-        </SheetHeader>
-        <SheetPanel className="flex min-h-0 flex-1 flex-col gap-4">
+          </DialogDescription>
+        </DialogHeader>
+        <DialogPanel className="flex flex-col gap-4">
           {isLoading ? (
             <div className="flex flex-col gap-3">
               <Skeleton className="h-6 w-32" />
@@ -215,7 +280,6 @@ function PollRunDetailDrawer({
             <>
               <div className="flex flex-wrap items-center gap-2">
                 <RunStatusBadge status={run.status} />
-                <RunTriggerBadge triggerSource={run.triggerSource} />
               </div>
               <dl className="grid gap-3 text-sm sm:grid-cols-2">
                 <div>
@@ -262,6 +326,12 @@ function PollRunDetailDrawer({
                   </dt>
                   <dd className="font-medium">{run.ticketsCreated}</dd>
                 </div>
+                <div>
+                  <dt className="text-muted-foreground">
+                    {t("lastRunTicketsSuperseded")}
+                  </dt>
+                  <dd className="font-medium">{run.ticketsSuperseded}</dd>
+                </div>
               </dl>
 
               {run.errors.length > 0 ? (
@@ -272,7 +342,9 @@ function PollRunDetailDrawer({
                   <ul className="list-disc ps-4 text-sm">
                     {run.errors.map((error) => (
                       <li key={`${error.repoId}-${error.message}`}>
-                        <span className="font-mono">{error.repoId}</span>
+                        <span className="font-mono">
+                          {repoPathById.get(error.repoId) ?? error.repoId}
+                        </span>
                         {": "}
                         {error.message}
                       </li>
@@ -281,24 +353,22 @@ function PollRunDetailDrawer({
                 </div>
               ) : null}
 
-              <div className="flex min-h-0 flex-1 flex-col gap-2">
+              <div className="flex flex-col gap-2">
                 <h3 className="font-medium text-sm">
                   {t("pollHistoryEventsTitle")}
                 </h3>
-                <ScrollArea className="max-h-80">
-                  <PollRunEventsList events={run.events ?? []} />
-                </ScrollArea>
+                <PollRunEventsList events={run.events ?? []} />
               </div>
             </>
           ) : null}
-        </SheetPanel>
-        <SheetFooter variant="bare">
-          <SheetClose render={<Button variant="ghost" type="button" />}>
+        </DialogPanel>
+        <DialogFooter variant="bare">
+          <DialogClose render={<Button variant="ghost" type="button" />}>
             {tCommon("cancel")}
-          </SheetClose>
-        </SheetFooter>
-      </SheetPopup>
-    </Sheet>
+          </DialogClose>
+        </DialogFooter>
+      </DialogPopup>
+    </Dialog>
   );
 }
 
@@ -451,7 +521,7 @@ export function PollRunHistory(): React.ReactElement {
         ) : null}
       </Frame>
 
-      <PollRunDetailDrawer
+      <PollRunDetailDialog
         onOpenChange={(open) => {
           if (!open) {
             setSelectedRunId(null);

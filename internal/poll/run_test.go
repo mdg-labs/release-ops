@@ -40,6 +40,7 @@ func (m *runTestPollRepo) InsertEvent(
 	monitoredRepoID *string,
 	action string,
 	detail *string,
+	ref store.PollEventRef,
 ) (*store.PollRunEvent, error) {
 	event := store.PollRunEvent{
 		ID:              "evt-" + action,
@@ -48,6 +49,10 @@ func (m *runTestPollRepo) InsertEvent(
 		Action:          action,
 		Detail:          detail,
 		CreatedAt:       "2026-08-07T10:00:00.000Z",
+
+		TicketExternalID: ref.TicketExternalID,
+		TicketURL:        ref.TicketURL,
+		ReleaseTag:       ref.ReleaseTag,
 	}
 	m.events = append(m.events, event)
 	return &event, nil

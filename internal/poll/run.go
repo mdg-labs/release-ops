@@ -51,7 +51,7 @@ func (r *RunRecorder) RecordEvaluation(
 			d := eval.Detail
 			detail = &d
 		}
-		if _, err := r.poll.InsertEvent(ctx, runID, &repoIDPtr, action, detail); err != nil {
+		if _, err := r.poll.InsertEvent(ctx, runID, &repoIDPtr, action, detail, eval.Refs[action]); err != nil {
 			slog.Error("insert poll run event", "runId", runID, "repoId", repoID, "action", action, "error", err)
 		}
 		created, superseded := CounterDeltasForAction(action)

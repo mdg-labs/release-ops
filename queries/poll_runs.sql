@@ -125,8 +125,14 @@ INSERT INTO poll_run_events (
   monitored_repo_id,
   action,
   detail,
-  created_at
+  created_at,
+  ticket_external_id,
+  ticket_url,
+  release_tag
 ) VALUES (
+  ?,
+  ?,
+  ?,
   ?,
   ?,
   ?,
@@ -140,16 +146,25 @@ RETURNING
   monitored_repo_id,
   action,
   detail,
-  created_at;
+  created_at,
+  ticket_external_id,
+  ticket_url,
+  release_tag;
 
 -- name: ListPollRunEventsByRunID :many
 SELECT
-  id,
-  poll_run_id,
-  monitored_repo_id,
-  action,
-  detail,
-  created_at
-FROM poll_run_events
-WHERE poll_run_id = ?
-ORDER BY created_at;
+  e.id,
+  e.poll_run_id,
+  e.monitored_repo_id,
+  e.action,
+  e.detail,
+  e.created_at,
+  e.ticket_external_id,
+  e.ticket_url,
+  e.release_tag,
+  r.source_kind,
+  r.project_path
+FROM poll_run_events e
+LEFT JOIN monitored_repos r ON r.id = e.monitored_repo_id
+WHERE e.poll_run_id = ?
+ORDER BY e.created_at;

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/mdg-labs/release-ops/internal/providers/source"
@@ -39,6 +40,39 @@ type RepoEvaluation struct {
 	Actions []string
 	Repo    *store.MonitoredRepo
 	Detail  string
+	// Refs holds the ticket and release each action refers to, keyed by action;
+	// actions without an entry carry none. An evaluation never repeats an action.
+	Refs map[string]store.PollEventRef
+}
+
+// releaseRef returns the event ref that only names the release tag, or an empty ref
+// when there is no release in hand.
+func releaseRef(tag string) store.PollEventRef {
+	if tag == "" {
+		return store.PollEventRef{}
+	}
+	return store.PollEventRef{ReleaseTag: &tag}
+}
+
+// ticketRef returns the event ref for externalID, resolving its web URL through the
+// provider. A failed lookup is logged and leaves the URL empty; it never fails the poll.
+func ticketRef(
+	provider ticket.TicketProvider,
+	project ticket.TicketProject,
+	externalID, releaseTag string,
+) store.PollEventRef {
+	ref := releaseRef(releaseTag)
+	id := externalID
+	ref.TicketExternalID = &id
+	url, err := provider.TicketWebURL(project, externalID)
+	if err != nil {
+		slog.Warn("resolve ticket web url for poll event", "ticketProject", project.ID, "ticket", externalID, "error", err)
+		return ref
+	}
+	if url != "" {
+		ref.TicketURL = &url
+	}
+	return ref
 }
 
 // hasError reports whether the evaluation recorded an error action.
@@ -180,7 +214,11 @@ func (e *Engine) applyBaseline(ctx context.Context, repo store.MonitoredRepo, re
 	if err != nil {
 		return nil, err
 	}
-	return &RepoEvaluation{Actions: []string{ActionBaseline}, Repo: updated}, nil
+	return &RepoEvaluation{
+		Actions: []string{ActionBaseline},
+		Repo:    updated,
+		Refs:    map[string]store.PollEventRef{ActionBaseline: releaseRef(tag)},
+	}, nil
 }
 
 func (e *Engine) applySkip(ctx context.Context, repo store.MonitoredRepo) (*RepoEvaluation, error) {
@@ -302,7 +340,11 @@ func (e *Engine) applyCreate(
 	if err != nil {
 		return nil, err
 	}
-	return &RepoEvaluation{Actions: []string{ActionCreate}, Repo: updated}, nil
+	return &RepoEvaluation{
+		Actions: []string{ActionCreate},
+		Repo:    updated,
+		Refs:    map[string]store.PollEventRef{ActionCreate: ticketRef(provider, project, externalID, tag)},
+	}, nil
 }
 
 func (e *Engine) applySupersede(
@@ -350,6 +392,8 @@ func (e *Engine) applySupersede(
 		return nil, err
 	}
 
+	newRef := ticketRef(provider, project, externalID, tag)
+
 	// The old ticket is updated best-effort: failures are reported on the repo
 	// (last_error + error event) but never undo the created ticket.
 	if supersedeErr := e.supersedeOldTicket(ctx, repo, release, project, provider, repoWebURL, supersedeCtx, oldID, externalID); supersedeErr != nil {
@@ -359,10 +403,22 @@ func (e *Engine) applySupersede(
 		if err != nil {
 			return nil, err
 		}
-		return &RepoEvaluation{Actions: []string{ActionCreate, ActionError}, Repo: updated, Detail: msg}, nil
+		return &RepoEvaluation{
+			Actions: []string{ActionCreate, ActionError},
+			Repo:    updated,
+			Detail:  msg,
+			Refs:    map[string]store.PollEventRef{ActionCreate: newRef},
+		}, nil
 	}
 
-	return &RepoEvaluation{Actions: []string{ActionSupersede, ActionCreate}, Repo: updated}, nil
+	return &RepoEvaluation{
+		Actions: []string{ActionSupersede, ActionCreate},
+		Repo:    updated,
+		Refs: map[string]store.PollEventRef{
+			ActionSupersede: ticketRef(provider, project, oldID, tag),
+			ActionCreate:    newRef,
+		},
+	}, nil
 }
 
 // supersedeOldTicket moves the old ticket to the superseded status and adds the
@@ -436,7 +492,11 @@ func (e *Engine) applyMerge(
 	if err != nil {
 		return nil, err
 	}
-	return &RepoEvaluation{Actions: []string{ActionMerge}, Repo: updated}, nil
+	return &RepoEvaluation{
+		Actions: []string{ActionMerge},
+		Repo:    updated,
+		Refs:    map[string]store.PollEventRef{ActionMerge: ticketRef(provider, project, oldID, tag)},
+	}, nil
 }
 
 func (e *Engine) applySkipIfOpen(
@@ -455,7 +515,11 @@ func (e *Engine) applySkipIfOpen(
 	if err != nil {
 		return nil, err
 	}
-	return &RepoEvaluation{Actions: []string{ActionSkipOpen}, Repo: updated}, nil
+	return &RepoEvaluation{
+		Actions: []string{ActionSkipOpen},
+		Repo:    updated,
+		Refs:    map[string]store.PollEventRef{ActionSkipOpen: releaseRef(tag)},
+	}, nil
 }
 
 func (e *Engine) recordError(ctx context.Context, repo store.MonitoredRepo, err error) (*RepoEvaluation, error) {

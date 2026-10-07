@@ -84,12 +84,15 @@ type PollRun struct {
 }
 
 type PollRunEvent struct {
-	ID              string         `json:"id"`
-	PollRunID       string         `json:"poll_run_id"`
-	MonitoredRepoID sql.NullString `json:"monitored_repo_id"`
-	Action          string         `json:"action"`
-	Detail          sql.NullString `json:"detail"`
-	CreatedAt       string         `json:"created_at"`
+	ID               string         `json:"id"`
+	PollRunID        string         `json:"poll_run_id"`
+	MonitoredRepoID  sql.NullString `json:"monitored_repo_id"`
+	Action           string         `json:"action"`
+	Detail           sql.NullString `json:"detail"`
+	CreatedAt        string         `json:"created_at"`
+	TicketExternalID sql.NullString `json:"ticket_external_id"`
+	TicketUrl        sql.NullString `json:"ticket_url"`
+	ReleaseTag       sql.NullString `json:"release_tag"`
 }
 
 type Session struct {

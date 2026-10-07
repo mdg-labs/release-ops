@@ -364,6 +364,11 @@ describe("React Query hooks", () => {
             action: "create",
             detail: null,
             createdAt: "2026-01-01T00:00:30Z",
+            sourceKind: "github",
+            projectPath: "acme/widget",
+            ticketExternalId: "TASK-1",
+            ticketUrl: "https://tracker.example/TASK-1",
+            releaseTag: "v1.0.0",
           },
         ],
       });
@@ -376,6 +381,10 @@ describe("React Query hooks", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.events).toHaveLength(1);
     expect(result.current.data?.events?.[0].action).toBe("create");
+    expect(result.current.data?.events?.[0].projectPath).toBe("acme/widget");
+    expect(result.current.data?.events?.[0].ticketUrl).toBe(
+      "https://tracker.example/TASK-1",
+    );
   });
 
   it("useSettings GET and PATCH /api/v1/settings", async () => {

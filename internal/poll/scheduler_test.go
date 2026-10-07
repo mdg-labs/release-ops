@@ -22,7 +22,7 @@ type schedulerMockPollRepo struct {
 		reposChecked, ticketsCreated, ticketsSuperseded int64,
 		errorsJSON string,
 	) (*store.PollRun, error)
-	insertEventFn func(ctx context.Context, pollRunID string, monitoredRepoID *string, action string, detail *string) (*store.PollRunEvent, error)
+	insertEventFn func(ctx context.Context, pollRunID string, monitoredRepoID *string, action string, detail *string, ref store.PollEventRef) (*store.PollRunEvent, error)
 }
 
 func (m *schedulerMockPollRepo) UpdatePollState(context.Context, string, store.PollStateUpdate) (*store.MonitoredRepo, error) {
@@ -63,9 +63,9 @@ func (m *schedulerMockPollRepo) ListRuns(context.Context, int64, int64) ([]store
 	return nil, errors.New("not implemented")
 }
 
-func (m *schedulerMockPollRepo) InsertEvent(ctx context.Context, pollRunID string, monitoredRepoID *string, action string, detail *string) (*store.PollRunEvent, error) {
+func (m *schedulerMockPollRepo) InsertEvent(ctx context.Context, pollRunID string, monitoredRepoID *string, action string, detail *string, ref store.PollEventRef) (*store.PollRunEvent, error) {
 	if m.insertEventFn != nil {
-		return m.insertEventFn(ctx, pollRunID, monitoredRepoID, action, detail)
+		return m.insertEventFn(ctx, pollRunID, monitoredRepoID, action, detail, ref)
 	}
 	return &store.PollRunEvent{ID: "event-1"}, nil
 }
