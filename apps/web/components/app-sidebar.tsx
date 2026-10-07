@@ -73,7 +73,8 @@ const NAV_ITEMS = [
 ] as const;
 
 const REPO_URL = "https://github.com/mdg-labs/release-ops";
-const RELEASE_VERSION = /^v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
+const RELEASE_VERSION =
+  /^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const NIGHTLY_VERSION = /^nightly-([0-9a-f]{7,40})$/;
 
 /** GitHub page for a running version: release tag, nightly commit, or none (dev). */

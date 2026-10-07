@@ -226,6 +226,9 @@ describe("versionHref", () => {
   it.each([
     ["v0.1.0", `${REPO_URL}/releases/tag/v0.1.0`],
     ["v1.2.3-rc.1", `${REPO_URL}/releases/tag/v1.2.3-rc.1`],
+    ["v1.2.3+build.5", `${REPO_URL}/releases/tag/v1.2.3+build.5`],
+    ["v1.2.3-rc.1+build.5", `${REPO_URL}/releases/tag/v1.2.3-rc.1+build.5`],
+    ["v1.2.3+build.5-rc.1+x", null],
     ["nightly-abc1234", `${REPO_URL}/commit/abc1234`],
     ["dev", null],
     ["", null],
