@@ -8,7 +8,7 @@ Durable project learnings for `/orchestrate` and the other skills. Not session-s
 - Columns: `backlog`, `ready`, `in-progress`, `in-review`, `implemented`, `done`. Verifier PASS → `implemented` (commit on `dev`); `done` comes from the Kaneo ↔ GitHub sync when the `fixes #N` commit lands on `main` (or the user sets it). No agent sets `done`.
 - Commits use GitHub `[#N]`. Kaneo payloads have no `externalLinks` (use `externalLinks[].externalId` if one ever appears) — resolve `#N` read-only with `github` `search_issues` on the exact task title. Task commit bodies end with `fixes #N` (`/orchestrate` adds `fixes #<epic-N>` to the commit that completes an epic); GitHub issues are never written.
 - Kaneo is the live plan; `docs/roadmap.html` (generated from `docs/roadmap.json`) is historical. `docs/index.html` is the doc hub.
-- Follow `docs/stack.html` — sqldiff migrations from `db/schema.sql`, Vitest for web, `go test` for the server.
+- Follow `docs/stack.html` — `sqlite-migrate generate` migrations from `db/schema.sql`, Vitest for web, `go test` for the server.
 
 ## Kaneo MCP quirks
 
