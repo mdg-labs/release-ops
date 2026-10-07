@@ -66,7 +66,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <p class="eyebrow">Product specification · MVP</p>
   <h1>Release Ops</h1>
   <p class="lede">
-    Self-hosted service: monitors releases on GitHub, GitLab, Gitea, Forgejo, and Codeberg for configured repos and creates tickets in Phasical, Jira, or Linear when
+    Self-hosted service: monitors releases on GitHub, GitLab, Gitea, Forgejo, and Codeberg for configured repos and creates tickets in Kaneo, Jira, or Linear when
     <em>genuine</em> new releases ship (not on the first baseline sighting). Ticket integrations support multiple project/team targets with their own status mapping; open tickets are
     superseded, merged, or skipped per policy.
     Notifications via Shoutrrr.
@@ -75,7 +75,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   </p>
 
   <div class="card amber">
-    <strong>Version:</strong> Spec v2.6 (2026-08-06) — Go-native auth · Single-container deploy (one image, one Compose service).
+    <strong>Version:</strong> Spec v2.8 (2026-08-07) — Multi-user invite-only auth · SMTP · rate limits · locked implementation defaults
   </div>
 
   <nav class="toc">
@@ -91,6 +91,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
       <li><a href="#providers">Provider interfaces (Go)</a></li>
       <li><a href="#api">REST API (Go)</a></li>
       <li><a href="#ui">Web UI &amp; COSS Particles</a></li>
+      <li><a href="#i18n">Internationalization (i18n)</a></li>
       <li><a href="#env">Environment variables</a></li>
       <li><a href="#deployment">Deployment</a></li>
       <li><a href="#ci">CI/CD (GitHub Actions)</a></li>
@@ -106,7 +107,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <li><strong>Sources (MVP):</strong> GitHub, GitLab, Gitea, Forgejo, Codeberg — each via <code>releases/latest</code> (GitLab: <code>permalink/latest</code>; Gitea family: Gitea API v1).</li>
     <li>Stores the last seen tag per project in SQLite.</li>
     <li>Creates a ticket in the chosen system on tag change (after baseline).</li>
-    <li><strong>Tickets (MVP):</strong> Phasical, Jira, Linear — freely combinable with source per repo.</li>
+    <li><strong>Tickets (MVP):</strong> Kaneo, Jira, Linear — freely combinable with source per repo.</li>
     <li>Each ticket integration can have <strong>multiple project/team targets</strong> (<code>ticket_projects</code>) — each with its own open/done/cancelled/superseded mapping.</li>
     <li>Idempotency with open tickets: default <code>supersede</code>; alternatively <code>merge</code> or <code>skip_if_open</code>.</li>
     <li>Notifications to Shoutrrr targets (Slack, ntfy, …) on create, error, supersede.</li>
@@ -115,8 +116,8 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <h3>MVP non-goals</h3>
   <ul>
     <li>No additional sources (Bitbucket, Azure DevOps, …).</li>
-    <li>No multi-user RBAC (one admin is enough; all logged-in users have equal permissions).</li>
-    <li>No public sign-up (admin account via seed/CLI or once in UI).</li>
+    <li>No RBAC — all logged-in users have equal permissions (no roles or per-resource ACLs).</li>
+    <li>No public self-registration — accounts only via invitation accept or bootstrap admin (<code>BOOTSTRAP_ADMIN_*</code> / <code>seed-admin</code> CLI on empty <code>users</code>).</li>
     <li>Self-host with <strong>one</strong> Docker container — no multi-service Compose.</li>
   </ul>
 
@@ -140,7 +141,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
    GitHub / GitLab / Gitea / Forgejo / Codeberg
           │
           ▼
-   Phasical / Jira / Linear  ·  Shoutrrr (Notifications)</code></pre>
+   Kaneo / Jira / Linear  ·  Shoutrrr (Notifications)</code></pre>
 
   <h3>Runtime in container</h3>
   <table>
@@ -148,7 +149,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <tr><td>Next.js</td><td><code>0.0.0.0:${PORT}</code> (default 3000)</td><td>COSS UI, HTTP proxy to Go (forwards <code>Cookie</code> / <code>Set-Cookie</code>)</td></tr>
     <tr><td>Go</td><td><code>127.0.0.1:${GO_INTERNAL_PORT}</code> (default 8080)</td><td>REST API, credential decrypt, polling, migrations</td></tr>
   </table>
-  <p>Start via <code>docker/entrypoint.sh</code>: migrations → start Go → start Next (or supervisord equivalent). Go does not run as a second container.</p>
+  <p>Start via <code>docker/entrypoint.sh</code>: migrations → start Go in background → start Next in foreground. Go does not run as a second container.</p>
 
   <h2 id="auth">3. Authentication</h2>
   <p>Auth lives entirely in <strong>Go</strong>. Next.js is UI-only — login forms and API clients call Go through the same-origin proxy. One SQLite file (<code>app.db</code>), one writer process.</p>
@@ -167,29 +168,104 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <li>No <code>POST /api/v1/auth/register</code> in MVP — bootstrap only.</li>
     <li>All logged-in users have equal permissions (no RBAC).</li>
   </ul>
+  <h3>Multi-user model (invite-only)</h3>
+  <ul>
+    <li>After bootstrap, additional accounts are created <strong>only</strong> via invitation accept — no <code>POST /api/v1/auth/register</code> and no public sign-up UI.</li>
+    <li>Any logged-in user can invite others, list users, revoke pending invitations, and remove other users.</li>
+    <li>Invitations return a one-time URL (<code>{APP_PUBLIC_URL}/accept-invitation?token=…</code>) for copy-link; optional SMTP email when configured (§9).</li>
+    <li>Password minimum: <strong>8 characters</strong> (invite accept, reset, logged-in change, login unchanged).</li>
+    <li>Admin/bootstrap never sets another user’s password — invited users choose their own password on accept; existing users use forgot-password or self-service flows.</li>
+  </ul>
+  <h3>Self-service password change</h3>
+  <ul>
+    <li>Logged-in user changes password via <code>POST /api/v1/users/me/password-change</code> with <code>currentPassword</code> and <code>newPassword</code>.</li>
+    <li>Minimum <strong>8 characters</strong> for <code>newPassword</code>; <strong>401</strong> when <code>currentPassword</code> is wrong (bcrypt verify).</li>
+    <li>Rate limit: <strong>10 / hour</strong> per client IP (same window as reset-password; §7.0).</li>
+    <li>Current session remains valid after change (no session revocation).</li>
+  </ul>
+  <h3>Self-service email change</h3>
+  <ul>
+    <li>Logged-in user requests change via <code>POST /api/v1/users/me/email-change-request</code> with <code>newEmail</code> and <code>currentPassword</code>.</li>
+    <li>Verification link is sent to the <strong>new</strong> email address (SMTP required for delivery; no link returned in API response).</li>
+    <li>Confirm via public <code>POST /api/v1/auth/confirm-email-change</code> with one-time token from the email link.</li>
+    <li>On confirm: update <code>users.email</code>, mark token used, revoke <strong>all other sessions</strong> for that user (current session remains valid).</li>
+    <li>Email-change tokens use <code>password_reset_token_expiry_minutes</code> from <code>app_settings</code> (§4.1).</li>
+  </ul>
+  <h3>User removal</h3>
+  <ul>
+    <li><code>DELETE /api/v1/users/{id}</code> — any logged-in user may remove another user.</li>
+    <li><strong>Forbidden:</strong> delete self; delete the last remaining user (instance must always have ≥1 user).</li>
+    <li>On delete: revoke <strong>all sessions</strong> for that user (<code>DELETE FROM sessions WHERE user_id = ?</code>) before deleting the <code>users</code> row.</li>
+  </ul>
+  <h3>Session revocation rules</h3>
+  <ul>
+    <li>Every successful login, invitation accept, and password reset sets <code>sessions.user_id</code> on the new session row (§4.0.1).</li>
+    <li><strong>User delete:</strong> delete all sessions for that <code>user_id</code>.</li>
+    <li><strong>Email change confirm:</strong> delete all sessions for that <code>user_id</code> except the current session token.</li>
+    <li><strong>Logout:</strong> delete current session only (existing behaviour).</li>
+    <li>Index on <code>sessions.user_id</code> supports bulk revocation.</li>
+  </ul>
   <h3>Protected routes</h3>
   <ul>
-    <li>Go middleware: all <code>/api/v1/*</code> require valid session except <code>POST /api/v1/auth/login</code> and <code>GET /api/v1/auth/session</code>.</li>
+    <li>Go middleware: all <code>/api/v1/*</code> require valid session except the public auth paths listed in §7.0.</li>
     <li><code>GET /healthz</code> — no auth (container probe).</li>
-    <li>Next middleware: pages except <code>/login</code> redirect to login when <code>GET /api/go/api/v1/auth/session</code> returns <code>user: null</code>.</li>
+    <li>Next middleware: pages except public auth routes (§8.2) redirect to login when <code>GET /api/go/api/v1/auth/session</code> returns <code>user: null</code>.</li>
   </ul>
 
   <h2 id="schema">4. Data model</h2>
-  <p>Canonical SQL: <a href="schema.html">schema.html</a> · <a href="schema.sql">schema.sql</a>. Migrations in <code>migrations/</code> must match the schema. All tables in <code>app.db</code> (including auth).</p>
+  <p>Canonical SQL: <a href="schema.html">schema.html</a> (browser view) · <a href="../db/schema.sql"><code>db/schema.sql</code></a> (source file). All tables in <code>app.db</code> (including auth).</p>
 
-  <h3>4.0 <code>users</code> &amp; <code>sessions</code></h3>
+  <h3 id="schema-migrations">4.0 Schema migrations (generated only)</h3>
+  <p><strong>Never hand-write</strong> migration SQL. Workflow:</p>
+  <ol>
+    <li>Edit <code>db/schema.sql</code> (canonical DDL — not under <code>docs/</code>).</li>
+    <li>Run <code>make migrate-diff name=&lt;change&gt;</code> — <code>scripts/migrate-diff.mjs</code> uses SQLite <code>sqldiff</code> (free, bundled with <code>sqlite3</code>) to generate <code>migrations/*.sql</code>.</li>
+    <li>Review generated <code>.up.sql</code> and <code>.down.sql</code>; commit both.</li>
+    <li>Runtime apply: <code>golang-migrate up</code> in entrypoint (unchanged).</li>
+  </ol>
+  <p>CI runs <code>npm run db:check</code> — fails if <code>db/schema.sql</code> drifts from applied migrations. Agents: see <code>.claude/rules/11-db-migrations.md</code>.</p>
+
+  <h4>Data-loss-safe upgrades</h4>
+  <p>Production <code>app.db</code> files may already contain rows. Migrations must <strong>preserve existing data</strong> on upgrade — never emit a bare <code>DROP TABLE</code> on a table that already has rows unless the table is genuinely new.</p>
+  <p>Raw <code>sqldiff</code> output often uses <code>DROP TABLE …; CREATE TABLE …</code> when column order differs or <code>CHECK</code> constraints change. <code>scripts/migrate-diff.mjs</code> post-processes that output:</p>
+  <ul>
+    <li><strong>Tables referenced by foreign keys</strong> (e.g. <code>poll_runs</code> ← <code>poll_run_events</code>) — use <code>ALTER TABLE … ADD COLUMN</code> at the end; <code>DROP TABLE</code> rebuilds are unsafe with <code>modernc.org/sqlite</code> <code>_foreign_keys=on</code> (child rows CASCADE-delete even when migration SQL sets <code>PRAGMA foreign_keys=OFF</code>). Place new columns at the <strong>end</strong> of the table in <code>db/schema.sql</code> so <code>db:check</code> stays in sync.</li>
+    <li><strong>Constraint or type changes</strong> on existing columns → SQLite <strong>table rebuild</strong>: <code>CREATE &lt;t&gt;_new</code>, <code>INSERT INTO &lt;t&gt;_new SELECT … FROM &lt;t&gt;</code>, <code>DROP &lt;t&gt;</code>, <code>ALTER TABLE &lt;t&gt;_new RENAME TO &lt;t&gt;</code>, recreate indexes. Uses <code>PRAGMA foreign_keys=OFF</code> during rebuild when required.</li>
+    <li><strong>Ambiguous diffs</strong> (e.g. column rename vs add+drop) → generator fails loudly; resolve manually in <code>db/schema.sql</code> or split the change.</li>
+  </ul>
+  <p><code>internal/store/migrate_test.go</code> includes seed-data tests: rows in <code>app_settings</code>, <code>poll_runs</code>, and <code>poll_run_events</code> must survive <code>migrate up</code> from version 1.</p>
+
+  <h3>4.0.1 <code>users</code> &amp; <code>sessions</code></h3>
   <p>Auth tables — written only by Go.</p>
   <table>
     <tr><th>Table</th><th>Columns</th><th>Notes</th></tr>
-    <tr><td><code>users</code></td><td><code>id</code> (UUID PK), <code>email</code> (unique), <code>password_hash</code>, <code>created_at</code>, <code>updated_at</code></td><td>MVP: typically one admin row</td></tr>
-    <tr><td><code>sessions</code></td><td><code>token</code> (PK), <code>data</code> (BLOB), <code>expiry</code> (REAL)</td><td>Server-side session store; index on <code>expiry</code> for cleanup</td></tr>
+    <tr><td><code>users</code></td><td><code>id</code> (UUID PK), <code>email</code> (unique), <code>password_hash</code>, <code>created_at</code>, <code>updated_at</code></td><td>Multi-user; bootstrap admin + invited accounts</td></tr>
+    <tr><td><code>sessions</code></td><td><code>token</code> (PK), <code>data</code> (BLOB), <code>expiry</code> (REAL), <code>user_id</code> (TEXT FK → <code>users.id</code> NULL)</td><td>Server-side session store; <code>user_id</code> set on login/accept/reset for revocation; index on <code>expiry</code> and <code>user_id</code></td></tr>
   </table>
+
+  <h3>4.0.2 <code>auth_tokens</code></h3>
+  <p>One-time tokens for invitations, password reset, and email change. Raw token is never stored — only SHA-256 hash in <code>token_hash</code>.</p>
+  <table>
+    <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+    <tr><td><code>id</code></td><td>TEXT (UUID)</td><td>PK — referenced by invitation send-email and list APIs</td></tr>
+    <tr><td><code>kind</code></td><td>TEXT</td><td><code>invitation</code> | <code>password_reset</code> | <code>email_change</code></td></tr>
+    <tr><td><code>email</code></td><td>TEXT</td><td>Target email (invitation invitee, reset account, or current email for email_change)</td></tr>
+    <tr><td><code>token_hash</code></td><td>TEXT</td><td>SHA-256 hex of the one-time secret</td></tr>
+    <tr><td><code>new_email</code></td><td>TEXT NULL</td><td>Proposed email — only for <code>email_change</code></td></tr>
+    <tr><td><code>invited_by_user_id</code></td><td>TEXT NULL FK → <code>users.id</code> ON DELETE SET NULL</td><td>Inviter — only for <code>invitation</code></td></tr>
+    <tr><td><code>expires_at</code></td><td>TEXT</td><td>UTC ISO8601 — invitation expiry from <code>invite_token_expiry_hours</code>; reset and email_change from <code>password_reset_token_expiry_minutes</code></td></tr>
+    <tr><td><code>used_at</code></td><td>TEXT NULL</td><td>UTC ISO8601 when consumed; NULL while pending</td></tr>
+    <tr><td><code>created_at</code></td><td>TEXT</td><td>UTC ISO8601</td></tr>
+  </table>
+  <p>Index on <code>token_hash</code> for lookup. Invalidate prior unused <code>password_reset</code> tokens for the same <code>email</code> when issuing a new reset request.</p>
 
   <h3>4.1 <code>app_settings</code></h3>
   <p>Singleton (always <code>id = 1</code>).</p>
   <table>
     <tr><th>Column</th><th>Type</th><th>Default</th><th>Description</th></tr>
     <tr><td><code>poll_interval_minutes</code></td><td>INTEGER</td><td>360</td><td>Global poll interval; min 5</td></tr>
+    <tr><td><code>invite_token_expiry_hours</code></td><td>INTEGER</td><td>168</td><td>Invitation link lifetime; CHECK 1–720</td></tr>
+    <tr><td><code>password_reset_token_expiry_minutes</code></td><td>INTEGER</td><td>60</td><td>Password-reset and email-change token lifetime; CHECK 5–1440</td></tr>
     <tr><td><code>updated_at</code></td><td>TEXT (ISO8601)</td><td>—</td><td>UTC</td></tr>
   </table>
 
@@ -198,7 +274,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <table>
     <tr><th>Column</th><th>Type</th><th>Description</th></tr>
     <tr><td><code>id</code></td><td>TEXT (UUID)</td><td>PK</td></tr>
-    <tr><td><code>kind</code></td><td>TEXT</td><td>Source: <code>github</code> | <code>gitlab</code> | <code>gitea</code> | <code>forgejo</code> | <code>codeberg</code> · Ticket: <code>phasical</code> | <code>jira</code> | <code>linear</code></td></tr>
+    <tr><td><code>kind</code></td><td>TEXT</td><td>Source: <code>github</code> | <code>gitlab</code> | <code>gitea</code> | <code>forgejo</code> | <code>codeberg</code> · Ticket: <code>kaneo</code> | <code>jira</code> | <code>linear</code></td></tr>
     <tr><td><code>name</code></td><td>TEXT</td><td>Display name in UI</td></tr>
     <tr><td><code>base_url</code></td><td>TEXT NULL</td><td>See table below</td></tr>
     <tr><td><code>encrypted_payload</code></td><td>TEXT</td><td>Encrypted JSON</td></tr>
@@ -211,7 +287,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <tr><td><code>gitea</code></td><td>Source</td><td>Required — instance root, e.g. <code>https://gitea.example.com</code></td></tr>
     <tr><td><code>forgejo</code></td><td>Source</td><td>Required — instance root, e.g. <code>https://forgejo.example.org</code></td></tr>
     <tr><td><code>codeberg</code></td><td>Source</td><td>NULL (<code>https://codeberg.org</code> fixed)</td></tr>
-    <tr><td><code>phasical</code></td><td>Ticket</td><td>Required — API base</td></tr>
+    <tr><td><code>kaneo</code></td><td>Ticket</td><td>Required — Kaneo host or API base (Kaneo cloud: <code>https://cloud.kaneo.app</code>; <code>/api</code> appended when missing)</td></tr>
     <tr><td><code>jira</code></td><td>Ticket</td><td>Required — e.g. <code>https://company.atlassian.net</code></td></tr>
     <tr><td><code>linear</code></td><td>Ticket</td><td>NULL (<code>api.linear.app</code> fixed)</td></tr>
   </table>
@@ -226,7 +302,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
 // gitea | forgejo | codeberg — token optional (recommended for rate limits / private repos)
 { "token": "..." }
 
-// phasical
+// kaneo
 { "api_key": "..." }
 
 // jira — Basic Auth
@@ -238,17 +314,18 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <h3>4.3 <code>ticket_projects</code></h3>
   <p>
     One ticket <strong>integration</strong> (credentials) can serve multiple <strong>projects/teams</strong>.
-    Each row is a configurable target with its own status mapping — Phasical projects, Jira project keys, and Linear teams
+    Each row is a configurable target with its own status mapping — Kaneo projects, Jira project keys, and Linear teams
     typically have different workflow statuses.
   </p>
   <table>
     <tr><th>Column</th><th>Type</th><th>Description</th></tr>
     <tr><td><code>id</code></td><td>TEXT (UUID)</td><td>PK</td></tr>
-    <tr><td><code>integration_id</code></td><td>TEXT FK</td><td>Ticket integration (<code>phasical</code> | <code>jira</code> | <code>linear</code>)</td></tr>
-    <tr><td><code>external_project_id</code></td><td>TEXT</td><td>Phasical <code>projectId</code> · Jira <code>projectKey</code> · Linear <code>teamId</code></td></tr>
+    <tr><td><code>integration_id</code></td><td>TEXT FK</td><td>Ticket integration (<code>kaneo</code> | <code>jira</code> | <code>linear</code>)</td></tr>
+    <tr><td><code>external_project_id</code></td><td>TEXT</td><td>Kaneo <code>projectId</code> · Jira <code>projectKey</code> · Linear <code>teamId</code></td></tr>
     <tr><td><code>name</code></td><td>TEXT</td><td>Display name in UI</td></tr>
     <tr><td><code>create_config</code></td><td>TEXT (JSON)</td><td>Defaults when <strong>creating</strong> a ticket (§5.3)</td></tr>
     <tr><td><code>status_mapping</code></td><td>TEXT (JSON)</td><td>Open/Done/Cancelled/Superseded — §5.3</td></tr>
+    <tr><td><code>content_templates</code></td><td>TEXT (JSON)</td><td>Per-project ticket title, description, and supersede comment templates (§5.4). Default: <code>{"title":"","description":"","supersedeComment":""}</code> — empty string per key uses integration-kind default.</td></tr>
     <tr><td><code>on_open_ticket_policy</code></td><td>TEXT</td><td><code>supersede</code> (default) | <code>merge</code> | <code>skip_if_open</code></td></tr>
     <tr><td><code>created_at</code>, <code>updated_at</code></td><td>TEXT</td><td>UTC</td></tr>
   </table>
@@ -261,6 +338,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <tr><td><code>source_kind</code></td><td>TEXT</td><td><code>github</code> | <code>gitlab</code> | <code>gitea</code> | <code>forgejo</code> | <code>codeberg</code></td></tr>
     <tr><td><code>project_path</code></td><td>TEXT</td><td>GitHub/Gitea/Forgejo/Codeberg: <code>owner/repo</code> · GitLab: <code>namespace/project</code></td></tr>
     <tr><td><code>enabled</code></td><td>INTEGER 0/1</td><td>Disabled = no poll</td></tr>
+    <tr><td><code>include_prereleases</code></td><td>INTEGER 0/1</td><td>Default <code>0</code> — when <code>1</code>, poll lists releases and picks newest by <code>published_at</code> (including pre-releases); when <code>0</code>, uses each host's latest non–pre-release endpoint</td></tr>
     <tr><td><code>source_integration_id</code></td><td>TEXT FK NULL</td><td>GitHub/Codeberg optional; GitLab/Gitea/Forgejo <strong>required</strong> (instance + token)</td></tr>
     <tr><td><code>ticket_project_id</code></td><td>TEXT FK</td><td>Required — references <code>ticket_projects</code></td></tr>
     <tr><td><code>open_ticket_external_id</code></td><td>TEXT NULL</td><td>ID of the currently open ticket in the target system</td></tr>
@@ -282,6 +360,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
 
   <h3>4.6 <code>poll_runs</code> &amp; <code>poll_run_events</code></h3>
   <p>Poller audit. <code>errors_json</code>: array <code>{ "repoId", "message" }</code>. <code>tickets_superseded</code> counts supersede actions.</p>
+  <p><code>poll_runs.trigger_source</code>: <code>manual</code> (dashboard / <code>POST /api/v1/poll/trigger</code>) or <code>scheduled</code> (cron from <code>poll_interval_minutes</code>). Default <code>scheduled</code> for existing rows.</p>
   <p><code>poll_run_events.action</code>:</p>
   <ul>
     <li><code>baseline</code> · <code>skip</code> · <code>create</code> · <code>supersede</code> · <code>merge</code> · <code>skip_open</code> · <code>error</code></li>
@@ -294,7 +373,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <ul>
     <li>Algorithm: AES-256-GCM.</li>
     <li>Key: <code>APP_ENCRYPTION_KEY</code> — 32 bytes, hex-encoded (64 characters).</li>
-    <li>Stored format: <code>base64(nonce + ciphertext + tag)</code> or JSON <code>{ "v": 1, "data": "..." }</code>.</li>
+    <li>Stored format: <code>base64(nonce + ciphertext + tag)</code> — 12-byte random nonce prepended to ciphertext; entire blob base64-encoded in <code>encrypted_payload</code> / <code>shoutrrr_url_encrypted</code>.</li>
     <li>Go decrypts credentials only in the Go process — never sent to frontend except “configured” / masking.</li>
     <li>API returns <code>has_secret: true</code> for integrations, never the secret value.</li>
   </ul>
@@ -308,6 +387,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <li><strong>error</strong> — API error (except “no release”) → <code>last_error</code>, continue run.</li>
   </ol>
   <p>“No release”: GitHub/GitLab/Gitea/Forgejo/Codeberg 404 on latest release — not an error.</p>
+  <p><strong>Tag comparison:</strong> poll skip uses <strong>exact string equality</strong> between the fetched release tag and <code>last_known_tag</code> (no semver ordering). Provider tests may assert tag parsing separately; poll decisions never reorder tags.</p>
 
   <h3>5.2 Open ticket &amp; idempotency</h3>
   <p>On a new tag, Go checks the linked ticket status (<code>open_ticket_external_id</code>) <strong>live</strong>, not only the local DB — the ticket may have been closed manually.</p>
@@ -322,19 +402,27 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <h4>5.2.1 <code>on_open_ticket_policy</code></h4>
   <table>
     <tr><th>Policy</th><th>Action</th><th>Poll event</th></tr>
-    <tr><td><code>supersede</code> (default)</td><td>Old ticket → <code>superseded</code> status + comment; create new ticket</td><td><code>supersede</code> + <code>create</code></td></tr>
+    <tr><td><code>supersede</code> (default)</td><td>Create new ticket; add supersede comment on old ticket (with new-ticket URL); old ticket → <code>superseded</code> status</td><td><code>supersede</code> + <code>create</code></td></tr>
     <tr><td><code>merge</code></td><td>Update existing ticket (title/description/tag); no second ticket</td><td><code>merge</code></td></tr>
     <tr><td><code>skip_if_open</code></td><td>No ticket; optional notification</td><td><code>skip_open</code></td></tr>
   </table>
-  <p>Supersede comment (all providers): link to new release, old tag → new tag.</p>
+  <p><strong>Supersede execution order</strong> (policy <code>supersede</code>):</p>
+  <ol>
+    <li><strong>Create</strong> new ticket (title + description from templates — §5.4).</li>
+    <li>Resolve provider web URL for the new ticket → populate <code>.Supersede.NewTicketURL</code>.</li>
+    <li>Render <code>supersedeComment</code> template on the old ticket context.</li>
+    <li><strong>Update</strong> old ticket status → mapped <code>superseded</code> value.</li>
+    <li><strong>Add comment</strong> on old ticket with rendered supersede body (includes new-ticket URL when template references it).</li>
+  </ol>
+  <p>Supersede comment body comes from <code>content_templates.supersedeComment</code> (or integration-kind default). Invalid template syntax → poll <code>error</code> for that repo (§5.4).</p>
   <p>After successful <code>create</code> / <code>supersede</code>: update <code>open_ticket_external_id</code> and <code>open_ticket_tag</code>. After <code>merge</code>: only <code>open_ticket_tag</code>.</p>
 
   <h3 id="ticket-projects">5.3 Ticket projects &amp; status mapping</h3>
   <p>UI flow: create integration (credentials) → define <strong>ticket projects</strong> below → monitored repo selects a <code>ticket_project_id</code>.</p>
 
   <h4><code>create_config</code> (when creating a ticket)</h4>
-  <pre><code>// phasical — ticket_projects.external_project_id = projectId
-{ "status": "ready", "priority": "medium" }
+  <pre><code>// kaneo — ticket_projects.external_project_id = projectId; workspaceId = Kaneo workspace (used for task web links)
+{ "workspaceId": "...", "status": "ready", "priority": "medium" }
 
 // jira — external_project_id = projectKey
 { "issueType": "Task", "priority": "Medium", "initialStatus": "To Do" }
@@ -361,9 +449,9 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <h4>Provider notes</h4>
   <table>
     <tr><th>Provider</th><th><code>external_project_id</code></th><th>Status values in mapping</th></tr>
-    <tr><td>Phasical</td><td><code>projectId</code></td><td>Board column slugs (<code>ready</code>, <code>in-progress</code>, …) — <strong>different per project</strong></td></tr>
+    <tr><td>Kaneo</td><td><code>projectId</code></td><td>Board column slugs (<code>ready</code>, <code>in-progress</code>, …) — <strong>different per project</strong></td></tr>
     <tr><td>Jira</td><td><code>projectKey</code> (e.g. <code>DEV</code>)</td><td>Status <strong>names</strong> from the workflow of the project key</td></tr>
-    <tr><td>Linear</td><td><code>teamId</code></td><td>Prefer <code>stateId</code>s in arrays; optional <code>openTypes</code>/<code>doneTypes</code> (<code>unstarted</code>, <code>started</code>, <code>completed</code>, <code>canceled</code>)</td></tr>
+    <tr><td>Linear</td><td><code>teamId</code></td><td>MVP: <code>stateId</code> strings in <code>open</code>/<code>done</code>/<code>cancelled</code> arrays and <code>superseded</code> (see example below). <code>openTypes</code>/<code>doneTypes</code> — post-MVP.</td></tr>
   </table>
   <pre><code>// Linear example with stateIds
 {
@@ -374,16 +462,70 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
 }</code></pre>
 
   <h3>5.4 Ticket content (all providers)</h3>
+  <p>
+    Ticket title, description, and supersede comment are rendered from per–ticket-project templates stored in
+    <code>ticket_projects.content_templates</code>. Templates use Go <code>text/template</code> syntax with dot paths
+    (e.g. <code>{{ .Release.Tag }}</code>). Renderer uses <code>missingkey=zero</code>.
+  </p>
+
+  <h4><code>content_templates</code> JSON shape</h4>
+  <pre><code>{
+  "title": "Release: {{ .Repo.SourceKind }} {{ .Repo.ProjectPath }} {{ .Release.Tag }}",
+  "description": "**Source:** {{ .Repo.SourceKind }}\n**Repository:** {{ .Repo.ProjectPath }} ({{ .Repo.URL }})\n\n**Release:** {{ .Release.Tag }} — {{ .Release.Name }}\n**URL:** {{ .Release.URL }}\n**Published:** {{ .Release.PublishedAt }}\n**Pre-release:** {{ yesNo .Release.IsPrerelease }}\n\n**Previous tag:** {{ .Previous.Tag }}\n\n**Release notes:**\n{{ .Release.Notes }}",
+  "supersedeComment": "Superseded: {{ .Supersede.OldTag }} → {{ .Supersede.NewTag }}\n{{ .Release.URL }}\n\nNew ticket: {{ .Supersede.NewTicketURL }}"
+}</code></pre>
   <table>
-    <tr><th>Field</th><th>Value</th></tr>
+    <tr><th>Key</th><th>Used on</th><th>Description</th></tr>
+    <tr><td><code>title</code></td><td><code>create</code>, <code>merge</code>, <code>supersede</code> (new ticket)</td><td>Ticket title sent to provider</td></tr>
+    <tr><td><code>description</code></td><td><code>create</code>, <code>merge</code>, <code>supersede</code> (new ticket)</td><td>Ticket body (markdown for Kaneo/Linear; plain text for Jira)</td></tr>
+    <tr><td><code>supersedeComment</code></td><td><code>supersede</code> (comment on old ticket)</td><td>Comment body after new ticket exists (§5.2.1)</td></tr>
+  </table>
+  <p>
+    Empty string for a key → use integration-kind default template (Go constants — not DB seed).
+    Kaneo and Linear defaults use markdown; Jira defaults use plain text (existing ADF path).
+    Invalid template syntax at render time → poll <code>error</code> for that repo; no silent fallback.
+  </p>
+
+  <h4>MVP template variables</h4>
+  <table>
+    <tr><th>Template path</th><th>Description</th><th>Available on</th></tr>
+    <tr><td><code>.Repo.SourceKind</code></td><td><code>monitored_repos.source_kind</code></td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Repo.ProjectPath</code></td><td><code>monitored_repos.project_path</code></td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Repo.URL</code></td><td>Repository web URL (derived from source kind + integration base URL + path)</td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Release.Tag</code></td><td>Latest release tag</td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Release.Name</code></td><td>Release name/title from source API</td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Release.URL</code></td><td>Release page URL</td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Release.Notes</code></td><td>Release body/changelog text from source API</td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Release.PublishedAt</code></td><td>Release timestamp (RFC3339 UTC string in templates)</td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Release.IsPrerelease</code></td><td>Whether the release is a pre-release (<code>true</code>/<code>false</code>)</td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Previous.Tag</code></td><td><code>last_known_tag</code> before this poll action</td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Supersede.OldTag</code></td><td>Tag on the open ticket being superseded</td><td>supersede comment; also populated on supersede new-ticket render (use <code>.Previous.Tag</code> for create/merge)</td></tr>
+    <tr><td><code>.Supersede.NewTag</code></td><td>New release tag</td><td>supersede comment only</td></tr>
+    <tr><td><code>.Supersede.NewTicketURL</code></td><td>Provider web URL for the ticket created during supersede</td><td>supersede comment only (after step 1 in §5.2.1)</td></tr>
+  </table>
+  <p>Template helper functions (MVP): <code>formatRFC3339</code>, <code>formatDate</code>, <code>yesNo</code> (for booleans in plain text).</p>
+
+  <h4>Write actions</h4>
+  <table>
+    <tr><th>Poll action</th><th>Templates rendered</th><th>Provider calls</th></tr>
+    <tr><td><code>create</code></td><td><code>title</code>, <code>description</code></td><td><code>CreateTicket</code></td></tr>
+    <tr><td><code>merge</code></td><td><code>title</code>, <code>description</code></td><td><code>UpdateTicket</code> (title + description)</td></tr>
+    <tr><td><code>supersede</code></td><td><code>title</code> + <code>description</code> on new ticket; <code>supersedeComment</code> on old ticket</td><td><code>CreateTicket</code> → <code>UpdateTicketStatus</code> → <code>AddTicketComment</code> (order §5.2.1)</td></tr>
+  </table>
+  <p><code>UpdateTicketStatus</code> does not use templates.</p>
+
+  <h4>Legacy hardcoded defaults (when all template keys empty)</h4>
+  <table>
+    <tr><th>Field</th><th>Default value</th></tr>
     <tr><td><code>title</code></td><td><code>Release: {source_kind} {project_path} {tag}</code></td></tr>
-    <tr><td><code>description</code></td><td>Markdown: release name, URL, <code>publishedAt</code></td></tr>
+    <tr><td><code>description</code></td><td>Markdown (Kaneo/Linear) or plain text (Jira): repo source/path/URL, release tag/name/URL/notes/publishedAt/isPrerelease, previous tag</td></tr>
+    <tr><td><code>supersedeComment</code></td><td>Old tag → new tag, release URL, new ticket URL</td></tr>
   </table>
 
   <h4>API calls (verify implementation)</h4>
   <table>
     <tr><th>Provider</th><th>Auth</th><th>Create</th><th>Status / Comment</th></tr>
-    <tr><td>Phasical</td><td>Bearer</td><td><code>POST {base_url}/task/{projectId}</code></td><td>Status update + comment via API</td></tr>
+    <tr><td>Kaneo</td><td>Bearer</td><td><code>POST {base_url}/api/task/{projectId}</code> (append <code>/api</code> when missing)</td><td><code>PUT /api/task/status/{id}</code>, <code>PUT /api/task/title/{id}</code>, <code>PUT /api/task/description/{id}</code>, <code>POST /api/comment/{taskId}</code></td></tr>
     <tr><td>Jira</td><td>Basic</td><td><code>POST /rest/api/3/issue</code></td><td>Transition + comment</td></tr>
     <tr><td>Linear</td><td>API Key header</td><td>GraphQL <code>issueCreate</code></td><td><code>issueUpdate</code> + comment</td></tr>
   </table>
@@ -409,15 +551,21 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
 
   <h2 id="providers">6. Provider interfaces (Go)</h2>
   <pre><code>type Release struct {
-    Tag         string
-    Name        string
-    URL         string
-    PublishedAt time.Time
+    Tag          string
+    Name         string
+    URL          string
+    Notes        string    // release body / changelog from source API
+    PublishedAt  time.Time
+    IsPrerelease bool      // from source API pre-release flag
 }
 
 type SourceProvider interface {
-    GetLatestRelease(ctx context.Context, projectPath string) (*Release, error)
+    GetLatestRelease(ctx context.Context, projectPath string, opts ReleaseOptions) (*Release, error)
     // (*Release, nil) = no release; (nil, err) = real error
+}
+
+type ReleaseOptions struct {
+    IncludePrereleases bool // from monitored_repos.include_prereleases
 }
 
 // Source factory: github | gitlab | gitea-compatible (gitea, forgejo, codeberg)</code></pre>
@@ -429,7 +577,14 @@ type TicketProject struct {
     ExternalProjectID  string
     CreateConfig       map[string]any
     StatusMapping      StatusMapping
+    ContentTemplates   ContentTemplates
     OnOpenTicketPolicy string // supersede | merge | skip_if_open
+}
+
+type ContentTemplates struct {
+    Title            string // empty → integration-kind default
+    Description      string
+    SupersedeComment string `json:"supersedeComment"`
 }
 
 type StatusMapping struct {
@@ -437,7 +592,7 @@ type StatusMapping struct {
     Done        []string
     Cancelled   []string
     Superseded  string
-    // Linear optional: OpenTypes, DoneTypes, CancelledTypes []string
+    // Linear post-MVP: OpenTypes, DoneTypes, CancelledTypes []string
 }
 
 type TicketInput struct {
@@ -459,18 +614,20 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
 
   <h3>6.1 Source: GitHub</h3>
   <ul>
-    <li><code>GET https://api.github.com/repos/{projectPath}/releases/latest</code></li>
+    <li>Default (<code>include_prereleases = 0</code>): <code>GET https://api.github.com/repos/{projectPath}/releases/latest</code></li>
+    <li>When <code>include_prereleases = 1</code>: <code>GET .../releases?per_page=100</code> — exclude drafts; pick newest by <code>published_at</code> (pre-releases included)</li>
     <li>Headers: <code>Accept: application/vnd.github+json</code>, <code>X-GitHub-Api-Version: 2022-11-28</code>, <code>User-Agent: release-ops</code></li>
     <li><code>Authorization: Bearer</code> when token in integration</li>
-    <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>html_url</code>→<code>URL</code>, <code>published_at</code>→<code>PublishedAt</code></li>
+    <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>name</code>→<code>Name</code>, <code>html_url</code>→<code>URL</code>, <code>body</code>→<code>Notes</code>, <code>published_at</code>→<code>PublishedAt</code>, <code>prerelease</code>→<code>IsPrerelease</code></li>
   </ul>
 
   <h3>6.2 Source: GitLab</h3>
   <ul>
-    <li><code>GET {base_url}/api/v4/projects/{urlencoded_path}/releases/permalink/latest</code></li>
+    <li>Default: <code>GET {base_url}/api/v4/projects/{urlencoded_path}/releases/permalink/latest</code></li>
+    <li>When <code>include_prereleases = 1</code>: <code>GET .../releases</code> — pick newest by <code>released_at</code></li>
     <li><code>projectPath</code> → URL-encode (<code>/</code> → <code>%2F</code>)</li>
     <li>Header: <code>PRIVATE-TOKEN: {token}</code></li>
-    <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>_links.self</code> or <code>assets.links</code>→<code>URL</code>, <code>released_at</code>→<code>PublishedAt</code></li>
+    <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>name</code>→<code>Name</code>, <code>_links.self</code> or <code>assets.links</code>→<code>URL</code>, <code>description</code>→<code>Notes</code>, <code>released_at</code>→<code>PublishedAt</code>, pre-release flag from release metadata→<code>IsPrerelease</code></li>
     <li>404 = no release</li>
   </ul>
 
@@ -483,17 +640,21 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><code>codeberg</code></td><td><code>https://codeberg.org</code> (fixed)</td><td>optional (token recommended)</td></tr>
   </table>
   <ul>
-    <li><code>GET {base_url}/api/v1/repos/{owner}/{repo}/releases/latest</code></li>
+    <li>Default: <code>GET {base_url}/api/v1/repos/{owner}/{repo}/releases/latest</code></li>
+    <li>When <code>include_prereleases = 1</code>: <code>GET .../releases</code> — exclude drafts; pick newest by <code>published_at</code></li>
     <li><code>projectPath</code> = <code>owner/repo</code> (like GitHub)</li>
     <li>Header with token: <code>Authorization: token {token}</code> (Gitea standard)</li>
-    <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>html_url</code>→<code>URL</code>, <code>published_at</code>→<code>PublishedAt</code></li>
+    <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>name</code>→<code>Name</code>, <code>html_url</code>→<code>URL</code>, <code>body</code>→<code>Notes</code>, <code>published_at</code>→<code>PublishedAt</code>, <code>prerelease</code>→<code>IsPrerelease</code></li>
     <li>404 = no release; returns latest non-prerelease, non-draft release (Forgejo/GitHub-compatible)</li>
     <li>Connectivity test: <code>GET {base_url}/api/v1/user</code></li>
   </ul>
 
-  <h3>6.4 Ticket: Phasical / Jira / Linear</h3>
+  <h3>6.4 Ticket: Kaneo / Jira / Linear</h3>
   <p>Factory per integration <code>kind</code>. Reads <code>ticket_projects</code> for create defaults and status mapping.</p>
-  <p>Connectivity tests: GitHub <code>GET /user</code>; GitLab <code>GET /api/v4/user</code>; Gitea/Forgejo/Codeberg <code>GET /api/v1/user</code>; Phasical lightweight GET; Jira <code>GET /rest/api/3/myself</code>; Linear GraphQL <code>viewer</code>.</p>
+  <p><strong>Kaneo:</strong> normalize stored <code>base_url</code> by appending <code>/api</code> when missing (same rule as metadata discovery and connectivity test). Ticket CRUD paths are relative to that API root: <code>POST /task/{projectId}</code>, <code>GET /task/{id}</code>, <code>PUT /task/status/{id}</code>, <code>PUT /task/title/{id}</code>, <code>PUT /task/description/{id}</code>, <code>POST /comment/{taskId}</code>. Merge policy uses the dedicated title/description routes (not partial <code>PUT /task/{id}</code>).</p>
+  <p>Connectivity tests: GitHub <code>GET /user</code>; GitLab <code>GET /api/v4/user</code>; Gitea/Forgejo/Codeberg <code>GET /api/v1/user</code>; Kaneo <code>GET /api/auth/organization/list</code>; Jira <code>GET /rest/api/3/myself</code>; Linear GraphQL <code>viewer</code>.</p>
+  <p>Kaneo comment content is limited to 10000 characters; longer supersede comments are truncated.</p>
+  <p><strong>Kaneo task link:</strong> <code>TicketWebURL</code> strips the trailing <code>/api</code> from the normalized base and returns <code>{web base}/dashboard/workspace/{create_config.workspaceId}/project/{external_project_id}/task/{taskId}</code> — no extra API call. Used for the dashboard <code>openTicketUrl</code> and the supersede comment <code>newTicketUrl</code>. When <code>workspaceId</code> is missing the link is omitted.</p>
 
   <h3>6.5 Notifications: Shoutrrr</h3>
   <ul>
@@ -506,17 +667,68 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <pre><code>{ "error": { "code": "VALIDATION_ERROR", "message": "..." } }</code></pre>
 
   <h3>7.0 Auth</h3>
+  <h4>Session endpoints</h4>
   <table>
     <tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
-    <tr><td>POST</td><td><code>/api/v1/auth/login</code></td><td>no</td><td><code>{ "email", "password" }</code> → sets session cookie; 401 on failure</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/auth/login</code></td><td>no</td><td><code>{ "email", "password" }</code> → sets session cookie + <code>sessions.user_id</code>; 401 on failure</td></tr>
     <tr><td>POST</td><td><code>/api/v1/auth/logout</code></td><td>yes</td><td>Clears session cookie</td></tr>
     <tr><td>GET</td><td><code>/api/v1/auth/session</code></td><td>no</td><td><code>{ "user": null }</code> or <code>{ "user": { "id", "email" } }</code></td></tr>
+  </table>
+  <h4>Public token endpoints</h4>
+  <table>
+    <tr><th>Method</th><th>Path</th><th>Body</th><th>Description</th></tr>
+    <tr><td>POST</td><td><code>/api/v1/auth/accept-invitation</code></td><td><code>{ "token", "password" }</code></td><td>Creates user, consumes invitation token, sets session; min 8-char password; 400 invalid/expired token</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/auth/forgot-password</code></td><td><code>{ "email" }</code></td><td>Always <strong>200</strong> with generic message — no email enumeration; sends reset email only when user exists and SMTP configured</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/auth/reset-password</code></td><td><code>{ "token", "password" }</code></td><td>Consumes reset token, updates password, sets session; min 8-char password; revokes prior unused reset tokens for same email on new forgot request</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/auth/confirm-email-change</code></td><td><code>{ "token" }</code></td><td>Updates <code>users.email</code> to <code>new_email</code>; revokes other sessions (keeps current)</td></tr>
+  </table>
+  <h4>Rate limiting (public auth mutations)</h4>
+  <p>Per-client IP sliding window (in-memory; honor <code>X-Forwarded-For</code> first hop when present). On exceed:</p>
+  <ul>
+    <li>HTTP <strong>429</strong> with standard error envelope (§7) and <code>Retry-After</code> header (seconds until window allows retry).</li>
+  </ul>
+  <table>
+    <tr><th>Endpoint</th><th>Limit (per IP)</th></tr>
+    <tr><td><code>POST /api/v1/auth/login</code></td><td>10 / minute</td></tr>
+    <tr><td><code>POST /api/v1/auth/forgot-password</code></td><td>5 / hour</td></tr>
+    <tr><td><code>POST /api/v1/auth/accept-invitation</code></td><td>10 / hour</td></tr>
+    <tr><td><code>POST /api/v1/auth/reset-password</code></td><td>10 / hour</td></tr>
+    <tr><td><code>POST /api/v1/auth/confirm-email-change</code></td><td>10 / hour</td></tr>
+    <tr><td><code>POST /api/v1/users/me/password-change</code></td><td>10 / hour</td></tr>
   </table>
   <pre><code>// POST /api/v1/auth/login — 200
 { "user": { "id": "uuid", "email": "admin@example.com" } }
 
 // GET /api/v1/auth/session — 200 (always, even when logged out)
-{ "user": null }</code></pre>
+{ "user": null }
+
+// POST /api/v1/auth/forgot-password — 200 (always)
+{ "message": "If an account exists for that email, a reset link has been sent." }
+
+// 429 — rate limited (all public auth mutations above)
+{ "error": { "code": "RATE_LIMITED", "message": "Too many requests. Try again later." } }
+// Header: Retry-After: &lt;seconds&gt;</code></pre>
+
+  <h3>7.0.1 Users &amp; invitations</h3>
+  <p>All endpoints require session. No RBAC — any logged-in user has equal access.</p>
+  <table>
+    <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+    <tr><td>GET</td><td><code>/api/v1/users</code></td><td>List users: <code>{ "items": [{ "id", "email", "createdAt" }] }</code></td></tr>
+    <tr><td>DELETE</td><td><code>/api/v1/users/{id}</code></td><td>Remove user — 403 self, 409 last user; revokes all sessions first</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/users/invitations</code></td><td>Pending invitations: <code>id</code>, <code>email</code>, <code>expiresAt</code>, <code>createdAt</code>, <code>invitedByUserId</code></td></tr>
+    <tr><td>POST</td><td><code>/api/v1/users/invitations</code></td><td><code>{ "email" }</code> → creates token; returns <code>inviteUrl</code> for copy-link (one-time raw token in URL)</td></tr>
+    <tr><td>DELETE</td><td><code>/api/v1/users/invitations/{id}</code></td><td>Revoke pending invitation</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/users/invitations/{id}/send-email</code></td><td>Send invitation email via SMTP — <strong>503</strong> when SMTP not configured</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/users/me/email-change-request</code></td><td><code>{ "newEmail", "currentPassword" }</code> — sends confirm link to <strong>new</strong> email; 401 wrong password</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/users/me/password-change</code></td><td><code>{ "currentPassword", "newPassword" }</code> — updates password; min 8-char <code>newPassword</code>; 401 wrong password; rate limited 10/hour per IP</td></tr>
+  </table>
+  <pre><code>// POST /api/v1/users/invitations — 201
+{
+  "id": "token-row-uuid",
+  "email": "colleague@example.com",
+  "expiresAt": "2026-08-14T12:00:00.000Z",
+  "inviteUrl": "https://release-ops.example.com/accept-invitation?token=..."
+}</code></pre>
 
   <h3>7.1 Status</h3>
   <table>
@@ -526,6 +738,41 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td>GET</td><td><code>/api/v1/poll/runs</code></td><td>List of recent runs (paginated, default limit 20)</td></tr>
     <tr><td>GET</td><td><code>/api/v1/poll/runs/{id}</code></td><td>Run including events</td></tr>
   </table>
+  <pre><code>// GET /api/v1/poll/runs — list item (events omitted)
+{
+  "id": "...",
+  "startedAt": "...",
+  "finishedAt": "...",
+  "status": "success",
+  "triggerSource": "manual",
+  "reposChecked": 5,
+  "ticketsCreated": 1,
+  "ticketsSuperseded": 0,
+  "errors": []
+}
+
+// GET /api/v1/poll/runs/{id} — same fields plus events[]
+{
+  "id": "...",
+  "startedAt": "...",
+  "finishedAt": "...",
+  "status": "success",
+  "triggerSource": "scheduled",
+  "reposChecked": 5,
+  "ticketsCreated": 1,
+  "ticketsSuperseded": 0,
+  "errors": [],
+  "events": [
+    {
+      "id": "...",
+      "pollRunId": "...",
+      "monitoredRepoId": "...",
+      "action": "create",
+      "detail": "...",
+      "createdAt": "..."
+    }
+  ]
+}</code></pre>
   <pre><code>// GET /api/v1/status
 {
   "pollIntervalMinutes": 360,
@@ -534,6 +781,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     "startedAt": "...",
     "finishedAt": "...",
     "status": "success",
+    "triggerSource": "scheduled",
     "reposChecked": 5,
     "ticketsCreated": 1,
     "ticketsSuperseded": 0,
@@ -545,13 +793,16 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
       "sourceKind": "github",
       "projectPath": "FreshRSS/FreshRSS",
       "ticketProjectId": "...",
-      "ticketProjectName": "Phasical — Release Ops",
+      "ticketProjectName": "Kaneo — Release Ops",
       "enabled": true,
       "openTicketExternalId": "task-uuid",
       "openTicketTag": "1.26.0",
       "lastKnownTag": "1.26.0",
       "lastPolledAt": "...",
-      "lastError": null
+      "lastError": null,
+      "repoUrl": "https://github.com/FreshRSS/FreshRSS",
+      "releaseUrl": "https://github.com/FreshRSS/FreshRSS/releases/tag/1.26.0",
+      "openTicketUrl": "https://cloud.kaneo.app/dashboard/workspace/ws-id/project/project-id/task/task-uuid"
     }
   ],
   "isPolling": false
@@ -561,8 +812,14 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <table>
     <tr><th>Method</th><th>Path</th><th>Body</th></tr>
     <tr><td>GET</td><td><code>/api/v1/settings</code></td><td>—</td></tr>
-    <tr><td>PATCH</td><td><code>/api/v1/settings</code></td><td><code>{ "pollIntervalMinutes": 360 }</code></td></tr>
+    <tr><td>PATCH</td><td><code>/api/v1/settings</code></td><td><code>{ "pollIntervalMinutes"?, "inviteTokenExpiryHours"?, "passwordResetTokenExpiryMinutes"? }</code></td></tr>
   </table>
+  <pre><code>// GET /api/v1/settings — 200
+{
+  "pollIntervalMinutes": 360,
+  "inviteTokenExpiryHours": 168,
+  "passwordResetTokenExpiryMinutes": 60
+}</code></pre>
 
   <h3>7.3 Integrations</h3>
   <table>
@@ -584,13 +841,38 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   "updatedAt": "..."
 }</code></pre>
 
+  <h4>7.3.1 Ticket integration metadata</h4>
+  <p>Discovery endpoints proxy provider APIs using stored (decrypted) credentials. Responses use the same actionable error pattern as <code>POST …/test</code>: HTTP 200 with <code>message</code> when the provider rejects credentials or the request fails.</p>
+  <p><strong>Kaneo:</strong> append <code>/api</code> to <code>baseUrl</code> when missing (ticket provider, metadata discovery, and connectivity test share this rule). Workspace list: <code>GET /auth/organization/list</code> (Better Auth organizations; response <code>[{ id, name, slug, … }]</code>). Project/column discovery unchanged: <code>/project</code>, <code>/column/{projectId}</code>. UI flow: workspace → project → column slugs / fixed priorities.</p>
+  <table>
+    <tr><th>Method</th><th>Path</th><th>Query</th><th>Notes</th></tr>
+    <tr><td>GET</td><td><code>/api/v1/integrations/{id}/ticket-metadata/workspaces</code></td><td>—</td><td>Kaneo only; empty <code>items</code> for Jira/Linear</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/integrations/{id}/ticket-metadata/projects</code></td><td><code>workspaceId</code> (Kaneo)</td><td>Kaneo <code>projectId</code>, Jira <code>projectKey</code>, Linear <code>teamId</code></td></tr>
+    <tr><td>GET</td><td><code>/api/v1/integrations/{id}/ticket-metadata/statuses</code></td><td><code>externalProjectId</code></td><td>Column slugs (Kaneo), status names (Jira), <code>stateId</code> (Linear)</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/integrations/{id}/ticket-metadata/priorities</code></td><td><code>externalProjectId?</code></td><td>Provider list or fixed enum (Kaneo, Linear)</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/integrations/{id}/ticket-metadata/issue-types</code></td><td><code>externalProjectId</code></td><td>Jira only</td></tr>
+  </table>
+  <pre><code>// GET /api/v1/integrations/{id}/ticket-metadata/projects?workspaceId=...
+{
+  "items": [
+    { "id": "proj-uuid", "name": "Release Ops", "label": "Release Ops (release-ops)" }
+  ],
+  "message": ""
+}
+
+// Provider/credential failure (same UX as test connection)
+{
+  "items": [],
+  "message": "unexpected status 401: {\"error\":\"unauthorized\"}"
+}</code></pre>
+
   <h3>7.4 Ticket Projects</h3>
   <p>Multiple project/team targets per ticket integration with their own status mapping.</p>
   <table>
     <tr><th>Method</th><th>Path</th><th>Notes</th></tr>
     <tr><td>GET</td><td><code>/api/v1/ticket-projects</code></td><td>Filter optional <code>?integrationId=</code></td></tr>
     <tr><td>POST</td><td><code>/api/v1/ticket-projects</code></td><td>Create</td></tr>
-    <tr><td>PATCH</td><td><code>/api/v1/ticket-projects/{id}</code></td><td>Update mapping, policy, create_config</td></tr>
+    <tr><td>PATCH</td><td><code>/api/v1/ticket-projects/{id}</code></td><td>Update mapping, policy, create_config, contentTemplates</td></tr>
     <tr><td>DELETE</td><td><code>/api/v1/ticket-projects/{id}</code></td><td>409 if still referenced by repos</td></tr>
   </table>
   <pre><code>// POST /api/v1/ticket-projects
@@ -608,8 +890,18 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     "cancelled": ["Cancelled"],
     "superseded": "Cancelled"
   },
+  "contentTemplates": {
+    "title": "",
+    "description": "",
+    "supersedeComment": ""
+  },
   "onOpenTicketPolicy": "supersede"
 }</code></pre>
+  <p>
+    GET list/detail responses include <code>contentTemplates</code> with the same shape.
+    PATCH accepts partial updates; omitted keys leave existing template values unchanged.
+    All three keys must be present on POST; use empty strings for integration-kind defaults.
+  </p>
 
   <h3>7.5 Monitored Repos</h3>
   <table>
@@ -624,6 +916,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   "sourceKind": "github",
   "projectPath": "FreshRSS/FreshRSS",
   "enabled": true,
+  "includePrereleases": false,
   "sourceIntegrationId": "uuid-or-null",
   "ticketProjectId": "uuid",
   "notificationTargetIds": ["uuid-optional"]
@@ -657,7 +950,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <h3>8.1 App shell (all authenticated pages)</h3>
   <table>
     <tr><th>Primitive</th><th>Particle / Pattern</th><th>Usage</th></tr>
-    <tr><td><code>Sidebar</code> (+ <code>SidebarProvider</code>)</td><td>sidebar primitive docs</td><td>Navigation: Dashboard, Repos, Integrations, Ticket Projects, Notifications, Settings</td></tr>
+    <tr><td><code>Sidebar</code> (+ <code>SidebarProvider</code>)</td><td>sidebar primitive docs</td><td>Navigation: Dashboard, Poll runs, Repos, Integrations, Ticket Projects, Notifications, Settings</td></tr>
     <tr><td><code>Frame</code></td><td><a href="https://coss.com/ui/r/p-frame-3.json">p-frame-3</a> — multiple separated panels</td><td>Page layout with header area + content</td></tr>
     <tr><td><code>Breadcrumb</code></td><td><a href="https://coss.com/ui/r/p-breadcrumb-3.json">p-breadcrumb-3</a> — home icon</td><td>Sub-page context</td></tr>
     <tr><td><code>Toaster</code></td><td><a href="https://coss.com/ui/r/p-toast-2.json">p-toast-2</a> — semantic types</td><td>Global feedback (success/error)</td></tr>
@@ -668,12 +961,15 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <table>
     <tr><th>Route</th><th>Page</th><th>Description</th></tr>
     <tr><td><code>/login</code></td><td>Login</td><td>Unauthenticated</td></tr>
-    <tr><td><code>/</code></td><td>Dashboard</td><td>Status, last run, quick actions</td></tr>
+    <tr><td><code>/</code></td><td>Dashboard</td><td>Status, last run, quick actions; repo status table linkifies path → <code>repoUrl</code>, last tag → <code>releaseUrl</code> (when present), open ticket ID → <code>openTicketUrl</code> (when present); external links open in a new tab</td></tr>
+    <tr><td><code>/poll-runs</code></td><td>Poll runs</td><td>Paginated poll run history with per-run detail drawer</td></tr>
     <tr><td><code>/repos</code></td><td>Repos</td><td>CRUD monitored repos</td></tr>
     <tr><td><code>/integrations</code></td><td>Integrations</td><td>CRUD credentials (sources + ticket providers)</td></tr>
-    <tr><td><code>/ticket-projects</code></td><td>Ticket Projects</td><td>CRUD per integration: project/team, status mapping, policy</td></tr>
+    <tr><td><code>/ticket-projects</code></td><td>Ticket Projects</td><td>CRUD per integration: project/team, status mapping, policy, content templates</td></tr>
     <tr><td><code>/notifications</code></td><td>Notifications</td><td>Shoutrrr targets, events, test</td></tr>
-    <tr><td><code>/settings</code></td><td>Settings</td><td>Poll interval</td></tr>
+    <tr><td><code>/profile</code></td><td>Profile</td><td>Account email, change email, change password</td></tr>
+    <tr><td><code>/settings</code></td><td>Settings</td><td>Instance: poll interval, invite/reset token expiry</td></tr>
+    <tr><td><code>/settings/users</code></td><td>Users</td><td>User list, invitations, invite/revoke</td></tr>
   </table>
   <p>Middleware: all pages except <code>/login</code> require session (via <code>GET /api/v1/auth/session</code> through the Go proxy).</p>
 
@@ -695,20 +991,29 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><a href="https://coss.com/ui/r/p-card-10.json">p-card-10</a> frame header+footer</td><td>"Last poll" summary card</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-badge-5.json">p-badge-5</a> (semantic)</td><td>Run status badge</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>"Run poll now" (triggers POST trigger)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a> TanStack sort+pagination</td><td>Repo status table (subset)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a> TanStack sort+pagination</td><td>Repo status table (subset): source, path, last tag, open ticket, last polled (<code>lastPolledAt</code>)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-alert-6.json">p-alert-6</a> warning</td><td>Errors from last run</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-empty-1.json">p-empty-1</a></td><td>No repos configured → CTA to /repos</td></tr>
+  </table>
+
+  <h4>/poll-runs</h4>
+  <table>
+    <tr><th>Particle</th><th>Usage</th></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a> pagination</td><td>Poll run history table</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-badge-5.json">p-badge-5</a> (semantic)</td><td>Run status badge</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-drawer-10.json">p-drawer-10</a></td><td>Per-run detail (events, errors)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-empty-1.json">p-empty-1</a></td><td>No poll runs yet</td></tr>
   </table>
 
   <h4>/repos</h4>
   <table>
     <tr><th>Particle</th><th>Usage</th></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-table-3.json">p-table-3</a> checkboxes</td><td>Repo list, bulk enable/disable optional</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-3.json">p-table-3</a></td><td>Repo list (bulk enable/disable — post-MVP)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-dialog-1.json">p-dialog-1</a> form</td><td>Add / Edit Repo</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-alert-dialog-1.json">p-alert-dialog-1</a></td><td>Delete confirmation</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td>Source kind, source integration, <strong>ticket project</strong></td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-checkbox-group-1.json">p-checkbox-group-1</a></td><td>Optional: notification targets per repo</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-switch-1.json">p-switch-1</a></td><td>Enabled toggle in form</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-switch-1.json">p-switch-1</a></td><td>Enabled toggle; <strong>Include pre-releases</strong> toggle (default off)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-badge-1.json">p-badge-1</a></td><td>source_kind + ticket project name in tables</td></tr>
   </table>
 
@@ -717,12 +1022,12 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><th>Particle</th><th>Usage</th></tr>
     <tr><td><a href="https://coss.com/ui/r/p-table-3.json">p-table-3</a></td><td>Project list grouped by integration</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-drawer-10.json">p-drawer-10</a></td><td>Create/Edit Ticket Project</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td>Integration (ticket kinds only)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>external_project_id, display name</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td><code>on_open_ticket_policy</code></td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-tabs-1.json">p-tabs-1</a></td><td>create_config subform per provider kind</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-field-2.json">p-field-2</a></td><td>Status mapping: open/done/cancelled arrays + superseded</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-alert-5.json">p-alert-5</a></td><td>Note: mapping is <strong>different per project</strong></td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td>Integration (ticket kinds only); Kaneo workspace; external project/team; <code>on_open_ticket_policy</code>; create_config fields; status mapping superseded</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>Display name</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-checkbox-group-1.json">p-checkbox-group-1</a></td><td>Status mapping: open / done / cancelled (multi-select from provider statuses)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-tabs-1.json">p-tabs-1</a></td><td>create_config subform per provider kind (selects populated from metadata endpoints); <strong>Content templates</strong> tab (<code>title</code>, <code>description</code>, <code>supersedeComment</code> text areas)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-textarea-1.json">p-textarea-1</a></td><td>Template fields — monospace; placeholder shows Go <code>text/template</code> example (<code>{{ .Release.Tag }}</code>)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-alert-5.json">p-alert-5</a></td><td>Note: mapping is <strong>different per project</strong>; empty template key → integration default; variable reference panel lists MVP paths (§5.4)</td></tr>
   </table>
 
   <h4>/notifications</h4>
@@ -741,24 +1046,59 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><th>Particle</th><th>Usage</th></tr>
     <tr><td><a href="https://coss.com/ui/r/p-table-2.json">p-table-2</a> card-style</td><td>Integration list</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-drawer-10.json">p-drawer-10</a> edit form</td><td>Create/Edit Integration (mobile-friendly)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>Name; Base URL (gitlab, gitea, forgejo, phasical, jira)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>Name; Base URL (gitlab, gitea, forgejo, kaneo, jira)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-field-2.json">p-field-2</a></td><td>Jira: email field</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-input-1.json">p-input-1</a> type password</td><td>Token / API Key (never re-display)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>"Test connection"</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-toast-5.json">p-toast-5</a> promise</td><td>Test connection async feedback</td></tr>
   </table>
 
+  <h4>/profile</h4>
+  <table>
+    <tr><th>Particle</th><th>Usage</th></tr>
+    <tr><td><code>SettingsSection</code></td><td>Account, change email, change password panels</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>Email (read-only), new email, passwords</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>Request email change, change password</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-alert-5.json">p-alert-5</a> success/error</td><td>Pending verification, password changed, errors</td></tr>
+  </table>
+
   <h4>/settings</h4>
   <table>
     <tr><th>Particle</th><th>Usage</th></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-card-8.json">p-card-8</a> within frame</td><td>Settings section</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-number-field-1.json">p-number-field-1</a></td><td>Poll interval (minutes), min 5</td></tr>
+    <tr><td><code>SettingsSection</code></td><td>Polling and token expiry panels (<code>max-w-4xl</code> layout)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-number-field-1.json">p-number-field-1</a></td><td>Poll interval (minutes, min 5); invite link expiry (hours); password-reset link expiry (minutes)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>Save</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-alert-5.json">p-alert-5</a> success</td><td>Settings saved</td></tr>
   </table>
 
+  <h4>/settings/users</h4>
+  <table>
+    <tr><th>Particle</th><th>Usage</th></tr>
+    <tr><td><code>PageHeader</code></td><td>Title + "Invite user" action</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a></td><td>Active users and pending invitations</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-dialog-1.json">p-dialog-1</a></td><td>Invite user, delete user, revoke invitation</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-badge-1.json">p-badge-1</a></td><td>"You" badge on current user</td></tr>
+  </table>
+
   <h3>8.4 API client (frontend)</h3>
-  <p>All API calls to <code>/api/go/api/v1/...</code> (Next proxy — same origin, session cookie forwarded automatically). Login: <code>POST /api/go/api/v1/auth/login</code>. React Query hooks: <code>useSession</code>, <code>useStatus</code>, <code>useRepos</code>, <code>useIntegrations</code>, <code>useTicketProjects</code>, <code>useNotificationTargets</code>, <code>useSettings</code>.</p>
+  <p>All API calls to <code>/api/go/api/v1/...</code> (Next proxy — same origin, session cookie forwarded automatically). Login: <code>POST /api/go/api/v1/auth/login</code>. React Query hooks: <code>useSession</code>, <code>useStatus</code>, <code>useRepos</code>, <code>useIntegrations</code>, <code>useTicketProjects</code>, <code>useNotificationTargets</code>, <code>useSettings</code>, <code>usePollRuns</code>, <code>usePollRun</code>, <code>useTriggerPoll</code>.</p>
+
+  <h3 id="i18n">8.5 Internationalization (i18n)</h3>
+  <p><strong>Zero hardcoded UI strings.</strong> All user-facing copy (labels, buttons, headings, errors, toasts, empty states, table headers, <code>aria-label</code>, placeholders) uses <strong>next-intl</strong>.</p>
+  <table>
+    <tr><th>Item</th><th>Rule</th></tr>
+    <tr><td>Library</td><td><code>next-intl</code> with App Router provider in root layout</td></tr>
+    <tr><td>Messages</td><td><code>apps/web/messages/en.json</code> (MVP default locale <code>en</code>)</td></tr>
+    <tr><td>Components</td><td><code>useTranslations('namespace')</code> / server <code>getTranslations</code></td></tr>
+    <tr><td>Keys</td><td>Dotted namespaces: <code>dashboard.runPoll</code>, <code>repos.add</code></td></tr>
+    <tr><td>CI</td><td><code>eslint-plugin-i18next</code> — <code>i18next/no-literal-string</code> fails on JSX literals</td></tr>
+  </table>
+  <p>Allowed without i18n keys: route paths, API enum values, CSS classes, test IDs. Forbidden: <code>&lt;Button&gt;Save&lt;/Button&gt;</code>, <code>toast('Error')</code>.</p>
+  <p><strong>Display timezone:</strong> All UI timestamps use the IANA timezone from <code>APP_TIMEZONE</code> (default <code>UTC</code>) via next-intl <code>timeZone</code> in <code>i18n/request.ts</code> and <code>NextIntlClientProvider</code>. Storage and API remain UTC ISO8601 (§4.7).</p>
+  <p><strong>24-hour clock:</strong> All displayed times use 24-hour format (<code>hour12: false</code>) — no AM/PM.</p>
+  <p><strong>Poll diagnostics:</strong> Poll run history and dashboard poll health show started/finished timestamps (and poll run event times) with millisecond precision (<code>fractionalSecondDigits: 3</code>). Other screens use medium date + short time without fractional seconds.</p>
+  <p>Shared formatters: <code>apps/web/lib/format/datetime.ts</code> (<code>formatAppDateTime</code>, <code>formatPollDiagnosticDateTime</code>).</p>
+  <p>Agents: <code>.claude/rules/10-i18n.md</code>.</p>
 
   <h2 id="env">9. Environment variables</h2>
   <p>All variables for the <strong>single</strong> container (<code>release-ops</code>). No service-specific Compose splitting.</p>
@@ -770,9 +1110,16 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><code>GO_INTERNAL_PORT</code></td><td>no</td><td><code>8080</code></td><td>Go binds only <code>127.0.0.1</code></td></tr>
     <tr><td><code>APP_DB_PATH</code></td><td>no</td><td><code>/data/app.db</code></td><td>SQLite (app data + auth)</td></tr>
     <tr><td><code>APP_ENCRYPTION_KEY</code></td><td>yes</td><td>—</td><td>64 hex chars — credential encryption</td></tr>
+    <tr><td><code>APP_TIMEZONE</code></td><td>no</td><td><code>UTC</code></td><td>IANA timezone for UI timestamp display (e.g. <code>Europe/Vienna</code>); does not affect API storage (always UTC)</td></tr>
     <tr><td><code>BOOTSTRAP_ADMIN_EMAIL</code></td><td>no</td><td>—</td><td>One-time first-start admin seed (only when no users exist)</td></tr>
     <tr><td><code>BOOTSTRAP_ADMIN_PASSWORD</code></td><td>no</td><td>—</td><td>Pair with <code>BOOTSTRAP_ADMIN_EMAIL</code>; remove after first boot</td></tr>
     <tr><td><code>PORT</code></td><td>no</td><td><code>3000</code></td><td>Public HTTP port (Next.js)</td></tr>
+    <tr><td><code>SMTP_HOST</code></td><td>no</td><td>—</td><td>SMTP server hostname — unset disables outbound email (copy-link still works)</td></tr>
+    <tr><td><code>SMTP_PORT</code></td><td>no</td><td><code>587</code></td><td>SMTP port</td></tr>
+    <tr><td><code>SMTP_USER</code></td><td>no</td><td>—</td><td>SMTP auth username (when server requires auth)</td></tr>
+    <tr><td><code>SMTP_PASSWORD</code></td><td>no</td><td>—</td><td>SMTP auth password</td></tr>
+    <tr><td><code>SMTP_FROM</code></td><td>no</td><td>—</td><td>From address for invitation, reset, and email-change messages</td></tr>
+    <tr><td><code>SMTP_TLS</code></td><td>no</td><td><code>true</code></td><td>Use STARTTLS when <code>true</code></td></tr>
   </table>
   <p><strong>Removed</strong> compared to prior specs: <code>BETTER_AUTH_*</code>, <code>DATABASE_URL</code> (auth.db), <code>JWKS_URL</code>, <code>CONFIG_PATH</code>, <code>GITHUB_TOKEN</code>, <code>PHASICAL_API_KEY</code>, <code>PHASICAL_BASE_URL</code>, <code>POLL_INTERVAL_MINUTES</code> (all in DB/UI or Go auth).</p>
 
@@ -904,6 +1251,7 @@ jobs:
     <tr><td>test</td><td><code>go test ./...</code></td><td><code>npm test</code></td></tr>
     <tr><td>typecheck</td><td><code>go vet</code> / optional staticcheck</td><td><code>npm run typecheck</code></td></tr>
     <tr><td>build</td><td><code>go build -o /dev/null ./cmd/server</code></td><td><code>npm run build</code> (production)</td></tr>
+    <tr><td>db</td><td><code>npm run db:check</code> (schema ↔ migrations via <code>sqldiff</code>)</td><td>—</td></tr>
   </table>
   <p>All jobs must be green before downstream jobs (images / release) run. No <code>--no-verify</code> in CI.</p>
 
@@ -952,17 +1300,17 @@ jobs:
   <ol>
     <li>Admin can log in (email/password).</li>
     <li>Admin can create integrations for all eight <code>kind</code> values; secrets never in API responses.</li>
-    <li>Admin can create multiple <strong>ticket projects</strong> per ticket integration (Phasical projects, Jira keys, Linear teams) with their own <code>status_mapping</code> and <code>on_open_ticket_policy</code>.</li>
-    <li>Admin can create monitored repo with any source/ticket-project combination (e.g. Codeberg+Phasical, Forgejo+Jira, Gitea+Linear).</li>
+    <li>Admin can create multiple <strong>ticket projects</strong> per ticket integration (Kaneo projects, Jira keys, Linear teams) with their own <code>status_mapping</code> and <code>on_open_ticket_policy</code>.</li>
+    <li>Admin can create monitored repo with any source/ticket-project combination (e.g. Codeberg+Kaneo, Forgejo+Jira, Gitea+Linear).</li>
     <li>Integration test per provider returns success/failure in UI.</li>
     <li>First poll: <strong>baseline</strong> — no ticket, <code>last_known_tag</code> set.</li>
     <li>Poll without release change: <strong>skip</strong>.</li>
     <li>New release, no open ticket (or done/cancelled): <strong>create</strong> — ticket visible in target system.</li>
     <li>New release, open ticket, policy <code>supersede</code>: old ticket → superseded status + comment; new ticket created; <code>tickets_superseded</code> incremented.</li>
     <li>Policies <code>merge</code> and <code>skip_if_open</code> work as in §5.2.1.</li>
-    <li>Status mapping is applied <strong>per ticket project</strong> (different open/done values per Phasical project, Jira key, Linear team).</li>
+    <li>Status mapping is applied <strong>per ticket project</strong> (different open/done values per Kaneo project, Jira key, Linear team).</li>
     <li>Admin can create and test Shoutrrr notification targets; events on create/error/supersede.</li>
-    <li>At least one end-to-end test per MVP source (GitHub, GitLab, Gitea, Forgejo, Codeberg) and per ticket provider (Phasical, Jira, Linear) in CI (mock or sandbox).</li>
+    <li>At least one end-to-end test per MVP source (GitHub, GitLab, Gitea, Forgejo, Codeberg) and per ticket provider (Kaneo, Jira, Linear) in CI (mock or sandbox).</li>
     <li>Dashboard, manual poll, settings interval; <code>docker compose up</code> with <strong>one</strong> service.</li>
     <li>Go + web tests green in CI; workflow layout per <a href="#ci">§11 CI/CD</a>.</li>
   </ol>
@@ -971,10 +1319,13 @@ jobs:
   <ul>
     <li>Bitbucket, Azure DevOps, more Git hosts.</li>
     <li>Per-repo poll interval.</li>
-    <li>Release filters (pre-releases, regex on tags).</li>
+    <li>Release filters (regex on tags). Pre-releases: per-repo <code>include_prereleases</code> (§4.4).</li>
     <li>Webhook instead of poll.</li>
-    <li>Multi-user with roles.</li>
+    <li>Multi-user with roles (RBAC).</li>
     <li>OAuth/social login (COSS: <a href="https://coss.com/ui/r/p-button-38.json">p-button-38</a>).</li>
+    <li>Bulk enable/disable on <code>/repos</code> table.</li>
+    <li>Linear <code>openTypes</code>/<code>doneTypes</code> status mapping (MVP uses <code>stateId</code> only).</li>
+    <li>In-app admin registration / first-run setup wizard.</li>
   </ul>
 
   <p class="docnav"><a href="index.html">Docs</a> · <a href="specs.html">Spec</a> · <a href="stack.html">Stack</a> · <a href="schema.html">Schema</a></p>

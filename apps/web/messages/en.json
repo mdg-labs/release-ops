@@ -1,0 +1,612 @@
+{
+  "common": {
+    "appTitle": "Release Ops",
+    "appDescription": "Self-hosted release monitor",
+    "scaffoldDescription": "Self-hosted release monitor scaffold",
+    "getStarted": "Get started",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "loading": "Loading…"
+  },
+  "auth": {
+    "login": "Log in",
+    "logout": "Log out",
+    "signIn": "Sign in",
+    "email": "Email",
+    "password": "Password",
+    "confirmPassword": "Confirm password",
+    "invalidCredentials": "Invalid email or password.",
+    "loginFailed": "Sign in failed. Please try again.",
+    "loginFailedTitle": "Sign in failed",
+    "forgotPasswordLink": "Forgot password?",
+    "backToLogin": "Back to log in",
+    "forgotPassword": "Forgot password",
+    "forgotPasswordDescription": "Enter your email address and we will send a reset link if an account exists.",
+    "sendResetLink": "Send reset link",
+    "forgotPasswordSuccessTitle": "Check your email",
+    "forgotPasswordSuccess": "If an account exists for that email, a reset link has been sent.",
+    "resetPassword": "Reset password",
+    "resetPasswordDescription": "Enter a new password for your account.",
+    "setPassword": "Set password",
+    "acceptInvitation": "Accept invitation",
+    "acceptInvitationDescription": "Choose a password to finish creating your account.",
+    "confirmEmailChange": "Confirm email change",
+    "confirmEmailChangeDescription": "Confirming your new email address…",
+    "confirmEmailChangeSuccessTitle": "Email updated",
+    "confirmEmailChangeSuccess": "Your email address has been updated.",
+    "invalidTokenTitle": "Link invalid",
+    "invalidToken": "This link is invalid or has expired.",
+    "passwordTooShort": "Password must be at least 8 characters.",
+    "passwordMismatch": "Passwords do not match.",
+    "rateLimited": "Too many requests. Try again later.",
+    "requestFailed": "Something went wrong. Please try again.",
+    "requestFailedTitle": "Request failed"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "runPoll": "Run poll now",
+    "viewAllRuns": "View all runs",
+    "loadFailed": "Failed to load dashboard status.",
+    "statusCardTitle": "System status",
+    "statusCardDescription": "Overview of the latest poll run and scheduler state.",
+    "lastPollTitle": "Last poll",
+    "pollIntervalValue": "Poll interval: {minutes} minutes",
+    "lastRunNever": "No poll has completed yet.",
+    "lastRunStarted": "Started",
+    "lastRunFinished": "Finished",
+    "lastRunInProgress": "In progress",
+    "lastRunReposChecked": "Repos checked",
+    "lastRunTicketsCreated": "Tickets created",
+    "pollingInProgress": "Poll in progress…",
+    "lastRunErrorsTitle": "Errors in last poll run",
+    "reposSectionTitle": "Monitored repos",
+    "reposEmptyTitle": "No monitored repos",
+    "reposEmptyDescription": "Add a repository to start polling for new releases.",
+    "reposEmptyCta": "Add repo",
+    "noTag": "—",
+    "noTicket": "—",
+    "noResults": "No results.",
+    "paginationSummary": "Showing {start}–{end} of {total}",
+    "paginationPageSize": "Rows per page",
+    "paginationPageSizeOption": "{count}",
+    "paginationPrevious": "Previous",
+    "paginationNext": "Next",
+    "columns": {
+      "source": "Source",
+      "path": "Path",
+      "lastTag": "Last tag",
+      "lastReleasePublishedAt": "Release date",
+      "openTicket": "Open ticket",
+      "lastPolledAt": "Last polled"
+    },
+    "links": {
+      "repo": "Open repository {path}",
+      "release": "View release {tag}",
+      "openTicket": "Open ticket {ticketId}"
+    },
+    "runStatus": {
+      "never": "No runs",
+      "polling": "Polling",
+      "success": "Success",
+      "failed": "Failed",
+      "partial": "Partial",
+      "running": "Running"
+    },
+    "runTrigger": {
+      "manual": "Manual",
+      "scheduled": "Automatic"
+    },
+    "pollHistorySectionTitle": "Poll run history",
+    "pollHistoryEmptyTitle": "No poll runs yet",
+    "pollHistoryEmptyDescription": "Runs appear here after the scheduler or a manual poll completes.",
+    "pollHistoryLoadFailed": "Failed to load poll run history.",
+    "pollHistoryDetailTitle": "Poll run details",
+    "pollHistoryDetailDescription": "Events and counters for this poll run.",
+    "pollHistoryDetailLoadFailed": "Failed to load poll run details.",
+    "pollHistoryEventsTitle": "Events",
+    "pollHistoryNoEvents": "No events recorded for this run.",
+    "pollHistoryErrorsTitle": "Errors",
+    "noEventDetail": "—",
+    "paginationRange": "Showing {start}–{end}",
+    "pollHistoryColumns": {
+      "startedAt": "Started",
+      "finishedAt": "Finished",
+      "status": "Status",
+      "trigger": "Trigger",
+      "reposChecked": "Repos checked",
+      "ticketsCreated": "Tickets created"
+    },
+    "pollHistoryEventColumns": {
+      "time": "Time",
+      "action": "Action",
+      "detail": "Detail"
+    },
+    "eventActions": {
+      "baseline": "Baseline",
+      "skip": "Skip",
+      "create": "Create ticket",
+      "supersede": "Supersede",
+      "merge": "Merge",
+      "skip_open": "Skip open ticket",
+      "error": "Error"
+    }
+  },
+  "repos": {
+    "title": "Repos",
+    "add": "Add repo",
+    "createTitle": "Add monitored repo",
+    "createDescription": "Configure a repository to poll for new releases.",
+    "editTitle": "Edit monitored repo",
+    "editDescription": "Update polling settings and ticket routing.",
+    "empty": "No monitored repos yet. Add one to get started.",
+    "emptyTitle": "No monitored repos yet",
+    "emptyDescription": "Add a repository to monitor for new releases.",
+    "loadFailed": "Failed to load monitored repos.",
+    "saveFailed": "Failed to save monitored repo.",
+    "sourceKind": "Source",
+    "sourceKindPlaceholder": "Select source",
+    "projectPath": "Project path",
+    "projectPathPlaceholder": "owner/repo",
+    "projectPathHint": "GitHub, Gitea, Forgejo, and Codeberg use owner/repo. GitLab uses namespace/project.",
+    "ticketProject": "Ticket project",
+    "ticketProjectPlaceholder": "Select ticket project",
+    "sourceIntegration": "Source integration",
+    "sourceIntegrationPlaceholder": "Select integration",
+    "sourceIntegrationOptionalPlaceholder": "None (unauthenticated)",
+    "sourceIntegrationOptionalHint": "Optional. Use a token to avoid API rate limits and access private repos.",
+    "sourceIntegrationNone": "None",
+    "notificationTargets": "Notification targets",
+    "notificationTargetsHint": "Optional. Leave empty to use all globally enabled targets.",
+    "enabled": "Enabled",
+    "enabledHint": "Disabled repos are skipped during polling.",
+    "includePrereleases": "Include pre-releases",
+    "includePrereleasesHint": "When enabled, polling treats pre-releases as new releases. Changes apply on the next poll only.",
+    "enabledOn": "Enabled",
+    "enabledOff": "Disabled",
+    "lastPolledNever": "Never",
+    "noError": "—",
+    "noTicketProjects": "Add a ticket project before monitoring repos.",
+    "noSourceIntegrations": "Add a {kind} integration first.",
+    "deleteTitle": "Delete monitored repo?",
+    "deleteDescription": "Delete “{path}”? This cannot be undone.",
+    "deleteAria": "Delete {path}",
+    "editAria": "Edit {path}",
+    "columns": {
+      "projectPath": "Project path",
+      "sourceKind": "Source",
+      "ticketProject": "Ticket project",
+      "enabled": "Enabled",
+      "lastPolledAt": "Last polled",
+      "lastError": "Last error",
+      "actions": "Actions"
+    },
+    "validation": {
+      "projectPathRequired": "Project path is required.",
+      "ticketProjectRequired": "Select a ticket project.",
+      "sourceIntegrationRequired": "Source integration is required for this source kind."
+    }
+  },
+  "integrations": {
+    "title": "Integrations",
+    "add": "Add integration",
+    "createTitle": "Add integration",
+    "createDescription": "Connect a source or ticket provider.",
+    "editTitle": "Edit integration",
+    "editDescription": "Update credentials and connection settings.",
+    "empty": "No integrations yet. Add one to get started.",
+    "emptyTitle": "No integrations yet",
+    "emptyDescription": "Connect a source or ticket provider to get started.",
+    "loadFailed": "Failed to load integrations.",
+    "saveFailed": "Failed to save integration.",
+    "kind": "Kind",
+    "kindPlaceholder": "Select kind",
+    "name": "Name",
+    "baseUrl": "Base URL",
+    "baseUrlPlaceholder": "https://example.com",
+    "baseUrlPlaceholderKaneo": "https://cloud.kaneo.app",
+    "baseUrlHintKaneo": "Kaneo cloud: https://cloud.kaneo.app. For self-hosted Kaneo, use your instance URL (/api is added automatically).",
+    "baseUrlDefault": "—",
+    "jiraEmail": "Email",
+    "jiraEmailEditHint": "Leave blank when not replacing Jira credentials.",
+    "token": "Token",
+    "apiKey": "API key",
+    "apiToken": "API token",
+    "secretConfigured": "Configured",
+    "secretMissing": "Missing",
+    "secretPlaceholder": "Enter token or API key",
+    "secretPlaceholderEdit": "Enter a new value to replace",
+    "secretEditHint": "Leave blank to keep the existing secret.",
+    "testConnection": "Test connection",
+    "testConnectionAria": "Test connection for {name}",
+    "testConnectionLoading": "Testing connection",
+    "testConnectionLoadingDescription": "Checking provider credentials…",
+    "testConnectionSuccess": "Connection successful",
+    "testConnectionSuccessDescription": "The provider accepted the stored credentials.",
+    "testConnectionFailed": "Connection failed",
+    "testConnectionFailedDescription": "The provider rejected the stored credentials.",
+    "deleteTitle": "Delete integration?",
+    "deleteDescription": "Delete “{name}”? This cannot be undone.",
+    "deleteAria": "Delete {name}",
+    "editAria": "Edit {name}",
+    "columns": {
+      "name": "Name",
+      "kind": "Kind",
+      "baseUrl": "Base URL",
+      "secret": "Secret",
+      "actions": "Actions"
+    },
+    "validation": {
+      "nameRequired": "Name is required.",
+      "baseUrlRequired": "Base URL is required for this kind.",
+      "emailRequired": "Email is required for Jira.",
+      "secretRequired": "Token or API key is required.",
+      "secretRequiredForBaseUrlChange": "Re-enter the token or API key when you change the base URL."
+    },
+    "kinds": {
+      "github": "GitHub",
+      "gitlab": "GitLab",
+      "gitea": "Gitea",
+      "forgejo": "Forgejo",
+      "codeberg": "Codeberg",
+      "kaneo": "Kaneo",
+      "jira": "Jira",
+      "linear": "Linear"
+    }
+  },
+  "ticket-projects": {
+    "title": "Ticket projects",
+    "add": "Add ticket project",
+    "createTitle": "Add ticket project",
+    "createDescription": "Define a project or team target with status mapping and open-ticket policy.",
+    "editTitle": "Edit ticket project",
+    "editDescription": "Update status mapping, create defaults, and open-ticket policy.",
+    "empty": "No ticket projects yet. Add one to get started.",
+    "emptyTitle": "No ticket projects yet",
+    "emptyDescription": "Define a project target with status mapping and ticket policy.",
+    "loadFailed": "Failed to load ticket projects.",
+    "saveFailed": "Failed to save ticket project.",
+    "integration": "Integration",
+    "integrationPlaceholder": "Select integration",
+    "noTicketIntegrations": "Add a Kaneo, Jira, or Linear integration first.",
+    "externalProjectId": "External project ID",
+    "name": "Display name",
+    "policy": "Open ticket policy",
+    "policyPlaceholder": "Select policy",
+    "tabs": {
+      "general": "General",
+      "createConfig": "Create config",
+      "statusMapping": "Status mapping",
+      "contentTemplates": "Content templates"
+    },
+    "createConfigTitle": "Create defaults",
+    "mappingNoteTitle": "Per-project mapping",
+    "mappingNoteDescription": "Status values differ per project. Choose from the provider options below.",
+    "statusOpen": "Open statuses",
+    "statusDone": "Done statuses",
+    "statusCancelled": "Cancelled statuses",
+    "statusSuperseded": "Superseded status",
+    "statusListPlaceholder": "ready, in-progress, in-review",
+    "statusListHint": "Comma-separated status values.",
+    "statusSupersededPlaceholder": "cancelled",
+    "statusSupersededHint": "Single status used when superseding an open ticket.",
+    "deleteTitle": "Delete ticket project?",
+    "deleteDescription": "Delete “{name}”? This cannot be undone.",
+    "deleteAria": "Delete {name}",
+    "editAria": "Edit {name}",
+    "columns": {
+      "integration": "Integration",
+      "name": "Name",
+      "externalProjectId": "External project ID",
+      "policy": "Policy",
+      "actions": "Actions"
+    },
+    "policies": {
+      "supersede": "Supersede",
+      "merge": "Merge",
+      "skip_if_open": "Skip if open"
+    },
+    "kinds": {
+      "kaneo": "Kaneo",
+      "jira": "Jira",
+      "linear": "Linear"
+    },
+    "kaneo": {
+      "workspace": "Workspace",
+      "status": "Default status",
+      "priority": "Default priority"
+    },
+    "jira": {
+      "issueType": "Issue type",
+      "priority": "Priority",
+      "initialStatus": "Initial status"
+    },
+    "linear": {
+      "priority": "Priority",
+      "stateId": "Initial state"
+    },
+    "metadata": {
+      "loading": "Loading options from the integration…",
+      "loadFailed": "Could not load options from the integration.",
+      "empty": "No options returned for this integration.",
+      "projectRequired": "Select an integration project before configuring defaults and status mapping.",
+      "workspacePlaceholder": "Select workspace",
+      "projectPlaceholder": "Select project or team",
+      "statusPlaceholder": "Select status",
+      "priorityPlaceholder": "Select priority",
+      "issueTypePlaceholder": "Select issue type",
+      "statePlaceholder": "Select workflow state",
+      "selectedStatus": "Selected: {status}"
+    },
+    "validation": {
+      "nameRequired": "Display name is required.",
+      "externalProjectIdRequired": "External project ID is required.",
+      "workspaceRequired": "Select a workspace.",
+      "integrationRequired": "Select a ticket integration.",
+      "createConfigRequired": "Complete the create defaults for this provider.",
+      "statusOpenRequired": "At least one open status is required.",
+      "statusDoneRequired": "At least one done status is required.",
+      "statusCancelledRequired": "At least one cancelled status is required.",
+      "statusSupersededRequired": "Superseded status is required."
+    },
+    "templates": {
+      "title": "Content templates",
+      "noteTitle": "Per-project templates",
+      "noteDescription": "Templates differ per project. Leave a field empty to use the integration default.",
+      "placeholder": "'{{' .Release.Tag '}}'",
+      "supersedeHint": "Used when commenting on the old ticket during supersede.",
+      "variablesTitle": "Template variables",
+      "variablesDescription": "Go text/template paths available when tickets are created or superseded.",
+      "variablePath": "Path",
+      "variableDescription": "Description",
+      "fields": {
+        "title": "Title template",
+        "description": "Description template",
+        "supersedeComment": "Supersede comment template"
+      },
+      "variables": {
+        "repoSourceKind": {
+          "path": ".Repo.SourceKind",
+          "description": "Monitored repo source kind (github, gitlab, etc.)"
+        },
+        "repoProjectPath": {
+          "path": ".Repo.ProjectPath",
+          "description": "Monitored repo project path"
+        },
+        "repoUrl": {
+          "path": ".Repo.URL",
+          "description": "Repository web URL"
+        },
+        "releaseTag": {
+          "path": ".Release.Tag",
+          "description": "Latest release tag"
+        },
+        "releaseName": {
+          "path": ".Release.Name",
+          "description": "Release name from the source API"
+        },
+        "releaseUrl": {
+          "path": ".Release.URL",
+          "description": "Release page URL"
+        },
+        "releaseNotes": {
+          "path": ".Release.Notes",
+          "description": "Release body or changelog text"
+        },
+        "releasePublishedAt": {
+          "path": ".Release.PublishedAt",
+          "description": "Release timestamp (RFC3339 UTC)"
+        },
+        "releaseIsPrerelease": {
+          "path": ".Release.IsPrerelease",
+          "description": "Whether the release is a pre-release (true/false)"
+        },
+        "previousTag": {
+          "path": ".Previous.Tag",
+          "description": "Last known tag before this poll action"
+        },
+        "supersedeOldTag": {
+          "path": ".Supersede.OldTag",
+          "description": "Tag on the open ticket being superseded"
+        },
+        "supersedeNewTag": {
+          "path": ".Supersede.NewTag",
+          "description": "New release tag"
+        },
+        "supersedeNewTicketUrl": {
+          "path": ".Supersede.NewTicketURL",
+          "description": "Provider web URL for the new ticket created during supersede"
+        }
+      }
+    }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "add": "Add notification target",
+    "createTitle": "Add notification target",
+    "createDescription": "Configure a Shoutrrr URL and poll events to notify.",
+    "editTitle": "Edit notification target",
+    "editDescription": "Update the Shoutrrr URL, events, and enabled state.",
+    "empty": "No notification targets yet. Add one to get started.",
+    "emptyTitle": "No notification targets yet",
+    "emptyDescription": "Add a Shoutrrr target for release and error alerts.",
+    "loadFailed": "Failed to load notification targets.",
+    "saveFailed": "Failed to save notification target.",
+    "name": "Name",
+    "shoutrrrUrl": "Shoutrrr URL",
+    "urlHint": "Example: slack://token@channel or ntfy://topic",
+    "urlPlaceholder": "Enter Shoutrrr URL",
+    "urlPlaceholderEdit": "Enter a new URL to replace",
+    "urlEditHint": "Leave blank to keep the existing URL.",
+    "urlConfigured": "Configured",
+    "urlMissing": "Missing",
+    "events": "Events",
+    "eventsHint": "Notify when these poll actions occur.",
+    "eventOptions": {
+      "create": "Create",
+      "error": "Error",
+      "supersede": "Supersede"
+    },
+    "enabled": "Enabled",
+    "enabledHint": "Disabled targets are skipped during notifications.",
+    "enabledOn": "Enabled",
+    "enabledOff": "Disabled",
+    "testNotification": "Test notification",
+    "testAria": "Test notification for {name}",
+    "testLoading": "Sending test notification",
+    "testLoadingDescription": "Delivering a probe message via Shoutrrr…",
+    "testSuccess": "Test notification sent",
+    "testSuccessDescription": "The target accepted the probe message.",
+    "testFailed": "Test notification failed",
+    "testFailedDescription": "Shoutrrr could not deliver the probe message.",
+    "deleteTitle": "Delete notification target?",
+    "deleteDescription": "Delete “{name}”? This cannot be undone.",
+    "deleteAria": "Delete {name}",
+    "editAria": "Edit {name}",
+    "columns": {
+      "name": "Name",
+      "events": "Events",
+      "enabled": "Enabled",
+      "url": "URL",
+      "actions": "Actions"
+    },
+    "validation": {
+      "nameRequired": "Name is required.",
+      "urlRequired": "Shoutrrr URL is required.",
+      "eventsRequired": "Select at least one event."
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "general": "General",
+    "usersNav": "Users",
+    "navAria": "Settings sections",
+    "saved": "Settings saved",
+    "savedDescription": "Your changes will apply to the next scheduled run and new tokens.",
+    "pollIntervalSection": "Polling",
+    "pollIntervalDescription": "Configure how often Release Ops checks monitored repositories for new releases.",
+    "pollInterval": "Poll interval (minutes)",
+    "pollIntervalHint": "Minimum 5 minutes between automated polls.",
+    "tokenExpirySection": "Token expiry",
+    "tokenExpiryDescription": "Control how long invitation and password-reset links remain valid.",
+    "inviteTokenExpiry": "Invitation link expiry (hours)",
+    "inviteTokenExpiryHint": "Between 1 and 720 hours.",
+    "resetTokenExpiry": "Password reset link expiry (minutes)",
+    "resetTokenExpiryHint": "Between 5 and 1440 minutes.",
+    "loadFailed": "Failed to load settings.",
+    "saveFailed": "Failed to save settings.",
+    "validation": {
+      "minInterval": "Poll interval must be at least 5 minutes.",
+      "inviteExpiryRange": "Invitation expiry must be between 1 and 720 hours.",
+      "resetExpiryRange": "Password reset expiry must be between 5 and 1440 minutes."
+    }
+  },
+  "users": {
+    "title": "Users",
+    "invite": "Invite user",
+    "inviteTitle": "Invite user",
+    "inviteDescription": "Send an invitation link to create a new account.",
+    "inviteEmail": "Email",
+    "inviteSubmit": "Create invitation",
+    "inviteCreatedDescription": "Copy this one-time link and share it with the invitee.",
+    "inviteFailed": "Failed to create invitation.",
+    "copyInviteLink": "Copy invite link",
+    "inviteLinkCopied": "Invite link copied",
+    "inviteLinkCopyFailed": "Could not copy invite link.",
+    "loadFailed": "Failed to load users or invitations.",
+    "usersSection": "Active users",
+    "usersSectionDescription": "All accounts with access to Release Ops.",
+    "usersEmpty": "No users found.",
+    "invitationsSection": "Pending invitations",
+    "invitationsSectionDescription": "Invitations that have not been accepted yet.",
+    "invitationsEmpty": "No pending invitations.",
+    "you": "You",
+    "removeAria": "Remove {email}",
+    "removeSelfDisabled": "You cannot remove your own account.",
+    "removeLastUserDisabled": "You cannot remove the last user.",
+    "removeTitle": "Remove user?",
+    "removeDescription": "Remove {email}? This revokes all sessions and cannot be undone.",
+    "removeConfirm": "Remove user",
+    "revokeAria": "Revoke invitation for {email}",
+    "revokeTitle": "Revoke invitation?",
+    "revokeDescription": "Revoke the invitation for {email}? The link will stop working.",
+    "revokeConfirm": "Revoke invitation",
+    "sendEmailAria": "Send invitation email to {email}",
+    "sendEmailSmtpDisabled": "SMTP is not configured. Copy the invite link instead.",
+    "sendEmailLoading": "Sending invitation email",
+    "sendEmailLoadingDescription": "Delivering the invitation via SMTP…",
+    "sendEmailSuccess": "Invitation email sent",
+    "sendEmailSuccessDescription": "The invitee should receive the message shortly.",
+    "sendEmailFailed": "Failed to send invitation email",
+    "sendEmailFailedDescription": "The invitation email could not be delivered.",
+    "columns": {
+      "email": "Email",
+      "createdAt": "Joined",
+      "expiresAt": "Expires",
+      "actions": "Actions"
+    },
+    "validation": {
+      "emailRequired": "Email is required."
+    }
+  },
+  "pollRuns": {
+    "title": "Poll run history"
+  },
+  "profile": {
+    "title": "Profile",
+    "loadFailed": "Failed to load profile.",
+    "account": {
+      "title": "Account",
+      "description": "Your sign-in email address.",
+      "currentEmail": "Email"
+    },
+    "changeEmail": {
+      "title": "Change email",
+      "description": "Request a verification link sent to your new email address.",
+      "newEmail": "New email",
+      "currentPassword": "Password confirmation",
+      "submit": "Request change",
+      "pendingTitle": "Verification email sent",
+      "pendingDescription": "Check your new inbox for a confirmation link to complete the change.",
+      "failed": "Email change request failed",
+      "invalidPassword": "Current password is incorrect.",
+      "smtpNotConfigured": "SMTP is not configured. Ask an administrator to set SMTP environment variables.",
+      "validation": {
+        "newEmailRequired": "New email is required.",
+        "passwordRequired": "Current password is required."
+      }
+    },
+    "changePassword": {
+      "title": "Change password",
+      "description": "Update your account password.",
+      "currentPassword": "Current password",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm new password",
+      "submit": "Update password",
+      "successTitle": "Password updated",
+      "successDescription": "Your password has been changed.",
+      "failed": "Password change failed",
+      "invalidPassword": "Current password is incorrect.",
+      "rateLimited": "Too many requests. Try again later.",
+      "validation": {
+        "currentPasswordRequired": "Current password is required.",
+        "newPasswordRequired": "New password is required.",
+        "newPasswordTooShort": "Password must be at least 8 characters.",
+        "confirmPasswordRequired": "Confirm password is required.",
+        "passwordMismatch": "Passwords do not match."
+      }
+    }
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "pollRuns": "Poll runs",
+    "repos": "Repos",
+    "integrations": "Integrations",
+    "ticketProjects": "Ticket projects",
+    "notifications": "Notifications",
+    "settings": "Settings",
+    "settingsUsers": "Users",
+    "profile": "Profile",
+    "homeAriaLabel": "Home"
+  }
+}

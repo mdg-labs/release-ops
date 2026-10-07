@@ -1,0 +1,23 @@
+name: Main
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: main-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  prepare-release:
+    needs: [ci]
+    if: needs.ci.result == 'success'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/prepare-release.yml
+    secrets: inherit

@@ -55,7 +55,7 @@ pre code { background: none; border: none; padding: 0; color: var(--text); font-
     See <a href="specs.html#auth">Spec § Authentication</a>.
   </p>
   <div class="card">
-    File in repo: <code>docs/schema.sql</code> (identical content — for migrations and tooling).
+    Canonical source in repo: <code>db/schema.sql</code> — this page is a human-readable mirror for spec review.
   </div>
   <pre><code>-- Release Ops — application schema (app.db)
 -- Auth (users + sessions) in the same file — Go-only writer; see specs.html § Authentication
@@ -86,11 +86,11 @@ CREATE TABLE app_settings (
   updated_at TEXT NOT NULL
 );
 
--- kind: source → github, gitlab, gitea, forgejo, codeberg | ticket → phasical, jira, linear
+-- kind: source → github, gitlab, gitea, forgejo, codeberg | ticket → kaneo, jira, linear
 CREATE TABLE integrations (
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL CHECK (
-    kind IN ('github', 'gitlab', 'gitea', 'forgejo', 'codeberg', 'phasical', 'jira', 'linear')
+    kind IN ('github', 'gitlab', 'gitea', 'forgejo', 'codeberg', 'kaneo', 'jira', 'linear')
   ),
   name TEXT NOT NULL,
   base_url TEXT,
@@ -103,7 +103,7 @@ CREATE TABLE integrations (
     OR (kind = 'gitea' AND base_url IS NOT NULL)
     OR (kind = 'forgejo' AND base_url IS NOT NULL)
     OR (kind = 'codeberg' AND base_url IS NULL)
-    OR (kind = 'phasical' AND base_url IS NOT NULL)
+    OR (kind = 'kaneo' AND base_url IS NOT NULL)
     OR (kind = 'jira' AND base_url IS NOT NULL)
     OR (kind = 'linear' AND base_url IS NULL)
   )

@@ -1,0 +1,39 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+    <title>{{.Title}} — {{.AppName}}</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#fafafa;color:#262626;-webkit-text-size-adjust:100%;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#fafafa;">
+      <tr>
+        <td align="center" style="padding:24px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:384px;background-color:#ffffff;border:1px solid rgba(0,0,0,0.08);border-radius:10px;">
+            <tr>
+              <td style="padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;font-size:14px;line-height:1.5;">
+                <p style="margin:0 0 4px;font-size:12px;font-weight:500;letter-spacing:0.02em;text-transform:uppercase;color:#737373;">{{.AppName}}</p>
+                <h1 style="margin:0 0 16px;font-size:18px;font-weight:600;line-height:1.3;color:#262626;">{{.Title}}</h1>
+                {{block "body" .}}{{end}}
+                {{if .ActionURL}}
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;">
+                  <tr>
+                    <td>
+                      <a href="{{.ActionURL}}" style="display:inline-block;padding:8px 16px;background-color:#262626;color:#fafafa;font-size:14px;font-weight:500;line-height:1.25;text-decoration:none;border-radius:10px;">{{.ActionLabel}}</a>
+                    </td>
+                  </tr>
+                </table>
+                {{end}}
+                <p style="margin:0;font-size:12px;line-height:1.5;color:#737373;">{{.Footer}}</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+{{end}}

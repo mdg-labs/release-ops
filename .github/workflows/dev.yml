@@ -1,0 +1,35 @@
+name: Dev
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: dev-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      short_sha: ${{ steps.sha.outputs.short_sha }}
+    steps:
+      - id: sha
+        run: echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+  push-image:
+    needs: [ci, meta]
+    if: needs.ci.result == 'success'
+    permissions:
+      packages: write
+    uses: ./.github/workflows/build-and-push-image.yml
+    with:
+      tags: |
+        nightly
+        ${{ needs.meta.outputs.short_sha }}
+    secrets: inherit

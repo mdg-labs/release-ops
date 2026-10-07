@@ -57,12 +57,16 @@ li { margin-bottom: 6px; }
   <h1>Release Ops</h1>
   <p class="lede">
     Self-hosted release monitor with a web UI: poll releases on GitHub, GitLab, Gitea, Forgejo, and Codeberg;
-    create tickets in Phasical, Jira, or Linear when a real new release ships.
+    create tickets in Kaneo, Jira, or Linear when a real new release ships.
     One Docker container for self-hosting — no multi-service Compose.
   </p>
 
   <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">Documents</h2>
   <div class="linkgrid">
+    <a class="linkcard" href="getting-started.md">
+      <div class="t">🚀 Getting started</div>
+      <div class="d">Docker Compose setup, env vars, admin bootstrap, troubleshooting.</div>
+    </a>
     <a class="linkcard" href="specs.html">
       <div class="t">📋 Product specification</div>
       <div class="d">Architecture, schema, APIs, providers, UI, MVP acceptance criteria.</div>
@@ -73,14 +77,22 @@ li { margin-bottom: 6px; }
     </a>
     <a class="linkcard" href="schema.html">
       <div class="t">🗄️ Database schema</div>
-      <div class="d">SQLite <code>app.db</code> — HTML view; source: <code>schema.sql</code>.</div>
+      <div class="d">SQLite <code>app.db</code> — HTML view; canonical source: <code>db/schema.sql</code>.</div>
+    </a>
+    <a class="linkcard" href="mvp-checklist.md">
+      <div class="t">✅ MVP checklist</div>
+      <div class="d">Sign-off against all 15 acceptance criteria.</div>
+    </a>
+    <a class="linkcard" href="roadmap.html">
+      <div class="t">🗺️ Implementation roadmap</div>
+      <div class="d">11 epics · 51 leaf tasks — full descriptions, spec backlinks, audit in <code>roadmap.json</code>.</div>
     </a>
   </div>
 
   <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">Spec precedence</h2>
   <ol>
     <li><a href="specs.html">specs.html</a> — MVP contract</li>
-    <li><a href="schema.html">schema.html</a> / <a href="schema.sql">schema.sql</a> — database</li>
+    <li><a href="schema.html">schema.html</a> (browser view) · <a href="../db/schema.sql"><code>db/schema.sql</code></a> — database</li>
     <li><a href="stack.html">stack.html</a> — tooling</li>
   </ol>
 
@@ -96,13 +108,13 @@ li { margin-bottom: 6px; }
     <span class="tag">Gitea</span>
     <span class="tag">Forgejo</span>
     <span class="tag">Codeberg</span>
-    <span class="tag">Phasical</span>
+    <span class="tag">Kaneo</span>
     <span class="tag">Jira</span>
     <span class="tag">Linear</span>
     <span class="tag">Shoutrrr</span>
   </p>
   <ul>
-    <li>Sources: GitHub, GitLab, Gitea, Forgejo, Codeberg · Tickets: Phasical, Jira, Linear (all from day 1)</li>
+    <li>Sources: GitHub, GitLab, Gitea, Forgejo, Codeberg · Tickets: Kaneo, Jira, Linear (all from day 1)</li>
     <li>Ticket integrations with <strong>multiple project/team targets</strong> — each with its own open/done/cancelled/superseded mapping</li>
     <li>Open-ticket idempotency: default <code>supersede</code>; alternatives <code>merge</code> or <code>skip_if_open</code></li>
     <li>Notifications via Shoutrrr (Slack, ntfy, …) — no custom chat integrations</li>
@@ -110,7 +122,7 @@ li { margin-bottom: 6px; }
     <li>CI: entrypoint workflows + reusable CI/release/image build (dev → nightly, main → VERSION draft, release → GHCR)</li>
     <li>Baseline / skip / create — no ticket on first sight of a repo</li>
   </ul>
-  <p class="docnav"><a href="index.html">Docs</a> · <a href="specs.html">Spec</a> · <a href="stack.html">Stack</a> · <a href="schema.html">Schema</a></p>
+  <p class="docnav"><a href="getting-started.md">Getting started</a> · <a href="index.html">Docs</a> · <a href="specs.html">Spec</a> · <a href="stack.html">Stack</a> · <a href="schema.html">Schema</a></p>
 </div>
 </body>
 </html>
