@@ -72,8 +72,9 @@ See child tasks for acceptance criteria, files and tests.
 - [ ] <concrete, testable outcome>
 - [ ] <schema work only> Schema change in `db/schema.sql`; migration generated with `make migrate-diff name=<change>` (no hand-written `migrations/*.sql`); `npm run db:check` passes
 - [ ] <web work only> All new UI strings via next-intl keys in `apps/web/messages/en.json` (no literals)
+- [ ] Reachable via: <entry point> → <capability>   <!-- runtime behaviour: API route in internal/api/routes.go served by cmd/server, an apps/web/app page, a poll-cycle step, or the make target / CI job for a script -->
 - [ ] `go test ./...` and `golangci-lint run` pass (Go changes)
-- [ ] `npm test` and `npm run lint` pass
+- [ ] `npm test`, `npm run lint` and `npm run typecheck` pass
 - [ ] `docs/specs.html` updated if the contract changed
 
 ---
@@ -83,6 +84,7 @@ See child tasks for acceptance criteria, files and tests.
 - `internal/<pkg>/<file>.go` — <role>
 - `apps/web/<path>` — <role>
 - `db/schema.sql` — <table/column>
+- `<entry-point file named by Reachable via>` — wiring
 
 ---
 
@@ -95,8 +97,20 @@ See child tasks for acceptance criteria, files and tests.
 
 ### Implementation notes
 
-- <non-obvious constraints for the execution agent>
+- <non-obvious constraints for the implementing agent>
+
+---
+
+## Out of scope
+
+- <adjacent work deliberately left alone> — RO-<n> | none
+
+## Scope hint
+
+~<N> changed lines · Expected files: <N> reviewable (`<paths>`)
 ```
+
+Every leaf task carries `## Out of scope` and `## Scope hint`, and every task that adds or changes runtime behaviour carries a `Reachable via:` criterion with its entry-point file under `### Files` — `/orchestrate`'s readiness gate sends a task without them to its `task-refiner` first. Count "Expected files" without what `.coderabbit.yaml` `path_filters` exclude (`package-lock.json`, `internal/store/db/*.sql.go`, `.claude/**`, …); a task above ~800 changed lines is split into vertical slices that each carry their own wiring.
 
 Keep only the gate lines that apply to the touched area: Go (`cmd/`, `internal/`) → `go test ./...` + `golangci-lint run`; web/Node → `npm test` + `npm run lint`; `db/schema.sql` / `migrations/` → `make migrate-diff` + `npm run db:check`. Docs-only tasks may drop the gates.
 
@@ -117,11 +131,20 @@ For bugs that need code investigation use `/kaneo-triage` and its [description-t
 
 - [ ] <expected fixed behaviour>
 - [ ] Regression test added (`go test ./...` or `npm test`)
-- [ ] `go test ./...`, `golangci-lint run`, `npm test`, `npm run lint` pass
+- [ ] Reachable via: <entry point> → <fixed behaviour>
+- [ ] `go test ./...`, `golangci-lint run`, `npm test`, `npm run lint`, `npm run typecheck` pass
 
 ## Key files
 
 - `<path>` — <suspected area>
+
+## Out of scope
+
+- <adjacent work> — RO-<n> | none
+
+## Scope hint
+
+~<N> changed lines · Expected files: <N> reviewable (`<paths>`)
 ```
 
 ## Dependency rules

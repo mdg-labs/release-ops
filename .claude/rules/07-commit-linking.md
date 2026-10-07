@@ -23,7 +23,7 @@ Kaneo (project Release Ops, ticket key `RO`) is the board and the source of trut
 
 1. **Kaneo task with a GitHub issue** — `[#N]`, the issue that mirrors the task.
 2. **Roadmap-only work without a GitHub issue** — the roadmap key, e.g. `[E03-02]`.
-3. **Combined batch** — the primary leaf's `[#N]`; list sibling tasks in session memory.
+3. **Several tasks done together** — never one commit for several tasks: each task gets its own commit with its own `[#N]` and `fixes #N`.
 
 Never put a Kaneo task CUID or an `RO-<n>` ref in a commit message.
 
@@ -31,9 +31,9 @@ Never put a Kaneo task CUID or an `RO-<n>` ref in a commit message.
 
 Kaneo task payloads have so far carried no GitHub link. Resolve the number by **reading** only:
 
-1. The user or the orchestrator prompt gives `#N` → use it.
+1. The user or the dispatch prompt gives `#N` → use it.
 2. Optional: if the Kaneo task payload has `externalLinks`, use `externalLinks[].externalId` (issue link) → `#N`. Not observed on current payloads (`get_task` / `get_task_by_ticket_id` for RO-108 return none), so expect to fall through to step 3.
-3. Otherwise `mcp__github__search_issues` (owner `mdg-labs`, repo `release-ops`, query = the exact Kaneo task title) → take the exact-title match.
+3. Otherwise search by the exact Kaneo task title — GitHub MCP `search_issues` (owner `mdg-labs`, repo `release-ops`) or `gh issue list --repo mdg-labs/release-ops --state all --search "<title> in:title" --json number,title` — and take the exact-title match.
 4. No match → use the roadmap key if the task has one; otherwise ask the user. Never create an issue to obtain a number.
 
 ### Examples
@@ -56,7 +56,7 @@ Adds the Kaneo REST client and wires it into the ticket dispatcher.
 fixes #111
 ```
 
-**Final leaf of an epic** (the orchestrator passes `closesParent: yes` for that parent, i.e. it is in `CLOSE_PARENTS`): add the parent's issue too — `fixes #<N>` and `fixes #<parent-N>` on separate lines.
+**The commit that completes an epic** (its last open subtask): the epic's issue too — `fixes #<N>` and `fixes #<epic-N>` on separate lines. The executor writes only its own task's trailer; `/orchestrate` adds the epic's at landing, after checking every other subtask is `implemented` or `done`.
 
 ```text
 fixes #111
@@ -80,12 +80,16 @@ No agent, skill or sub-agent ever:
 
 The `fixes #N` commit trailer is not an issue write: GitHub acts on it when the commit reaches `main`. It is the only closing mechanism.
 
-Allowed: `mcp__github__issue_read`, `mcp__github__search_issues`, `mcp__github__list_issues` (read-only).
+Allowed: `mcp__github__issue_read`, `mcp__github__search_issues`, `mcp__github__list_issues`, `gh issue view`, `gh issue list` (read-only).
+
+## Private security advisories
+
+A fix for a private repository security advisory (`/orchestrate --advisory GHSA-…`) is the exception: no `[#N]` in the subject, no `fixes` line, and a neutral message ending `Refs: GHSA-xxxx-xxxx-xxxx` — what the code now does, never how it failed (`docs/threat-model.md` §7).
 
 ## Forbidden
 
 - Kaneo CUIDs or `RO-<n>` in any commit message
 - Task commits without `[#N]` or `[E*-*]`
-- Task commits with `[#N]` but without the `fixes #N` trailer (and `fixes #<parent-N>` on the epic's final leaf)
+- Task commits with `[#N]` but without the `fixes #N` trailer (and `fixes #<epic-N>` on the commit that completes an epic)
 - Closing GitHub issues directly or setting Kaneo `done` — `done` comes only from the trailer landing on `main` (or the user)
 - Any GitHub issue write

@@ -11,7 +11,12 @@
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
-      "Bash(git worktree list:*)"
+      "Bash(git worktree list:*)",
+      "Bash(git commit:*)",
+      "Bash(git push origin dev)",
+      "Bash(.claude/skills/dev-diff/dev-diff.sh)",
+      "Bash(.claude/skills/dev-diff/dev-diff.sh --list)",
+      "Bash(scripts/security-history.sh:*)"
     ],
     "deny": [
       "Bash(git push --force:*)",

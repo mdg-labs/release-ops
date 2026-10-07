@@ -35,12 +35,11 @@ Read-only code investigation, then **update the Kaneo task description (and titl
 | Title patterns | `.claude/skills/kaneo-triage/summary-patterns.md` |
 | Project constants | `.agents/project/orchestrator/project.config.md` |
 | Doc index | `.agents/project/orchestrator/doc-index.md` |
-| Kaneo status sync (orchestrator) | `.claude/skills/orchestrator/references/kaneo-sync.md` |
-| Sub-agent monitoring | `.claude/skills/orchestrator/references/sub-agent-monitoring.md` |
+| Implementation (consumes `ready` tasks) | `.claude/skills/orchestrate/SKILL.md` |
 
 ## Parent agents: do not take over triage
 
-If **kaneo-triage** runs as a sub-agent, the parent must not `update_task` / `create_task` while it may still be running. Git silence is normal during investigation. Follow `sub-agent-monitoring.md` (transcript two-sample → terminate → dedupe → re-dispatch).
+If **kaneo-triage** runs as a sub-agent, the parent must not `update_task` / `create_task` while it may still be running. Git silence is normal during investigation. Wait for its completion notification; to replace it, stop it first (`TaskStop`), dedupe what it wrote, then re-dispatch.
 
 ## When to use
 
@@ -49,7 +48,7 @@ If **kaneo-triage** runs as a sub-agent, the parent must not `update_task` / `cr
 | "Triage RO-108", "investigate #50", Kaneo task URL | **Update mode** |
 | Bug report, no task yet | **Create mode** — `create_task` with the triage description |
 | "Don't change code" / "investigate only" | Default — triage never changes code |
-| "Fix it" after triage | Separate implementation pass (orchestrator / execution agent) |
+| "Fix it" after triage | Separate implementation pass (`/orchestrate RO-<n>`) |
 | "Don't update Kaneo" | Findings in chat only — no Kaneo writes |
 | Multi-task feature breakdown | Use `/kaneo-intake` instead |
 

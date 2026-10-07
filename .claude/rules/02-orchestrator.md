@@ -1,65 +1,47 @@
 ---
-description: When and how to use the orchestrator skill, the roadmap plan file and the Kaneo board
+description: How work moves from the Kaneo board to verified commits on dev — the orchestrate skill, its agents, and who sets each Kaneo column
 ---
 
-# Orchestrator & roadmap
+# Orchestration & the Kaneo board
 
-Release Ops is built **task-by-task** from the roadmap plan file `docs/roadmap.html` (generated from `docs/roadmap.json`) and the Kaneo board (project Release Ops, ticket key `RO`). Sub-agents implement tasks; a verifier checks them; progress is tracked in Kaneo columns and/or plan checkboxes.
+Kaneo (project Release Ops, ticket key `RO`) is the plan and the status. Tasks are specified by `/kaneo-intake`, `/kaneo-triage` or `/dependabot-triage` and stop at `ready`; `/orchestrate` turns them into verified commits on `dev`. `docs/roadmap.html` is a historical plan — Kaneo is the only live one.
 
-## Use the orchestrator skill when
+## Use `/orchestrate` when
 
-- The user asks to "orchestrate", "delegate", "run the roadmap", "implement RO-<n>" / "implement #N", or "execute tasks autonomously"
-- Multi-step work spans several tasks
+- The user asks to "orchestrate", "delegate", "implement RO-<n>" / "implement #N", "work on epic RO-<n>", or to execute tasks autonomously.
+- Any work spans more than one Kaneo task.
 
-Follow `.claude/skills/orchestrator/SKILL.md`. Do not improvise.
+Follow `.claude/skills/orchestrate/SKILL.md`. Do not improvise.
 
-## Sub-agent prompts (orchestrator dispatch)
+## How it works
 
-Before every **Agent** call: `.claude/rules/09-sub-agent-prompt-contract.md` — copy verbatim blocks from `.agents/project/orchestrator/prompt-templates.md`. No shorthand. The verifier is not read-only when Kaneo sync is on.
+- `task-executor` agents (sonnet) implement each task in an **isolated scratch clone** (`git clone` into the scratchpad), one commit per task, never in the real repo.
+- One independent `task-verifier` per attempt (sonnet; Opus for security-sensitive work, advisories and large diffs) runs seven layers and the full gate, posts a verdict comment on the Kaneo task and moves its column.
+- The orchestrator lands a commit on local `dev` (cherry-pick) **only after a PASS**, then pushes `origin/dev` immediately.
+- A thin or stale task goes through a `task-refiner` (readiness gate) before any executor sees it.
+- Prompts are filled from `.claude/skills/orchestrate/templates/` and passed **inline, in full**. Never a pointer to a file, never shorthand.
+- `known-escapes.md` in the same folder lists defect patterns CodeRabbit caught after a PASS; executors and verifiers read it, `/cr-review` appends to it.
+- `main` moves only through the `dev → main` PR: `/open-pr`, then `/cr-review <PR>`. `/dev-diff` reports the CodeRabbit-reviewable size; the orchestrator keeps it under 100 files.
 
 ## Sub-agents (any Agent dispatch)
 
-When waiting on a sub-agent: follow `.claude/skills/orchestrator/references/sub-agent-monitoring.md`.
-
-- Git silence ≠ stalled. Check the **sub-agent transcript** (two samples, 10–20s apart) before any stall verdict.
-- **Terminate** the old agent before spawning a replacement.
-- Never take over the sub-agent's work (e.g. kaneo-intake `create_task`) while it may still be running.
-
-## Use the roadmap directly when
-
-- You're implementing a single task and the user already pointed at a task (`E*-*`, `RO-<n>` or `#N`)
-- You're checking dependencies or what's next
-
-Open `docs/roadmap.html`, search the task key, read the row (Doc Ref + acceptance criteria + Tests). For a Kaneo task, read its description (the AC contract) via the lookup rules in `.agents/project/orchestrator/project.config.md`.
-
-## Task lifecycle (plan-file mode)
-
-```
-- [ ] not started
-- [~] awaiting verification    ← Lane S: execution agent (if plan file in WRITE SCOPE)
-                               ← Lane P: orchestrator at batch start
-- [x] verified                 ← Lane S: task verifier
-                               ← Lane P: batch verifier after integration
-- [!] failed — <reason>        ← verifier only
-```
-
-The orchestrator chat does not edit checkboxes during normal flow except **Lane P batch prep** (`[~]` at batch start). Verifiers set `[x]` / `[!]`.
-
-**Parallel batches (Lane P):** execution in isolated worktrees (Agent `isolation: "worktree"`); an integration agent merges to `dev`. See `.claude/skills/orchestrator/SKILL.md` § Parallelism.
+- Subagents re-invoke you when they finish: end your turn instead of polling, sleeping or scheduling a wakeup.
+- Never take over a running sub-agent's work (e.g. kaneo-intake `create_task`). To replace one, stop it first (`TaskStop`), confirm it stopped, and check what it already wrote before dispatching again.
 
 ## Kaneo board status
 
 | Column | Who sets it |
 |--------|-------------|
-| `backlog` / `ready` | kaneo-intake / kaneo-triage / user (intake and triage stop at `ready`) |
-| `in-progress` | **execution agent** — first action (leaf + parent epic) |
-| `in-review` | **execution agent** — after AC + gate, before the commit |
-| `implemented` | **verifier** — after all layers PASS, PASS comment first (parent epic when its last child passes) |
-| `in-progress` (rework) | **verifier** — after FAIL, FAIL comment first |
-| `done` | **Kaneo ↔ GitHub sync** when the `fixes #N` commit lands on `main` and GitHub closes the issue (the user may also set it manually) — no agent ever sets `done` |
+| `backlog` / `ready` | kaneo-intake / kaneo-triage / dependabot-triage / user (they stop at `ready`) |
+| `in-progress` | **task-executor** — before it starts a task (the orchestrator claims the first task right after dispatch as a backstop); the **orchestrator** for an epic with started subtasks |
+| `in-review` | **task-executor** — after the task's commit in its scratch clone |
+| `implemented` | **task-verifier** — PASS, after its PASS comment; the **orchestrator** for an epic whose subtasks are all implemented |
+| `in-progress` (rework) | **task-verifier** — FAIL, after its FAIL comment |
+| `ready` (abandoned) | **orchestrator** — a task leaving the run unfinished (blocked, escalated, dropped for the budget) |
+| `done` | **Kaneo ↔ GitHub sync** when the `fixes #N` commit reaches `main` and GitHub closes the issue (the user may also set it manually) — no agent ever sets `done` |
 
-`implemented` means the commit is on `dev` but not yet on `main`. Verifier comments go on the Kaneo task, never to GitHub. GitHub issues are read-only for every agent; the `fixes #N` commit trailer is the only closing mechanism. See `.claude/skills/orchestrator/references/kaneo-sync.md` and `07-commit-linking.md`.
+`implemented` means the commit is verified and on `dev`, not yet on `main`. Verifier comments go on the Kaneo task, never to GitHub. GitHub issues are read-only for every agent (`07-commit-linking.md`).
 
 ## Project config
 
-Project constants: `.agents/project/orchestrator/project.config.md`
+Kaneo IDs, lookup rules, area → paths: `.agents/project/orchestrator/project.config.md`.

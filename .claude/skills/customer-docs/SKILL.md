@@ -28,7 +28,6 @@ All release-ops specifics (docs root, synced vs hand-written files, sidebar file
 | Sidebar | `apps/docs/astro.config.mjs` |
 | App routes / nav / labels (read-only) | `apps/web/app/`, `apps/web/components/app-sidebar.tsx`, `apps/web/messages/en.json` |
 | Behaviour spec (read-only) | `docs/specs.html`, `db/schema.sql`, `README.md` |
-| Sub-agent monitoring | `.claude/skills/orchestrator/references/sub-agent-monitoring.md` |
 
 Never hand-edit the synced files listed in `docs-config.md` § Synced files (`getting-started.md`, `mvp-checklist.md`, `spec.mdx`, `stack.mdx`, `schema.mdx`, `index.mdx` under `apps/docs/src/content/docs/`). Edit their sources in `docs/` and run `npm run docs:sync`.
 
@@ -198,7 +197,7 @@ Follow `.claude/rules/01-git-workflow.md` and the commit-linking rule (rule 07):
 
 ## Parent agents: do not take over customer-docs
 
-If customer-docs runs as a sub-agent, the parent must not write doc files while it may still be running. Follow `.claude/skills/orchestrator/references/sub-agent-monitoring.md` (transcript two-sample check → terminate → dedupe → re-dispatch).
+If customer-docs runs as a sub-agent, the parent must not write doc files while it may still be running. Wait for its completion notification; to replace it, stop it first (`TaskStop`), check what it wrote, then re-dispatch.
 
 ---
 

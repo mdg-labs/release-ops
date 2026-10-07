@@ -16,7 +16,7 @@ Self-hosted release monitor — polls releases on GitHub, GitLab, Gitea, Forgejo
 
 ## Repository state
 
-Implementation in progress: Go server (`cmd/server`, `internal/`), web app (`apps/web`), customer docs site (`apps/docs`), schema + generated migrations (`db/schema.sql`, `migrations/`). Work is planned in the roadmap (`docs/roadmap.html`) and tracked on the Kaneo board (project Release Ops, `RO-<n>`).
+Implementation in progress: Go server (`cmd/server`, `internal/`), web app (`apps/web`), customer docs site (`apps/docs`), schema + generated migrations (`db/schema.sql`, `migrations/`). Work is planned and tracked on the Kaneo board (project Release Ops, `RO-<n>`); `docs/roadmap.html` is the historical plan the board was seeded from.
 
 ## Spec doc precedence (when docs conflict)
 
@@ -36,8 +36,8 @@ Deprecated (do not use): old learning-path HTML under <code>docs/</code> — rem
 
 ## Agent config
 
-- Orchestrator: `.claude/skills/orchestrator/SKILL.md` (project-owned; edit in place)
-- Sub-agent monitoring: `.claude/skills/orchestrator/references/sub-agent-monitoring.md` — mandatory when dispatching sub-agents via the Agent tool
-- Project constants (Kaneo IDs, branches, lookup rules): `.agents/project/orchestrator/project.config.md`
-- Plan file: `docs/roadmap.html` (generated from `docs/roadmap.json`); `docs/index.html` is the doc hub
-- Board: Kaneo (MCP `Kaneo`); GitHub issues are read-only for agents (`07-commit-linking.md`)
+- Orchestration: `.claude/skills/orchestrate/SKILL.md` + `templates/` (project-owned; edit in place); agents in `.claude/agents/` (`task-executor`, `task-verifier`, `task-refiner`, `security-reviewer`, `security-verifier`, `ci-investigator`)
+- Promotion: `/dev-diff`, `/open-pr`, `/cr-review`; security: `/security-audit` against `docs/threat-model.md`
+- Project constants (Kaneo IDs, lookup rules, area → paths): `.agents/project/orchestrator/project.config.md`
+- Board: Kaneo (MCP `Kaneo`, or the claude.ai connector `claude_ai_Kaneo`); GitHub issues are read-only for agents (`07-commit-linking.md`)
+- Threat model: `docs/threat-model.md` — the yardstick for security review and severity

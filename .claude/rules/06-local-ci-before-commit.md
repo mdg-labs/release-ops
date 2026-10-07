@@ -1,42 +1,32 @@
 ---
-description: Run scoped CI before every task commit; full gate only before push
+description: Which checks run before a commit and before a push
 ---
 
 # Local CI before commit
 
-## Scoped gate (every task commit and verifier Layer 2)
-
 npm workspaces repo (`apps/web`, `apps/docs`) plus a Go module. Run the checks for the paths you touched:
-
-```bash
-npm test && npm run lint && npm run db:check   # web, root JS, DB
-go test ./... && golangci-lint run             # Go
-```
 
 | Paths | Checks |
 |-------|--------|
-| `apps/web/**`, root `package.json` / `package-lock.json` | `npm test && npm run lint` — lint includes **i18n** (`eslint-plugin-i18next`, no literal UI strings) |
-| `db/schema.sql`, `migrations/**` | **`npm run db:check`** (sqldiff drift vs `db/schema.sql`) |
-| `cmd/**`, `internal/**`, `queries/**`, `sqlc.yaml`, `go.mod` / `go.sum` | `go test ./... && golangci-lint run` |
-| `docs/**`, `apps/docs/**` only | no test/lint gate; sanity-check the edited content |
-| Config / CI files (`Makefile`, `Dockerfile`, `.github/workflows/**`) | full scoped gate above |
+| `apps/web/**`, root `package.json` / `package-lock.json` | `npm test && npm run lint && npm run typecheck` — lint includes **i18n** (`eslint-plugin-i18next`, no literal UI strings) |
+| `db/schema.sql`, `migrations/**` | **`npm run db:check`** (sqldiff drift vs `db/schema.sql`; needs `sqlite3` and `sqldiff`) |
+| `cmd/**`, `internal/**`, `queries/**`, `tools/**`, `sqlc.yaml`, `go.mod` / `go.sum` | `gofmt -l .`, `go vet ./...`, `go test ./... && golangci-lint run` |
+| `apps/docs/**` | `npm run docs:build` |
+| `docs/**` only | no test/lint gate; every `§`/anchor added or touched resolves |
+| Config / CI files (`Makefile`, `Dockerfile`, `docker/**`, `.github/workflows/**`) | all of the above that the change can affect; `actionlint` if installed |
 
-Mark a check `n/a` only when it does not apply to the touched paths.
+Mark a check `n/a` only when it does not apply to the touched paths. On failure → `blocked`; no commit.
 
-On failure → `blocked`; no commit.
+## Before a push
 
-## Full gate (pre-push only)
-
-When the user **explicitly asks to push**:
+Every commit that reaches `origin/dev` has passed the checks above for everything it touches, including `npm run typecheck`. Under `/orchestrate` the `task-verifier` runs them in the scratch clone before the landing; `/cr-review` runs the full set below on the real repo before its push; a manual push the user asks for runs:
 
 ```bash
 npm test && npm run lint && npm run typecheck && npm run db:check
 go test ./... && golangci-lint run
 ```
 
-Sub-agents must **not** run the full gate during routine task execution unless push is requested.
-
 ## Rules
 
-- Derive scope from WRITE ∪ READ paths (see `.agents/project/orchestrator/doc-index.md`).
-- Lane P parallel agents: use per-worktree `WORK_ROOT`; never global `pkill` that kills sibling agents.
+- Scratch clones run the checks in their own directory with their own `node_modules` (`npm ci`); never point a check at another agent's clone.
+- Kill by PID only — never `pkill`/`killall`, which can take down sibling agents' processes.
