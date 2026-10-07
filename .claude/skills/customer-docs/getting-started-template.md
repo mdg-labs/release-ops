@@ -1,47 +1,43 @@
 ---
-# Framework-specific frontmatter — adapt per docs.config.md § Frontmatter schema
-title: "Getting started"
-description: "{ONE_LINE — from signup to first success with {PRODUCT_NAME}}"
-sidebar_position: 1
+title: "First steps"
+description: "From your first sign-in to the first ticket Release Ops creates for a new release."
 ---
 
-# Getting started with {PRODUCT_NAME}
+<!-- Starlight renders `title` as the H1: do not add a `# Heading` here. -->
+<!-- Save as apps/docs/src/content/docs/guide/first-steps.md. Installation lives in the synced
+     Getting started page (source: docs/getting-started.md) — link to it, do not repeat it. -->
 
-{ONE_OR_TWO_SENTENCES — who this guide is for and what "done" looks like.}
+This guide takes you from your first sign-in to your first automatically created ticket. It assumes Release Ops is already running; if not, follow [Getting started](../../getting-started/) first.
 
 ## What you'll need
 
-- {REQUIREMENT_1 — e.g. email address, supported browser}
-- {REQUIREMENT_2 — or "A {PRODUCT_NAME} account."}
+- A Release Ops account (the bootstrap admin, or an invitation link from another user).
+- An API token for the release source you want to watch (GitHub, GitLab, Gitea, Forgejo or Codeberg).
+- An API token for your ticket system (Kaneo, Jira or Linear).
 
 ## Quick start
 
-Complete these steps to reach your first success moment. For details on any screen, follow the linked page docs.
+1. **Sign in** — <Brief instruction.> → See [Signing in](../signing-in/).
+2. **Add a source integration** — <Brief instruction.> → See [Integrations](../integrations/).
+3. **Add a ticket integration** — <Brief instruction, e.g. Kaneo with its base URL and API token.>
+4. **Add a ticket project** — <Brief instruction: project/team, status mapping, open-ticket policy.> → See [Ticket projects](../ticket-projects/).
+5. **Add a repo** — <Brief instruction: source integration, repository, ticket project.> → See [Repos](../repos/).
+6. **Run a poll** — <Brief instruction, e.g. "Click **Run poll now** on the Dashboard.">
+7. **Check the result** — <Where the poll run and created ticket show up.> → See [Poll runs](../poll-runs/).
 
-1. **{Step 1 — e.g. Create an account}** — {Brief instruction.}  
-   → See [{Page title}]({relative-path}) for more.
+<!-- Keep it to 10 steps or fewer. Take every label from apps/web/messages/en.json and every behaviour from docs/specs.html. -->
 
-2. **{Step 2}** — {Brief instruction.}
-
-3. **{Step 3}** — {Brief instruction.}
-
-4. **{Step 4}** — {Brief instruction.}
-
-5. **{Step 5}** — {Brief instruction.}
-
-<!-- Keep total steps ≤ 10. Combine or link out if the happy path is longer. -->
-
-**You're ready when:** {FIRST_SUCCESS_MOMENT — e.g. "You see your first dashboard with sample data."}
+**You're ready when:** <first success moment, e.g. "the poll run shows a created ticket and you can open it in your ticket system.">
 
 ## Next steps
 
 | Goal | Go to |
 | ---- | ----- |
-| {Common task} | [{Page title}]({relative-path}) |
-| {Common task} | [{Page title}]({relative-path}) |
-| Understand {concept} | [{Concept page}]({relative-path}) |
+| Get notified when polls create tickets or fail | [Notifications](../notifications/) |
+| Invite a teammate | [Users](../users/) |
+| Change the poll schedule | [Settings](../settings/) |
 
 ## Get help
 
-- [{FAQ}]({faq-path})
-- {Support channel if documented in config — no internal URLs}
+- [FAQ](../../faq/)
+- [Report an issue on GitHub](https://github.com/mdg-labs/release-ops/issues)

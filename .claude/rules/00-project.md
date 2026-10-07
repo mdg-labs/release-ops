@@ -16,7 +16,7 @@ Self-hosted release monitor — polls releases on GitHub, GitLab, Gitea, Forgejo
 
 ## Repository state
 
-Early phase: product spec in `docs/`; application scaffold not started. Roadmap (`docs/roadmap.html`) follows from spec.
+Implementation in progress: Go server (`cmd/server`, `internal/`), web app (`apps/web`), customer docs site (`apps/docs`), schema + generated migrations (`db/schema.sql`, `migrations/`). Work is planned in the roadmap (`docs/roadmap.html`) and tracked on the Kaneo board (project Release Ops, `RO-<n>`).
 
 ## Spec doc precedence (when docs conflict)
 
@@ -36,7 +36,8 @@ Deprecated (do not use): old learning-path HTML under <code>docs/</code> — rem
 
 ## Agent config
 
-- Orchestrator: `.claude/skills/orchestrator/SKILL.md` (from `mdg-labs/skills`)
+- Orchestrator: `.claude/skills/orchestrator/SKILL.md` (project-owned; edit in place)
 - Sub-agent monitoring: `.claude/skills/orchestrator/references/sub-agent-monitoring.md` — mandatory when dispatching sub-agents via the Agent tool
-- Project constants: `.agents/project/orchestrator/project.config.md`
-- Plan file: `docs/index.html`
+- Project constants (Kaneo IDs, branches, lookup rules): `.agents/project/orchestrator/project.config.md`
+- Plan file: `docs/roadmap.html` (generated from `docs/roadmap.json`); `docs/index.html` is the doc hub
+- Board: Kaneo (MCP `Kaneo`); GitHub issues are read-only for agents (`07-commit-linking.md`)

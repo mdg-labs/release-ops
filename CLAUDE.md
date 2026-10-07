@@ -7,11 +7,12 @@ Self-hosted release monitor: polls GitHub, GitLab, Gitea, Forgejo and Codeberg f
 | What | Path |
 | ---- | ---- |
 | Project rules (auto-loaded; `paths:` frontmatter = file-scoped) | `.claude/rules/*.md` |
-| Skills (`/orchestrator`, `/phasical-intake`, `/phasical-triage`, `/dependabot-triage`, `/customer-docs`, `/coss`, …) | `.claude/skills/` — installed by `npx skills` from `mdg-labs/skills` / `cosscom/coss`; do not hand-edit, change upstream |
+| Skills (`/orchestrator`, `/kaneo-intake`, `/kaneo-triage`, `/dependabot-triage`, `/customer-docs`, `/coss`) | `.claude/skills/` — project-owned, edit in place. Only `coss` and `coss-particles` are third-party (`cosscom/coss`, pinned in `skills-lock.json`); don't edit those |
 | Project sub-agents | `.claude/agents/*.md` |
-| Orchestrator config (project constants, doc index, prompt templates) | `.agents/project/orchestrator/` |
-| Workspace notes / session memory (gitignored) | `.agents/project/workspace-notes.md`, `.agents/project/agent-memory/` |
-| Rule + skill manifests | `rules-manifest.json`, `skills-lock.json` |
+| Orchestrator config (Kaneo IDs + lookup rules, doc index, prompt templates) | `.agents/project/orchestrator/` |
+| Workspace notes (tracked) / session memory (gitignored) | `.agents/project/workspace-notes.md` / `.agents/project/agent-memory/` |
+| Roadmap plan file (generated from `docs/roadmap.json`) | `docs/roadmap.html` — `docs/index.html` is the doc hub |
+| Third-party skill lock (coss only) | `skills-lock.json` |
 
 Start with `.claude/rules/00-project.md` (identity, doc precedence, hard rules) and `.claude/rules/01-git-workflow.md`.
 
@@ -28,6 +29,5 @@ make migrate-diff name=<change>                # schema change — edit db/schem
 
 The harness expects these Claude Code MCP server names (tool prefix `mcp__<name>__`):
 
-- `phasical` — Phasical board (source of truth for tasks; syncs to GitHub issues)
-- `github` — GitHub read access
-- Slack — only for the optional orchestrator session-end DM
+- `Kaneo` — Kaneo board, project Release Ops (`RO-<n>`); source of truth for tasks and status. Agents never set `done` (user only).
+- `github` — read-only for issues (resolve the `#N` for commit subjects). Agents never comment on, label, close or create GitHub issues, and never use closing keywords (`fixes #N`) in commits or PRs.
