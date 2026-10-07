@@ -15,9 +15,20 @@ fi
 
 git rev-parse --git-dir >/dev/null
 
-git log --no-merges --format='%h %s' -i -E \
-    --grep='CVE-[0-9]{4}-[0-9]+' \
-    --grep='GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}' \
-    --grep='\bsecurity\b' \
-    --grep='\bharden' \
-    -- "$@"
+cve='cve-[0-9]{4}-[0-9]+'
+ghsa='ghsa-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}'
+security='(^|[^a-z0-9_])security([^a-z0-9_]|$)'
+harden='(^|[^a-z0-9_])harden'
+
+# git log --grep would match the whole message; match the subject and the Refs
+# trailer separately so a passing mention in a body does not count.
+git log --no-merges \
+    --format='%h%x1f%s%x1f%(trailers:key=Refs,valueonly,unfold,separator=%x20)' \
+    -- "$@" |
+    while IFS=$'\x1f' read -r sha subject refs; do
+        s=${subject,,}
+        r=${refs,,}
+        if [[ $s =~ $cve || $s =~ $ghsa || $s =~ $security || $s =~ $harden || $r =~ $ghsa ]]; then
+            printf '%s %s\n' "$sha" "$subject"
+        fi
+    done
