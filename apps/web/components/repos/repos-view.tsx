@@ -117,6 +117,7 @@ export function ReposView(): React.ReactElement {
                 <TableRow>
                   <TableHead>{t("columns.projectPath")}</TableHead>
                   <TableHead>{t("columns.sourceKind")}</TableHead>
+                  <TableHead>{t("columns.sourceIntegration")}</TableHead>
                   <TableHead>{t("columns.ticketProject")}</TableHead>
                   <TableHead>{t("columns.enabled")}</TableHead>
                   <TableHead>{t("columns.lastPolledAt")}</TableHead>
@@ -129,7 +130,7 @@ export function ReposView(): React.ReactElement {
               <TableBody>
                 {Array.from({ length: 3 }, (_, index) => (
                   <TableRow key={`skeleton-${index}`}>
-                    <TableCell colSpan={7}>
+                    <TableCell colSpan={8}>
                       <Skeleton className="h-8 w-full" />
                     </TableCell>
                   </TableRow>
@@ -155,6 +156,7 @@ export function ReposView(): React.ReactElement {
                 <TableRow>
                   <TableHead>{t("columns.projectPath")}</TableHead>
                   <TableHead>{t("columns.sourceKind")}</TableHead>
+                  <TableHead>{t("columns.sourceIntegration")}</TableHead>
                   <TableHead>{t("columns.ticketProject")}</TableHead>
                   <TableHead>{t("columns.enabled")}</TableHead>
                   <TableHead>{t("columns.lastPolledAt")}</TableHead>
@@ -180,16 +182,18 @@ export function ReposView(): React.ReactElement {
                         {repo.projectPath}
                       </TableCell>
                       <TableCell>
-                        <div className="flex flex-col gap-1">
-                          <Badge variant="outline">
-                            {tIntegrations(`kinds.${repo.sourceKind}`)}
-                          </Badge>
-                          {integrationName ? (
-                            <span className="text-muted-foreground text-xs">
-                              {integrationName}
-                            </span>
-                          ) : null}
-                        </div>
+                        <Badge variant="outline">
+                          {tIntegrations(`kinds.${repo.sourceKind}`)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="max-w-48 truncate text-sm">
+                        {integrationName ? (
+                          <span title={integrationName}>{integrationName}</span>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            {t("noSourceIntegration")}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>{ticketProjectName}</TableCell>
                       <TableCell>

@@ -221,6 +221,36 @@ describe("ReposView", () => {
     expect(screen.getByText("Self-hosted GitLab")).toBeInTheDocument();
   });
 
+  it("shows the source integration in its own column after the source", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    mockListEndpoints(pool);
+
+    renderReposPage();
+
+    await screen.findByText("org/app");
+
+    const headers = screen
+      .getAllByRole("columnheader")
+      .map((header) => header.textContent);
+    expect(headers.slice(0, 3)).toEqual([
+      "Project path",
+      "Source",
+      "Source integration",
+    ]);
+
+    const withIntegration = within(
+      screen.getByText("group/service").closest("tr") as HTMLElement,
+    ).getAllByRole("cell");
+    expect(withIntegration[1]).toHaveTextContent(/^GitLab$/);
+    expect(withIntegration[2]).toHaveTextContent(/^Self-hosted GitLab$/);
+
+    const withoutIntegration = within(
+      screen.getByText("org/app").closest("tr") as HTMLElement,
+    ).getAllByRole("cell");
+    expect(withoutIntegration[1]).toHaveTextContent(/^GitHub$/);
+    expect(withoutIntegration[2]).toHaveTextContent(/^—$/);
+  });
+
   it("shows source integration field when editing gitlab repo", async () => {
     const pool = mockAgent.get(ORIGIN);
     mockListEndpoints(pool);

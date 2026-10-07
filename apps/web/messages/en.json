@@ -170,6 +170,7 @@
     "enabledOff": "Disabled",
     "lastPolledNever": "Never",
     "noError": "—",
+    "noSourceIntegration": "—",
     "noTicketProjects": "Add a ticket project before monitoring repos.",
     "noSourceIntegrations": "Add a {kind} integration first.",
     "deleteTitle": "Delete monitored repo?",
@@ -179,6 +180,7 @@
     "columns": {
       "projectPath": "Project path",
       "sourceKind": "Source",
+      "sourceIntegration": "Source integration",
       "ticketProject": "Ticket project",
       "enabled": "Enabled",
       "lastPolledAt": "Last polled",
