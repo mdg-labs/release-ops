@@ -87,7 +87,7 @@ export function StatusMappingForm({
                   </Label>
                 ))}
               </CheckboxGroup>
-              <FieldDescription>{t("statusListHint")}</FieldDescription>
+              <FieldDescription>{t("statusOpenHint")}</FieldDescription>
             </Field>
 
             <Field name="statusDone">
@@ -109,7 +109,7 @@ export function StatusMappingForm({
                   </Label>
                 ))}
               </CheckboxGroup>
-              <FieldDescription>{t("statusListHint")}</FieldDescription>
+              <FieldDescription>{t("statusDoneHint")}</FieldDescription>
             </Field>
 
             <Field className="md:col-span-2" name="statusCancelled">
@@ -133,7 +133,7 @@ export function StatusMappingForm({
                   </Label>
                 ))}
               </CheckboxGroup>
-              <FieldDescription>{t("statusListHint")}</FieldDescription>
+              <FieldDescription>{t("statusCancelledHint")}</FieldDescription>
             </Field>
           </div>
 

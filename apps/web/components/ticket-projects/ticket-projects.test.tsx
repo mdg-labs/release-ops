@@ -450,6 +450,54 @@ describe("TicketProjectsView", () => {
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
   });
 
+  it("shows checkbox-style hints under the status mapping lists", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/ticket-projects", method: "GET" })
+      .reply(200, sampleProjects);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, ticketIntegrations);
+    pool
+      .intercept({
+        path: /\/api\/go\/api\/v1\/integrations\/int-jira\/ticket-metadata\/.*/,
+        method: "GET",
+      })
+      .reply(200, {
+        items: [
+          { id: "To Do", name: "To Do" },
+          { id: "Done", name: "Done" },
+        ],
+      })
+      .persist();
+
+    renderTicketProjectsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit Jira — DEV" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(dialog).getByRole("tab", { name: "Status mapping" }),
+    );
+
+    expect(
+      await within(dialog).findByText(
+        "Select every status that counts as open.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Select every status that counts as done."),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Select every status that counts as cancelled."),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByText("Comma-separated status values."),
+    ).not.toBeInTheDocument();
+  });
+
   it("pre-fills edit drawer values", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool
