@@ -11,7 +11,7 @@ description: >-
 
 # Dependabot triage
 
-Read one Dependabot alert from `mdg-labs/release-ops`, check the Kaneo board for an open duplicate, and create a Kaneo task in `ready` if there is none. Triage only: no code changes, no dependency bumps, no commits. The fix is implemented later as a normal task (`/orchestrator`, "implement RO-<n>").
+Read one Dependabot alert from `mdg-labs/release-ops`, check the Kaneo board for an open duplicate, and create a Kaneo task in `ready` if there is none. Triage only: no code changes, no dependency bumps, no commits. The fix is implemented later as a normal task (`/orchestrate RO-<n>`).
 
 | What | Path (repo root relative) |
 | ---- | ---- |
@@ -19,9 +19,9 @@ Read one Dependabot alert from `mdg-labs/release-ops`, check the Kaneo board for
 | Dependabot policy (binding) | `.claude/rules/08-dependabot-alerts.md` |
 | Commit linking | rule 07 in `.claude/rules/` (GitHub `[#N]` commit linking) |
 | Task description conventions | `.claude/skills/kaneo-intake/SKILL.md` |
-| Sub-agent monitoring | `.claude/skills/orchestrator/references/sub-agent-monitoring.md` |
+| Implementation (consumes `ready` tasks) | `.claude/skills/orchestrate/SKILL.md` |
 
-If this skill runs as a sub-agent, the parent follows `sub-agent-monitoring.md` and must not call `mcp__Kaneo__create_task` for the same alert while this skill may still be running.
+If this skill runs as a sub-agent, the parent waits for its completion notification and must not call `create_task` for the same alert while this skill may still be running.
 
 ## Constants
 
@@ -177,7 +177,21 @@ Land the fix on `dev`. The Dependabot alert closes automatically once the vulner
 - [ ] `<package_name>` resolved to `>= <patched_version>` in `<manifest_path>` (and lockfile where applicable)
 - [ ] Gate passes: <ecosystem gate command>
 - [ ] Commit: `fix(deps)[#N]: bump <package_name> to <patched_version> (<CVE or GHSA>)`, body ending with `fixes #N`
+
+### Files
+
+- `<owning package.json, root package.json for overrides, package-lock.json — or go.mod/go.sum, Dockerfile, the workflow file>`
+
+## Out of scope
+
+- <other vulnerable packages pulled in by the same parent, with their RO-<n>; a major-version migration beyond what the bump needs> | none
+
+## Scope hint
+
+~<N> changed lines (excluding the lockfile) · Expected files: <N> reviewable (`<paths>`)
 ```
+
+A dependency bump has no `Reachable via` criterion; `/orchestrate`'s readiness gate needs the `### Files` paths, `## Out of scope` and `## Scope hint`. Note in "Out of scope" when another task's bump (a parent package) probably resolves this one, so the orchestrator can bundle them.
 
 ### Phase 4 — Read-only `#N` lookup and summary
 
@@ -193,7 +207,7 @@ Report in chat:
 - Duplicate result: open duplicate `RO-<n>` + URL (no create), or "none"
 - Created task: `RO-<n>`, task URL, status `ready`, priority, label used (`deps` / `ci` / none)
 - GitHub `#N` if found (read-only lookup), else "not found yet"
-- Next step: "implement RO-<n>" via `/orchestrator`; fix commit `fix(deps)[#N]: bump <pkg> to <ver> (CVE-…)` with body trailer `fixes #N`
+- Next step: `/orchestrate RO-<n>`; fix commit `fix(deps)[#N]: bump <pkg> to <ver> (CVE-…)` with body trailer `fixes #N`
 
 ## Fix commit convention (for the implementer)
 
@@ -205,7 +219,7 @@ fixes #N
 
 - `#N` = GitHub issue mirroring the Kaneo task (read-only lookup above). Use the GHSA ID in parentheses when there is no CVE.
 - The body **must** end with the `fixes #N` trailer (rule 07): when the commit lands on `main`, GitHub closes the issue and the Kaneo ↔ GitHub sync moves the task to `done`. No trailer only when there is no GitHub issue (roadmap key instead).
-- Never the Kaneo CUID or `RO-<n>`. Stage explicit paths only. Never push unless the user asks.
+- Never the Kaneo CUID or `RO-<n>`. Stage explicit paths only. Pushing follows `.claude/rules/01-git-workflow.md` (`/orchestrate` pushes `dev` after each verified landing).
 
 ## Tools
 

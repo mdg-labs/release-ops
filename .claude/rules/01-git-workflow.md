@@ -1,5 +1,5 @@
 ---
-description: Git branch policy, commit format, staging rules, never-push default
+description: Git branch policy, commit format, staging rules, push policy
 ---
 
 # Git workflow
@@ -11,9 +11,8 @@ description: Git branch policy, commit format, staging rules, never-push default
 | `dev` | Integration — nightly GHCR images on push (after CI) |
 | `main` | Release track — CI + draft release when `VERSION` bumps; production images on GitHub Release publish |
 
-- Feature work on `dev` (Lane S) or `orchestrator/<TASK-ID>` branches (Lane P); merge to `main` for release.
-- **Never push** unless the user explicitly asks.
-- **Never push to `main`** from agents.
+- Work lands on `dev`; `main` moves only through the `dev → main` pull request (`/open-pr`), merged by the maintainer.
+- **Never push to `main`** from agents, and never force-push anything.
 
 ## Commit messages (Conventional Commits)
 
@@ -27,9 +26,7 @@ chore(<scope>)[E03-02]: <summary>   # roadmap-only, no GitHub issue, no trailer
 
 **Allowed scopes**: release-ops, api, db, config, ci, docs, deps
 
-Plan-file verifier commits: `chore(docs)[E03-02]: mark E03-02 verified`
-
-Task commits **must** end their body with `fixes #N` (the final leaf of an epic also `fixes #<parent-N>`). When the commit lands on `main`, GitHub closes the issue and the Kaneo ↔ GitHub sync moves the task to `done`. That trailer is the only closing mechanism — agents never change GitHub issue state via API. PR bodies may also carry closing keywords; they don't need to.
+Task commits **must** end their body with `fixes #N` (the commit that completes an epic also `fixes #<epic-N>`, added by the orchestrator at landing). When the commit lands on `main`, GitHub closes the issue and the Kaneo ↔ GitHub sync moves the task to `done`. That trailer is the only closing mechanism — agents never change GitHub issue state via API. PR bodies may also carry closing keywords; they don't need to.
 
 Session memory (`.agents/project/agent-memory/`) is **gitignored** — never commit session files.
 
@@ -39,4 +36,7 @@ Stage explicit paths only. Never `git add .` or `git add -A`.
 
 ## Push policy
 
-Agents default to **local commits only**. Full CI gate before push when the user explicitly requests a push (see `06-local-ci-before-commit.md`). Never amend pushed commits (`13-no-amend-pushed.md`).
+- **`/orchestrate`** pushes `origin/dev` right after each landed commit — the independent verifier's PASS, which includes the full gate, is the gate. It holds a commit back only when a fresh blocking dependency was added to its task during the run, or when unpushed commits it did not land sit underneath.
+- **`/cr-review`** pushes `origin/dev` after its round's fixes pass the full gate; **`/open-pr`** pushes only the content-free back-merge of `main` into `dev`.
+- Invoking one of those skills is the authorization for its pushes. Everywhere else, agents commit locally and push only when the user explicitly asks — after the full gate (`06-local-ci-before-commit.md`).
+- Before any push: `git log origin/dev..dev --oneline` must list only commits you mean to push. Never amend pushed commits (`13-no-amend-pushed.md`).

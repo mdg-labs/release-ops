@@ -43,14 +43,15 @@ Title is set separately via the `title` field — see [summary-patterns.md](summ
 
 1. <Decision to take, with a recommendation>
 2. <Concrete verification step>
-3. <Suggested split: one Lane S task, or backend / web split via /kaneo-intake>
+3. <Suggested split: one task, or vertical slices via /kaneo-intake that each carry their own wiring>
 
 ## Acceptance criteria (proposed)
 
 - [ ] <user-visible or contract outcome>
 - [ ] <behaviour covered by updated/added tests>
 - [ ] Schema change via `make migrate-diff` only; `npm run db:check` passes   <!-- schema work only -->
-- [ ] `go test ./...`, `golangci-lint run`, `npm test`, `npm run lint` pass
+- [ ] Reachable via: <entry point> → <fixed behaviour>   <!-- runtime behaviour only -->
+- [ ] `go test ./...`, `golangci-lint run`, `npm test`, `npm run lint`, `npm run typecheck` pass
 
 ## Key files
 
@@ -58,6 +59,14 @@ Title is set separately via the `title` field — see [summary-patterns.md](summ
 - `apps/web/<path>` — <one-line role>
 - `db/schema.sql` — <table / constraint>
 - `docs/specs.html` §<x.y> — <spec contract>
+
+## Out of scope
+
+- <adjacent work> — RO-<n> | none
+
+## Scope hint
+
+~<N> changed lines · Expected files: <N> reviewable (`<paths>`)
 ```
 
 Omit "Open questions" when there are none. Keep only the gates that apply (Go → `go test ./...` + `golangci-lint run`; web → `npm test` + `npm run lint`; schema → `npm run db:check`).

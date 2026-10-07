@@ -21,7 +21,7 @@ Turn a feature request, codebase change, roadmap epic or rough draft into **`rea
 
 | Field | Value |
 | ----- | ----- |
-| MCP tools | `mcp__Kaneo__<tool>` |
+| MCP tools | `mcp__Kaneo__<tool>` (or `mcp__claude_ai_Kaneo__<tool>` via the claude.ai connector) |
 | Workspace | MDG-Labs `ffM0nW62CAq0BeWqTEQuoqsDySEVyxxj` |
 | Project | Release Ops `z4janvyjsbbb0esishvd9gb8`, ticket key `RO` |
 | Task URL | `https://cloud.kaneo.app/dashboard/workspace/ffM0nW62CAq0BeWqTEQuoqsDySEVyxxj/project/z4janvyjsbbb0esishvd9gb8/task/<taskCuid>` |
@@ -38,8 +38,7 @@ Turn a feature request, codebase change, roadmap epic or rough draft into **`rea
 | Title patterns | `.claude/skills/kaneo-triage/summary-patterns.md` |
 | Project constants | `.agents/project/orchestrator/project.config.md` |
 | Doc index | `.agents/project/orchestrator/doc-index.md` |
-| Kaneo status sync (orchestrator) | `.claude/skills/orchestrator/references/kaneo-sync.md` |
-| Sub-agent monitoring | `.claude/skills/orchestrator/references/sub-agent-monitoring.md` |
+| Implementation (consumes `ready` tasks) | `.claude/skills/orchestrate/SKILL.md` — its readiness gate checks the shape in `templates.md` |
 | Intake plan drafts (gitignored) | `.agents/project/kaneo-intake/plans/` |
 | Roadmap source / view | `docs/roadmap.json` → `docs/roadmap.html` |
 
@@ -54,7 +53,7 @@ Turn a feature request, codebase change, roadmap epic or rough draft into **`rea
 | Browse / dedupe | `list_tasks` `{ projectId: "z4janvyjsbbb0esishvd9gb8", status?, page?, limit? }` — paginate via `pagination.totalPages` |
 | Relations | `get_task_relations` `{ taskId: "<cuid>" }` |
 
-Kaneo task payloads have so far carried **no** GitHub link. The mirrored GitHub issue number (used by execution agents for the `[#N]` commit subject and the `fixes #N` body trailer) is resolved **read-only**: `externalLinks[].externalId` if the payload ever carries it; otherwise `mcp__github__search_issues` on `mdg-labs/release-ops` with the exact task title → take the exact-title match. If none matches, report "no GitHub mirror" — never create one.
+Kaneo task payloads have so far carried **no** GitHub link. The mirrored GitHub issue number (used for the `[#N]` commit subject and the `fixes #N` body trailer) is resolved **read-only**: `externalLinks[].externalId` if the payload ever carries it; otherwise `mcp__github__search_issues` or `gh issue list --repo mdg-labs/release-ops --state all --search "<title> in:title"` with the exact task title → take the exact-title match. If none matches, report "no GitHub mirror" — never create one.
 
 ## GitHub: read-only
 
@@ -64,11 +63,7 @@ This skill **never** creates, comments on, labels, assigns, edits or closes GitH
 
 If you dispatched **kaneo-intake** as a sub-agent, **do not** create or enrich Kaneo tasks yourself while it may still be running — even if git is quiet. Kaneo writes produce no commits.
 
-Follow `.claude/skills/orchestrator/references/sub-agent-monitoring.md`:
-
-1. Suspect a stall only with real reason — not because git is silent.
-2. Read the sub-agent **transcript** → wait **10–20s** → read again.
-3. Still no progress → **terminate** the intake sub-agent → `list_tasks` / `search` for partial creates → **dedupe** → re-dispatch once.
+Wait for its completion notification instead of polling. To replace it: stop it first (`TaskStop`) and confirm it stopped → `list_tasks` / `search` for partial creates → **dedupe** → re-dispatch once.
 
 Taking over while the sub-agent is alive causes **duplicate RO tasks**.
 
@@ -115,7 +110,7 @@ Ask clarifying questions in Phase 1 when priority, owning domain or product beha
 2. `db/schema.sql` — canonical DDL (`docs/schema.html` is a browser view only)
 3. `docs/stack.html` — tooling choices
 
-`docs/index.html` is the doc hub; `docs/roadmap.html` (generated from `docs/roadmap.json`) is the plan. If behaviour is not defined in a spec doc, **ask** — never invent fields, endpoints or IDs. Cite `§` sections in descriptions (see `.agents/project/orchestrator/doc-index.md`).
+`docs/index.html` is the doc hub; `docs/roadmap.html` (generated from `docs/roadmap.json`) is the historical plan the board was seeded from. If behaviour is not defined in a spec doc, **ask** — never invent fields, endpoints or IDs. Cite `§` sections in descriptions (see `.agents/project/orchestrator/doc-index.md`).
 
 ## Code layout (for Files / Key files sections)
 
