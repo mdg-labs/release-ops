@@ -62,7 +62,7 @@ With no repos, the table shows **No monitored repos** and an **Add repo** button
 
 ### Run poll now does nothing
 
-A poll is already running. Wait for it to finish. The button is disabled until then.
+A poll is already running. Wait for it to finish. The button is disabled while a poll runs. If a scheduled poll started after you opened the page, clicking the button shows **A poll is already running.** and the badge changes to **Polling**. If the poll cannot be started for another reason, an error message appears.
 
 ### The table is empty
 

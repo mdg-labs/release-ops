@@ -10,6 +10,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MockAgent, setGlobalDispatcher } from "undici";
 import { DashboardView } from "@/components/dashboard/dashboard-view";
+import { ToastProvider } from "@/components/ui/toast";
 import messages from "@/messages/en.json";
 
 const ORIGIN = "http://localhost:3000";
@@ -82,7 +83,9 @@ function renderDashboard(): void {
   render(
     <QueryClientProvider client={queryClient}>
       <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
-        <DashboardView />
+        <ToastProvider>
+          <DashboardView />
+        </ToastProvider>
       </NextIntlClientProvider>
     </QueryClientProvider>,
   );
@@ -226,6 +229,76 @@ describe("DashboardView", () => {
 
     await waitFor(() => {
       expect(runPollButton).toBeTruthy();
+    });
+  });
+
+  it("shows a toast and refreshes status when the trigger returns 409", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/status",
+        method: "GET",
+      })
+      .reply(200, sampleStatus);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/poll/trigger",
+        method: "POST",
+      })
+      .reply(409, {
+        error: { code: "CONFLICT", message: "poll already running" },
+      });
+    pool
+      .intercept({
+        path: "/api/go/api/v1/status",
+        method: "GET",
+      })
+      .reply(200, { ...sampleStatus, isPolling: true });
+
+    renderDashboard();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Run poll now" }),
+    );
+
+    expect(await screen.findByText("A poll is already running.")).toBeTruthy();
+    expect(await screen.findByText("Polling")).toBeTruthy();
+  });
+
+  it("shows the server message in a toast when the trigger fails", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/status",
+        method: "GET",
+      })
+      .reply(200, sampleStatus);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/poll/trigger",
+        method: "POST",
+      })
+      .reply(500, {
+        error: { code: "INTERNAL_ERROR", message: "failed to start poll" },
+      });
+
+    renderDashboard();
+
+    const runPollButton = await screen.findByRole("button", {
+      name: "Run poll now",
+    });
+    fireEvent.click(runPollButton);
+
+    expect(await screen.findByText("Couldn't start a poll.")).toBeTruthy();
+    expect(await screen.findByText("failed to start poll")).toBeTruthy();
+    await waitFor(() => {
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Run poll now",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false);
     });
   });
 

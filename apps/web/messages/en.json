@@ -60,6 +60,8 @@
     "lastRunTicketsCreated": "Tickets created",
     "lastRunTicketsSuperseded": "Tickets superseded",
     "pollingInProgress": "Poll in progress…",
+    "pollAlreadyRunning": "A poll is already running.",
+    "triggerFailed": "Couldn't start a poll.",
     "lastRunErrorsTitle": "Errors in last poll run",
     "reposSectionTitle": "Monitored repos",
     "reposEmptyTitle": "No monitored repos",
