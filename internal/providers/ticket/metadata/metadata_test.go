@@ -161,12 +161,18 @@ func TestJiraMetadataProjectsStatusesPriorities(t *testing.T) {
 	if len(statuses) != 2 || statuses[0].Name != "To Do" {
 		t.Fatalf("statuses = %#v", statuses)
 	}
+	// Jira values are names (specs §5.3): the UI stores Item.ID, so ID must be the name.
+	for _, status := range statuses {
+		if status.ID != status.Name {
+			t.Fatalf("status ID = %q, want name %q", status.ID, status.Name)
+		}
+	}
 
 	issueTypes, err := provider.ListIssueTypes(context.Background(), "DEV")
 	if err != nil {
 		t.Fatalf("ListIssueTypes: %v", err)
 	}
-	if len(issueTypes) != 1 || issueTypes[0].Name != "Task" {
+	if len(issueTypes) != 1 || issueTypes[0].Name != "Task" || issueTypes[0].ID != "Task" {
 		t.Fatalf("issueTypes = %#v", issueTypes)
 	}
 
@@ -174,8 +180,52 @@ func TestJiraMetadataProjectsStatusesPriorities(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListPriorities: %v", err)
 	}
-	if len(priorities) != 1 || priorities[0].Name != "Medium" {
+	if len(priorities) != 1 || priorities[0].Name != "Medium" || priorities[0].ID != "Medium" {
 		t.Fatalf("priorities = %#v", priorities)
+	}
+}
+
+func TestJiraMetadataProjectsPaginate(t *testing.T) {
+	t.Parallel()
+
+	var startAts []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/rest/api/3/project/search" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		startAt := r.URL.Query().Get("startAt")
+		startAts = append(startAts, startAt)
+		switch startAt {
+		case "0":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"values": []map[string]string{{"key": "A", "name": "Alpha"}, {"key": "B", "name": "Beta"}},
+				"total":  3, "isLast": false,
+			})
+		case "2":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"values": []map[string]string{{"key": "C", "name": "Gamma"}},
+				"total":  3, "isLast": true,
+			})
+		default:
+			t.Fatalf("unexpected startAt %q", startAt)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	baseURL := server.URL
+	provider, err := metadata.NewProvider("jira", &baseURL, []byte(`{"email":"u@example.com","api_token":"t"}`), server.Client())
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	projects, err := provider.ListProjects(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	if len(projects) != 3 || projects[2].ID != "C" {
+		t.Fatalf("projects = %#v", projects)
+	}
+	if len(startAts) != 2 {
+		t.Fatalf("pages requested = %v", startAts)
 	}
 }
 

@@ -9,7 +9,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+)
+
+// jiraProjectPageSize is the page size for GET /rest/api/3/project/search; jiraMaxProjectPages
+// bounds the pagination loop.
+const (
+	jiraProjectPageSize = 100
+	jiraMaxProjectPages = 50
 )
 
 type jiraProvider struct {
@@ -41,33 +49,44 @@ func (j *jiraProvider) ListWorkspaces(context.Context) ([]Item, error) {
 }
 
 func (j *jiraProvider) ListProjects(ctx context.Context, _ string) ([]Item, error) {
-	var response struct {
-		Values []struct {
-			ID   string `json:"id"`
-			Key  string `json:"key"`
-			Name string `json:"name"`
-		} `json:"values"`
-	}
-	path := "/rest/api/3/project/search?maxResults=100"
-	if err := j.doJSON(ctx, http.MethodGet, path, nil, &response); err != nil {
-		return nil, err
-	}
+	items := make([]Item, 0)
+	startAt := 0
+	for page := 0; page < jiraMaxProjectPages; page++ {
+		var response struct {
+			Values []struct {
+				ID   string `json:"id"`
+				Key  string `json:"key"`
+				Name string `json:"name"`
+			} `json:"values"`
+			Total  int  `json:"total"`
+			IsLast bool `json:"isLast"`
+		}
+		path := "/rest/api/3/project/search?startAt=" + strconv.Itoa(startAt) +
+			"&maxResults=" + strconv.Itoa(jiraProjectPageSize)
+		if err := j.doJSON(ctx, http.MethodGet, path, nil, &response); err != nil {
+			return nil, err
+		}
 
-	items := make([]Item, 0, len(response.Values))
-	for _, project := range response.Values {
-		key := strings.TrimSpace(project.Key)
-		if key == "" {
-			continue
+		for _, project := range response.Values {
+			key := strings.TrimSpace(project.Key)
+			if key == "" {
+				continue
+			}
+			name := strings.TrimSpace(project.Name)
+			if name == "" {
+				name = key
+			}
+			items = append(items, Item{
+				ID:    key,
+				Name:  name,
+				Label: fmt.Sprintf("%s (%s)", name, key),
+			})
 		}
-		name := strings.TrimSpace(project.Name)
-		if name == "" {
-			name = key
+
+		startAt += len(response.Values)
+		if response.IsLast || len(response.Values) == 0 || startAt >= response.Total {
+			break
 		}
-		items = append(items, Item{
-			ID:    key,
-			Name:  name,
-			Label: fmt.Sprintf("%s (%s)", name, key),
-		})
 	}
 	return items, nil
 }
@@ -82,7 +101,6 @@ func (j *jiraProvider) ListStatuses(ctx context.Context, externalProjectID strin
 	var issueTypes []struct {
 		Name     string `json:"name"`
 		Statuses []struct {
-			ID   string `json:"id"`
 			Name string `json:"name"`
 		} `json:"statuses"`
 	}
@@ -102,11 +120,9 @@ func (j *jiraProvider) ListStatuses(ctx context.Context, externalProjectID strin
 				continue
 			}
 			seen[strings.ToLower(name)] = struct{}{}
-			id := strings.TrimSpace(status.ID)
-			if id == "" {
-				id = name
-			}
-			items = append(items, Item{ID: id, Name: name, Label: name})
+			// Status mapping and initialStatus store status names (specs §5.3) — the ticket
+			// provider reads fields.status.name and matches transitions by name.
+			items = append(items, Item{ID: name, Name: name, Label: name})
 		}
 	}
 	return items, nil
@@ -114,7 +130,6 @@ func (j *jiraProvider) ListStatuses(ctx context.Context, externalProjectID strin
 
 func (j *jiraProvider) ListPriorities(ctx context.Context, _ string) ([]Item, error) {
 	var priorities []struct {
-		ID   string `json:"id"`
 		Name string `json:"name"`
 	}
 	if err := j.doJSON(ctx, http.MethodGet, "/rest/api/3/priority", nil, &priorities); err != nil {
@@ -127,11 +142,8 @@ func (j *jiraProvider) ListPriorities(ctx context.Context, _ string) ([]Item, er
 		if name == "" {
 			continue
 		}
-		id := strings.TrimSpace(priority.ID)
-		if id == "" {
-			id = name
-		}
-		items = append(items, Item{ID: id, Name: name})
+		// create_config.priority is a priority name (specs §5.3).
+		items = append(items, Item{ID: name, Name: name})
 	}
 	return items, nil
 }
@@ -144,24 +156,27 @@ func (j *jiraProvider) ListIssueTypes(ctx context.Context, externalProjectID str
 
 	path := "/rest/api/3/project/" + url.PathEscape(externalProjectID) + "/statuses"
 	var issueTypes []struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
+		Name    string `json:"name"`
+		Subtask bool   `json:"subtask"`
 	}
 	if err := j.doJSON(ctx, http.MethodGet, path, nil, &issueTypes); err != nil {
 		return nil, err
 	}
 
 	items := make([]Item, 0, len(issueTypes))
+	seen := make(map[string]struct{})
 	for _, issueType := range issueTypes {
 		name := strings.TrimSpace(issueType.Name)
-		if name == "" {
+		// Sub-task types need a parent issue and cannot be created standalone.
+		if name == "" || issueType.Subtask {
 			continue
 		}
-		id := strings.TrimSpace(issueType.ID)
-		if id == "" {
-			id = name
+		if _, ok := seen[strings.ToLower(name)]; ok {
+			continue
 		}
-		items = append(items, Item{ID: id, Name: name})
+		seen[strings.ToLower(name)] = struct{}{}
+		// create_config.issueType is an issue type name (specs §5.3).
+		items = append(items, Item{ID: name, Name: name})
 	}
 	return items, nil
 }
