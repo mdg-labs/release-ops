@@ -313,13 +313,16 @@ func TestLinearCreateTicketPriorityForms(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
+			var mu sync.Mutex
 			var input map[string]any
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var body struct {
 					Variables map[string]any `json:"variables"`
 				}
 				_ = json.NewDecoder(r.Body).Decode(&body)
+				mu.Lock()
 				input, _ = body.Variables["input"].(map[string]any)
+				mu.Unlock()
 				_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
 					"issueCreate": map[string]any{"success": true, "issue": map[string]string{"id": "prio-" + tc.name}},
 				}})
@@ -340,7 +343,9 @@ func TestLinearCreateTicketPriorityForms(t *testing.T) {
 			if err != nil {
 				t.Fatalf("CreateTicket: %v", err)
 			}
+			mu.Lock()
 			got, sent := input["priority"]
+			mu.Unlock()
 			if tc.want == nil {
 				if sent {
 					t.Fatalf("priority sent = %#v, want omitted", got)

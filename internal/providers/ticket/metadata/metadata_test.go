@@ -227,6 +227,48 @@ func TestJiraMetadataProjectsPaginate(t *testing.T) {
 	}
 }
 
+func TestJiraMetadataProjectsPaginateWithoutTotal(t *testing.T) {
+	t.Parallel()
+
+	var startAts []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		startAt := r.URL.Query().Get("startAt")
+		startAts = append(startAts, startAt)
+		switch startAt {
+		case "0":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"values": []map[string]string{{"key": "A", "name": "Alpha"}},
+				"isLast": false,
+			})
+		case "1":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"values": []map[string]string{{"key": "B", "name": "Beta"}},
+				"isLast": true,
+			})
+		default:
+			t.Errorf("unexpected startAt %q", startAt)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	baseURL := server.URL
+	provider, err := metadata.NewProvider("jira", &baseURL, []byte(`{"email":"u@example.com","api_token":"t"}`), server.Client())
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	projects, err := provider.ListProjects(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	if len(projects) != 2 || projects[1].ID != "B" {
+		t.Fatalf("projects = %#v", projects)
+	}
+	if len(startAts) != 2 {
+		t.Fatalf("pages requested = %v", startAts)
+	}
+}
+
 func TestLinearMetadataTeamsAndStates(t *testing.T) {
 	t.Parallel()
 

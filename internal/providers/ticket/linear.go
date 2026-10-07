@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -382,7 +383,7 @@ func linearPriority(raw any) (int, bool) {
 	case int64:
 		p = int(v)
 	case float64:
-		if v != float64(int(v)) {
+		if v < 0 || v > 4 || v != math.Trunc(v) {
 			return 0, false
 		}
 		p = int(v)

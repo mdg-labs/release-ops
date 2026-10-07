@@ -58,8 +58,8 @@ func (j *jiraProvider) ListProjects(ctx context.Context, _ string) ([]Item, erro
 				Key  string `json:"key"`
 				Name string `json:"name"`
 			} `json:"values"`
-			Total  int  `json:"total"`
-			IsLast bool `json:"isLast"`
+			Total  *int  `json:"total"`
+			IsLast *bool `json:"isLast"`
 		}
 		path := "/rest/api/3/project/search?startAt=" + strconv.Itoa(startAt) +
 			"&maxResults=" + strconv.Itoa(jiraProjectPageSize)
@@ -84,7 +84,12 @@ func (j *jiraProvider) ListProjects(ctx context.Context, _ string) ([]Item, erro
 		}
 
 		startAt += len(response.Values)
-		if response.IsLast || len(response.Values) == 0 || startAt >= response.Total {
+		// total/isLast may be omitted: only an explicit signal ends paging, and a response
+		// without either is treated as the only page so the loop cannot run unbounded.
+		if len(response.Values) == 0 ||
+			(response.IsLast != nil && *response.IsLast) ||
+			(response.Total != nil && startAt >= *response.Total) ||
+			(response.IsLast == nil && response.Total == nil) {
 			break
 		}
 	}

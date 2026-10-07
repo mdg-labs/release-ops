@@ -77,7 +77,9 @@ func TestLinearTicketWebURL(t *testing.T) {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		variables, _ := body["variables"].(map[string]any)
 		if variables["id"] != "weburl-issue-uuid" {
-			t.Fatalf("id = %v", variables["id"])
+			t.Errorf("id = %v", variables["id"])
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
