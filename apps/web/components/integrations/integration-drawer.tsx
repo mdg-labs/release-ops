@@ -62,6 +62,11 @@ type IntegrationDrawerProps = {
 
 type KindOption = { label: string; value: IntegrationKind };
 
+
+function normalizeBaseUrl(value: string): string {
+  return value.trim().replace(/\/+$/, "");
+}
+
 export function IntegrationDrawer({
   mode,
   integration,
@@ -148,6 +153,16 @@ export function IntegrationDrawer({
     const secretRequired = mode === "create" || !integration?.hasSecret;
     if (secretRequired && !trimmedSecret) {
       setFormError(t("validation.secretRequired"));
+      return;
+    }
+    if (
+      mode === "edit" &&
+      requiresBaseUrl &&
+      !trimmedSecret &&
+      normalizeBaseUrl(trimmedBaseUrl) !==
+        normalizeBaseUrl(integration?.baseUrl ?? "")
+    ) {
+      setFormError(t("validation.secretRequiredForBaseUrlChange"));
       return;
     }
 

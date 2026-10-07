@@ -240,7 +240,8 @@
       "nameRequired": "Name is required.",
       "baseUrlRequired": "Base URL is required for this kind.",
       "emailRequired": "Email is required for Jira.",
-      "secretRequired": "Token or API key is required."
+      "secretRequired": "Token or API key is required.",
+      "secretRequiredForBaseUrlChange": "Re-enter the token or API key when you change the base URL."
     },
     "kinds": {
       "github": "GitHub",

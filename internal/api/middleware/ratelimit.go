@@ -36,18 +36,27 @@ type realClock struct{}
 
 func (realClock) Now() time.Time { return time.Now() }
 
+// sweepInterval is how often stale buckets are evicted from the in-memory store.
+const sweepInterval = time.Minute
+
 // RateLimiter enforces per-IP sliding-window limits for public auth endpoints.
 type RateLimiter struct {
-	mu    sync.Mutex
-	clock clock
-	store map[string][]time.Time
+	mu        sync.Mutex
+	clock     clock
+	store     map[string]*rateBucket
+	lastSweep time.Time
+}
+
+type rateBucket struct {
+	hits   []time.Time
+	window time.Duration
 }
 
 // NewRateLimiter returns an in-memory rate limiter for a single container.
 func NewRateLimiter() *RateLimiter {
 	return &RateLimiter{
 		clock: realClock{},
-		store: make(map[string][]time.Time),
+		store: make(map[string]*rateBucket),
 	}
 }
 
@@ -55,7 +64,7 @@ func NewRateLimiter() *RateLimiter {
 func NewRateLimiterForTest(clock interface{ Now() time.Time }) *RateLimiter {
 	return &RateLimiter{
 		clock: clock,
-		store: make(map[string][]time.Time),
+		store: make(map[string]*rateBucket),
 	}
 }
 
@@ -107,9 +116,15 @@ func (rl *RateLimiter) allow(ip, endpoint string, max int, window time.Duration,
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	timestamps := rl.store[key]
-	active := timestamps[:0]
-	for _, ts := range timestamps {
+	rl.sweep(now)
+
+	bucket, ok := rl.store[key]
+	if !ok {
+		bucket = &rateBucket{window: window}
+		rl.store[key] = bucket
+	}
+	active := bucket.hits[:0]
+	for _, ts := range bucket.hits {
 		if ts.After(cutoff) {
 			active = append(active, ts)
 		}
@@ -126,24 +141,51 @@ func (rl *RateLimiter) allow(ip, endpoint string, max int, window time.Duration,
 		if retryAfter < time.Second {
 			retryAfter = time.Second
 		}
-		rl.store[key] = active
+		bucket.hits = active
 		return retryAfter, false
 	}
 
-	rl.store[key] = append(active, now)
+	bucket.hits = append(active, now)
 	return 0, true
 }
 
-// clientIP returns the first hop from X-Forwarded-For when present, else RemoteAddr host.
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		first, _, _ := strings.Cut(xff, ",")
-		return strings.TrimSpace(first)
+// sweep drops buckets whose newest hit is outside their window, so the map stays
+// bounded by the clients seen within the longest window. Caller holds rl.mu.
+func (rl *RateLimiter) sweep(now time.Time) {
+	if now.Sub(rl.lastSweep) < sweepInterval {
+		return
 	}
+	rl.lastSweep = now
+	for key, bucket := range rl.store {
+		if len(bucket.hits) == 0 || !bucket.hits[len(bucket.hits)-1].After(now.Add(-bucket.window)) {
+			delete(rl.store, key)
+		}
+	}
+}
 
+// Len returns the number of tracked buckets (tests).
+func (rl *RateLimiter) Len() int {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	return len(rl.store)
+}
+
+// clientIP returns the first X-Forwarded-For hop (specs §7.0) when the request comes from
+// a loopback peer — the bundled Next.js proxy, which forwards the browser's address —
+// and the RemoteAddr host otherwise, so a direct caller cannot pick its own bucket.
+func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
+	}
+
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			first, _, _ := strings.Cut(xff, ",")
+			if first = strings.TrimSpace(first); first != "" {
+				return first
+			}
+		}
 	}
 	return host
 }

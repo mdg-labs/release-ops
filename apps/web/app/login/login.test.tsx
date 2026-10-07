@@ -148,4 +148,34 @@ describe("LoginForm", () => {
       "auth.loginFailedTitle",
     );
   });
+
+  it("shows rate-limited message on 429 instead of invalid credentials", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/auth/login",
+        method: "POST",
+      })
+      .reply(429, {
+        error: {
+          code: "RATE_LIMITED",
+          message: "Too many requests. Try again later.",
+        },
+      });
+
+    renderLoginForm();
+
+    fireEvent.change(screen.getByLabelText(/auth\.email/), {
+      target: { value: "admin@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/auth\.password/), {
+      target: { value: "secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "auth.signIn" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent("auth.rateLimited"),
+    );
+    expect(pushMock).not.toHaveBeenCalled();
+  });
 });
