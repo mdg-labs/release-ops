@@ -142,7 +142,9 @@ docker compose pull
 docker compose up -d
 ```
 
-Migrations run automatically when the container starts.
+Pending migrations run automatically when the container starts, after a snapshot of the database is saved under `/data/snapshots`.
+
+**Exception — databases from before the migration baseline reset.** The database migrations were reset to a single baseline. A `/data` volume created by an image from before that reset cannot be opened by this version: stop the container, remove the old `app.db` (or the whole volume) and start again to create a fresh database. This discards the existing data. It applies once; later releases add migrations on top of the baseline.
 
 ## Troubleshooting
 
