@@ -5,7 +5,7 @@
  */
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const docsDir = join(root, "docs");
@@ -17,14 +17,20 @@ mkdirSync(outDir, { recursive: true });
 mkdirSync(publicDir, { recursive: true });
 mkdirSync(dataDir, { recursive: true });
 
+// The site is served under a base path; internal links must carry it.
+const astroConfigPath = join(root, "apps/docs/astro.config.mjs");
+const { default: astroConfig } = await import(pathToFileURL(astroConfigPath).href);
+const base = (astroConfig.base ?? "").replace(/\/+$/, "");
+const withBase = (path) => `${base}${path}`;
+
 const linkMap = {
-  "specs.html": "/spec/",
-  "stack.html": "/stack/",
-  "schema.html": "/schema/",
-  "index.html": "/",
-  "getting-started.md": "/getting-started/",
-  "mvp-checklist.md": "/mvp-checklist/",
-  "roadmap.html": "/roadmap/",
+  "specs.html": withBase("/spec/"),
+  "stack.html": withBase("/stack/"),
+  "schema.html": withBase("/schema/"),
+  "index.html": withBase("/"),
+  "getting-started.md": withBase("/getting-started/"),
+  "mvp-checklist.md": withBase("/mvp-checklist/"),
+  "roadmap.html": withBase("/roadmap/"),
 };
 
 function rewriteLinks(html) {
@@ -196,7 +202,7 @@ hero:
   tagline: Self-hosted release monitor — one Docker container, full control.
   actions:
     - text: Get started
-      link: /getting-started/
+      link: ${withBase("/getting-started/")}
       icon: right-arrow
       variant: primary
     - text: View on GitHub
@@ -210,22 +216,22 @@ import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 `;
 
 const indexCards = `<CardGrid>
-  <LinkCard title="Getting started" href="/getting-started/">
+  <LinkCard title="Getting started" href="${withBase("/getting-started/")}">
     Docker Compose setup, env vars, admin bootstrap, troubleshooting.
   </LinkCard>
-  <LinkCard title="Product specification" href="/spec/">
+  <LinkCard title="Product specification" href="${withBase("/spec/")}">
     Architecture, schema, APIs, providers, UI, MVP acceptance criteria.
   </LinkCard>
-  <LinkCard title="Tech stack" href="/stack/">
+  <LinkCard title="Tech stack" href="${withBase("/stack/")}">
     Go, Next.js, COSS, session auth, SQLite, Docker.
   </LinkCard>
-  <LinkCard title="Database schema" href="/schema/">
+  <LinkCard title="Database schema" href="${withBase("/schema/")}">
     SQLite app.db — HTML view; canonical DDL in db/schema.sql.
   </LinkCard>
-  <LinkCard title="MVP checklist" href="/mvp-checklist/">
+  <LinkCard title="MVP checklist" href="${withBase("/mvp-checklist/")}">
     Sign-off against all 15 acceptance criteria.
   </LinkCard>
-  <LinkCard title="Roadmap" href="/roadmap/">
+  <LinkCard title="Roadmap" href="${withBase("/roadmap/")}">
     Implementation phases — epics, leaf tasks, spec backlinks.
   </LinkCard>
 </CardGrid>

@@ -5,11 +5,11 @@ description: "Sign-off checklist for all 15 MVP acceptance criteria."
 
 # MVP acceptance checklist
 
-Sign-off checklist for Release Ops MVP. Each item maps to [specs.html §12 MVP Acceptance Criteria](/spec/#mvp). Use this document for release validation and operator handoff.
+Sign-off checklist for Release Ops MVP. Each item maps to [specs.html §12 MVP Acceptance Criteria](/release-ops/spec/#mvp). Use this document for release validation and operator handoff.
 
-**Spec references:** [§12 MVP](/spec/#mvp) · [§9 Environment](/spec/#env) · [§10 Deployment](/spec/#deployment) · [§11 CI/CD](/spec/#ci)
+**Spec references:** [§12 MVP](/release-ops/spec/#mvp) · [§9 Environment](/release-ops/spec/#env) · [§10 Deployment](/release-ops/spec/#deployment) · [§11 CI/CD](/release-ops/spec/#ci)
 
-**Operator guide:** [getting-started.md](/getting-started/)
+**Operator guide:** [getting-started.md](/release-ops/getting-started/)
 
 ---
 
@@ -56,7 +56,7 @@ Sign-off checklist for Release Ops MVP. Each item maps to [specs.html §12 MVP A
 ## AC #5 — Integration connectivity test
 
 - [ ] **Test connection** on each integration returns success or failure in the UI (toast/feedback)
-- [ ] Backend calls provider-specific probe endpoints per [specs.html §6](/spec/#providers)
+- [ ] Backend calls provider-specific probe endpoints per [specs.html §6](/release-ops/spec/#providers)
 
 **How to verify:** **Integrations** — run test on a configured integration (valid and invalid credentials).
 
@@ -167,13 +167,13 @@ go test ./internal/providers/...
 - [ ] **Settings** saves global `poll_interval_minutes` (min 5)
 - [ ] `docker compose up` runs **one** service (`release-ops`) with volume `release-ops-data:/data`
 
-**How to verify:** Follow [getting-started.md](/getting-started/); confirm `docker compose config` shows a single service.
+**How to verify:** Follow [getting-started.md](/release-ops/getting-started/); confirm `docker compose config` shows a single service.
 
 ---
 
 ## AC #15 — GitHub Actions workflows
 
-CI/CD layout per [specs.html §11](/spec/#ci). All entrypoints call reusable workflows; reusable workflows have no direct `on: push`.
+CI/CD layout per [specs.html §11](/release-ops/spec/#ci). All entrypoints call reusable workflows; reusable workflows have no direct `on: push`.
 
 ### Workflow files
 

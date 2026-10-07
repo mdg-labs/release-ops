@@ -53,7 +53,7 @@ release-ops/
   <h2>Data</h2>
   <table>
     <tr><th>File</th><th>Contents</th></tr>
-    <tr><td><code>/data/app.db</code></td><td>Users, sessions, repos, integrations, ticket projects, notifications, poll runs — <a href="/schema/">schema</a></td></tr>
+    <tr><td><code>/data/app.db</code></td><td>Users, sessions, repos, integrations, ticket projects, notifications, poll runs — <a href="/release-ops/schema/">schema</a></td></tr>
   </table>
   <p>Single SQLite file on the volume; Go is the only writer (Next never opens the DB).</p>
 
@@ -88,7 +88,7 @@ release-ops/
     <tr><th>Tool</th><th>Why</th></tr>
     <tr><td><code>Docker</code> multi-stage</td><td><strong>One</strong> image <code>ghcr.io/&#123;owner&#125;/release-ops</code> — Coolify-compatible.</td></tr>
     <tr><td><code>docker-compose</code></td><td>Single service <code>release-ops</code>, port 3000, volume <code>/data</code>.</td></tr>
-    <tr><td>GitHub Actions</td><td>CI — see <a href="/spec/#ci">Spec §11</a>.</td></tr>
+    <tr><td>GitHub Actions</td><td>CI — see <a href="/release-ops/spec/#ci">Spec §11</a>.</td></tr>
   </table>
 
   <h2>Intentionally not used (MVP)</h2>
