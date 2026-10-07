@@ -86,7 +86,12 @@ function readVersionAt(ref) {
   return null;
 }
 
-function getLastTag() {
+/**
+ * Newest v* tag other than `excludeTag`. The release's own tag is excluded so a re-run
+ * after a failure between `git push <tag>` and `gh release create` still compares
+ * against the previous release instead of skipping.
+ */
+function getLastTag(excludeTag) {
   const result = run("git", ["tag", "--list", "v*", "--sort=-v:refname"]);
   if (result.status !== 0) {
     fail("Failed to list git tags", result.stderr);
@@ -95,9 +100,14 @@ function getLastTag() {
   const tags = result.stdout
     .split("\n")
     .map((tag) => tag.trim())
-    .filter(Boolean);
+    .filter((tag) => tag && tag !== excludeTag);
 
   return tags[0] ?? null;
+}
+
+function releaseExists(tag) {
+  const result = run("gh", ["release", "view", tag, "--json", "tagName"]);
+  return result.status === 0;
 }
 
 function gitLogSince(lastTag) {
@@ -128,7 +138,13 @@ function main() {
     fail(error.message);
   }
 
-  const lastTag = getLastTag();
+  const newTag = `v${headVersion}`;
+  if (!dryRun && releaseExists(newTag)) {
+    console.log(`Skip: release ${newTag} already exists`);
+    process.exit(0);
+  }
+
+  const lastTag = getLastTag(newTag);
   let previousVersion = "0.0.0";
 
   if (lastTag) {
@@ -149,7 +165,6 @@ function main() {
     process.exit(0);
   }
 
-  const newTag = `v${headVersion}`;
   const title = `Release Ops v${headVersion}`;
   const notes = gitLogSince(lastTag);
 
@@ -186,6 +201,7 @@ function main() {
     "release",
     "create",
     newTag,
+    "--verify-tag",
     "--draft",
     "--title",
     title,

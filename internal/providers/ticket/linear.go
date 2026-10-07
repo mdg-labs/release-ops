@@ -317,7 +317,7 @@ func (l *LinearProvider) UpdateTicket(ctx context.Context, externalID, title, de
 // be derived from the issue id alone. The url Linear returns from issueCreate is cached; on a
 // cache miss the issue url is queried (bounded by linearURLLookupTimeout). If the lookup fails
 // the id-based form is returned so callers still get a link.
-func (l *LinearProvider) TicketWebURL(externalID string) (string, error) {
+func (l *LinearProvider) TicketWebURL(_ TicketProject, externalID string) (string, error) {
 	externalID = strings.TrimSpace(externalID)
 	if externalID == "" {
 		return "", errors.New("linear: external id is required")

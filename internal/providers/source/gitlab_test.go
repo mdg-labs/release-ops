@@ -263,3 +263,47 @@ func TestGitLabSourceReleaseURLFromAssetsLink(t *testing.T) {
 		t.Fatalf("publishedAt = %v, want %v", release.PublishedAt, expectedTime)
 	}
 }
+
+func TestGitLabSourceKeepsBaseURLSubpath(t *testing.T) {
+	t.Parallel()
+
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.EscapedPath())
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.EscapedPath(), "/permalink/latest") {
+			_, _ = w.Write([]byte(`{"tag_name":"v1.0.0","released_at":"2026-03-15T14:30:00Z"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`[{"tag_name":"v1.1.0-rc.1","released_at":"2026-03-16T14:30:00Z"}]`))
+	}))
+	t.Cleanup(srv.Close)
+
+	provider, err := source.NewGitLabSource(srv.URL+"/gitlab/", "", srv.Client())
+	if err != nil {
+		t.Fatalf("NewGitLabSource: %v", err)
+	}
+
+	for _, opts := range []source.ReleaseOptions{{}, {IncludePrereleases: true}} {
+		release, err := provider.GetLatestRelease(context.Background(), "group/sub/proj", opts)
+		if err != nil {
+			t.Fatalf("GetLatestRelease(%+v): %v", opts, err)
+		}
+		if release == nil {
+			t.Fatalf("GetLatestRelease(%+v) = nil, want release", opts)
+		}
+	}
+
+	want := []string{
+		"/gitlab/api/v4/projects/group%2Fsub%2Fproj/releases/permalink/latest",
+		"/gitlab/api/v4/projects/group%2Fsub%2Fproj/releases",
+	}
+	if len(paths) != len(want) {
+		t.Fatalf("paths = %v, want %v", paths, want)
+	}
+	for i := range want {
+		if paths[i] != want[i] {
+			t.Fatalf("path[%d] = %q, want %q", i, paths[i], want[i])
+		}
+	}
+}

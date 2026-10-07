@@ -14,9 +14,9 @@ import (
 )
 
 var ticketIntegrationKinds = map[string]struct{}{
-	"phasical": {},
-	"jira":     {},
-	"linear":   {},
+	"kaneo":  {},
+	"jira":   {},
+	"linear": {},
 }
 
 // IntegrationMetadataHandlers serves ticket-metadata discovery endpoints.

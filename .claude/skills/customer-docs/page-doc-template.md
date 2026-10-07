@@ -1,57 +1,53 @@
 ---
-# Framework-specific frontmatter — adapt per docs.config.md § Frontmatter schema
-# Common fields (rename/remove per framework):
-title: "{PAGE_TITLE}"
-description: "{ONE_LINE_PURPOSE}"
-sidebar_position: {N}
-# slug: {kebab-case-slug}   # Mintlify, Docusaurus, etc.
+title: "<Page title from apps/web/messages/en.json, e.g. Ticket projects>"
+description: "<One sentence: what you can do on this page.>"
 ---
 
-# {PAGE_TITLE}
+<!-- Starlight renders `title` as the H1: do not add a `# Heading` here. -->
+<!-- Save as apps/docs/src/content/docs/guide/<page>.md (see docs-config.md § Route → doc map). -->
 
-{ONE_SENTENCE_PURPOSE — what the user can accomplish on this page.}
+<One-sentence purpose: what you accomplish on this page, e.g. "Connect Release Ops to the services it reads releases from and creates tickets in.">
 
 ## Prerequisites
 
-- {PREREQUISITE_1 — e.g. "You are signed in."}
-- {PREREQUISITE_2 — or "None."}
+- You are signed in to Release Ops.
+- <Other prerequisite, e.g. "You have added a ticket integration (Kaneo, Jira or Linear) on the [Integrations](../integrations/) page." — or "None.">
 
-<!-- Optional when screenshot policy = PLACEHOLDERS -->
-<!-- {SCREENSHOT: {PAGE_NAME} overview} -->
+<!-- SCREENSHOT: <page> overview -->
 
-## {KEY_ACTION_1 — imperative verb phrase}
+## <Key action 1 — imperative, e.g. Add a ticket project>
 
-1. {Step — second person, present tense.}
-2. {Step.}
-3. {Step.}
+1. Click **<button label from en.json>**.
+2. <Step — second person, present tense.>
+3. Click **<Save / Create label>**.
 
-**Result:** {What the user sees or achieves.}
+**Result:** <What you see, e.g. "The ticket project appears in the list.">
 
-## {KEY_ACTION_2}
+## <Key action 2 — e.g. Edit the status mapping>
 
-1. {Step.}
-2. {Step.}
+1. <Step.>
+2. <Step.>
 
-<!-- Repeat ## sections for each primary action visible on the page -->
+<!-- Repeat one ## section per primary action on the page (add, edit, test connection, delete, …). -->
 
-## Field and option reference
+## Field reference
 
-| Field / option | Description | Required |
-| -------------- | ----------- | -------- |
-| {Customer-facing label} | {What it does.} | {Yes \| No} |
-| {Customer-facing label} | {What it does.} | {Yes \| No} |
+| Field | Description | Required |
+| ----- | ----------- | -------- |
+| <Label from en.json> | <What it does, per docs/specs.html.> | Yes |
+| <Label> | <What it does.> | No |
 
 ## Troubleshooting
 
-### {Problem in plain language}
+### <Problem in plain language, e.g. "Test connection fails">
 
-{Cause and fix — task-oriented steps.}
+<Cause and fix as steps.>
 
-### {Another problem}
+### <Another problem>
 
-{Cause and fix.}
+<Cause and fix.>
 
 ## Related pages
 
-- [{Related page title}]({relative-path})
-- [{Related page title}]({relative-path})
+- [<Related page>](../<page>/)
+- [<Concept page>](../../concepts/<concept>/)

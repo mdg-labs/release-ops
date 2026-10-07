@@ -410,3 +410,68 @@ func TestRequireSessionAllowsAuthenticatedRequests(t *testing.T) {
 		t.Fatal("protected handler should not run without session")
 	}
 }
+
+func TestLoginIsCaseInsensitiveAndRenewsSessionToken(t *testing.T) {
+	t.Parallel()
+
+	db := openMigratedDB(t)
+	t.Cleanup(func() { _ = db.Close() })
+
+	queries := storedb.New(db)
+	now := time.Now().UTC().Format(time.RFC3339)
+	hash, err := auth.HashPassword("secret-pass")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	// Mixed case as an older bootstrap could have stored it.
+	if _, err := queries.CreateUser(context.Background(), storedb.CreateUserParams{
+		ID:           uuid.NewString(),
+		Email:        "Admin@Example.com",
+		PasswordHash: hash,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	sm := auth.NewSessionManager(db, strings.Repeat("s", 32), false)
+	srv := httptest.NewServer(api.NewServerRouter(&api.ServerDeps{
+		DB:      db,
+		Session: sm,
+		Queries: queries,
+	}))
+	t.Cleanup(srv.Close)
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar: %v", err)
+	}
+	client := &http.Client{Jar: jar}
+	login := func() string {
+		t.Helper()
+		body := `{"email":"admin@EXAMPLE.com","password":"secret-pass"}`
+		resp, err := client.Post(srv.URL+"/api/v1/auth/login", "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("POST login: %v", err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+		for _, c := range resp.Cookies() {
+			if c.Name == auth.SessionCookieName {
+				return c.Value
+			}
+		}
+		t.Fatal("expected session cookie")
+		return ""
+	}
+
+	// The second login carries the first token; it must be replaced, not reused
+	// (a token known before authentication must never become authenticated).
+	first := login()
+	second := login()
+	if first == second {
+		t.Fatalf("session token was not renewed on login: %q", second)
+	}
+}

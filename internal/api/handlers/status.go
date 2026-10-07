@@ -178,7 +178,7 @@ func (r *statusURLResolver) resolve(ctx context.Context, repo *store.MonitoredRe
 	if repo.OpenTicketExternalID != nil && strings.TrimSpace(*repo.OpenTicketExternalID) != "" && ticketProject.ID != "" {
 		provider, providerErr := r.ticketProvider(ctx, ticketProject.IntegrationID)
 		if providerErr == nil {
-			ticketURL, ticketErr := provider.TicketWebURL(*repo.OpenTicketExternalID)
+			ticketURL, ticketErr := provider.TicketWebURL(statusTicketProject(ticketProject), *repo.OpenTicketExternalID)
 			if ticketErr == nil {
 				urls.OpenTicketURL = &ticketURL
 			}
@@ -186,6 +186,23 @@ func (r *statusURLResolver) resolve(ctx context.Context, repo *store.MonitoredRe
 	}
 
 	return urls
+}
+
+// statusTicketProject converts the fields needed for ticket web links (external project,
+// create_config) without requiring a valid status_mapping.
+func statusTicketProject(row store.TicketProject) ticket.TicketProject {
+	project := ticket.TicketProject{
+		ID:                row.ID,
+		IntegrationID:     row.IntegrationID,
+		ExternalProjectID: row.ExternalProjectID,
+	}
+	if strings.TrimSpace(row.CreateConfig) != "" {
+		var createConfig map[string]any
+		if err := json.Unmarshal([]byte(row.CreateConfig), &createConfig); err == nil {
+			project.CreateConfig = createConfig
+		}
+	}
+	return project
 }
 
 func sourceIntegrationBaseURL(repo *store.MonitoredRepo, integrationsBy map[string]store.Integration) *string {

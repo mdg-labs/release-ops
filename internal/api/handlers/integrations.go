@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
@@ -18,7 +19,7 @@ var validIntegrationKinds = map[string]struct{}{
 	"gitea":    {},
 	"forgejo":  {},
 	"codeberg": {},
-	"phasical": {},
+	"kaneo":    {},
 	"jira":     {},
 	"linear":   {},
 }
@@ -154,6 +155,13 @@ func (h *IntegrationHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The stored secret may only be sent to the host it was entered for: moving an
+	// integration to another base URL requires re-entering the secret.
+	if req.Secret == nil && normalizedBaseURL(baseURL) != normalizedBaseURL(existing.BaseURL) {
+		auth.WriteError(w, "VALIDATION_ERROR", "secret is required when baseUrl changes", http.StatusBadRequest)
+		return
+	}
+
 	input := store.UpdateIntegrationInput{
 		Name:    req.Name,
 		BaseURL: baseURL,
@@ -178,6 +186,13 @@ func (h *IntegrationHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeIntegrationsJSON(w, http.StatusOK, integrationFromStore(updated))
+}
+
+func normalizedBaseURL(baseURL *string) string {
+	if baseURL == nil {
+		return ""
+	}
+	return strings.TrimRight(strings.TrimSpace(*baseURL), "/")
 }
 
 // Delete handles DELETE /api/v1/integrations/{id}.
@@ -268,13 +283,13 @@ func integrationFromStore(item *store.Integration) integrationResponse {
 
 func validateIntegrationKind(kind string) error {
 	if _, ok := validIntegrationKinds[kind]; !ok {
-		return errors.New("kind must be one of: github, gitlab, gitea, forgejo, codeberg, phasical, jira, linear")
+		return errors.New("kind must be one of: github, gitlab, gitea, forgejo, codeberg, kaneo, jira, linear")
 	}
 	return nil
 }
 
 func validateBaseURL(kind string, baseURL *string) error {
-	requiresURL := kind == "gitlab" || kind == "gitea" || kind == "forgejo" || kind == "phasical" || kind == "jira"
+	requiresURL := kind == "gitlab" || kind == "gitea" || kind == "forgejo" || kind == "kaneo" || kind == "jira"
 	hasURL := baseURL != nil && *baseURL != ""
 	switch {
 	case requiresURL && !hasURL:

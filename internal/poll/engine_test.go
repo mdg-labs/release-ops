@@ -102,6 +102,7 @@ type mockTicketProvider struct {
 	createCalls    int
 	callLog        []string
 	lastCreateInput ticket.TicketInput
+	updateStatusErr error
 }
 
 type statusUpdate struct {
@@ -142,7 +143,7 @@ func (m *mockTicketProvider) GetTicketStatus(_ context.Context, externalID strin
 func (m *mockTicketProvider) UpdateTicketStatus(_ context.Context, externalID, status string) error {
 	m.callLog = append(m.callLog, "updateStatus")
 	m.updateStatus = append(m.updateStatus, statusUpdate{externalID: externalID, status: status})
-	return nil
+	return m.updateStatusErr
 }
 
 func (m *mockTicketProvider) AddTicketComment(_ context.Context, externalID, body string) error {
@@ -156,7 +157,7 @@ func (m *mockTicketProvider) UpdateTicket(_ context.Context, externalID, title, 
 	return nil
 }
 
-func (m *mockTicketProvider) TicketWebURL(externalID string) (string, error) {
+func (m *mockTicketProvider) TicketWebURL(_ ticket.TicketProject, externalID string) (string, error) {
 	if m.webURL != "" {
 		return m.webURL, nil
 	}
@@ -176,7 +177,7 @@ func testTicketProject(policy string) ticket.TicketProject {
 	return ticket.TicketProject{
 		ID:                "tp-1",
 		IntegrationID:     "int-1",
-		IntegrationKind:   ticket.IntegrationKindPhasical,
+		IntegrationKind:   ticket.IntegrationKindKaneo,
 		ExternalProjectID: "proj-1",
 		CreateConfig:      map[string]any{"status": "ready"},
 		StatusMapping: ticket.StatusMapping{
@@ -617,5 +618,97 @@ func TestEvaluateRepoFetchError(t *testing.T) {
 	}
 	if got.Repo.LastError == nil || !strings.Contains(*got.Repo.LastError, "network down") {
 		t.Fatalf("LastError = %v, want network down", got.Repo.LastError)
+	}
+}
+
+func TestEvaluateRepoSupersedeKeepsNewTicketWhenOldTicketUpdateFails(t *testing.T) {
+	t.Parallel()
+
+	repo := baseRepo()
+	last := "v1.0.0"
+	openID := "old-ticket"
+	repo.LastKnownTag = &last
+	repo.OpenTicketExternalID = &openID
+	repo.OpenTicketTag = &last
+
+	pollRepo := newMockPollRepo(repo)
+	engine := poll.NewEngine(pollRepo)
+	provider := &mockTicketProvider{
+		statuses:        map[string]string{openID: "in-progress"},
+		createID:        "new-ticket",
+		updateStatusErr: errors.New("no transition to superseded"),
+	}
+
+	got, err := engine.EvaluateRepo(
+		context.Background(),
+		repo,
+		testRelease("v2.0.0"),
+		nil,
+		testTicketProject(ticket.PolicySupersede),
+		provider,
+		testRepoWebURL(),
+	)
+	if err != nil {
+		t.Fatalf("EvaluateRepo: %v", err)
+	}
+	if len(got.Actions) != 2 || got.Actions[0] != poll.ActionCreate || got.Actions[1] != poll.ActionError {
+		t.Fatalf("actions = %v, want [create error]", got.Actions)
+	}
+	if got.Repo.OpenTicketExternalID == nil || *got.Repo.OpenTicketExternalID != "new-ticket" {
+		t.Fatalf("OpenTicketExternalID = %v, want new-ticket persisted", got.Repo.OpenTicketExternalID)
+	}
+	if got.Repo.LastKnownTag == nil || *got.Repo.LastKnownTag != "v2.0.0" {
+		t.Fatalf("LastKnownTag = %v, want v2.0.0", got.Repo.LastKnownTag)
+	}
+	if got.Repo.LastError == nil || !strings.Contains(*got.Repo.LastError, "no transition to superseded") {
+		t.Fatalf("LastError = %v, want supersede failure", got.Repo.LastError)
+	}
+	if len(provider.comments) != 1 {
+		t.Fatalf("comments = %d, want comment still added after failed transition", len(provider.comments))
+	}
+
+	// The next poll sees the same tag and must not create another ticket.
+	again, err := engine.EvaluateRepo(
+		context.Background(),
+		*got.Repo,
+		testRelease("v2.0.0"),
+		nil,
+		testTicketProject(ticket.PolicySupersede),
+		provider,
+		testRepoWebURL(),
+	)
+	if err != nil {
+		t.Fatalf("EvaluateRepo (second poll): %v", err)
+	}
+	if again.Actions[0] != poll.ActionSkip || provider.createCalls != 1 {
+		t.Fatalf("second poll actions = %v, create calls = %d; want skip and 1", again.Actions, provider.createCalls)
+	}
+}
+
+func TestEvaluateRepoTreatsSupersededStatusAsClosed(t *testing.T) {
+	t.Parallel()
+
+	repo := baseRepo()
+	last := "v1.0.0"
+	openID := "old-ticket"
+	repo.LastKnownTag = &last
+	repo.OpenTicketExternalID = &openID
+
+	project := testTicketProject(ticket.PolicySupersede)
+	project.StatusMapping.Superseded = "superseded"
+
+	pollRepo := newMockPollRepo(repo)
+	engine := poll.NewEngine(pollRepo)
+	provider := &mockTicketProvider{
+		statuses: map[string]string{openID: "Superseded"},
+		createID: "new-ticket",
+	}
+
+	got, err := engine.EvaluateRepo(context.Background(), repo, testRelease("v2.0.0"), nil, project, provider, testRepoWebURL())
+	if err != nil {
+		t.Fatalf("EvaluateRepo: %v", err)
+	}
+	if len(got.Actions) != 1 || got.Actions[0] != poll.ActionCreate {
+		t.Fatalf("actions = %v, want [create]", got.Actions)
 	}
 }

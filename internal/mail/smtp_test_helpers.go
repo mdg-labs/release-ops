@@ -16,24 +16,25 @@ import (
 
 type pipeConn struct{}
 
-func (pipeConn) Read([]byte) (int, error)  { return 0, io.EOF }
-func (pipeConn) Write([]byte) (int, error) { return len([]byte{}), nil }
-func (pipeConn) Close() error              { return nil }
-func (pipeConn) LocalAddr() net.Addr       { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 1} }
-func (pipeConn) RemoteAddr() net.Addr      { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 2} }
+func (pipeConn) Read([]byte) (int, error)         { return 0, io.EOF }
+func (pipeConn) Write([]byte) (int, error)        { return len([]byte{}), nil }
+func (pipeConn) Close() error                     { return nil }
+func (pipeConn) LocalAddr() net.Addr              { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 1} }
+func (pipeConn) RemoteAddr() net.Addr             { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 2} }
 func (pipeConn) SetDeadline(time.Time) error      { return nil }
 func (pipeConn) SetReadDeadline(time.Time) error  { return nil }
 func (pipeConn) SetWriteDeadline(time.Time) error { return nil }
 
 type mockSMTPClient struct {
-	onMail func(string) error
-	onRcpt func(string) error
-	onData func([]byte) error
+	noStartTLS bool
+	onMail     func(string) error
+	onRcpt     func(string) error
+	onData     func([]byte) error
 }
 
 func (m *mockSMTPClient) Extension(ext string) (bool, string) {
 	if ext == "STARTTLS" {
-		return true, ""
+		return !m.noStartTLS, ""
 	}
 	return false, ""
 }

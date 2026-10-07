@@ -10,7 +10,8 @@ jobs:
       packages: write
     uses: ./.github/workflows/build-and-push-image.yml
     with:
-      ref: ${{ github.event.release.target_commitish }}
+      # Build from the tagged commit, not the branch HEAD at publish time.
+      ref: refs/tags/${{ github.event.release.tag_name }}
       tags: |
         latest
         ${{ github.event.release.tag_name }}

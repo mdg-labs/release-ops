@@ -99,7 +99,7 @@ func (m *integrationTicketProvider) UpdateTicket(_ context.Context, externalID, 
 	return fmt.Errorf("UpdateTicket not expected in integration flow: %s", externalID)
 }
 
-func (m *integrationTicketProvider) TicketWebURL(externalID string) (string, error) {
+func (m *integrationTicketProvider) TicketWebURL(_ ticket.TicketProject, externalID string) (string, error) {
 	return "https://tickets.example/" + externalID, nil
 }
 
@@ -243,9 +243,9 @@ func newPollIntegrationEnv(t *testing.T, tags []string, contentTemplates string)
 	ctx := context.Background()
 
 	integration, err := s.Integrations().Create(ctx, store.CreateIntegrationInput{
-		Kind:    "phasical",
-		Name:    "Phasical Integration",
-		BaseURL: integrationStrPtr("https://api.phasical.example"),
+		Kind:    "kaneo",
+		Name:    "Kaneo Integration",
+		BaseURL: integrationStrPtr("https://api.kaneo.example"),
 		Secret:  []byte(`{"api_key":"test"}`),
 	})
 	if err != nil {

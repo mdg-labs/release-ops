@@ -3,12 +3,13 @@ package metadata
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 )
 
 // Item is a selectable metadata option returned to the web UI.
@@ -43,8 +44,8 @@ func NewProvider(kind string, baseURL *string, secret []byte, client *http.Clien
 	}
 
 	switch kind {
-	case "phasical":
-		return newPhasicalProvider(baseURL, secret, client)
+	case "kaneo":
+		return newKaneoProvider(baseURL, secret, client)
 	case "jira":
 		return newJiraProvider(baseURL, secret, client)
 	case "linear":
@@ -54,37 +55,12 @@ func NewProvider(kind string, baseURL *string, secret []byte, client *http.Clien
 	}
 }
 
-func parsePhasicalSecret(secret []byte) (string, error) {
-	var creds struct {
-		APIKey string `json:"api_key"`
-	}
-	if err := json.Unmarshal(secret, &creds); err != nil {
-		return "", fmt.Errorf("parse integration secret: %w", err)
-	}
-	apiKey := strings.TrimSpace(creds.APIKey)
-	if apiKey == "" {
-		return "", errors.New("phasical: api_key is required in integration secret")
-	}
-	return apiKey, nil
+func parseKaneoSecret(secret []byte) (string, error) {
+	return ticket.ParseKaneoSecret(secret)
 }
 
 func parseJiraSecret(secret []byte) (email, apiToken string, err error) {
-	var creds struct {
-		Email    string `json:"email"`
-		APIToken string `json:"api_token"`
-	}
-	if err := json.Unmarshal(secret, &creds); err != nil {
-		return "", "", fmt.Errorf("parse integration secret: %w", err)
-	}
-	email = strings.TrimSpace(creds.Email)
-	apiToken = strings.TrimSpace(creds.APIToken)
-	if email == "" {
-		return "", "", errors.New("jira: email is required in integration secret")
-	}
-	if apiToken == "" {
-		return "", "", errors.New("jira: api_token is required in integration secret")
-	}
-	return email, apiToken, nil
+	return ticket.ParseJiraSecret(secret)
 }
 
 // NewLinearProviderWithEndpoint builds a Linear metadata provider for tests.
@@ -96,17 +72,7 @@ func NewLinearProviderWithEndpoint(secret []byte, endpoint string, client *http.
 }
 
 func parseLinearSecret(secret []byte) (string, error) {
-	var creds struct {
-		APIKey string `json:"api_key"`
-	}
-	if err := json.Unmarshal(secret, &creds); err != nil {
-		return "", fmt.Errorf("parse integration secret: %w", err)
-	}
-	apiKey := strings.TrimSpace(creds.APIKey)
-	if apiKey == "" {
-		return "", errors.New("linear: api_key is required in integration secret")
-	}
-	return apiKey, nil
+	return ticket.ParseLinearSecret(secret)
 }
 
 func requireBaseURL(baseURL *string, kind string) (string, error) {
@@ -120,8 +86,8 @@ func requireBaseURL(baseURL *string, kind string) (string, error) {
 	return raw, nil
 }
 
-// normalizePhasicalAPIBase appends /api when missing (Kaneo-compatible Phasical hosts).
-func normalizePhasicalAPIBase(raw string) string {
+// normalizeKaneoAPIBase appends /api when missing (Kaneo hosts).
+func normalizeKaneoAPIBase(raw string) string {
 	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
 	if raw == "" {
 		return raw

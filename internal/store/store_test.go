@@ -371,9 +371,9 @@ func seedRepoFixture(t *testing.T, s *store.Store, ctx context.Context) repoFixt
 	t.Helper()
 
 	integration, err := s.Integrations().Create(ctx, store.CreateIntegrationInput{
-		Kind:   "phasical",
-		Name:   "Phasical",
-		BaseURL: strPtr("https://api.phasical.example"),
+		Kind:   "kaneo",
+		Name:   "Kaneo",
+		BaseURL: strPtr("https://api.kaneo.example"),
 		Secret: []byte(`{"api_key":"test"}`),
 	})
 	if err != nil {
@@ -420,4 +420,73 @@ func TestMain(m *testing.M) {
 		_ = os.Unsetenv("APP_DB_PATH")
 	}
 	os.Exit(m.Run())
+}
+
+func TestRepoUpdateResetsPollStateWhenTargetChanges(t *testing.T) {
+	t.Parallel()
+
+	s, _ := testStore(t)
+	ctx := context.Background()
+	fixture := seedRepoFixture(t, s, ctx)
+
+	setState := func() {
+		t.Helper()
+		tag := "v1.0.0"
+		published := "2026-08-06T12:00:00.000Z"
+		ticketID := "DEV-12"
+		if _, err := s.Poll().UpdatePollState(ctx, fixture.repoID, store.PollStateUpdate{
+			LastKnownTag:           &tag,
+			LastReleasePublishedAt: &published,
+			OpenTicketExternalID:   &ticketID,
+			OpenTicketTag:          &tag,
+		}); err != nil {
+			t.Fatalf("UpdatePollState: %v", err)
+		}
+	}
+	update := func(projectPath, ticketProjectID string) *store.MonitoredRepo {
+		t.Helper()
+		updated, err := s.Repos().Update(ctx, fixture.repoID, store.UpdateMonitoredRepoInput{
+			SourceKind:      "github",
+			ProjectPath:     projectPath,
+			Enabled:         true,
+			TicketProjectID: ticketProjectID,
+		})
+		if err != nil {
+			t.Fatalf("Update repo: %v", err)
+		}
+		return updated
+	}
+
+	// Unchanged target keeps poll state.
+	setState()
+	got := update("org/repo", fixture.ticketProjectID)
+	if got.OpenTicketExternalID == nil || got.LastKnownTag == nil {
+		t.Fatalf("poll state cleared on unchanged target: %+v", got)
+	}
+
+	// New ticket project clears the open ticket but keeps the baseline tag.
+	otherProject, err := s.TicketProjects().Create(ctx, store.CreateTicketProjectInput{
+		IntegrationID:     fixture.integrationID,
+		ExternalProjectID: "proj-2",
+		Name:              "Other",
+		CreateConfig:      `{"status":"ready"}`,
+		StatusMapping:     `{"open":["To Do"],"done":["Done"],"cancelled":["Cancelled"],"superseded":"Cancelled"}`,
+	})
+	if err != nil {
+		t.Fatalf("Create ticket project: %v", err)
+	}
+	got = update("org/repo", otherProject.ID)
+	if got.OpenTicketExternalID != nil || got.OpenTicketTag != nil {
+		t.Fatalf("open ticket kept after ticket project change: %v", got.OpenTicketExternalID)
+	}
+	if got.LastKnownTag == nil || *got.LastKnownTag != "v1.0.0" {
+		t.Fatalf("LastKnownTag = %v, want v1.0.0 kept", got.LastKnownTag)
+	}
+
+	// New source path forces a fresh baseline.
+	setState()
+	got = update("org/other", otherProject.ID)
+	if got.LastKnownTag != nil || got.LastReleasePublishedAt != nil || got.OpenTicketExternalID != nil {
+		t.Fatalf("poll state kept after source change: %+v", got)
+	}
 }

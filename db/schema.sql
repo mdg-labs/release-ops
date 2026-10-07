@@ -52,11 +52,11 @@ CREATE TABLE auth_tokens (
 
 CREATE INDEX idx_auth_tokens_token_hash ON auth_tokens (token_hash);
 
--- kind: source → github, gitlab, gitea, forgejo, codeberg | ticket → phasical, jira, linear
+-- kind: source → github, gitlab, gitea, forgejo, codeberg | ticket → kaneo, jira, linear
 CREATE TABLE integrations (
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL CHECK (
-    kind IN ('github', 'gitlab', 'gitea', 'forgejo', 'codeberg', 'phasical', 'jira', 'linear')
+    kind IN ('github', 'gitlab', 'gitea', 'forgejo', 'codeberg', 'kaneo', 'jira', 'linear')
   ),
   name TEXT NOT NULL,
   base_url TEXT,
@@ -69,7 +69,7 @@ CREATE TABLE integrations (
     OR (kind = 'gitea' AND base_url IS NOT NULL)
     OR (kind = 'forgejo' AND base_url IS NOT NULL)
     OR (kind = 'codeberg' AND base_url IS NULL)
-    OR (kind = 'phasical' AND base_url IS NOT NULL)
+    OR (kind = 'kaneo' AND base_url IS NOT NULL)
     OR (kind = 'jira' AND base_url IS NOT NULL)
     OR (kind = 'linear' AND base_url IS NULL)
   )

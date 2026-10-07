@@ -23,9 +23,9 @@ const (
 
 // Ticket integration kinds (specs §6.4).
 const (
-	IntegrationKindPhasical = "phasical"
-	IntegrationKindJira     = "jira"
-	IntegrationKindLinear   = "linear"
+	IntegrationKindKaneo  = "kaneo"
+	IntegrationKindJira   = "jira"
+	IntegrationKindLinear = "linear"
 )
 
 // ContentTemplates mirrors ticket_projects.content_templates JSON (specs §5.4).
@@ -62,14 +62,14 @@ type TicketInput struct {
 	Project     TicketProject
 }
 
-// TicketProvider creates and updates tickets in Phasical, Jira, or Linear (specs §6).
+// TicketProvider creates and updates tickets in Kaneo, Jira, or Linear (specs §6).
 type TicketProvider interface {
 	CreateTicket(ctx context.Context, input TicketInput) (externalID string, err error)
 	GetTicketStatus(ctx context.Context, externalID string) (status string, err error)
 	UpdateTicketStatus(ctx context.Context, externalID, status string) error
 	AddTicketComment(ctx context.Context, externalID, body string) error
 	UpdateTicket(ctx context.Context, externalID string, title, description string) error
-	TicketWebURL(externalID string) (string, error)
+	TicketWebURL(project TicketProject, externalID string) (string, error)
 }
 
 // ParseStatusMapping unmarshals a ticket_projects.status_mapping JSON blob.

@@ -359,9 +359,12 @@ func TestJiraADFDescriptionLineBreaksAndEmpty(t *testing.T) {
 		t.Fatalf("paragraphs = %d, want 2", len(content))
 	}
 
-	emptyDoc, _ := descriptions[1].(map[string]any)
-	content, ok := emptyDoc["content"].([]any)
-	if !ok || len(content) != 0 {
-		t.Fatalf("empty description content = %#v, want []", emptyDoc["content"])
+	// Empty text → one empty paragraph (no content key), never an empty text node.
+	emptyDoc, err := json.Marshal(descriptions[1])
+	if err != nil {
+		t.Fatalf("marshal empty description: %v", err)
+	}
+	if want := `{"content":[{"type":"paragraph"}],"type":"doc","version":1}`; string(emptyDoc) != want {
+		t.Fatalf("empty description = %s, want %s", emptyDoc, want)
 	}
 }

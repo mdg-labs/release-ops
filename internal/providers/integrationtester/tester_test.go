@@ -129,14 +129,14 @@ func TestTesterCodebergSuccess(t *testing.T) {
 	}
 }
 
-func TestTesterPhasicalSuccess(t *testing.T) {
+func TestTesterKaneoSuccess(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/auth/organization/list" {
 			t.Fatalf("path = %q, want /api/auth/organization/list", r.URL.Path)
 		}
-		if r.Header.Get("Authorization") != "Bearer phasical-key" {
+		if r.Header.Get("Authorization") != "Bearer kaneo-key" {
 			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
 		}
 		w.WriteHeader(http.StatusOK)
@@ -145,9 +145,9 @@ func TestTesterPhasicalSuccess(t *testing.T) {
 
 	tester := integrationtester.New(server.Client())
 	baseURL := server.URL
-	secret := []byte(`{"api_key":"phasical-key"}`)
+	secret := []byte(`{"api_key":"kaneo-key"}`)
 
-	if err := tester.TestConnection(context.Background(), "phasical", &baseURL, secret); err != nil {
+	if err := tester.TestConnection(context.Background(), "kaneo", &baseURL, secret); err != nil {
 		t.Fatalf("TestConnection: %v", err)
 	}
 }

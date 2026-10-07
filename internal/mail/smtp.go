@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net"
 	"net/smtp"
@@ -15,8 +16,8 @@ type smtpDialer func(ctx context.Context, network, addr string) (net.Conn, error
 
 // SMTPMailer sends email through an SMTP server.
 type SMTPMailer struct {
-	cfg   Config
-	dial  smtpDialer
+	cfg       Config
+	dial      smtpDialer
 	newClient func(conn net.Conn, host string) (smtpClient, error)
 }
 
@@ -91,10 +92,13 @@ func (m *SMTPMailer) Send(ctx context.Context, msg Message) error {
 	}()
 
 	if m.cfg.TLS {
-		if ok, _ := client.Extension("STARTTLS"); ok {
-			if err := client.StartTLS(&tls.Config{ServerName: m.cfg.Host}); err != nil {
-				return fmt.Errorf("smtp starttls: %w", err)
-			}
+		// SMTP_TLS=true requires STARTTLS; never fall back to plaintext (the messages
+		// carry one-time auth tokens).
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			return errors.New("smtp: server does not support STARTTLS (set SMTP_TLS=false to send without TLS)")
+		}
+		if err := client.StartTLS(&tls.Config{ServerName: m.cfg.Host}); err != nil {
+			return fmt.Errorf("smtp starttls: %w", err)
 		}
 	}
 

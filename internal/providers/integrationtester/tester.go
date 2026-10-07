@@ -13,6 +13,9 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/mdg-labs/release-ops/internal/providers/source"
+	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 )
 
 const (
@@ -50,8 +53,8 @@ func (t *Tester) TestConnection(ctx context.Context, kind string, baseURL *strin
 		return t.testGiteaCompatible(ctx, baseURL, secret)
 	case "codeberg":
 		return t.testCodeberg(ctx, secret)
-	case "phasical":
-		return t.testPhasical(ctx, baseURL, secret)
+	case "kaneo":
+		return t.testKaneo(ctx, baseURL, secret)
 	case "jira":
 		return t.testJira(ctx, baseURL, secret)
 	case "linear":
@@ -59,23 +62,6 @@ func (t *Tester) TestConnection(ctx context.Context, kind string, baseURL *strin
 	default:
 		return fmt.Errorf("unsupported integration kind %q", kind)
 	}
-}
-
-type tokenPayload struct {
-	Token string `json:"token"`
-}
-
-type phasicalPayload struct {
-	APIKey string `json:"api_key"`
-}
-
-type jiraPayload struct {
-	Email    string `json:"email"`
-	APIToken string `json:"api_token"`
-}
-
-type linearPayload struct {
-	APIKey string `json:"api_key"`
 }
 
 func (t *Tester) testGitHub(ctx context.Context, secret []byte) error {
@@ -141,17 +127,17 @@ func (t *Tester) testCodeberg(ctx context.Context, secret []byte) error {
 	return t.doGET(ctx, codebergBaseURL+"/api/v1/user", headers)
 }
 
-func (t *Tester) testPhasical(ctx context.Context, baseURL *string, secret []byte) error {
-	root, err := requireBaseURL(baseURL, "phasical")
+func (t *Tester) testKaneo(ctx context.Context, baseURL *string, secret []byte) error {
+	root, err := requireBaseURL(baseURL, "kaneo")
 	if err != nil {
 		return err
 	}
-	apiKey, err := parsePhasicalPayload(secret)
+	apiKey, err := parseKaneoPayload(secret)
 	if err != nil {
 		return err
 	}
 
-	apiBase := normalizePhasicalAPIBase(root)
+	apiBase := normalizeKaneoAPIBase(root)
 	headers := map[string]string{}
 	if apiKey != "" {
 		headers["Authorization"] = "Bearer " + apiKey
@@ -249,47 +235,19 @@ func (t *Tester) doGET(ctx context.Context, endpoint string, headers map[string]
 }
 
 func parseTokenPayload(secret []byte) (string, error) {
-	var creds tokenPayload
-	if err := json.Unmarshal(secret, &creds); err != nil {
-		return "", fmt.Errorf("parse integration secret: %w", err)
-	}
-	return strings.TrimSpace(creds.Token), nil
+	return source.ParseTokenSecret(secret)
 }
 
-func parsePhasicalPayload(secret []byte) (string, error) {
-	var creds phasicalPayload
-	if err := json.Unmarshal(secret, &creds); err != nil {
-		return "", fmt.Errorf("parse integration secret: %w", err)
-	}
-	return strings.TrimSpace(creds.APIKey), nil
+func parseKaneoPayload(secret []byte) (string, error) {
+	return ticket.ParseKaneoSecret(secret)
 }
 
 func parseJiraPayload(secret []byte) (email, apiToken string, err error) {
-	var creds jiraPayload
-	if err := json.Unmarshal(secret, &creds); err != nil {
-		return "", "", fmt.Errorf("parse integration secret: %w", err)
-	}
-	email = strings.TrimSpace(creds.Email)
-	apiToken = strings.TrimSpace(creds.APIToken)
-	if email == "" {
-		return "", "", errors.New("jira: email is required in integration secret")
-	}
-	if apiToken == "" {
-		return "", "", errors.New("jira: api_token is required in integration secret")
-	}
-	return email, apiToken, nil
+	return ticket.ParseJiraSecret(secret)
 }
 
 func parseLinearPayload(secret []byte) (string, error) {
-	var creds linearPayload
-	if err := json.Unmarshal(secret, &creds); err != nil {
-		return "", fmt.Errorf("parse integration secret: %w", err)
-	}
-	apiKey := strings.TrimSpace(creds.APIKey)
-	if apiKey == "" {
-		return "", errors.New("linear: api_key is required in integration secret")
-	}
-	return apiKey, nil
+	return ticket.ParseLinearSecret(secret)
 }
 
 func requireBaseURL(baseURL *string, kind string) (string, error) {
@@ -303,8 +261,8 @@ func requireBaseURL(baseURL *string, kind string) (string, error) {
 	return normalized, nil
 }
 
-// normalizePhasicalAPIBase appends /api when missing (same semantics as ticket metadata provider).
-func normalizePhasicalAPIBase(raw string) string {
+// normalizeKaneoAPIBase appends /api when missing (same semantics as ticket metadata provider).
+func normalizeKaneoAPIBase(raw string) string {
 	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
 	if raw == "" {
 		return raw

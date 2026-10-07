@@ -51,6 +51,9 @@ func main() {
 
 	switch args[0] {
 	case "up":
+		if err := preflightUp(m, *databaseURL); err != nil {
+			log.Fatal(err)
+		}
 		if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 			log.Fatal(err)
 		}

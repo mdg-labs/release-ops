@@ -270,3 +270,86 @@ func TestJiraProviderInvalidProjectKey(t *testing.T) {
 		t.Fatalf("error = %v, want 400 mention", err)
 	}
 }
+
+func TestJiraProviderCreateTicketOmitsUnsetPriorityAndEmptyText(t *testing.T) {
+	t.Parallel()
+
+	var gotBody struct {
+		Fields map[string]json.RawMessage `json:"fields"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"key": "DEV-1"})
+	}))
+	t.Cleanup(server.Close)
+
+	provider, err := ticket.NewJiraProvider(server.URL, "user@company.com", "token", server.Client())
+	if err != nil {
+		t.Fatalf("NewJiraProvider: %v", err)
+	}
+	if _, err := provider.CreateTicket(context.Background(), ticket.TicketInput{
+		Title:   "Release v1",
+		Project: ticket.TicketProject{ExternalProjectID: "DEV"},
+	}); err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+
+	if _, ok := gotBody.Fields["priority"]; ok {
+		t.Fatalf("priority sent without create_config.priority: %s", gotBody.Fields["priority"])
+	}
+	wantDescription := `{"type":"doc","version":1,"content":[{"type":"paragraph"}]}`
+	if string(gotBody.Fields["description"]) != wantDescription {
+		t.Fatalf("description = %s, want %s", gotBody.Fields["description"], wantDescription)
+	}
+}
+
+func TestJiraProviderCreateTicketAppliesInitialStatus(t *testing.T) {
+	t.Parallel()
+
+	var transitioned string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/rest/api/3/issue":
+			_ = json.NewEncoder(w).Encode(map[string]string{"key": "DEV-7"})
+		case r.Method == http.MethodGet && r.URL.Path == "/rest/api/3/issue/DEV-7":
+			_, _ = io.WriteString(w, `{"fields":{"status":{"name":"Backlog"}}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/rest/api/3/issue/DEV-7/transitions":
+			_, _ = io.WriteString(w, `{"transitions":[{"id":"31","to":{"name":"Selected for Development"}}]}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/rest/api/3/issue/DEV-7/transitions":
+			var body struct {
+				Transition struct {
+					ID string `json:"id"`
+				} `json:"transition"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			transitioned = body.Transition.ID
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	provider, err := ticket.NewJiraProvider(server.URL, "user@company.com", "token", server.Client())
+	if err != nil {
+		t.Fatalf("NewJiraProvider: %v", err)
+	}
+	key, err := provider.CreateTicket(context.Background(), ticket.TicketInput{
+		Title: "Release v1",
+		Project: ticket.TicketProject{
+			ExternalProjectID: "DEV",
+			CreateConfig:      map[string]any{"initialStatus": "Selected for Development"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+	if key != "DEV-7" {
+		t.Fatalf("key = %q, want DEV-7", key)
+	}
+	if transitioned != "31" {
+		t.Fatalf("transition id = %q, want 31", transitioned)
+	}
+}

@@ -46,12 +46,13 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, "VALIDATION_ERROR", "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	if req.Email == "" || req.Password == "" {
+	email := NormalizeEmail(req.Email)
+	if email == "" || req.Password == "" {
 		WriteError(w, "VALIDATION_ERROR", "email and password are required", http.StatusBadRequest)
 		return
 	}
 
-	user, err := h.Queries.GetUserByEmail(r.Context(), req.Email)
+	user, err := h.Queries.GetUserByEmail(r.Context(), email)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			WriteError(w, "invalid_credentials", "invalid email or password", http.StatusUnauthorized)
@@ -66,8 +67,10 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.SessionManager.Put(r.Context(), SessionUserIDKey, user.ID)
-	h.SessionManager.Put(r.Context(), SessionUserEmailKey, user.Email)
+	if err := StartUserSession(r.Context(), h.SessionManager, user.ID, user.Email); err != nil {
+		WriteError(w, "INTERNAL_ERROR", "failed to start session", http.StatusInternalServerError)
+		return
+	}
 
 	writeJSON(w, http.StatusOK, sessionResponse{
 		User: &userResponse{ID: user.ID, Email: user.Email},
@@ -147,6 +150,10 @@ func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Consume before any side effect so a concurrent request with the same token fails.
+	if !h.consumeToken(w, r, tokenRow.ID) {
+		return
+	}
 	now := nowUTC()
 	user, err := h.Queries.CreateUser(r.Context(), storedb.CreateUserParams{
 		ID:           newUserID(),
@@ -159,13 +166,11 @@ func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, "INTERNAL_ERROR", "failed to create user", http.StatusInternalServerError)
 		return
 	}
-	if err := h.TokenService.Consume(r.Context(), tokenRow.ID); err != nil {
-		WriteError(w, "INTERNAL_ERROR", "failed to consume token", http.StatusInternalServerError)
+
+	if err := StartUserSession(r.Context(), h.SessionManager, user.ID, user.Email); err != nil {
+		WriteError(w, "INTERNAL_ERROR", "failed to start session", http.StatusInternalServerError)
 		return
 	}
-
-	h.SessionManager.Put(r.Context(), SessionUserIDKey, user.ID)
-	h.SessionManager.Put(r.Context(), SessionUserEmailKey, user.Email)
 
 	writeJSON(w, http.StatusOK, sessionResponse{
 		User: &userResponse{ID: user.ID, Email: user.Email},
@@ -225,6 +230,10 @@ func (h *Handlers) ConfirmEmailChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.consumeToken(w, r, tokenRow.ID) {
+		return
+	}
+
 	updated, err := h.Queries.UpdateUserEmail(r.Context(), storedb.UpdateUserEmailParams{
 		Email:     tokenRow.NewEmail.String,
 		UpdatedAt: nowUTC(),
@@ -232,10 +241,6 @@ func (h *Handlers) ConfirmEmailChange(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		WriteError(w, "INTERNAL_ERROR", "failed to update email", http.StatusInternalServerError)
-		return
-	}
-	if err := h.TokenService.Consume(r.Context(), tokenRow.ID); err != nil {
-		WriteError(w, "INTERNAL_ERROR", "failed to consume token", http.StatusInternalServerError)
 		return
 	}
 
@@ -253,12 +258,32 @@ func (h *Handlers) ConfirmEmailChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.SessionManager.Put(r.Context(), SessionUserIDKey, updated.ID)
-	h.SessionManager.Put(r.Context(), SessionUserEmailKey, updated.Email)
+	if err := StartUserSession(r.Context(), h.SessionManager, updated.ID, updated.Email); err != nil {
+		WriteError(w, "INTERNAL_ERROR", "failed to start session", http.StatusInternalServerError)
+		return
+	}
 
 	writeJSON(w, http.StatusOK, sessionResponse{
 		User: &userResponse{ID: updated.ID, Email: updated.Email},
 	})
+}
+
+// consumeToken marks a validated one-time token used. It writes the error response and
+// returns false when the token was already consumed (e.g. by a concurrent request).
+func (h *Handlers) consumeToken(w http.ResponseWriter, r *http.Request, tokenID string) bool {
+	return consumeOneTimeToken(w, r, h.TokenService, tokenID)
+}
+
+func consumeOneTimeToken(w http.ResponseWriter, r *http.Request, tokens *TokenService, tokenID string) bool {
+	if err := tokens.Consume(r.Context(), tokenID); err != nil {
+		if errors.Is(err, ErrTokenInvalid) {
+			WriteError(w, "VALIDATION_ERROR", "invalid or expired token", http.StatusBadRequest)
+			return false
+		}
+		WriteError(w, "INTERNAL_ERROR", "failed to consume token", http.StatusInternalServerError)
+		return false
+	}
+	return true
 }
 
 const minPasswordLength = 8

@@ -316,7 +316,7 @@ func TestPatchIntegrationWithoutSecretKeepsExistingPayload(t *testing.T) {
 	router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
 	cookie := seedSession(t, sm)
 
-	newBaseURL := "https://gitlab.new.example"
+	newBaseURL := "https://gitlab.example/"
 	body := fmt.Sprintf(`{"name":"GitLab Updated","baseUrl":%q}`, newBaseURL)
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/integrations/int-1", strings.NewReader(body))
 	req.AddCookie(cookie)
@@ -340,6 +340,43 @@ func TestPatchIntegrationWithoutSecretKeepsExistingPayload(t *testing.T) {
 	}
 	if string(repo.secrets["int-1"]) != `{"token":"keep-me"}` {
 		t.Fatalf("secret changed without patch secret: %q", repo.secrets["int-1"])
+	}
+}
+
+func TestPatchIntegrationRejectsBaseURLChangeWithoutSecret(t *testing.T) {
+	t.Parallel()
+
+	baseURL := "https://gitlab.example"
+	repo := &mockIntegrationRepo{
+		items: map[string]*store.Integration{
+			"int-1": {
+				ID:        "int-1",
+				Kind:      "gitlab",
+				Name:      "GitLab",
+				BaseURL:   &baseURL,
+				HasSecret: true,
+				CreatedAt: "2026-08-07T10:00:00.000Z",
+				UpdatedAt: "2026-08-07T10:00:00.000Z",
+			},
+		},
+		secrets: map[string][]byte{
+			"int-1": []byte(`{"token":"keep-me"}`),
+		},
+	}
+	router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+	cookie := seedSession(t, sm)
+
+	body := `{"name":"GitLab","baseUrl":"https://attacker.example"}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/integrations/int-1", strings.NewReader(body))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if repo.updateInput != nil {
+		t.Fatal("expected no Update when baseUrl changes without a new secret")
 	}
 }
 
@@ -531,7 +568,7 @@ func TestCreateIntegrationAcceptsAllKinds(t *testing.T) {
 		{kind: "gitea", baseURL: "https://gitea.example"},
 		{kind: "forgejo", baseURL: "https://forgejo.example"},
 		{kind: "codeberg"},
-		{kind: "phasical", baseURL: "https://api.phasical.example"},
+		{kind: "kaneo", baseURL: "https://api.kaneo.example"},
 		{kind: "jira", baseURL: "https://jira.example"},
 		{kind: "linear"},
 	}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -88,7 +89,7 @@ func TestForgotPasswordCreatesTokenOnlyForExistingUser(t *testing.T) {
 	if count != 0 {
 		t.Fatalf("token count for missing user = %d, want 0", count)
 	}
-	if len(recorder.messages) != 0 {
+	if len(recorder.sent(0)) != 0 {
 		t.Fatal("expected no email for missing user")
 	}
 
@@ -108,11 +109,12 @@ func TestForgotPasswordCreatesTokenOnlyForExistingUser(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("token count for existing user = %d, want 1", count)
 	}
-	if len(recorder.messages) != 1 {
-		t.Fatalf("sent emails = %d, want 1", len(recorder.messages))
+	messages := recorder.sent(1)
+	if len(messages) != 1 {
+		t.Fatalf("sent emails = %d, want 1", len(messages))
 	}
-	if recorder.messages[0].To != "known@example.com" {
-		t.Fatalf("email to = %q, want known@example.com", recorder.messages[0].To)
+	if messages[0].To != "known@example.com" {
+		t.Fatalf("email to = %q, want known@example.com", messages[0].To)
 	}
 }
 
@@ -312,12 +314,30 @@ func TestForgotPasswordSkipsEmailWhenSMTPNotConfigured(t *testing.T) {
 }
 
 type recordingMailer struct {
+	mu       sync.Mutex
 	messages []mail.Message
 }
 
 func (m *recordingMailer) Send(_ context.Context, msg mail.Message) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.messages = append(m.messages, msg)
 	return nil
+}
+
+// sent returns the messages sent so far, waiting up to a second for want messages
+// because forgot-password sends asynchronously.
+func (m *recordingMailer) sent(want int) []mail.Message {
+	deadline := time.Now().Add(time.Second)
+	for {
+		m.mu.Lock()
+		out := append([]mail.Message(nil), m.messages...)
+		m.mu.Unlock()
+		if len(out) >= want || time.Now().After(deadline) {
+			return out
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func newPasswordResetTestServer(t *testing.T, db *sql.DB, queries *storedb.Queries, mailer mail.Mailer) *httptest.Server {

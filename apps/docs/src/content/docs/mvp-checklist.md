@@ -25,9 +25,9 @@ Sign-off checklist for Release Ops MVP. Each item maps to [specs.html §12 MVP A
 
 ## AC #2 — Integrations (all eight kinds)
 
-- [ ] Admin can create integrations for every `kind`: `github`, `gitlab`, `gitea`, `forgejo`, `codeberg`, `phasical`, `jira`, `linear`
+- [ ] Admin can create integrations for every `kind`: `github`, `gitlab`, `gitea`, `forgejo`, `codeberg`, `kaneo`, `jira`, `linear`
 - [ ] API list/detail responses include `hasSecret: true` but **never** the secret value
-- [ ] Base URL required where specified (GitLab, Gitea, Forgejo, Phasical, Jira)
+- [ ] Base URL required where specified (GitLab, Gitea, Forgejo, Kaneo, Jira)
 
 **How to verify:** **Integrations** page — create one of each kind; inspect API responses via browser devtools.
 
@@ -35,7 +35,7 @@ Sign-off checklist for Release Ops MVP. Each item maps to [specs.html §12 MVP A
 
 ## AC #3 — Ticket projects
 
-- [ ] Multiple ticket projects per ticket integration (Phasical project, Jira key, Linear team)
+- [ ] Multiple ticket projects per ticket integration (Kaneo project, Jira key, Linear team)
 - [ ] Each project has its own `status_mapping` (open / done / cancelled / superseded)
 - [ ] Each project has `on_open_ticket_policy`: `supersede` (default), `merge`, or `skip_if_open`
 
@@ -46,7 +46,7 @@ Sign-off checklist for Release Ops MVP. Each item maps to [specs.html §12 MVP A
 ## AC #4 — Monitored repos
 
 - [ ] Admin can add a repo with any valid source + ticket-project combination
-- [ ] Examples: Codeberg + Phasical, Forgejo + Jira, Gitea + Linear, GitHub + any ticket provider
+- [ ] Examples: Codeberg + Kaneo, Forgejo + Jira, Gitea + Linear, GitHub + any ticket provider
 - [ ] Source integration required for GitLab, Gitea, Forgejo; optional for GitHub and Codeberg
 
 **How to verify:** **Repos** — add repos covering at least two source/ticket pairs.
@@ -84,7 +84,7 @@ Sign-off checklist for Release Ops MVP. Each item maps to [specs.html §12 MVP A
 - [ ] When tag changes and no open ticket (or ticket is done/cancelled), a ticket is created in the target system
 - [ ] Title format: `Release: {source_kind} {project_path} {tag}`
 
-**How to verify:** Simulate or wait for a new release tag; confirm ticket appears in Phasical/Jira/Linear.
+**How to verify:** Simulate or wait for a new release tag; confirm ticket appears in Kaneo/Jira/Linear.
 
 ---
 
@@ -111,7 +111,7 @@ Sign-off checklist for Release Ops MVP. Each item maps to [specs.html §12 MVP A
 ## AC #11 — Per-project status mapping
 
 - [ ] Status classification uses the linked `ticket_projects.status_mapping`, not a global default
-- [ ] Different Phasical projects / Jira keys / Linear teams can use different open/done values
+- [ ] Different Kaneo projects / Jira keys / Linear teams can use different open/done values
 
 **How to verify:** Two ticket projects with different `open` arrays; confirm live status checks respect each mapping.
 
@@ -146,7 +146,7 @@ End-to-end tests per MVP source and ticket provider run in CI via `go test ./...
 
 | Provider | Test file | CI job |
 |----------|-----------|--------|
-| Phasical | `phasical_test.go` | Go test |
+| Kaneo | `kaneo_test.go` | Go test |
 | Jira | `jira_test.go` | Go test |
 | Linear | `linear_test.go` | Go test |
 

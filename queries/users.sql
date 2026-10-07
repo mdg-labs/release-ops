@@ -22,7 +22,7 @@ SELECT
   created_at,
   updated_at
 FROM users
-WHERE email = ?
+WHERE lower(email) = lower(sqlc.arg(email))
 LIMIT 1;
 
 -- name: CountUsers :one

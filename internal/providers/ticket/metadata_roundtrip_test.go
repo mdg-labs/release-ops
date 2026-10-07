@@ -270,7 +270,7 @@ func TestLinearMetadataRoundTripToProvider(t *testing.T) {
 		t.Fatalf("ClassifyStatus(%q) = %q, want open", status, got)
 	}
 
-	webURL, err := provider.TicketWebURL(id)
+	webURL, err := provider.TicketWebURL(ticket.TicketProject{}, id)
 	if err != nil {
 		t.Fatalf("TicketWebURL: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestLinearMetadataRoundTripToProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewLinearProviderWithEndpoint: %v", err)
 	}
-	if got, _ := other.TicketWebURL(id); got != webURL {
+	if got, _ := other.TicketWebURL(ticket.TicketProject{}, id); got != webURL {
 		t.Fatalf("fresh provider TicketWebURL = %q, want %q", got, webURL)
 	}
 	mu.Lock()

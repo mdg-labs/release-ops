@@ -63,6 +63,31 @@ describe("Go API proxy route", () => {
     expect(await response.json()).toEqual({ user: null });
   });
 
+  it("forwards X-Forwarded-For to upstream for per-IP rate limits", async () => {
+    const pool = mockAgent.get(GO_ORIGIN);
+    pool
+      .intercept({
+        path: "/api/v1/auth/login",
+        method: "POST",
+        headers: { "x-forwarded-for": "198.51.100.42" },
+      })
+      .reply(200, { user: null });
+
+    const response = await POST(
+      makeRequest("http://localhost:3000/api/go/api/v1/auth/login", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-forwarded-for": "198.51.100.42",
+        },
+        body: "{}",
+      }),
+      routeContext(["api", "v1", "auth", "login"]),
+    );
+
+    expect(response.status).toBe(200);
+  });
+
   it("forwards Cookie header to upstream", async () => {
     const pool = mockAgent.get(GO_ORIGIN);
     pool

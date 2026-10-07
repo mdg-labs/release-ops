@@ -6,7 +6,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 )
 
-func phasicalMapping() ticket.StatusMapping {
+func kaneoMapping() ticket.StatusMapping {
 	return ticket.StatusMapping{
 		Open:       []string{"ready", "in-progress", "in-review"},
 		Done:       []string{"done"},
@@ -43,26 +43,26 @@ func TestClassifyStatusMappingFixtures(t *testing.T) {
 		want      string
 	}{
 		{
-			name:      "phasical open ready",
-			mapping:   phasicalMapping(),
+			name:      "kaneo open ready",
+			mapping:   kaneoMapping(),
 			rawStatus: "ready",
 			want:      ticket.StatusOpen,
 		},
 		{
-			name:      "phasical open in-progress case insensitive",
-			mapping:   phasicalMapping(),
+			name:      "kaneo open in-progress case insensitive",
+			mapping:   kaneoMapping(),
 			rawStatus: "In-Progress",
 			want:      ticket.StatusOpen,
 		},
 		{
-			name:      "phasical done",
-			mapping:   phasicalMapping(),
+			name:      "kaneo done",
+			mapping:   kaneoMapping(),
 			rawStatus: "done",
 			want:      ticket.StatusDone,
 		},
 		{
-			name:      "phasical cancelled american spelling",
-			mapping:   phasicalMapping(),
+			name:      "kaneo cancelled american spelling",
+			mapping:   kaneoMapping(),
 			rawStatus: "canceled",
 			want:      ticket.StatusCancelled,
 		},
@@ -104,13 +104,13 @@ func TestClassifyStatusMappingFixtures(t *testing.T) {
 		},
 		{
 			name:      "unknown status",
-			mapping:   phasicalMapping(),
+			mapping:   kaneoMapping(),
 			rawStatus: "archived",
 			want:      ticket.StatusUnknown,
 		},
 		{
 			name:      "empty raw status",
-			mapping:   phasicalMapping(),
+			mapping:   kaneoMapping(),
 			rawStatus: "   ",
 			want:      ticket.StatusUnknown,
 		},
@@ -154,7 +154,7 @@ func TestParseStatusMapping(t *testing.T) {
 		t.Fatalf("ParseStatusMapping: %v", err)
 	}
 
-	want := phasicalMapping()
+	want := kaneoMapping()
 	want.Open = []string{"ready", "in-progress"}
 
 	if len(got.Open) != len(want.Open) || got.Open[0] != want.Open[0] || got.Open[1] != want.Open[1] {

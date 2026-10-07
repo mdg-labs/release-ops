@@ -204,6 +204,8 @@
     "name": "Name",
     "baseUrl": "Base URL",
     "baseUrlPlaceholder": "https://example.com",
+    "baseUrlPlaceholderKaneo": "https://cloud.kaneo.app",
+    "baseUrlHintKaneo": "Kaneo cloud: https://cloud.kaneo.app. For self-hosted Kaneo, use your instance URL (/api is added automatically).",
     "baseUrlDefault": "—",
     "jiraEmail": "Email",
     "jiraEmailEditHint": "Leave blank when not replacing Jira credentials.",
@@ -238,7 +240,8 @@
       "nameRequired": "Name is required.",
       "baseUrlRequired": "Base URL is required for this kind.",
       "emailRequired": "Email is required for Jira.",
-      "secretRequired": "Token or API key is required."
+      "secretRequired": "Token or API key is required.",
+      "secretRequiredForBaseUrlChange": "Re-enter the token or API key when you change the base URL."
     },
     "kinds": {
       "github": "GitHub",
@@ -246,7 +249,7 @@
       "gitea": "Gitea",
       "forgejo": "Forgejo",
       "codeberg": "Codeberg",
-      "phasical": "Phasical",
+      "kaneo": "Kaneo",
       "jira": "Jira",
       "linear": "Linear"
     }
@@ -265,7 +268,7 @@
     "saveFailed": "Failed to save ticket project.",
     "integration": "Integration",
     "integrationPlaceholder": "Select integration",
-    "noTicketIntegrations": "Add a Phasical, Jira, or Linear integration first.",
+    "noTicketIntegrations": "Add a Kaneo, Jira, or Linear integration first.",
     "externalProjectId": "External project ID",
     "name": "Display name",
     "policy": "Open ticket policy",
@@ -304,11 +307,11 @@
       "skip_if_open": "Skip if open"
     },
     "kinds": {
-      "phasical": "Phasical",
+      "kaneo": "Kaneo",
       "jira": "Jira",
       "linear": "Linear"
     },
-    "phasical": {
+    "kaneo": {
       "workspace": "Workspace",
       "status": "Default status",
       "priority": "Default priority"

@@ -1,6 +1,7 @@
 package middleware_test
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -62,7 +63,7 @@ func TestRateLimiterEnforcesLoginLimit(t *testing.T) {
 	}
 }
 
-func TestRateLimiterUsesXForwardedForFirstHop(t *testing.T) {
+func TestRateLimiterUsesXForwardedForFirstHopFromLoopbackProxy(t *testing.T) {
 	t.Parallel()
 
 	clock := &fixedClock{now: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)}
@@ -75,7 +76,7 @@ func TestRateLimiterUsesXForwardedForFirstHop(t *testing.T) {
 	for i := 0; i < apimw.LoginLimit; i++ {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
-		req.RemoteAddr = "10.0.0.1:12345"
+		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set("X-Forwarded-For", "198.51.100.42, 203.0.113.9")
 		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
@@ -85,7 +86,7 @@ func TestRateLimiterUsesXForwardedForFirstHop(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
-	req.RemoteAddr = "10.0.0.1:12345"
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("X-Forwarded-For", "198.51.100.42, 203.0.113.9")
 	handler.ServeHTTP(rec, req)
 
@@ -96,11 +97,65 @@ func TestRateLimiterUsesXForwardedForFirstHop(t *testing.T) {
 	// Different first hop should still be allowed.
 	rec2 := httptest.NewRecorder()
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
-	req2.RemoteAddr = "10.0.0.1:12345"
+	req2.RemoteAddr = "127.0.0.1:12345"
 	req2.Header.Set("X-Forwarded-For", "198.51.100.99")
 	handler.ServeHTTP(rec2, req2)
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("other IP status = %d, want %d", rec2.Code, http.StatusOK)
+	}
+}
+
+func TestRateLimiterIgnoresXForwardedForFromNonLoopbackPeer(t *testing.T) {
+	t.Parallel()
+
+	clock := &fixedClock{now: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)}
+	rl := apimw.NewRateLimiterForTest(clock)
+
+	handler := rl.Login(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// A direct caller rotating X-Forwarded-For must still share one bucket.
+	var last int
+	for i := 0; i <= apimw.LoginLimit; i++ {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+		req.RemoteAddr = "203.0.113.7:12345"
+		req.Header.Set("X-Forwarded-For", fmt.Sprintf("198.51.100.%d", i))
+		handler.ServeHTTP(rec, req)
+		last = rec.Code
+	}
+	if last != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want %d", last, http.StatusTooManyRequests)
+	}
+}
+
+func TestRateLimiterEvictsStaleBuckets(t *testing.T) {
+	t.Parallel()
+
+	start := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
+	clock := &fixedClock{now: start}
+	rl := apimw.NewRateLimiterForTest(clock)
+
+	handler := rl.Login(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	for i := 0; i < 50; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+		req.RemoteAddr = fmt.Sprintf("203.0.113.%d:12345", i)
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+	}
+	if got := rl.Len(); got != 50 {
+		t.Fatalf("buckets = %d, want 50", got)
+	}
+
+	clock.now = start.Add(2 * apimw.LoginWindow)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+	req.RemoteAddr = "198.51.100.1:12345"
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+	if got := rl.Len(); got != 1 {
+		t.Fatalf("buckets after window = %d, want 1 (stale buckets evicted)", got)
 	}
 }
 

@@ -78,13 +78,17 @@ func (s *TokenService) Validate(ctx context.Context, raw, kind string) (storedb.
 	return row, nil
 }
 
-// Consume marks a token row as used.
+// Consume marks an unused token row as used. It returns ErrTokenInvalid when the token
+// was already consumed, so only one of several concurrent redemptions succeeds.
 func (s *TokenService) Consume(ctx context.Context, id string) error {
 	now := nowUTC()
 	_, err := s.Queries.MarkAuthTokenUsed(ctx, storedb.MarkAuthTokenUsedParams{
 		UsedAt: sql.NullString{String: now, Valid: true},
 		ID:     id,
 	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrTokenInvalid
+	}
 	return err
 }
 

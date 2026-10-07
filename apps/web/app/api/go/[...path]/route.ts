@@ -2,11 +2,14 @@ import { NextRequest } from "next/server";
 
 const DEFAULT_GO_API_URL = "http://127.0.0.1:8080";
 
+// x-forwarded-for carries the browser's address (Next.js fills it from the socket when the
+// client sent none) so the Go per-IP rate limits don't put every user in one bucket.
 const FORWARD_REQUEST_HEADERS = [
   "accept",
   "content-type",
   "cookie",
   "authorization",
+  "x-forwarded-for",
 ];
 
 function getGoApiUrl(): string {

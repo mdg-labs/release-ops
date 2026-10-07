@@ -4,7 +4,7 @@ description: "MVP contract — architecture, APIs, providers, UI, and acceptance
 ---
 
 <p class="lede">
-    Self-hosted service: monitors releases on GitHub, GitLab, Gitea, Forgejo, and Codeberg for configured repos and creates tickets in Phasical, Jira, or Linear when
+    Self-hosted service: monitors releases on GitHub, GitLab, Gitea, Forgejo, and Codeberg for configured repos and creates tickets in Kaneo, Jira, or Linear when
     <em>genuine</em> new releases ship (not on the first baseline sighting). Ticket integrations support multiple project/team targets with their own status mapping; open tickets are
     superseded, merged, or skipped per policy.
     Notifications via Shoutrrr.
@@ -45,7 +45,7 @@ description: "MVP contract — architecture, APIs, providers, UI, and acceptance
     <li><strong>Sources (MVP):</strong> GitHub, GitLab, Gitea, Forgejo, Codeberg — each via <code>releases/latest</code> (GitLab: <code>permalink/latest</code>; Gitea family: Gitea API v1).</li>
     <li>Stores the last seen tag per project in SQLite.</li>
     <li>Creates a ticket in the chosen system on tag change (after baseline).</li>
-    <li><strong>Tickets (MVP):</strong> Phasical, Jira, Linear — freely combinable with source per repo.</li>
+    <li><strong>Tickets (MVP):</strong> Kaneo, Jira, Linear — freely combinable with source per repo.</li>
     <li>Each ticket integration can have <strong>multiple project/team targets</strong> (<code>ticket_projects</code>) — each with its own open/done/cancelled/superseded mapping.</li>
     <li>Idempotency with open tickets: default <code>supersede</code>; alternatively <code>merge</code> or <code>skip_if_open</code>.</li>
     <li>Notifications to Shoutrrr targets (Slack, ntfy, …) on create, error, supersede.</li>
@@ -81,7 +81,7 @@ description: "MVP contract — architecture, APIs, providers, UI, and acceptance
    GitHub / GitLab / Gitea / Forgejo / Codeberg
           │
           ▼
-   Phasical / Jira / Linear  ·  Shoutrrr (Notifications)
+   Kaneo / Jira / Linear  ·  Shoutrrr (Notifications)
 ```
 
 
@@ -151,7 +151,7 @@ description: "MVP contract — architecture, APIs, providers, UI, and acceptance
   <table>
     <tr><th>Column</th><th>Type</th><th>Description</th></tr>
     <tr><td><code>id</code></td><td>TEXT (UUID)</td><td>PK</td></tr>
-    <tr><td><code>kind</code></td><td>TEXT</td><td>Source: <code>github</code> | <code>gitlab</code> | <code>gitea</code> | <code>forgejo</code> | <code>codeberg</code> · Ticket: <code>phasical</code> | <code>jira</code> | <code>linear</code></td></tr>
+    <tr><td><code>kind</code></td><td>TEXT</td><td>Source: <code>github</code> | <code>gitlab</code> | <code>gitea</code> | <code>forgejo</code> | <code>codeberg</code> · Ticket: <code>kaneo</code> | <code>jira</code> | <code>linear</code></td></tr>
     <tr><td><code>name</code></td><td>TEXT</td><td>Display name in UI</td></tr>
     <tr><td><code>base_url</code></td><td>TEXT NULL</td><td>See table below</td></tr>
     <tr><td><code>encrypted_payload</code></td><td>TEXT</td><td>Encrypted JSON</td></tr>
@@ -164,7 +164,7 @@ description: "MVP contract — architecture, APIs, providers, UI, and acceptance
     <tr><td><code>gitea</code></td><td>Source</td><td>Required — instance root, e.g. <code>https://gitea.example.com</code></td></tr>
     <tr><td><code>forgejo</code></td><td>Source</td><td>Required — instance root, e.g. <code>https://forgejo.example.org</code></td></tr>
     <tr><td><code>codeberg</code></td><td>Source</td><td>NULL (<code>https://codeberg.org</code> fixed)</td></tr>
-    <tr><td><code>phasical</code></td><td>Ticket</td><td>Required — API base</td></tr>
+    <tr><td><code>kaneo</code></td><td>Ticket</td><td>Required — Kaneo host or API base (Kaneo cloud: <code>https://cloud.kaneo.app</code>; <code>/api</code> appended when missing)</td></tr>
     <tr><td><code>jira</code></td><td>Ticket</td><td>Required — e.g. <code>https://company.atlassian.net</code></td></tr>
     <tr><td><code>linear</code></td><td>Ticket</td><td>NULL (<code>api.linear.app</code> fixed)</td></tr>
   </table>
@@ -181,7 +181,7 @@ description: "MVP contract — architecture, APIs, providers, UI, and acceptance
 // gitea | forgejo | codeberg — token optional (recommended for rate limits / private repos)
 &#123; "token": "..." &#125;
 
-// phasical
+// kaneo
 &#123; "api_key": "..." &#125;
 
 // jira — Basic Auth
@@ -195,14 +195,14 @@ description: "MVP contract — architecture, APIs, providers, UI, and acceptance
   <h3>4.3 <code>ticket_projects</code></h3>
   <p>
     One ticket <strong>integration</strong> (credentials) can serve multiple <strong>projects/teams</strong>.
-    Each row is a configurable target with its own status mapping — Phasical projects, Jira project keys, and Linear teams
+    Each row is a configurable target with its own status mapping — Kaneo projects, Jira project keys, and Linear teams
     typically have different workflow statuses.
   </p>
   <table>
     <tr><th>Column</th><th>Type</th><th>Description</th></tr>
     <tr><td><code>id</code></td><td>TEXT (UUID)</td><td>PK</td></tr>
-    <tr><td><code>integration_id</code></td><td>TEXT FK</td><td>Ticket integration (<code>phasical</code> | <code>jira</code> | <code>linear</code>)</td></tr>
-    <tr><td><code>external_project_id</code></td><td>TEXT</td><td>Phasical <code>projectId</code> · Jira <code>projectKey</code> · Linear <code>teamId</code></td></tr>
+    <tr><td><code>integration_id</code></td><td>TEXT FK</td><td>Ticket integration (<code>kaneo</code> | <code>jira</code> | <code>linear</code>)</td></tr>
+    <tr><td><code>external_project_id</code></td><td>TEXT</td><td>Kaneo <code>projectId</code> · Jira <code>projectKey</code> · Linear <code>teamId</code></td></tr>
     <tr><td><code>name</code></td><td>TEXT</td><td>Display name in UI</td></tr>
     <tr><td><code>create_config</code></td><td>TEXT (JSON)</td><td>Defaults when <strong>creating</strong> a ticket (§5.3)</td></tr>
     <tr><td><code>status_mapping</code></td><td>TEXT (JSON)</td><td>Open/Done/Cancelled/Superseded — §5.3</td></tr>
@@ -293,8 +293,8 @@ description: "MVP contract — architecture, APIs, providers, UI, and acceptance
   <h4><code>create_config</code> (when creating a ticket)</h4>
   
 ```
-// phasical — ticket_projects.external_project_id = projectId
-&#123; "status": "ready", "priority": "medium" &#125;
+// kaneo — ticket_projects.external_project_id = projectId; workspaceId = Kaneo workspace (used for task web links)
+&#123; "workspaceId": "...", "status": "ready", "priority": "medium" &#125;
 
 // jira — external_project_id = projectKey
 &#123; "issueType": "Task", "priority": "Medium", "initialStatus": "To Do" &#125;
@@ -327,7 +327,7 @@ description: "MVP contract — architecture, APIs, providers, UI, and acceptance
   <h4>Provider notes</h4>
   <table>
     <tr><th>Provider</th><th><code>external_project_id</code></th><th>Status values in mapping</th></tr>
-    <tr><td>Phasical</td><td><code>projectId</code></td><td>Board column slugs (<code>ready</code>, <code>in-progress</code>, …) — <strong>different per project</strong></td></tr>
+    <tr><td>Kaneo</td><td><code>projectId</code></td><td>Board column slugs (<code>ready</code>, <code>in-progress</code>, …) — <strong>different per project</strong></td></tr>
     <tr><td>Jira</td><td><code>projectKey</code> (e.g. <code>DEV</code>)</td><td>Status <strong>names</strong> from the workflow of the project key</td></tr>
     <tr><td>Linear</td><td><code>teamId</code></td><td>MVP: <code>stateId</code> strings in <code>open</code>/<code>done</code>/<code>cancelled</code> arrays and <code>superseded</code> (see example below). <code>openTypes</code>/<code>doneTypes</code> — post-MVP.</td></tr>
   </table>
@@ -353,7 +353,7 @@ description: "MVP contract — architecture, APIs, providers, UI, and acceptance
   <h4>API calls (verify implementation)</h4>
   <table>
     <tr><th>Provider</th><th>Auth</th><th>Create</th><th>Status / Comment</th></tr>
-    <tr><td>Phasical</td><td>Bearer</td><td><code>POST &#123;base_url&#125;/task/&#123;projectId&#125;</code></td><td>Status update + comment via API</td></tr>
+    <tr><td>Kaneo</td><td>Bearer</td><td><code>POST &#123;base_url&#125;/task/&#123;projectId&#125;</code></td><td>Status update + comment via API</td></tr>
     <tr><td>Jira</td><td>Basic</td><td><code>POST /rest/api/3/issue</code></td><td>Transition + comment</td></tr>
     <tr><td>Linear</td><td>API Key header</td><td>GraphQL <code>issueCreate</code></td><td><code>issueUpdate</code> + comment</td></tr>
   </table>
@@ -468,9 +468,11 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string
     <li>Connectivity test: <code>GET &#123;base_url&#125;/api/v1/user</code></li>
   </ul>
 
-  <h3>6.4 Ticket: Phasical / Jira / Linear</h3>
+  <h3>6.4 Ticket: Kaneo / Jira / Linear</h3>
   <p>Factory per integration <code>kind</code>. Reads <code>ticket_projects</code> for create defaults and status mapping.</p>
-  <p>Connectivity tests: GitHub <code>GET /user</code>; GitLab <code>GET /api/v4/user</code>; Gitea/Forgejo/Codeberg <code>GET /api/v1/user</code>; Phasical lightweight GET; Jira <code>GET /rest/api/3/myself</code>; Linear GraphQL <code>viewer</code>.</p>
+  <p>Connectivity tests: GitHub <code>GET /user</code>; GitLab <code>GET /api/v4/user</code>; Gitea/Forgejo/Codeberg <code>GET /api/v1/user</code>; Kaneo <code>GET /api/auth/organization/list</code>; Jira <code>GET /rest/api/3/myself</code>; Linear GraphQL <code>viewer</code>.</p>
+  <p>Kaneo comment content is limited to 10000 characters; longer supersede comments are truncated.</p>
+  <p><strong>Kaneo task link:</strong> <code>TicketWebURL</code> strips the trailing <code>/api</code> from the normalized base and returns <code>&#123;web base&#125;/dashboard/workspace/&#123;create_config.workspaceId&#125;/project/&#123;external_project_id&#125;/task/&#123;taskId&#125;</code> — no extra API call. Used for the dashboard <code>openTicketUrl</code> and the supersede comment <code>newTicketUrl</code>. When <code>workspaceId</code> is missing the link is omitted.</p>
 
   <h3>6.5 Notifications: Shoutrrr</h3>
   <ul>
@@ -532,7 +534,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string
       "sourceKind": "github",
       "projectPath": "FreshRSS/FreshRSS",
       "ticketProjectId": "...",
-      "ticketProjectName": "Phasical — Release Ops",
+      "ticketProjectName": "Kaneo — Release Ops",
       "enabled": true,
       "openTicketExternalId": "task-uuid",
       "openTicketTag": "1.26.0",
@@ -746,7 +748,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string
     <tr><th>Particle</th><th>Usage</th></tr>
     <tr><td><a href="https://coss.com/ui/r/p-table-2.json">p-table-2</a> card-style</td><td>Integration list</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-drawer-10.json">p-drawer-10</a> edit form</td><td>Create/Edit Integration (mobile-friendly)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>Name; Base URL (gitlab, gitea, forgejo, phasical, jira)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>Name; Base URL (gitlab, gitea, forgejo, kaneo, jira)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-field-2.json">p-field-2</a></td><td>Jira: email field</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-input-1.json">p-input-1</a> type password</td><td>Token / API Key (never re-display)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>"Test connection"</td></tr>
@@ -995,17 +997,17 @@ workflow_call:
   <ol>
     <li>Admin can log in (email/password).</li>
     <li>Admin can create integrations for all eight <code>kind</code> values; secrets never in API responses.</li>
-    <li>Admin can create multiple <strong>ticket projects</strong> per ticket integration (Phasical projects, Jira keys, Linear teams) with their own <code>status_mapping</code> and <code>on_open_ticket_policy</code>.</li>
-    <li>Admin can create monitored repo with any source/ticket-project combination (e.g. Codeberg+Phasical, Forgejo+Jira, Gitea+Linear).</li>
+    <li>Admin can create multiple <strong>ticket projects</strong> per ticket integration (Kaneo projects, Jira keys, Linear teams) with their own <code>status_mapping</code> and <code>on_open_ticket_policy</code>.</li>
+    <li>Admin can create monitored repo with any source/ticket-project combination (e.g. Codeberg+Kaneo, Forgejo+Jira, Gitea+Linear).</li>
     <li>Integration test per provider returns success/failure in UI.</li>
     <li>First poll: <strong>baseline</strong> — no ticket, <code>last_known_tag</code> set.</li>
     <li>Poll without release change: <strong>skip</strong>.</li>
     <li>New release, no open ticket (or done/cancelled): <strong>create</strong> — ticket visible in target system.</li>
     <li>New release, open ticket, policy <code>supersede</code>: old ticket → superseded status + comment; new ticket created; <code>tickets_superseded</code> incremented.</li>
     <li>Policies <code>merge</code> and <code>skip_if_open</code> work as in §5.2.1.</li>
-    <li>Status mapping is applied <strong>per ticket project</strong> (different open/done values per Phasical project, Jira key, Linear team).</li>
+    <li>Status mapping is applied <strong>per ticket project</strong> (different open/done values per Kaneo project, Jira key, Linear team).</li>
     <li>Admin can create and test Shoutrrr notification targets; events on create/error/supersede.</li>
-    <li>At least one end-to-end test per MVP source (GitHub, GitLab, Gitea, Forgejo, Codeberg) and per ticket provider (Phasical, Jira, Linear) in CI (mock or sandbox).</li>
+    <li>At least one end-to-end test per MVP source (GitHub, GitLab, Gitea, Forgejo, Codeberg) and per ticket provider (Kaneo, Jira, Linear) in CI (mock or sandbox).</li>
     <li>Dashboard, manual poll, settings interval; <code>docker compose up</code> with <strong>one</strong> service.</li>
     <li>Go + web tests green in CI; workflow layout per <a href="#ci">§11 CI/CD</a>.</li>
   </ol>

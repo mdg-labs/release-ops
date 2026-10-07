@@ -73,7 +73,7 @@ SELECT
   created_at,
   updated_at
 FROM users
-WHERE email = ?
+WHERE lower(email) = lower(?)
 LIMIT 1
 `
 

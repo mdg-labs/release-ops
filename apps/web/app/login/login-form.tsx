@@ -13,7 +13,23 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/client";
+import { safeRedirectPath } from "@/lib/auth/safe-redirect";
 import { useLogin } from "@/lib/hooks/use-login";
+
+function resolveLoginError(
+  error: unknown,
+  t: ReturnType<typeof useTranslations<"auth">>,
+): string {
+  if (error instanceof ApiError) {
+    if (error.status === 429 || error.code === "RATE_LIMITED") {
+      return t("rateLimited");
+    }
+    if (error.status === 401 || error.code === "invalid_credentials") {
+      return t("invalidCredentials");
+    }
+  }
+  return t("loginFailed");
+}
 
 export function LoginForm(): React.ReactElement {
   const t = useTranslations("auth");
@@ -41,15 +57,10 @@ export function LoginForm(): React.ReactElement {
 
     try {
       await login.mutateAsync({ email, password });
-      const redirectTo = searchParams.get("redirect") ?? "/";
-      router.push(redirectTo);
+      router.push(safeRedirectPath(searchParams.get("redirect")));
       router.refresh();
     } catch (error) {
-      if (error instanceof ApiError) {
-        setSubmitError(t("invalidCredentials"));
-      } else {
-        setSubmitError(t("loginFailed"));
-      }
+      setSubmitError(resolveLoginError(error, t));
     }
   }
 

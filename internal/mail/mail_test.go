@@ -351,3 +351,41 @@ func TestSMTPMailerSendIntegration(t *testing.T) {
 		t.Fatalf("server message missing body: %s", msg)
 	}
 }
+
+func TestSMTPMailerSendFailsWithoutSTARTTLSWhenTLSRequired(t *testing.T) {
+	t.Parallel()
+
+	mailed := false
+	mailer := &SMTPMailer{
+		cfg: Config{
+			Host: "smtp.test",
+			Port: 587,
+			From: "release-ops@example.com",
+			TLS:  true,
+		},
+		dial: func(context.Context, string, string) (net.Conn, error) {
+			return &pipeConn{}, nil
+		},
+		newClient: func(net.Conn, string) (smtpClient, error) {
+			return &mockSMTPClient{
+				noStartTLS: true,
+				onMail: func(string) error {
+					mailed = true
+					return nil
+				},
+			}, nil
+		},
+	}
+
+	err := mailer.Send(context.Background(), Message{
+		To:       "user@example.com",
+		Subject:  "Reset",
+		TextBody: "token",
+	})
+	if err == nil || !strings.Contains(err.Error(), "STARTTLS") {
+		t.Fatalf("Send() error = %v, want STARTTLS error", err)
+	}
+	if mailed {
+		t.Fatal("message sent in plaintext although SMTP_TLS=true")
+	}
+}

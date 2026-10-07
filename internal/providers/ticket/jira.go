@@ -134,7 +134,7 @@ type jiraADF struct {
 
 type jiraADFBlock struct {
 	Type    string        `json:"type"`
-	Content []jiraADFNode `json:"content"`
+	Content []jiraADFNode `json:"content,omitempty"`
 }
 
 // jiraADFNode is an inline ADF node: "text" (non-empty Text) or "hardBreak".
@@ -184,9 +184,11 @@ func (j *JiraProvider) CreateTicket(ctx context.Context, input TicketInput) (str
 		return "", errors.New("jira: create issue: empty key in response")
 	}
 
+	// create_config.initialStatus (specs §5.3): move the new issue out of the workflow's
+	// default status. Best-effort — the issue already exists: a failed transition must not
+	// fail the create, otherwise the poll engine would not record the ticket and would create
+	// a duplicate next cycle.
 	if cfg.initialStatus != "" {
-		// The issue already exists: a failed transition must not fail the create, otherwise the
-		// poll engine would not record the ticket and would create a duplicate next cycle.
 		if err := j.applyInitialStatus(ctx, created.Key, cfg.initialStatus); err != nil {
 			slog.WarnContext(ctx, "jira: initial status not applied",
 				"issue", created.Key, "initialStatus", cfg.initialStatus, "error", err)
@@ -311,7 +313,7 @@ func (j *JiraProvider) UpdateTicket(ctx context.Context, externalID, title, desc
 }
 
 // TicketWebURL implements TicketProvider.
-func (j *JiraProvider) TicketWebURL(externalID string) (string, error) {
+func (j *JiraProvider) TicketWebURL(_ TicketProject, externalID string) (string, error) {
 	externalID = strings.TrimSpace(externalID)
 	if externalID == "" {
 		return "", errors.New("jira: external id is required")
@@ -392,8 +394,8 @@ func isAllDigits(value string) bool {
 }
 
 // plainTextADF converts plain text to an Atlassian Document Format doc: blank-line separated
-// blocks become paragraphs, single newlines become hardBreak nodes, and empty text produces a
-// doc without content (ADF rejects empty text nodes).
+// blocks become paragraphs, single newlines become hardBreak nodes, and empty (or
+// whitespace-only) text produces a single empty paragraph (Jira rejects empty text nodes).
 func plainTextADF(text string) jiraADF {
 	doc := jiraADF{Type: "doc", Version: 1, Content: []jiraADFBlock{}}
 
@@ -425,6 +427,9 @@ func plainTextADF(text string) jiraADF {
 		lines = append(lines, strings.TrimRight(line, " \t"))
 	}
 	flush()
+	if len(doc.Content) == 0 {
+		doc.Content = append(doc.Content, jiraADFBlock{Type: "paragraph"})
+	}
 	return doc
 }
 

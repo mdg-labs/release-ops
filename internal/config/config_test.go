@@ -146,3 +146,17 @@ func TestLoadCustomValues(t *testing.T) {
 		t.Errorf("GoListenAddr() = %q", cfg.GoListenAddr())
 	}
 }
+
+func TestLoadRejectsEnvExamplePlaceholders(t *testing.T) {
+	validEnv(t)
+	t.Setenv("APP_ENCRYPTION_KEY", exampleAppEncryptionKey)
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "APP_ENCRYPTION_KEY") {
+		t.Fatalf("Load() error = %v, want placeholder APP_ENCRYPTION_KEY rejected", err)
+	}
+
+	validEnv(t)
+	t.Setenv("SESSION_SECRET", exampleSessionSecret)
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "SESSION_SECRET") {
+		t.Fatalf("Load() error = %v, want placeholder SESSION_SECRET rejected", err)
+	}
+}

@@ -3,6 +3,7 @@ package auth_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
@@ -45,6 +46,10 @@ func TestTokenServiceGenerateHashValidateConsume(t *testing.T) {
 	}
 	if _, err := service.Validate(context.Background(), raw, auth.TokenKindInvitation); err == nil {
 		t.Fatal("expected invalid token after consume")
+	}
+	// A concurrent request that validated before the first consume must not consume again.
+	if err := service.Consume(context.Background(), row.ID); !errors.Is(err, auth.ErrTokenInvalid) {
+		t.Fatalf("second Consume err = %v, want ErrTokenInvalid", err)
 	}
 }
 

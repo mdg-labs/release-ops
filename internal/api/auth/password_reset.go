@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	netmail "net/mail"
 	"strings"
@@ -15,6 +16,8 @@ import (
 	"github.com/mdg-labs/release-ops/internal/mail"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
+
+const passwordResetSendTimeout = 30 * time.Second
 
 const forgotPasswordResponseMessage = "If an account exists for that email, a reset link has been sent."
 
@@ -52,7 +55,7 @@ func (h *PasswordResetHandlers) ForgotPassword(w http.ResponseWriter, r *http.Re
 		WriteError(w, "VALIDATION_ERROR", "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	email := strings.TrimSpace(req.Email)
+	email := NormalizeEmail(req.Email)
 	if email == "" {
 		WriteError(w, "VALIDATION_ERROR", "email is required", http.StatusBadRequest)
 		return
@@ -92,10 +95,9 @@ func (h *PasswordResetHandlers) ForgotPassword(w http.ResponseWriter, r *http.Re
 			WriteError(w, "INTERNAL_ERROR", "failed to build email", http.StatusInternalServerError)
 			return
 		}
-		if err := h.Mailer.Send(r.Context(), msg); err != nil && !errors.Is(err, mail.ErrSMTPNotConfigured) {
-			WriteError(w, "INTERNAL_ERROR", "failed to send email", http.StatusInternalServerError)
-			return
-		}
+		// Send in the background so neither response time nor an SMTP failure reveals
+		// whether the address has an account. Failures are logged server-side only.
+		go h.sendResetEmail(context.WithoutCancel(r.Context()), msg)
 	}
 
 	writeJSON(w, http.StatusOK, forgotPasswordResponse{Message: forgotPasswordResponseMessage})
@@ -131,6 +133,10 @@ func (h *PasswordResetHandlers) ResetPassword(w http.ResponseWriter, r *http.Req
 		WriteError(w, "INTERNAL_ERROR", "failed to validate token", http.StatusInternalServerError)
 		return
 	}
+	// Consume before any side effect so a concurrent request with the same token fails.
+	if !consumeOneTimeToken(w, r, h.TokenService, tokenRow.ID) {
+		return
+	}
 
 	user, err := h.Queries.GetUserByEmail(r.Context(), tokenRow.Email)
 	if err != nil {
@@ -157,17 +163,28 @@ func (h *PasswordResetHandlers) ResetPassword(w http.ResponseWriter, r *http.Req
 		WriteError(w, "INTERNAL_ERROR", "failed to update password", http.StatusInternalServerError)
 		return
 	}
-	if err := h.TokenService.Consume(r.Context(), tokenRow.ID); err != nil {
-		WriteError(w, "INTERNAL_ERROR", "failed to consume token", http.StatusInternalServerError)
+
+	// A reset usually follows a compromise: sign out every existing session of this user.
+	if err := h.Queries.DeleteSessionsByUserID(r.Context(), updated.ID); err != nil {
+		WriteError(w, "INTERNAL_ERROR", "failed to revoke sessions", http.StatusInternalServerError)
 		return
 	}
-
-	h.SessionManager.Put(r.Context(), SessionUserIDKey, updated.ID)
-	h.SessionManager.Put(r.Context(), SessionUserEmailKey, updated.Email)
+	if err := StartUserSession(r.Context(), h.SessionManager, updated.ID, updated.Email); err != nil {
+		WriteError(w, "INTERNAL_ERROR", "failed to start session", http.StatusInternalServerError)
+		return
+	}
 
 	writeJSON(w, http.StatusOK, sessionResponse{
 		User: &userResponse{ID: updated.ID, Email: updated.Email},
 	})
+}
+
+func (h *PasswordResetHandlers) sendResetEmail(ctx context.Context, msg mail.Message) {
+	ctx, cancel := context.WithTimeout(ctx, passwordResetSendTimeout)
+	defer cancel()
+	if err := h.Mailer.Send(ctx, msg); err != nil && !errors.Is(err, mail.ErrSMTPNotConfigured) {
+		slog.Error("send password reset email", "error", err)
+	}
 }
 
 // CreatePasswordReset invalidates prior reset tokens and stores a new one.

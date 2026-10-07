@@ -1,104 +1,64 @@
 ---
 name: customer-docs
 description: >-
-  Autonomously write and maintain end-user customer documentation for an app:
-  one doc page per in-app page, plus Getting Started, concept pages, and FAQ.
-  English only. Bootstraps per-project config on first run. Use when the user asks
-  to write customer docs, document page X, create a getting started guide, update
-  user documentation, check docs coverage, or run a full docs pass on the app.
+  Write and maintain Release Ops end-user documentation on the Starlight docs site
+  (apps/docs): one page per web UI page in apps/web, a "First steps" guide, concept
+  pages and an FAQ. English only. Proposal first, writes only after explicit approval.
+  Use when the user asks to write customer docs, document page X (repos, integrations,
+  ticket projects, …), create a getting started guide, update user documentation,
+  check docs coverage, or run a full docs pass on the app.
 ---
 
 # Customer docs
 
-Write and maintain **end-user / customer documentation** for an application: one doc page per in-app page, plus Getting Started, concept pages, and FAQ. Language: **English only** (baseline).
+Write and maintain **end-user documentation** for Release Ops: one doc page per page of the web UI (`apps/web`), plus a "First steps" guide, concept pages and an FAQ, published on the Starlight site in `apps/docs` (`https://mdg-labs.github.io/release-ops/`). English only.
 
-This skill is **fully generic** — all project-specific facts live in a local config bootstrapped on first run (same pattern as project-setup).
+All release-ops specifics (docs root, synced vs hand-written files, sidebar file, route → doc map, frontmatter, glossary, commit format) are in [docs-config.md](docs-config.md). Voice and structure rules are in [style-guide.md](style-guide.md).
 
-**Style rules:** [style-guide.md](style-guide.md) — single source of truth for voice, structure, and terminology.
+## Files
 
-## Path layout
-
-| What | Path |
+| What | Path (repo root relative) |
 | ---- | ---- |
-| This skill (installed) | `.claude/skills/customer-docs/SKILL.md` |
-| Templates (installed) | `.claude/skills/customer-docs/*-template.md`, `style-guide.md` |
-| Project config (supporting — **NEVER** under `.claude/skills/`) | `.agents/project/customer-docs/docs.config.md` |
-| Coverage inventory (supporting) | `.agents/project/customer-docs/coverage.md` |
-| Project glossary (supporting) | `.agents/project/customer-docs/glossary.md` |
-| Orchestrator constants (optional) | `.agents/project/orchestrator/project.config.md` |
-| Spec doc index (optional) | `.agents/project/orchestrator/doc-index.md` |
-| Sub-agent monitoring (installed) | `.claude/skills/orchestrator/references/sub-agent-monitoring.md` |
+| This skill | `.claude/skills/customer-docs/SKILL.md` |
+| Release-ops config + glossary | `.claude/skills/customer-docs/docs-config.md` |
+| Style rules | `.claude/skills/customer-docs/style-guide.md` |
+| Templates | `.claude/skills/customer-docs/page-doc-template.md`, `getting-started-template.md` |
+| Coverage inventory (created on first approved write) | `.agents/project/customer-docs/coverage.md` |
+| Docs content root | `apps/docs/src/content/docs/` (`guide/`, `concepts/`, `faq.md`) |
+| Sidebar | `apps/docs/astro.config.mjs` |
+| App routes / nav / labels (read-only) | `apps/web/app/`, `apps/web/components/app-sidebar.tsx`, `apps/web/messages/en.json` |
+| Behaviour spec (read-only) | `docs/specs.html`, `db/schema.sql`, `README.md` |
+| Sub-agent monitoring | `.claude/skills/orchestrator/references/sub-agent-monitoring.md` |
 
-`npx skills` installs to `.claude/skills/`. **`npx skills update` replaces each skill directory wholesale** — local files there are deleted. Supporting files (config, coverage, glossary) **must** live under **`.agents/project/customer-docs/`**. **Never** write supporting files under `.claude/skills/`.
+Never hand-edit the synced files listed in `docs-config.md` § Synced files (`getting-started.md`, `mvp-checklist.md`, `spec.mdx`, `stack.mdx`, `schema.mdx`, `index.mdx` under `apps/docs/src/content/docs/`). Edit their sources in `docs/` and run `npm run docs:sync`.
 
 ---
 
 ## Mode detection
 
-Parse user intent on first turn:
-
 | Mode | User says | Action |
 | ---- | --------- | ------ |
-| **0 — Bootstrap** | First run, or `docs.config.md` missing | Interactive setup — no doc writes until config exists |
 | **1 — Full pass** | "write all docs", "document the app", "full docs pass" | Inventory → proposal → write batch-by-batch |
-| **2 — Single page** | "document the settings page", "write docs for /billing" | Scoped inventory → outline → write one page |
+| **2 — Single page** | "document the repos page", "write docs for /ticket-projects" | Scoped inventory → outline → write one page |
 | **3 — Update / drift** | "update docs", "check docs coverage", "sync docs" | Diff routes vs coverage → propose → execute |
 
-Default: **Mode 0** if `.agents/project/customer-docs/docs.config.md` is missing; otherwise infer from user intent (Mode 1 if ambiguous).
-
----
-
-## Mode 0 — Bootstrap (first run, config missing)
-
-If `.agents/project/customer-docs/docs.config.md` does **not** exist: **do NOT write any customer docs.** Run interactive setup analogous to project-setup.
-
-### Gather inputs
-
-| Step | Topic | Questions |
-| ---- | ----- | --------- |
-| 1 | **Repo detection** | Are docs in the same repo (`docs/`, `apps/docs/`, `website/`) or a second repo in the workspace? Scan workspace directories, propose findings, user confirms. |
-| 2 | **Publishing setup** | Framework (Docusaurus, Mintlify, Nextra, VitePress, Starlight, plain Markdown, other), deploy mechanism (CI, manual), published base URL. |
-| 3 | **App inventory** | Where does app code live (routes/pages dir, e.g. `app/`, `src/pages/`, `src/routes/`)? Which apps in the monorepo are end-user facing? |
-| 4 | **Audience + product** | Technical vs non-technical users, product name, core use case, existing spec docs (read `.agents/project/orchestrator/doc-index.md` if present). |
-| 5 | **Docs structure** | Folder layout, sidebar/nav file, naming (kebab-case), framework frontmatter schema. |
-| 6 | **Screenshot policy** | Insert placeholders like `{SCREENSHOT: description}` vs no images — this skill **never** takes screenshots itself. |
-| 7 | **Phasical integration** (optional) | If `.agents/project/orchestrator/project.config.md` exists, adopt Phasical constants; docs commits follow `07-phasical-commit-linking` (`[#N]` when a task exists; `docs(scope)` without a task key only if user opts out of Phasical sync). |
-
-### Bootstrap workflow
-
-```text
-Bootstrap progress:
-- [ ] Scan workspace for docs repo/path and app routes dirs
-- [ ] Gather answers (steps 1–7)
-- [ ] Show change plan — what will be created under .agents/project/customer-docs/
-- [ ] User confirms plan (project-setup update semantics)
-- [ ] Render docs.config.md from docs-config-template.md
-- [ ] Create coverage.md stub (table headers only)
-- [ ] Create glossary.md stub
-- [ ] Report handoff — offer Mode 1/2/3 or end run
-```
-
-**Merge policy:** On re-bootstrap (config exists but user asks to refresh), show change plan and patch named fields only — never blind-overwrite glossary terms or coverage rows without confirmation.
+Default when ambiguous: Mode 3 if `coverage.md` exists, else Mode 1.
 
 ---
 
 ## Approval gate (mandatory — no exceptions)
 
-**Phase 1 — investigate + written proposal only.** No doc file writes (no page markdown, no nav/sidebar edits, no coverage updates).
+**Phase 1 — investigate + written proposal only.** No file writes (no doc pages, no `astro.config.mjs` sidebar edits, no `docs/` source edits, no `coverage.md`, no glossary changes in `docs-config.md`).
 
-**Phase 2 — file writes** only after the user explicitly approves the proposal in chat (e.g. **approve**, **yes write them**, **go ahead**, **LGTM**).
+**Phase 2 — writes** only after the user explicitly approves the proposal in chat (**approve**, **yes write them**, **go ahead**, **LGTM**).
 
 | Rule | Detail |
 | ---- | ------ |
-| **Always propose first** | Full pass, single page, drift check — every run that writes docs |
-| **Never skip Phase 1** | Even if the user said "write all docs" or "document the settings page" upfront |
-| **Wait for reply** | End Phase 1 with: *"Approve to write these docs (or tell me what to change)."* |
-| **Re-propose after edits** | User requests changes → updated proposal; no writes until they approve again |
-| **Sub-agent same rule** | Parent agents must not write docs while customer-docs waits for approval |
-
-**Forbidden before approval:** any customer doc file, nav/sidebar file, `coverage.md`, or `glossary.md` writes (bootstrap config stubs are Mode 0 only, after user confirms the change plan).
-
-Mode 0 bootstrap: no doc writes at all until config exists. Config file creation follows project-setup change-plan confirmation.
+| Always propose first | Full pass, single page, drift check — every run that writes docs |
+| Never skip Phase 1 | Even if the user said "write all docs" upfront |
+| Wait for reply | End Phase 1 with: *"Approve to write these docs (or tell me what to change)."* |
+| Re-propose after edits | User requests changes → updated proposal; no writes until approved again |
+| Sub-agents | Parent agents must not write docs while customer-docs waits for approval |
 
 ---
 
@@ -106,39 +66,41 @@ Mode 0 bootstrap: no doc writes at all until config exists. Config file creation
 
 ### Phase 1 — Inventory + proposal (no writes)
 
-1. Read `docs.config.md`, `coverage.md`, `glossary.md`, [style-guide.md](style-guide.md).
-2. Inventory app routes/pages from code (**read-only**): route files, navigation, page titles, visible UI actions (buttons, forms, dialogs), roles/permissions where detectable.
-3. Read spec docs per `doc-index.md` when present — do not invent behaviour.
-4. **Present written proposal** (format below).
-5. **Stop and wait** for explicit user approval.
+1. Read [docs-config.md](docs-config.md), [style-guide.md](style-guide.md), and `.agents/project/customer-docs/coverage.md` if it exists.
+2. Inventory pages **read-only**: every `page.tsx` under `apps/web/app/`, the sidebar in `apps/web/components/app-sidebar.tsx`, the settings sub-nav, and the feature components under `apps/web/components/<feature>/` (buttons, forms, dialogs, table columns, empty states). Take every label from `apps/web/messages/en.json`.
+3. Read the matching sections of `docs/specs.html` (integrations and kinds, ticket projects with status mapping and open-ticket policy, polling and release detection, notifications, auth and invitations, settings). Do not invent behaviour.
+4. Check the existing site: `apps/docs/src/content/docs/` and the `sidebar` in `apps/docs/astro.config.mjs`. `docs/getting-started.md` already covers installation; link to it instead of repeating it.
+5. Post the written proposal (format below) and **stop**.
 
 ### Phase 2 — Write (after approval only)
 
-1. Write docs batch-by-batch using [page-doc-template.md](page-doc-template.md) and [getting-started-template.md](getting-started-template.md).
-2. Update nav/sidebar file per `docs.config.md`.
-3. Update `coverage.md` — route → doc path → last-synced commit SHA → status.
-4. Maintain `glossary.md` for product terms (internal → customer-facing).
-5. Report handoff.
+1. Write pages batch-by-batch from [page-doc-template.md](page-doc-template.md) and [getting-started-template.md](getting-started-template.md) at the paths in `docs-config.md` § Route → doc map.
+2. Add sidebar entries in `apps/docs/astro.config.mjs` ("User guide" / "Concepts" groups).
+3. Run `npm run docs:build` to check the site builds and links resolve. On failure, fix the docs; never touch app code.
+4. Update `.agents/project/customer-docs/coverage.md` (route → doc path → last-synced SHA → status).
+5. Add new terms to `docs-config.md` § Glossary.
+6. Report the handoff.
 
 ### Written proposal format (Mode 1)
 
 ```markdown
-## Proposed customer docs — {product name}
+## Proposed customer docs — Release Ops
 
 **Mode:** full pass
-**Config:** `.agents/project/customer-docs/docs.config.md`
-**Routes scanned:** {dirs}
+**Routes scanned:** apps/web/app/ ({N} pages)
 
 ### Planned pages
 
-| Doc path | Page title | Source (route/component) | Priority | Type |
-| -------- | ---------- | ------------------------ | -------- | ---- |
-| docs/getting-started.md | Getting started | — | P0 | getting started |
-| docs/settings/profile.md | Profile settings | `/settings/profile` · `ProfilePage.tsx` | P1 | page doc |
-| docs/concepts/workspaces.md | Workspaces | concept | P2 | concept |
+| Doc path | Title | Source (route · component) | Priority | Type |
+| -------- | ----- | -------------------------- | -------- | ---- |
+| guide/first-steps.md | First steps | — | P0 | getting started |
+| guide/integrations.md | Integrations | `/integrations` · components/integrations/ | P0 | page doc |
+| guide/ticket-projects.md | Ticket projects | `/ticket-projects` · components/ticket-projects/ | P0 | page doc |
+| concepts/release-detection.md | How release detection works | docs/specs.html | P1 | concept |
+| faq.md | FAQ | — | P2 | FAQ |
 
-**Nav changes:** {sidebar file} — add {N} entries under {section}
-**Glossary additions:** {term → customer term, or "none"}
+**Sidebar changes:** apps/docs/astro.config.mjs — add {N} entries under "User guide" / "Concepts"
+**Glossary additions:** {internal term → customer term, or "none"}
 **Open questions:** {flows that could not be verified read-only — or "none"}
 
 ---
@@ -149,10 +111,10 @@ Mode 0 bootstrap: no doc writes at all until config exists. Config file creation
 
 ## Mode 2 — Single page
 
-Same flow as Mode 1, scoped to one route/page or named feature.
+Same flow as Mode 1, scoped to one route or feature (use the route → doc map in `docs-config.md`).
 
-- Phase 1 proposal may be a **short outline** (purpose, key actions, related pages) instead of a full table.
-- Still end with the approval ask — **no file writes before approval**.
+- Phase 1 may be a **short outline**: purpose, key actions, fields, related pages, open questions.
+- Still end with the approval ask — no writes before approval.
 
 ---
 
@@ -160,17 +122,17 @@ Same flow as Mode 1, scoped to one route/page or named feature.
 
 ### Phase 1 — Diff + proposal (no writes)
 
-1. Read `docs.config.md` and `coverage.md`.
-2. Diff current routes against coverage:
+1. Read `docs-config.md` and `coverage.md`.
+2. Diff `apps/web/app/**/page.tsx` against coverage:
    - **New pages** — routes with no doc row (missing)
    - **Removed pages** — doc rows whose route no longer exists (stale)
-   - **Changed pages** — compare `last-synced SHA` vs current; read the diff **read-only**
-3. **Present proposal:** create / update / archive per page.
-4. **Stop and wait** for approval.
+   - **Changed pages** — `git log --oneline <last-synced SHA>..HEAD -- apps/web/app/<route> apps/web/components/<feature> apps/web/messages/en.json`; read the diff read-only
+3. Also flag doc text that contradicts the current spec (for example a ticket integration kind or setting that was renamed).
+4. Present the drift proposal and **stop**.
 
 ### Phase 2 — Execute (after approval)
 
-Update or create docs, adjust nav, refresh `coverage.md` SHAs, archive or remove stale pages per user preference in config.
+Update or create pages, adjust the sidebar, run `npm run docs:build`, refresh `coverage.md` SHAs. Removed pages: delete the doc and its sidebar entry unless the user asks to keep a redirect note.
 
 ### Drift proposal format (Mode 3)
 
@@ -179,9 +141,8 @@ Update or create docs, adjust nav, refresh `coverage.md` SHAs, archive or remove
 
 | Route | Doc path | Status | Action |
 | ----- | -------- | ------ | ------ |
-| `/settings/billing` | docs/settings/billing.md | changed (abc123 → def456) | update |
-| `/reports` | — | missing | create |
-| `/legacy/foo` | docs/legacy/foo.md | route removed | archive |
+| `/ticket-projects` | guide/ticket-projects.md | changed (abc1234 → def5678) | update |
+| `/poll-runs` | — | missing | create |
 
 **Open questions:** {any — or "none"}
 
@@ -196,68 +157,68 @@ Update or create docs, adjust nav, refresh `coverage.md` SHAs, archive or remove
 File: `.agents/project/customer-docs/coverage.md`
 
 ```markdown
-# Docs coverage
+# Docs coverage — Release Ops
 
 | Route | Doc path | Status | Last-synced SHA | Notes |
 | ----- | -------- | ------ | --------------- | ----- |
-| `/settings/profile` | docs/settings/profile.md | current | abc1234 | |
+| `/repos` | apps/docs/src/content/docs/guide/repos.md | current | abc1234 | |
 ```
 
-**Status values:** `current` · `stale` · `missing`
-
-Update `last-synced SHA` to the commit at which the doc was last verified against the route source.
+**Status values:** `current` · `stale` · `missing`. Set the SHA to the commit at which the doc was last checked against the route source.
 
 ---
 
 ## Content quality (summary)
 
-Full rules: [style-guide.md](style-guide.md). Enforce on every write.
+Full rules: [style-guide.md](style-guide.md).
 
-- Task-oriented: every page doc answers **what can I do here and how** — not what components exist.
-- Second person ("you"), present tense, imperative steps.
-- Page structure: purpose → prerequisites → steps per key action → field/option table → troubleshooting → related links.
-- Getting started: happy path signup/login → first success in ≤10 steps; link to page docs for detail.
-- No internal jargon — map terms via `glossary.md`; **ask the user** when mapping is unclear (never guess).
-- Never invent features or behaviour not found in code or spec docs — list unverified flows under **Open questions**.
-- Never include secrets, internal URLs, or admin-only endpoints.
-- One term per concept across all pages (glossary-enforced).
-- Short sentences; no marketing fluff; English only.
+- Task-oriented: every page doc answers **what can I do here and how**.
+- Second person, present tense, imperative steps; short sentences; English only.
+- Page structure: purpose → prerequisites → steps per key action → field table → troubleshooting → related pages.
+- First steps: sign in → first ticket created from a release in ≤10 steps; link to page docs for detail.
+- Ticket integrations are **Kaneo, Jira and Linear**; release sources are **GitHub, GitLab, Gitea, Forgejo and Codeberg**. Do not mention removed integration kinds except in the FAQ upgrade entry pointing to `README.md`.
+- No internal jargon (glossary in `docs-config.md`); ask the user when a mapping is unclear.
+- Never invent features, labels or behaviour — unverified flows go under **Open questions**.
+- Never include secrets, real tokens, internal URLs or API routes meant only for integrators.
 
 ---
 
 ## Commits
 
-Follow project git rules (`.claude/rules/01-git-workflow.md`, `07-phasical-commit-linking.md` when Phasical is enabled):
+Follow `.claude/rules/01-git-workflow.md` and the commit-linking rule (rule 07):
 
-- Explicit path staging only — **no** `git add .`
-- Subject: `[#N] docs(scope): …` when a Phasical task exists; `docs(scope): …` only if user opted out of Phasical sync in config
-- Never push unless the user asks
+- Subject: `docs(docs)[#N]: <summary>` when the work belongs to a Kaneo task. `#N` is the GitHub issue that mirrors the task, resolved **read-only**: the user gives `#N`; or `externalLinks[].externalId` if the Kaneo payload ever carries it; otherwise `mcp__github__search_issues` (owner `mdg-labs`, repo `release-ops`, query = exact task title) → exact-title match.
+- Body: task commits with `[#N]` **must** end with the trailer `fixes #N` — the only way the issue closes (GitHub closes it when the commit lands on `main`; the Kaneo ↔ GitHub sync then sets `done`).
+- Roadmap-only work with no GitHub issue: `docs(docs)[E<x>-<y>]: <summary>`, no trailer. Neither available: ask the user.
+- Never the Kaneo CUID or `RO-<n>` in a commit. Never write to GitHub issues (the trailer is not an issue write).
+- Stage explicit paths only (no `git add .` / `-A`). Never push unless the user asks.
+- Gate: docs-only changes skip `npm test`/`npm run lint`; run `npm run docs:build` instead.
 
 ---
 
 ## Parent agents: do not take over customer-docs
 
-If **customer-docs** runs as a sub-agent (Agent tool), the parent must not write doc files while it may still be running. Follow `.claude/skills/orchestrator/references/sub-agent-monitoring.md` (transcript two-sample → terminate → dedupe → re-dispatch).
+If customer-docs runs as a sub-agent, the parent must not write doc files while it may still be running. Follow `.claude/skills/orchestrator/references/sub-agent-monitoring.md` (transcript two-sample check → terminate → dedupe → re-dispatch).
 
 ---
 
 ## Workflow checklist
 
 ```text
-Phase 1 (no doc writes):
-- [ ] docs.config.md exists (else Mode 0 bootstrap)
-- [ ] Read config, coverage, glossary, style-guide.md
-- [ ] Read-only route/UI inventory from app code
-- [ ] Read spec docs via doc-index.md when present
+Phase 1 (no writes):
+- [ ] Read docs-config.md, style-guide.md, coverage.md (if present)
+- [ ] Read-only inventory: apps/web/app/, app-sidebar.tsx, components/<feature>/, messages/en.json
+- [ ] Read matching docs/specs.html sections
 - [ ] Written proposal posted (table or outline)
-- [ ] User explicitly approved proposal in chat
+- [ ] User explicitly approved in chat
 
 Phase 2 (after approval):
-- [ ] Write pages from templates — style-guide.md
-- [ ] Update nav/sidebar per config
-- [ ] Update coverage.md (route, path, SHA, status)
-- [ ] Update glossary.md for new terms
-- [ ] Report handoff
+- [ ] Write pages from templates (Starlight frontmatter, no body H1)
+- [ ] Sidebar entries in apps/docs/astro.config.mjs
+- [ ] npm run docs:build passes
+- [ ] coverage.md updated (route, path, SHA, status)
+- [ ] Glossary in docs-config.md updated
+- [ ] Handoff report
 ```
 
 ---
@@ -267,12 +228,10 @@ Phase 2 (after approval):
 ```markdown
 ## Customer docs — {MODE}
 
-**Config:** `.agents/project/customer-docs/docs.config.md`
-**Coverage:** `.agents/project/customer-docs/coverage.md`
-
 ### Written
-- {list of doc paths}
-- Nav: {sidebar file} — {summary of changes}
+- {doc paths}
+- Sidebar: apps/docs/astro.config.mjs — {summary}
+- Build: npm run docs:build — {pass/fail}
 
 ### Coverage
 - {N} current · {N} updated · {N} new
@@ -281,9 +240,9 @@ Phase 2 (after approval):
 - {items needing product input — or "none"}
 
 ### Suggested review order
-1. Getting started
-2. {highest-traffic or P0 pages}
-3. {remaining pages}
+1. guide/first-steps.md
+2. Integrations, Ticket projects, Repos
+3. Remaining pages
 
 ### Next
 - "update docs" — drift check (Mode 3)
@@ -294,13 +253,10 @@ Phase 2 (after approval):
 
 ## Forbidden
 
-- **Any customer doc or nav file write before explicit user approval** of the written proposal (no exceptions — same gate as phasical-intake)
-- **Skipping the written proposal** — including single-page and drift-check runs
-- Proceeding to Phase 2 in the same turn as Phase 1 without user reply
-- **Modifying application source code** — read-only on app code; only docs files, nav files, and supporting files under `.agents/project/customer-docs/`
-- Writing supporting files under `.claude/skills/`
-- **Fabricating** behaviour, screenshots, or UI text
-- Taking screenshots — use `{SCREENSHOT: description}` placeholders only when policy allows
-- Exposing internal entity names, DB terms, code identifiers, secrets, or admin-only URLs in customer docs
-- `git add .` or push without explicit user request
-- Parent agent takeover while customer-docs sub-agent is in flight
+- Any doc, sidebar, `docs/` source, coverage or glossary write before explicit approval of the written proposal
+- Skipping the written proposal, or moving to Phase 2 in the same turn as Phase 1
+- Hand-editing synced files in `apps/docs/src/content/docs/` (edit `docs/` sources instead)
+- Modifying application code (`apps/web`, `cmd/`, `internal/`, `db/`, `migrations/`) — read-only
+- Fabricating behaviour, UI labels or screenshots; capturing screenshots
+- Exposing internal table/column names, code identifiers, env var names (outside the install guide), secrets or internal URLs
+- `git add .`, push without explicit request, a `[#N]` commit without the `fixes #N` trailer, any GitHub issue write

@@ -2,28 +2,29 @@ package store
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/mdg-labs/release-ops/internal/store/db"
 )
 
 // MonitoredRepo is a repository monitored for new releases.
 type MonitoredRepo struct {
-	ID                    string
-	SourceKind            string
-	ProjectPath           string
-	Enabled               bool
-	IncludePrereleases    bool
-	SourceIntegrationID   *string
-	TicketProjectID       string
-	OpenTicketExternalID  *string
-	OpenTicketTag         *string
+	ID                     string
+	SourceKind             string
+	ProjectPath            string
+	Enabled                bool
+	IncludePrereleases     bool
+	SourceIntegrationID    *string
+	TicketProjectID        string
+	OpenTicketExternalID   *string
+	OpenTicketTag          *string
 	LastKnownTag           *string
 	LastReleasePublishedAt *string
 	LastPolledAt           *string
-	LastError             *string
-	NotificationTargetIDs []string
-	CreatedAt             string
-	UpdatedAt             string
+	LastError              *string
+	NotificationTargetIDs  []string
+	CreatedAt              string
+	UpdatedAt              string
 }
 
 // CreateMonitoredRepoInput holds fields for a new monitored repo.
@@ -141,6 +142,11 @@ func (r monitoredRepoRepo) Update(ctx context.Context, id string, input UpdateMo
 	}()
 
 	q := r.store.q.WithTx(tx)
+	existing, err := q.GetMonitoredRepo(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
 	row, err := q.UpdateMonitoredRepo(ctx, db.UpdateMonitoredRepoParams{
 		SourceKind:          input.SourceKind,
 		ProjectPath:         input.ProjectPath,
@@ -155,6 +161,11 @@ func (r monitoredRepoRepo) Update(ctx context.Context, id string, input UpdateMo
 		return nil, err
 	}
 
+	row, err = resetPollStateOnTargetChange(ctx, q, existing, row)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := replaceNotificationTargets(ctx, q, id, input.NotificationTargetIDs); err != nil {
 		return nil, err
 	}
@@ -164,6 +175,33 @@ func (r monitoredRepoRepo) Update(ctx context.Context, id string, input UpdateMo
 	}
 
 	return r.repoWithNotificationIDs(ctx, row, input.NotificationTargetIDs)
+}
+
+// resetPollStateOnTargetChange drops poll state that belongs to the repo's previous
+// target. A new ticket project clears the open ticket (it lives in the old project).
+// A new source (kind, path or integration) also clears the last known tag so the next
+// poll records a fresh baseline instead of ticketing the new repo's existing release.
+func resetPollStateOnTargetChange(ctx context.Context, q *db.Queries, before, after db.MonitoredRepo) (db.MonitoredRepo, error) {
+	sourceChanged := before.SourceKind != after.SourceKind ||
+		before.ProjectPath != after.ProjectPath ||
+		before.SourceIntegrationID != after.SourceIntegrationID
+	ticketChanged := before.TicketProjectID != after.TicketProjectID
+	if !sourceChanged && !ticketChanged {
+		return after, nil
+	}
+
+	params := db.UpdatePollStateParams{
+		LastKnownTag:           after.LastKnownTag,
+		LastReleasePublishedAt: after.LastReleasePublishedAt,
+		LastPolledAt:           after.LastPolledAt,
+		UpdatedAt:              after.UpdatedAt,
+		ID:                     after.ID,
+	}
+	if sourceChanged {
+		params.LastKnownTag = sql.NullString{}
+		params.LastReleasePublishedAt = sql.NullString{}
+	}
+	return q.UpdatePollState(ctx, params)
 }
 
 func (r monitoredRepoRepo) SetEnabled(ctx context.Context, id string, enabled bool) (*MonitoredRepo, error) {
@@ -229,41 +267,41 @@ func replaceNotificationTargets(ctx context.Context, q *db.Queries, repoID strin
 
 func monitoredRepoFromRow(row db.MonitoredRepo) *MonitoredRepo {
 	return &MonitoredRepo{
-		ID:                   row.ID,
-		SourceKind:           row.SourceKind,
-		ProjectPath:          row.ProjectPath,
-		Enabled:              int64ToBool(row.Enabled),
-		IncludePrereleases:   int64ToBool(row.IncludePrereleases),
-		SourceIntegrationID:  nullStringPtr(row.SourceIntegrationID),
-		TicketProjectID:      row.TicketProjectID,
-		OpenTicketExternalID: nullStringPtr(row.OpenTicketExternalID),
-		OpenTicketTag:        nullStringPtr(row.OpenTicketTag),
+		ID:                     row.ID,
+		SourceKind:             row.SourceKind,
+		ProjectPath:            row.ProjectPath,
+		Enabled:                int64ToBool(row.Enabled),
+		IncludePrereleases:     int64ToBool(row.IncludePrereleases),
+		SourceIntegrationID:    nullStringPtr(row.SourceIntegrationID),
+		TicketProjectID:        row.TicketProjectID,
+		OpenTicketExternalID:   nullStringPtr(row.OpenTicketExternalID),
+		OpenTicketTag:          nullStringPtr(row.OpenTicketTag),
 		LastKnownTag:           nullStringPtr(row.LastKnownTag),
 		LastReleasePublishedAt: nullStringPtr(row.LastReleasePublishedAt),
 		LastPolledAt:           nullStringPtr(row.LastPolledAt),
-		LastError:            nullStringPtr(row.LastError),
-		CreatedAt:            row.CreatedAt,
-		UpdatedAt:            row.UpdatedAt,
+		LastError:              nullStringPtr(row.LastError),
+		CreatedAt:              row.CreatedAt,
+		UpdatedAt:              row.UpdatedAt,
 	}
 }
 
 func monitoredRepoFromListEnabledRow(row db.ListEnabledRow) MonitoredRepo {
 	repo := MonitoredRepo{
-		ID:                   row.ID,
-		SourceKind:           row.SourceKind,
-		ProjectPath:          row.ProjectPath,
-		Enabled:              int64ToBool(row.Enabled),
-		IncludePrereleases:   int64ToBool(row.IncludePrereleases),
-		SourceIntegrationID:  nullStringPtr(row.SourceIntegrationID),
-		TicketProjectID:      row.TicketProjectID,
-		OpenTicketExternalID: nullStringPtr(row.OpenTicketExternalID),
-		OpenTicketTag:        nullStringPtr(row.OpenTicketTag),
+		ID:                     row.ID,
+		SourceKind:             row.SourceKind,
+		ProjectPath:            row.ProjectPath,
+		Enabled:                int64ToBool(row.Enabled),
+		IncludePrereleases:     int64ToBool(row.IncludePrereleases),
+		SourceIntegrationID:    nullStringPtr(row.SourceIntegrationID),
+		TicketProjectID:        row.TicketProjectID,
+		OpenTicketExternalID:   nullStringPtr(row.OpenTicketExternalID),
+		OpenTicketTag:          nullStringPtr(row.OpenTicketTag),
 		LastKnownTag:           nullStringPtr(row.LastKnownTag),
 		LastReleasePublishedAt: nullStringPtr(row.LastReleasePublishedAt),
 		LastPolledAt:           nullStringPtr(row.LastPolledAt),
-		LastError:            nullStringPtr(row.LastError),
-		CreatedAt:            row.CreatedAt,
-		UpdatedAt:            row.UpdatedAt,
+		LastError:              nullStringPtr(row.LastError),
+		CreatedAt:              row.CreatedAt,
+		UpdatedAt:              row.UpdatedAt,
 	}
 	if raw, ok := row.NotificationTargetIds.(string); ok && raw != "" {
 		// GROUP_CONCAT returns comma-separated IDs; split for callers.

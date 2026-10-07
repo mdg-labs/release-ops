@@ -84,7 +84,7 @@ export function CreateConfigTabs({
           ))}
         </TabsList>
 
-        <TabsPanel className="flex flex-col gap-4 pt-2" value="phasical">
+        <TabsPanel className="flex flex-col gap-4 pt-2" value="kaneo">
           <MetadataSelect
             disabled={!metadataEnabled}
             errorMessage={statusesQuery.data?.message}
@@ -93,8 +93,8 @@ export function CreateConfigTabs({
             isError={statusesQuery.isError}
             isLoading={statusesQuery.isLoading}
             items={statuses}
-            label={t("phasical.status")}
-            name="phasicalStatus"
+            label={t("kaneo.status")}
+            name="kaneoStatus"
             onValueChange={(next) =>
               onChange(updateStringField(values, "status", next))
             }
@@ -110,8 +110,8 @@ export function CreateConfigTabs({
             isError={prioritiesQuery.isError}
             isLoading={prioritiesQuery.isLoading}
             items={priorities}
-            label={t("phasical.priority")}
-            name="phasicalPriority"
+            label={t("kaneo.priority")}
+            name="kaneoPriority"
             onValueChange={(next) =>
               onChange(updateStringField(values, "priority", next))
             }

@@ -1,39 +1,44 @@
 # Doc index — Release Ops
 
-> Local spec shorthand map.
+Shorthand → path map for prompt Doc Refs, plus the verification commands sub-agents run. The orchestrator passes paths and `§` anchors; sub-agents read the bodies.
 
 ## Spec documents
 
+Precedence when docs conflict: `spec` → `schema` → `stack` → `hub` (see `.claude/rules/00-project.md`).
+
 | Shorthand | Path | Topics |
 | --------- | ---- | ------ |
-| `docs-site` | `apps/docs/` | Published docs (Starlight) → https://mdg-labs.github.io/release-ops/ |
-| `docs` | `docs/index.html` | Legacy hub source (synced to site intro) |
-| `spec` | `docs/specs.html` | MVP contract, APIs, UI, providers, CI/CD (§11), domain logic |
-| `schema` | `db/schema.sql` | SQLite app.db schema (canonical DDL) |
-| `schema-html` | `docs/schema.html` | Schema browser view (synced to site) |
-| `stack` | `docs/stack.html` | Go, Next.js, COSS, Go session auth, Docker |
-| `roadmap` | `docs/roadmap.html` | Plan file — 11 epics, 51 leaves; machine source: `docs/roadmap.json`; site: `/roadmap/` |
+| `spec` | `docs/specs.html` | MVP contract, APIs, UI, providers, ticket integrations, domain logic; anchors e.g. `#architecture`, `#ui`, `#i18n`, `#env`, `#ci`, `#schema-migrations` |
+| `schema` | `db/schema.sql` | SQLite `app.db` schema (canonical DDL) |
+| `schema-html` | `docs/schema.html` | Browser view of the schema only — never the source of truth |
+| `stack` | `docs/stack.html` | Go, Next.js, COSS, Go session auth, Docker, repository layout |
+| `roadmap` | `docs/roadmap.html` | **Plan file** — 11 epics, 51 leaves, status checkboxes; generated from `docs/roadmap.json` |
+| `hub` | `docs/index.html` | Doc hub (not the plan file) |
+| `docs-site` | `apps/docs/` | Published customer docs (Starlight) → https://mdg-labs.github.io/release-ops/ |
 
-## Verification commands (when scaffold exists)
+## Verification commands
 
-| Scope | Command |
-| ----- | ------- |
-| Go test | `go test ./...` |
-| Go lint | `golangci-lint run` |
-| Web test | `npm test` (in `apps/web`) |
-| Web typecheck | `npm run typecheck` (in `apps/web`) |
+| Paths touched | Command |
+| ------------- | ------- |
+| `apps/web/**`, root `package.json` / lockfile | `npm test && npm run lint` (lint enforces `i18next/no-literal-string`) |
+| `db/schema.sql`, `migrations/**` | `npm run db:check` (+ Go gate when sqlc output changes) |
+| `cmd/**`, `internal/**`, `queries/**`, `sqlc.yaml`, `go.mod` | `go test ./... && golangci-lint run` |
+| `docs/**` only | no test/lint gate — sanity-check the edited HTML/Markdown |
+| Pre-push (only when the user asks to push) | `npm test && npm run lint && npm run typecheck && npm run db:check` (+ Go gate) |
 | CI layout | `docs/specs.html#ci` — `pr` / `dev` / `main` / `release` entrypoints |
 
-Map committed paths per `.claude/rules/06-local-ci-before-commit.md`.
+Full mapping: `.claude/rules/06-local-ci-before-commit.md`.
 
 ## Phase gates
 
 | Gate | Blocks |
 | ---- | ------ |
-| `db-migrations` | Schema changes: edit `db/schema.sql` → `make migrate-diff` only; CI `npm run db:check` |
-| `i18n` | No hardcoded UI strings in `apps/web/` — next-intl keys only; ESLint `i18next/no-literal-string` |
+| `db-migrations` | Schema changes: edit `db/schema.sql` → `make migrate-diff name=<change>` only; `npm run db:check` (`.claude/rules/11-db-migrations.md`) |
+| `i18n` | No hardcoded UI strings in `apps/web/` — next-intl keys only (`.claude/rules/10-i18n.md`) |
 
 ## Hot files (never parallelize)
 
-- `migrations/` — single writer per schema change batch
-- `docs/roadmap.html` — plan file checkboxes (when created)
+- `db/schema.sql`, `migrations/` — single writer per schema change
+- `docs/roadmap.html` / `docs/roadmap.json` — plan file
+- `package.json`, `package-lock.json`, `go.mod`, `go.sum` — root dependency manifests
+- `apps/web/messages/en.json` — shared i18n message file

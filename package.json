@@ -1,6 +1,7 @@
 {
   "name": "release-ops",
   "private": true,
+  "license": "AGPL-3.0-only",
   "workspaces": [
     "apps/web",
     "apps/docs"
