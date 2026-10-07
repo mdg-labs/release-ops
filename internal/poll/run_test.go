@@ -61,9 +61,9 @@ func TestCounterDeltasForAction(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		action             string
-		wantCreated        int64
-		wantSuperseded     int64
+		action         string
+		wantCreated    int64
+		wantSuperseded int64
 	}{
 		{poll.ActionCreate, 1, 0},
 		{poll.ActionSupersede, 0, 1},

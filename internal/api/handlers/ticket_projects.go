@@ -34,16 +34,16 @@ type contentTemplatesResponse struct {
 }
 
 type ticketProjectResponse struct {
-	ID                 string                  `json:"id"`
-	IntegrationID      string                  `json:"integrationId"`
-	ExternalProjectID  string                  `json:"externalProjectId"`
-	Name               string                  `json:"name"`
-	CreateConfig       json.RawMessage         `json:"createConfig"`
-	StatusMapping      json.RawMessage         `json:"statusMapping"`
+	ID                 string                   `json:"id"`
+	IntegrationID      string                   `json:"integrationId"`
+	ExternalProjectID  string                   `json:"externalProjectId"`
+	Name               string                   `json:"name"`
+	CreateConfig       json.RawMessage          `json:"createConfig"`
+	StatusMapping      json.RawMessage          `json:"statusMapping"`
 	ContentTemplates   contentTemplatesResponse `json:"contentTemplates"`
-	OnOpenTicketPolicy string                  `json:"onOpenTicketPolicy"`
-	CreatedAt          string                  `json:"createdAt"`
-	UpdatedAt          string                  `json:"updatedAt"`
+	OnOpenTicketPolicy string                   `json:"onOpenTicketPolicy"`
+	CreatedAt          string                   `json:"createdAt"`
+	UpdatedAt          string                   `json:"updatedAt"`
 }
 
 type createTicketProjectRequest struct {

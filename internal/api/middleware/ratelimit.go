@@ -16,15 +16,15 @@ const rateLimitedMessage = "Too many requests. Try again later."
 
 // Rate limit windows per specs §7.
 const (
-	LoginLimit            = 10
-	LoginWindow           = time.Minute
-	ForgotPasswordLimit   = 5
-	ForgotPasswordWindow  = time.Hour
-	AcceptInvitationLimit = 10
-	AcceptInvitationWindow = time.Hour
-	ResetPasswordLimit    = 10
-	ResetPasswordWindow   = time.Hour
-	ConfirmEmailChangeLimit = 10
+	LoginLimit               = 10
+	LoginWindow              = time.Minute
+	ForgotPasswordLimit      = 5
+	ForgotPasswordWindow     = time.Hour
+	AcceptInvitationLimit    = 10
+	AcceptInvitationWindow   = time.Hour
+	ResetPasswordLimit       = 10
+	ResetPasswordWindow      = time.Hour
+	ConfirmEmailChangeLimit  = 10
 	ConfirmEmailChangeWindow = time.Hour
 )
 

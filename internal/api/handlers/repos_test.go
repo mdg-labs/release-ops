@@ -190,16 +190,16 @@ func TestListRepos(t *testing.T) {
 	repo := &mockRepoRepo{
 		items: map[string]*store.MonitoredRepo{
 			"repo-1": {
-				ID:                   "repo-1",
-				SourceKind:           "github",
-				ProjectPath:          "org/repo",
-				Enabled:              true,
-				TicketProjectID:      "tp-1",
+				ID:                    "repo-1",
+				SourceKind:            "github",
+				ProjectPath:           "org/repo",
+				Enabled:               true,
+				TicketProjectID:       "tp-1",
 				NotificationTargetIDs: []string{"nt-1"},
-				OpenTicketExternalID: &openTicketID,
-				OpenTicketTag:        &openTicketTag,
-				CreatedAt:            "2026-08-07T10:00:00.000Z",
-				UpdatedAt:            "2026-08-07T10:00:00.000Z",
+				OpenTicketExternalID:  &openTicketID,
+				OpenTicketTag:         &openTicketTag,
+				CreatedAt:             "2026-08-07T10:00:00.000Z",
+				UpdatedAt:             "2026-08-07T10:00:00.000Z",
 			},
 		},
 	}

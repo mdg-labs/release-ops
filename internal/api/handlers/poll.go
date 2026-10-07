@@ -35,15 +35,15 @@ type pollRunError struct {
 }
 
 type pollRunResponse struct {
-	ID                string           `json:"id"`
-	StartedAt         string           `json:"startedAt"`
-	FinishedAt        *string          `json:"finishedAt"`
-	Status            string           `json:"status"`
-	TriggerSource     string           `json:"triggerSource"`
-	ReposChecked      int64            `json:"reposChecked"`
-	TicketsCreated    int64            `json:"ticketsCreated"`
-	TicketsSuperseded int64            `json:"ticketsSuperseded"`
-	Errors            []pollRunError   `json:"errors"`
+	ID                string                 `json:"id"`
+	StartedAt         string                 `json:"startedAt"`
+	FinishedAt        *string                `json:"finishedAt"`
+	Status            string                 `json:"status"`
+	TriggerSource     string                 `json:"triggerSource"`
+	ReposChecked      int64                  `json:"reposChecked"`
+	TicketsCreated    int64                  `json:"ticketsCreated"`
+	TicketsSuperseded int64                  `json:"ticketsSuperseded"`
+	Errors            []pollRunError         `json:"errors"`
 	Events            []pollRunEventResponse `json:"events,omitempty"`
 }
 

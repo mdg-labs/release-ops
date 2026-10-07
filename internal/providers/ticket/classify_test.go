@@ -121,7 +121,7 @@ func TestClassifyStatusMappingFixtures(t *testing.T) {
 			want:      ticket.StatusUnknown,
 		},
 		{
-			name:      "open wins over done when both match",
+			name: "open wins over done when both match",
 			mapping: ticket.StatusMapping{
 				Open:      []string{"shared"},
 				Done:      []string{"shared"},
