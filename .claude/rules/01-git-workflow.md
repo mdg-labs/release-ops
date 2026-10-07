@@ -17,12 +17,12 @@ description: Git branch policy, commit format, staging rules, never-push default
 
 ## Commit messages (Conventional Commits)
 
-Subject ≤72 chars, imperative mood, **scoped**. Task commits link work items per `07-phasical-commit-linking.md`.
+Subject ≤72 chars, imperative mood, **scoped**. Task commits link work items per `07-kaneo-commit-linking.md`.
 
 ```
-feat(<scope>)[#123]: <summary>
+feat(<scope>)[#123]: <summary>     # body ends with: fixes #123 (mandatory)
 fix(<scope>)[#123]: <summary>
-chore(<scope>)[P2-01]: <summary>   # roadmap-only when no Phasical mirror
+chore(<scope>)[P2-01]: <summary>   # roadmap-only when no Kaneo mirror
 ```
 
 **Allowed scopes**: release-ops, api, db, config, ci, docs, deps

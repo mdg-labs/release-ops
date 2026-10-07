@@ -57,14 +57,14 @@
 | Policy | {PLACEHOLDERS \| NONE} |
 | Placeholder format | `{SCREENSHOT: short description}` — skill never captures images |
 
-## Phasical integration
+## Kaneo integration
 
 | Field | Value |
 | ----- | ----- |
 | Enabled | {yes \| no} |
 | project.config.md | `.agents/project/orchestrator/project.config.md` — {present \| absent} |
 | Commit subject (with task) | `[#N] docs({SCOPE}): {summary}` |
-| Commit subject (no task) | `docs({SCOPE}): {summary}` — only when Phasical sync opted out |
+| Commit subject (no task) | `docs({SCOPE}): {summary}` — only when Kaneo sync opted out |
 | Allowed docs scope | `{DOCS_SCOPE}` — e.g. `docs`, `help` |
 
 ## Conventions

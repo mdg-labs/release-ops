@@ -16,54 +16,54 @@ Source of truth: `.agents/project/orchestrator/prompt-templates.md` — copy blo
 
 | # | Must appear verbatim in prompt | Block in prompt-templates.md |
 |---|-------------------------------|------------------------------|
-| 1 | `PHASICAL STATUS SYNC — EXECUTION` | § PHASICAL SYNC — EXECUTION |
+| 1 | `KANEO STATUS SYNC — EXECUTION` | § KANEO SYNC — EXECUTION |
 | 2 | `━━━ STATUS SYNC TABLE` | (inside execution block) |
 | 3 | `COMMIT CONTRACT — EXECUTION` | § COMMIT CONTRACT — EXECUTION |
 | 4 | `SCOPED CI GATE` | § SCOPED CI GATE |
 | 5 | `DB MIGRATIONS` | § DB MIGRATIONS |
-| 6 | Filled `taskId:` + `githubIssueNumber:` per leaf task | inside PHASICAL SYNC block |
+| 6 | Filled `taskId:` (Kaneo task ID) + `githubIssueNumber:` (from `list_tasks` `externalLinks`, not `RO-<n>`) per leaf task; `closesParent:` on the parent entry | inside KANEO SYNC block |
 | 7 | `SESSION-ID:` with value `<TASK-ID>-<YYYYMMDD>-<4hex>` | orchestrator header |
-| 8 | Verbatim acceptance criteria bullets | from plan row / Phasical description |
+| 8 | Verbatim acceptance criteria bullets | from plan row / Kaneo description |
 | 9 | `READ SCOPE:` and `WRITE SCOPE:` with absolute paths | orchestrator header |
 
 Also include when applicable: `SESSION TIME TRACKING`, `PLAN FILE GUARD`, `WORKTREE ISOLATION` (Lane P).
 
-Skip PHASICAL SYNC only when user said **"don't update Phasical"**. COMMIT CONTRACT is **always** required.
+Skip KANEO SYNC only when user said **"don't update Kaneo"**. COMMIT CONTRACT is **always** required.
 
 ### Verifier prompt — required content
 
 | # | Must appear verbatim in prompt | Block in prompt-templates.md |
 |---|-------------------------------|------------------------------|
-| 1 | `PHASICAL STATUS SYNC — VERIFIER` | § PHASICAL SYNC — VERIFIER |
+| 1 | `KANEO STATUS SYNC — VERIFIER` | § KANEO SYNC — VERIFIER |
 | 2 | `━━━ STATUS SYNC TABLE` | (inside verifier block) |
 | 3 | `━━━ GATE: PASS PATH` and `━━━ GATE: FAIL PATH` | (inside verifier block) |
-| 4 | `PHASICAL COMMENT CONTRACT` | § PHASICAL COMMENT CONTRACT |
+| 4 | `KANEO COMMENT CONTRACT` | § KANEO COMMENT CONTRACT |
 | 5 | `SCOPED CI GATE` | § SCOPED CI GATE |
-| 6 | Filled `taskId:` + `githubIssueNumber:` per leaf task | inside PHASICAL SYNC block |
+| 6 | Filled `taskId:` + `githubIssueNumber:` per leaf task | inside KANEO SYNC block |
 | 7 | Same `SESSION-ID:` as execution agent | orchestrator header |
-| 8 | Verbatim acceptance criteria bullets | from plan row / Phasical description |
-| 9 | `READ SCOPE:` / `WRITE SCOPE:` (verifier may write Phasical + plan file only) | orchestrator header |
+| 8 | Verbatim acceptance criteria bullets | from plan row / Kaneo description |
+| 9 | `READ SCOPE:` / `WRITE SCOPE:` (verifier may write Kaneo + plan file only) | orchestrator header |
 
 Also include when applicable: `PLAN FILE GUARD`, three-layer verification instructions from orchestrator skill.
 
-Skip PHASICAL SYNC only when user said **"don't update Phasical"**.
+Skip KANEO SYNC only when user said **"don't update Kaneo"**.
 
 ### Verifier is NOT read-only
 
-When Phasical sync is on, the verifier **must** call `create_task_comment` and `update_task_status`. Never label a verifier prompt `READ-ONLY` or dispatch it as a read-only agent type (`Explore`, `Plan`) — that blocks required MCP writes.
+When Kaneo sync is on, the verifier **must** call `create_task_comment` and `update_task_status`. Never label a verifier prompt `READ-ONLY` or dispatch it as a read-only agent type (`Explore`, `Plan`) — that blocks required MCP writes.
 
 ## Forbidden shorthand (never dispatch with these)
 
 These patterns mean the prompt is **invalid** — rebuild from prompt-templates before calling Agent:
 
-- `Phasical PASS` / `Phasical FAIL` / `leaf done` / `set done` — orchestrator **never** pre-decides verification outcome
-- `VERIFIER READ-ONLY` or a read-only `subagent_type` (`Explore`, `Plan`) on verifier when Phasical sync is on
-- One-line Phasical instructions (`Phasical sync on`, `update board`, `git log [#N]`)
+- `Kaneo PASS` / `Kaneo FAIL` / `leaf done` / `set done` — orchestrator **never** pre-decides verification outcome
+- `VERIFIER READ-ONLY` or a read-only `subagent_type` (`Explore`, `Plan`) on verifier when Kaneo sync is on
+- One-line Kaneo instructions (`Kaneo sync on`, `update board`, `git log [#N]`)
 - CI as a lone flag (`CI --filter=…`) without the full `SCOPED CI GATE` block
-- TaskId / `#N` in prose without the filled `tasks:` list inside PHASICAL SYNC block
+- TaskId / `#N` in prose without the filled `tasks:` list inside KANEO SYNC block
 - Summarized status transitions instead of the `━━━ STATUS SYNC TABLE`
 - Missing `COMMIT CONTRACT — EXECUTION` on execution prompts
-- Missing `━━━ REQUIRED OUTPUT` section from PHASICAL SYNC block
+- Missing `━━━ REQUIRED OUTPUT` section from KANEO SYNC block
 
 ### Invalid example (do not dispatch)
 
@@ -71,7 +71,7 @@ These patterns mean the prompt is **invalid** — rebuild from prompt-templates 
 Verifier EL-169 #170 taskId abc. Epic not done. git log [#170].
 AC: …
 WRITE: …
-Phasical PASS leaf done. VERIFIER READ-ONLY. CI --filter=@app/web.
+Kaneo PASS leaf done. VERIFIER READ-ONLY. CI --filter=@app/web.
 ```
 
 ### Valid shape (minimum — blocks must be full verbatim copies)
@@ -86,22 +86,23 @@ AC:
 READ SCOPE: …
 WRITE SCOPE: …
 
-<verbatim PHASICAL STATUS SYNC — VERIFIER block from prompt-templates.md>
+<verbatim KANEO STATUS SYNC — VERIFIER block from prompt-templates.md>
 
-<verbatim PHASICAL COMMENT CONTRACT block from prompt-templates.md>
+<verbatim KANEO COMMENT CONTRACT block from prompt-templates.md>
 
 <verbatim SCOPED CI GATE block from prompt-templates.md>
 ```
 
-## Phasical status + comment rules (summary)
+## Kaneo status + comment rules (summary)
 
 | Role | Status MCP | Comment MCP |
 |------|------------|-------------|
 | **Execution** | `in-progress` first; `in-review` before commit | **Never** |
-| **Verifier PASS** | `done` on leaf (+ parent if epic complete) | **Mandatory** PASS template — **before** `done` |
+| **Verifier PASS** | `implemented` on leaf (+ parent when `closesParent: yes`) | **Mandatory** PASS template — **before** `implemented` |
+| **Anyone** | `done` — **never** (GitHub sync sets it when the `fixes #N` commit lands on `main`) | — |
 | **Verifier FAIL** | `in-progress` on leaf (rework) | **Mandatory** FAIL template — **before** `in-progress` |
 
-Full templates: `.claude/skills/orchestrator/references/phasical-sync.md` and prompt-templates § PHASICAL COMMENT CONTRACT.
+Full templates: `.claude/skills/orchestrator/references/kaneo-sync.md` and prompt-templates § KANEO COMMENT CONTRACT.
 
 ## Enforcement
 

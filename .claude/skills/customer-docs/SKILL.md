@@ -62,7 +62,7 @@ If `.agents/project/customer-docs/docs.config.md` does **not** exist: **do NOT w
 | 4 | **Audience + product** | Technical vs non-technical users, product name, core use case, existing spec docs (read `.agents/project/orchestrator/doc-index.md` if present). |
 | 5 | **Docs structure** | Folder layout, sidebar/nav file, naming (kebab-case), framework frontmatter schema. |
 | 6 | **Screenshot policy** | Insert placeholders like `{SCREENSHOT: description}` vs no images — this skill **never** takes screenshots itself. |
-| 7 | **Phasical integration** (optional) | If `.agents/project/orchestrator/project.config.md` exists, adopt Phasical constants; docs commits follow `07-phasical-commit-linking` (`[#N]` when a task exists; `docs(scope)` without a task key only if user opts out of Phasical sync). |
+| 7 | **Kaneo integration** (optional) | If `.agents/project/orchestrator/project.config.md` exists, adopt Kaneo constants; docs commits follow `07-kaneo-commit-linking` (`[#N]` when a task exists; `docs(scope)` without a task key only if user opts out of Kaneo sync). |
 
 ### Bootstrap workflow
 
@@ -227,10 +227,10 @@ Full rules: [style-guide.md](style-guide.md). Enforce on every write.
 
 ## Commits
 
-Follow project git rules (`.claude/rules/01-git-workflow.md`, `07-phasical-commit-linking.md` when Phasical is enabled):
+Follow project git rules (`.claude/rules/01-git-workflow.md`, `07-kaneo-commit-linking.md` when Kaneo is enabled):
 
 - Explicit path staging only — **no** `git add .`
-- Subject: `[#N] docs(scope): …` when a Phasical task exists; `docs(scope): …` only if user opted out of Phasical sync in config
+- Subject: `[#N] docs(scope): …` when a Kaneo task exists; `docs(scope): …` only if user opted out of Kaneo sync in config
 - Never push unless the user asks
 
 ---
@@ -294,7 +294,7 @@ Phase 2 (after approval):
 
 ## Forbidden
 
-- **Any customer doc or nav file write before explicit user approval** of the written proposal (no exceptions — same gate as phasical-intake)
+- **Any customer doc or nav file write before explicit user approval** of the written proposal (no exceptions — same gate as kaneo-intake)
 - **Skipping the written proposal** — including single-page and drift-check runs
 - Proceeding to Phase 2 in the same turn as Phase 1 without user reply
 - **Modifying application source code** — read-only on app code; only docs files, nav files, and supporting files under `.agents/project/customer-docs/`

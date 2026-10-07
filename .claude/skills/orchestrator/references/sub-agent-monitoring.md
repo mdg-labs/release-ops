@@ -1,10 +1,10 @@
 # Sub-agent monitoring
 
-**Applies to any agent that dispatches sub-agents** via the Claude Code **Agent** tool (`run_in_background: true` or not) — orchestrator, main chat delegating phasical-intake, triage, explore, etc.
+**Applies to any agent that dispatches sub-agents** via the Claude Code **Agent** tool (`run_in_background: true` or not) — orchestrator, main chat delegating kaneo-intake, triage, explore, etc.
 
 ## The failure mode
 
-Parent infers **stalled** from git silence (or one quiet minute), takes over the sub-agent's WRITE scope, and duplicates work — e.g. phasical-intake still creating tasks via MCP while the parent also `create_task`s the same issues.
+Parent infers **stalled** from git silence (or one quiet minute), takes over the sub-agent's WRITE scope, and duplicates work — e.g. kaneo-intake still creating tasks via MCP while the parent also `create_task`s the same issues.
 
 **Git history alone is not liveness.** MCP-heavy sub-agents (intake, triage, explore) may produce no commits for long stretches while still working.
 
@@ -61,7 +61,7 @@ Compare to step 2. **Progress** = new transcript lines, new tool calls, or compl
 
 1. **Terminate the existing sub-agent first** — `TaskStop` on the running agent's task id. Confirm it is stopped before continuing.
 2. **Audit partial work** before re-dispatch:
-   - Phasical: `list_tasks` / search for titles created in this run
+   - Kaneo: `list_tasks` / search for titles created in this run
    - Git: `git log`, `git status` on relevant branches
    - Files: plan drafts, session memory
 3. **Dedupe** — continue or enrich existing artifacts; do **not** blindly recreate tasks, commits, or files.
@@ -73,7 +73,7 @@ Compare to step 2. **Progress** = new transcript lines, new tool calls, or compl
 
 ## Parent agent: do not take over
 
-While a sub-agent is in-flight for a scoped skill (phasical-intake, phasical-triage, execution, verifier):
+While a sub-agent is in-flight for a scoped skill (kaneo-intake, kaneo-triage, execution, verifier):
 
 - **Do not** perform that skill's WRITE actions yourself (no `create_task`, no implementation edits, no verifier PASS/FAIL).
 - **Do not** assume stalled because git is quiet.

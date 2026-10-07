@@ -31,18 +31,6 @@
       "skillPath": "orchestrator/SKILL.md",
       "computedHash": "16133146418149875777e08c0bade4a03bb6b756ce4037238799ed8de451fd7d"
     },
-    "phasical-intake": {
-      "source": "mdg-labs/skills",
-      "sourceType": "github",
-      "skillPath": "phasical-intake/SKILL.md",
-      "computedHash": "1f2aa985e6c40cb99f174fcfac2e0fcb74c8845017e43395c3fc7256a4c693cd"
-    },
-    "phasical-triage": {
-      "source": "mdg-labs/skills",
-      "sourceType": "github",
-      "skillPath": "phasical-triage/SKILL.md",
-      "computedHash": "36e88f5c7aa7335608629c76b8b721c689a43c0bd1f9e641e74aa7c6201d8875"
-    },
     "project-setup": {
       "source": "mdg-labs/skills",
       "sourceType": "github",

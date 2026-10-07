@@ -8,8 +8,8 @@
       "managed": "shared",
       "computedHash": "89f73d186adc211363734c59353e6f9ba9e6a69c30d917381cc5dab01f1b8a2c"
     },
-    "07-phasical-commit-linking": {
-      "installPath": ".claude/rules/07-phasical-commit-linking.md",
+    "07-kaneo-commit-linking": {
+      "installPath": ".claude/rules/07-kaneo-commit-linking.md",
       "templatePath": "project-setup/templates/rules/shared/07-phasical-commit-linking.md",
       "managed": "shared",
       "computedHash": "4bcb44b30e82ed6d7572848e11a4ef07fd8f985efc10ae80c5222833fa9ad9f3"

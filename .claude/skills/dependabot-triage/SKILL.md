@@ -1,21 +1,23 @@
 ---
 name: dependabot-triage
 description: >-
-  Fetch a Dependabot security alert from a GitHub repo via gh CLI, search Phasical for
-  a duplicate Bug, and create a Phasical Bug if no open duplicate exists. Records
+  Fetch a Dependabot security alert from a GitHub repo via gh CLI, search Kaneo for
+  a duplicate Bug, and create a Kaneo Bug if no open duplicate exists. Records
   githubIssueNumber after sync. Use when the user references a Dependabot alert
   number, CVE/GHSA ID, or asks to triage a dependency vulnerability.
 ---
 
 # Dependabot triage
 
-Fetch alert details from GitHub, search Phasical for duplicates, create a Phasical Bug if none found. Phasical sync creates the GitHub mirror issue.
+Fetch alert details from GitHub, search Kaneo for duplicates, create a Kaneo Bug if none found. Kaneo sync creates the GitHub mirror issue.
+
+> Locally migrated to Kaneo — upstream `mdg-labs/skills` still ships the Phasical version; `npx skills update` would revert this.
 
 | What | Path |
 | ---- | ---- |
 | This skill (installed) | `.claude/skills/dependabot-triage/SKILL.md` |
 | Project constants (supporting) | `.agents/project/orchestrator/project.config.md` |
-| Intake patterns (installed) | `.claude/skills/phasical-intake/SKILL.md` |
+| Intake patterns (installed) | `.claude/skills/kaneo-intake/SKILL.md` |
 | Sub-agent monitoring (installed) | `.claude/skills/orchestrator/references/sub-agent-monitoring.md` |
 
 If dispatched as a sub-agent: parent must follow `sub-agent-monitoring.md` — no duplicate `create_task` while this skill is in-flight.
@@ -33,15 +35,16 @@ If dispatched as a sub-agent: parent must follow `sub-agent-monitoring.md` — n
 
 1. **Never** dismiss alerts via GitHub API — follow project Dependabot rule (e.g. `08-dependabot-alerts.md`).
 2. **No code changes** during triage.
-3. **Do not** set in-progress or done — leave at backlog or to-do after create.
-4. **Phasical-first** create via `create_task`; record `githubIssueNumber` after sync.
+3. **Do not** set in-progress, implemented or done — leave at backlog or ready after create.
+4. **Kaneo-first** create via `create_task` (with `userId` from `whoami`); record `githubIssueNumber` from `list_tasks` `externalLinks` after sync.
 
 ## Constants
 
 Read from `.agents/project/orchestrator/project.config.md`:
 
 ```text
-MCP server: phasical  (Claude Code tools: mcp__phasical__<tool>)
+MCP server: Kaneo  (Claude Code tools: mcp__Kaneo__<tool>)
+workspaceId: <from project.config.md>
 projectId: <from project.config.md>
 GitHub: <owner/repo from project.config.md>
 ```
@@ -50,8 +53,8 @@ GitHub: <owner/repo from project.config.md>
 
 ```
 - [ ] Phase 1: Fetch alert (gh api REST)
-- [ ] Phase 2: Search Phasical duplicates (list_tasks)
-- [ ] Phase 3: Create Phasical Bug (if no open duplicate)
+- [ ] Phase 2: Search Kaneo duplicates (list_tasks)
+- [ ] Phase 3: Create Kaneo Bug (if no open duplicate)
 - [ ] Phase 4: Summarise #N + taskId in chat
 ```
 
@@ -66,14 +69,15 @@ Record: package, CVE, GHSA, severity, patched version, alert URL.
 ### Phase 2 — Duplicate search
 
 ```text
-list_tasks: projectId + search title/description for <package_name>
-list_tasks: projectId + search for <cve_id>
+search: { q: <package_name>, type: "tasks", workspaceId, projectId }
+search: { q: <cve_id>, type: "tasks", workspaceId, projectId }
+(or list_tasks: projectId — filter title/description)
 ```
 
 | Result | Action |
 | ------ | ------ |
-| Open duplicate (not done/closed) | Report `#N` + taskId; do not create |
-| done/closed duplicate | Create anyway (regression or incomplete fix) |
+| Open duplicate (not implemented/done) | Report `#N` + taskId; do not create |
+| implemented/done duplicate | Create anyway (regression or incomplete fix) |
 | No duplicate | Phase 3 |
 
 ### Phase 3 — Create Bug
@@ -85,11 +89,12 @@ create_task
   description: <template below>
   priority: high
   status: backlog
+  userId: <whoami user.id>
 ```
 
-Attach labels: `bug`, `security`, `dependabot` (if project uses them).
+Labels: `create_label` with `taskId` for `bug` (+ `security`, `dependabot` if the project uses them) — Kaneo labels are per task.
 
-Wait for sync; resolve `githubIssueNumber` from `externalLinks`.
+Wait for sync; resolve `githubIssueNumber` from `list_tasks` `externalLinks` (`get_task` does not return it).
 
 **Description template:**
 
@@ -111,21 +116,23 @@ Bump `<package_name>` per project Dependabot policy. Land fix on integration bra
 ```
 
 ```text
-update_task_status → to-do
+update_task_status → ready
 ```
 
 ### Phase 4 — Summarise
 
-Report alert details, duplicate status, new `#N` + Phasical taskId, suggested next step (`implement #N` via orchestrator).
+Report alert details, duplicate status, new `#N` + Kaneo taskId, suggested next step (`implement #N` via orchestrator).
 
 ## Tools
 
 | Tool | Purpose |
 | ---- | ------- |
 | `gh api` REST | Dependabot alerts |
-| `list_tasks` | Duplicate check |
+| `search` / `list_tasks` | Duplicate check |
+| `whoami` | Operator `user.id` for `userId` |
+| `create_label` | Per-task labels |
 | `create_task` | Create Bug |
-| `get_task` | Resolve synced GitHub # |
-| `update_task_status` | Move to to-do |
+| `list_tasks` | Resolve synced GitHub # (`externalLinks`) |
+| `update_task_status` | Move to ready |
 
 **Forbidden:** setting done; posting findings as comments only; dismissing alerts.

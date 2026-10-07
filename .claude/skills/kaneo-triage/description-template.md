@@ -54,5 +54,5 @@ Previously fixed on #<N> (closed <date>). This report suggests the fix did not c
 - Paraphrasing the reporter's `## Report` text
 - Transitioning to in-progress / in-review / done during triage
 - Committing code fixes without an explicit user request
-- Leaving triaged backlog tasks in backlog when user did not opt out of Phasical updates
-- Re-opening **done** / **closed** tasks for regressions — create a **new** task with `regression` label instead
+- Leaving triaged backlog tasks in backlog when user did not opt out of Kaneo updates
+- Re-opening **implemented** / **done** tasks for regressions — create a **new** task with `regression` label instead

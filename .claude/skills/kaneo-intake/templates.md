@@ -1,8 +1,8 @@
-# Phasical description templates
+# Kaneo description templates
 
 Use during **Phase 1** to draft description outlines in the written proposal. After approval, copy filled templates into MCP `description` fields. Replace `{placeholders}`. Use GitHub issue URLs once sync completes: `https://github.com/{owner}/{repo}/issues/{N}`.
 
-**Titles** are set on `create_task` / `update_task` separately — follow [summary-patterns.md](../phasical-triage/summary-patterns.md).
+**Titles** are set on `create_task` / `update_task` separately — follow [summary-patterns.md](../kaneo-triage/summary-patterns.md).
 
 GitHub repo and owner come from `.agents/project/orchestrator/project.config.md`.
 

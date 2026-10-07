@@ -18,7 +18,7 @@ The correct resolution is to **upgrade the vulnerable dependency** and land the 
 4. Commit: `fix(deps)[#N]: bump <pkg> to <version> (CVE-XXXX-XXXX)`.
 5. Alert auto-closes when the fix is on the default/integration branch.
 
-Use **dependabot-triage** skill to create a Phasical bug if no ticket exists.
+Use **dependabot-triage** skill to create a Kaneo bug if no ticket exists.
 
 ## Dismissal is only acceptable when
 

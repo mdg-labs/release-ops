@@ -4,7 +4,7 @@ description: When and how to use the orchestrator skill and development roadmap
 
 # Orchestrator & roadmap
 
-This project is built **task-by-task** from the plan file (see `project.config.md` § Plan file). Sub-agents implement tasks; a verifier checks them; progress is tracked on Phasical and/or plan checkboxes.
+This project is built **task-by-task** from the plan file (see `project.config.md` § Plan file). Sub-agents implement tasks; a verifier checks them; progress is tracked on Kaneo and/or plan checkboxes.
 
 ## Use the orchestrator skill when
 
@@ -15,7 +15,7 @@ Follow `.claude/skills/orchestrator/SKILL.md` (installed from `mdg-labs/skills`)
 
 ## Sub-agent prompts (orchestrator dispatch)
 
-Before every **Agent** call: `.claude/rules/09-sub-agent-prompt-contract.md` — copy verbatim blocks from `.agents/project/orchestrator/prompt-templates.md`. No shorthand. Verifier is not read-only when Phasical sync is on.
+Before every **Agent** call: `.claude/rules/09-sub-agent-prompt-contract.md` — copy verbatim blocks from `.agents/project/orchestrator/prompt-templates.md`. No shorthand. Verifier is not read-only when Kaneo sync is on.
 
 ## Sub-agents (any Agent dispatch)
 
@@ -47,17 +47,21 @@ If you're the orchestrator chat: do not edit checkboxes during normal flow excep
 
 **Parallel batches (Lane P):** execution on isolated worktrees (Agent `isolation: "worktree"`); integration merges to the integration branch. See `.claude/skills/orchestrator/SKILL.md` § Parallelism.
 
-## Phasical board status (when orchestrating)
+## Kaneo board status (when orchestrating)
 
 | Column | Who sets it |
 |--------|-------------|
-| Ready (`to-do`) | intake / triage / user |
-| In Progress | **execution agent** (first action) |
-| In Review | **execution agent** (pre-verifier) |
-| Done | **verifier** after PASS |
+| Backlog (`backlog`) | new / raw issue |
+| Ready (`ready`) | intake / triage / user |
+| In Progress (`in-progress`) | **execution agent** (first action) |
+| In Review (`in-review`) | **execution agent** (pre-verifier) |
+| Implemented (`implemented`) | **verifier** after PASS (work on `dev`, not yet on `main`) |
 | In Progress (rework) | **verifier** after FAIL |
+| Done (`done`) | **never an agent** — GitHub closes the issue when the `fixes #N` commit lands on `main`; Kaneo syncs Implemented → Done |
 
-See `.claude/skills/orchestrator/references/phasical-sync.md` and `07-phasical-commit-linking.md`.
+Ticket IDs (`RO-106`) resolve with `get_task_by_ticket_id`; the GitHub number comes from `list_tasks` `externalLinks` and differs from the `RO-` number (`RO-106` = `#108`). See `project.config.md` § Task lookup.
+
+See `.claude/skills/orchestrator/references/kaneo-sync.md` and `07-kaneo-commit-linking.md`.
 
 ## Project config
 
