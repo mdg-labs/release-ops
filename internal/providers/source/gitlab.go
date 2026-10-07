@@ -36,6 +36,12 @@ func NewGitLabSource(baseURL, token string, client *http.Client) (*GitLabSource,
 	}, nil
 }
 
+// gitLabOpaquePath builds the opaque request target for apiPath, keeping any path prefix
+// of the instance base URL (GitLab served under a subpath, e.g. https://host/gitlab).
+func gitLabOpaquePath(base *url.URL, apiPath string) string {
+	return "//" + base.Host + strings.TrimRight(base.EscapedPath(), "/") + apiPath
+}
+
 // GetLatestRelease fetches the latest release for a GitLab project path (namespace/project).
 func (g *GitLabSource) GetLatestRelease(ctx context.Context, projectPath string, opts ReleaseOptions) (*Release, error) {
 	if opts.IncludePrereleases {
@@ -62,7 +68,7 @@ func (g *GitLabSource) getLatestStableRelease(ctx context.Context, projectPath s
 		return nil, fmt.Errorf("gitlab: build request: %w", err)
 	}
 	// Preserve encoded slashes in the GitLab project path (net/http decodes %2F by default).
-	req.URL.Opaque = "//" + req.URL.Host + apiPath
+	req.URL.Opaque = gitLabOpaquePath(req.URL, apiPath)
 	endpoint := g.baseURL + apiPath
 	req.Header.Set("User-Agent", gitLabUserAgent)
 	if g.token != "" {
@@ -117,7 +123,7 @@ func (g *GitLabSource) getLatestReleaseIncludingPrereleases(ctx context.Context,
 	if err != nil {
 		return nil, fmt.Errorf("gitlab: build request: %w", err)
 	}
-	req.URL.Opaque = "//" + req.URL.Host + apiPath
+	req.URL.Opaque = gitLabOpaquePath(req.URL, apiPath)
 	req.Header.Set("User-Agent", gitLabUserAgent)
 	if g.token != "" {
 		req.Header.Set("PRIVATE-TOKEN", g.token)

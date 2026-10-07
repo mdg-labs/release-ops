@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -114,14 +115,14 @@ type jiraUpdateFields struct {
 }
 
 type jiraADF struct {
-	Type    string       `json:"type"`
-	Version int          `json:"version"`
+	Type    string         `json:"type"`
+	Version int            `json:"version"`
 	Content []jiraADFBlock `json:"content"`
 }
 
 type jiraADFBlock struct {
 	Type    string        `json:"type"`
-	Content []jiraADFText `json:"content"`
+	Content []jiraADFText `json:"content,omitempty"`
 }
 
 type jiraADFText struct {
@@ -140,7 +141,7 @@ func (j *JiraProvider) CreateTicket(ctx context.Context, input TicketInput) (str
 		return "", errors.New("jira: external_project_id (project key) is required")
 	}
 
-	issueType, priority := jiraCreateDefaults(input.Project.CreateConfig)
+	issueType, priority, initialStatus := jiraCreateDefaults(input.Project.CreateConfig)
 
 	fields := jiraCreateFields{
 		Project:     jiraProjectRef{Key: projectKey},
@@ -160,7 +161,27 @@ func (j *JiraProvider) CreateTicket(ctx context.Context, input TicketInput) (str
 	if created.Key == "" {
 		return "", errors.New("jira: create issue: empty key in response")
 	}
+
+	// create_config.initialStatus (specs §5.3): move the new issue out of the workflow's
+	// default status. Best-effort — the issue exists, so a failed transition is logged
+	// and the key is still returned.
+	if initialStatus != "" {
+		if err := j.applyInitialStatus(ctx, created.Key, initialStatus); err != nil {
+			slog.Warn("jira: apply initial status", "issue", created.Key, "status", initialStatus, "error", err)
+		}
+	}
 	return created.Key, nil
+}
+
+func (j *JiraProvider) applyInitialStatus(ctx context.Context, issueKey, initialStatus string) error {
+	current, err := j.GetTicketStatus(ctx, issueKey)
+	if err != nil {
+		return err
+	}
+	if strings.EqualFold(current, initialStatus) {
+		return nil
+	}
+	return j.UpdateTicketStatus(ctx, issueKey, initialStatus)
 }
 
 // GetTicketStatus implements TicketProvider.
@@ -288,34 +309,37 @@ func (j *JiraProvider) findTransitionID(ctx context.Context, issueKey, targetSta
 	return "", fmt.Errorf("jira: no transition found to status %q", targetStatus)
 }
 
-func jiraCreateDefaults(createConfig map[string]any) (issueType, priority string) {
+// jiraCreateDefaults reads create_config. Priority is sent only when configured: projects
+// without a priority field on the create screen reject it.
+func jiraCreateDefaults(createConfig map[string]any) (issueType, priority, initialStatus string) {
 	issueType = "Task"
-	priority = "Medium"
 
 	if createConfig == nil {
-		return issueType, priority
+		return issueType, "", ""
 	}
 	if raw, ok := createConfig["issueType"].(string); ok && strings.TrimSpace(raw) != "" {
 		issueType = strings.TrimSpace(raw)
 	}
-	if raw, ok := createConfig["priority"].(string); ok && strings.TrimSpace(raw) != "" {
+	if raw, ok := createConfig["priority"].(string); ok {
 		priority = strings.TrimSpace(raw)
 	}
-	return issueType, priority
+	if raw, ok := createConfig["initialStatus"].(string); ok {
+		initialStatus = strings.TrimSpace(raw)
+	}
+	return issueType, priority, initialStatus
 }
 
+// plainTextADF wraps text in an ADF document. Jira rejects empty text nodes, so empty
+// text becomes an empty paragraph.
 func plainTextADF(text string) jiraADF {
+	paragraph := jiraADFBlock{Type: "paragraph"}
+	if text != "" {
+		paragraph.Content = []jiraADFText{{Type: "text", Text: text}}
+	}
 	return jiraADF{
 		Type:    "doc",
 		Version: 1,
-		Content: []jiraADFBlock{
-			{
-				Type: "paragraph",
-				Content: []jiraADFText{
-					{Type: "text", Text: text},
-				},
-			},
-		},
+		Content: []jiraADFBlock{paragraph},
 	}
 }
 
