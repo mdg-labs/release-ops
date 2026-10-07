@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	netmail "net/mail"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -18,10 +16,10 @@ import (
 
 // InvitationHandlers serves invitation HTTP endpoints.
 type InvitationHandlers struct {
-	Queries        *storedb.Queries
-	TokenService   *auth.TokenService
-	Mailer         mail.Mailer
-	AppPublicURL   string
+	Queries      *storedb.Queries
+	TokenService *auth.TokenService
+	Mailer       mail.Mailer
+	AppPublicURL string
 }
 
 type invitationItem struct {
@@ -82,12 +80,12 @@ func (h *InvitationHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		auth.WriteError(w, "VALIDATION_ERROR", "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	email := strings.TrimSpace(strings.ToLower(req.Email))
+	email := auth.NormalizeEmail(req.Email)
 	if email == "" {
 		auth.WriteError(w, "VALIDATION_ERROR", "email is required", http.StatusBadRequest)
 		return
 	}
-	if _, err := netmail.ParseAddress(email); err != nil {
+	if err := auth.ValidateEmail(email); err != nil {
 		auth.WriteError(w, "VALIDATION_ERROR", "invalid email address", http.StatusBadRequest)
 		return
 	}

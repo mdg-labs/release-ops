@@ -233,6 +233,7 @@ const markAuthTokenUsed = `-- name: MarkAuthTokenUsed :one
 UPDATE auth_tokens
 SET used_at = ?
 WHERE id = ?
+  AND used_at IS NULL
 RETURNING
   id,
   kind,

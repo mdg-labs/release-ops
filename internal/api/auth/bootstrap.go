@@ -80,6 +80,7 @@ func createAdminIfEmpty(ctx context.Context, q *storedb.Queries, email, password
 		return false, nil
 	}
 
+	email = NormalizeEmail(email)
 	if err := ValidateEmail(email); err != nil {
 		return false, err
 	}

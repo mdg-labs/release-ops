@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	netmail "net/mail"
 	"strings"
 	"time"
 
@@ -122,12 +121,12 @@ func (h *UsersHandlers) EmailChangeRequest(w http.ResponseWriter, r *http.Reques
 		auth.WriteError(w, "VALIDATION_ERROR", "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	newEmail := strings.TrimSpace(strings.ToLower(req.NewEmail))
+	newEmail := auth.NormalizeEmail(req.NewEmail)
 	if newEmail == "" || req.CurrentPassword == "" {
 		auth.WriteError(w, "VALIDATION_ERROR", "newEmail and currentPassword are required", http.StatusBadRequest)
 		return
 	}
-	if _, err := netmail.ParseAddress(newEmail); err != nil {
+	if err := auth.ValidateEmail(newEmail); err != nil {
 		auth.WriteError(w, "VALIDATION_ERROR", "invalid email address", http.StatusBadRequest)
 		return
 	}
@@ -237,6 +236,19 @@ func (h *UsersHandlers) PasswordChange(w http.ResponseWriter, r *http.Request) {
 		ID:           currentUserID,
 	}); err != nil {
 		auth.WriteError(w, "INTERNAL_ERROR", "failed to update password", http.StatusInternalServerError)
+		return
+	}
+
+	// Sign out every other session of this user and rotate the current token.
+	if err := h.Queries.DeleteOtherSessionsByUserID(r.Context(), storedb.DeleteOtherSessionsByUserIDParams{
+		UserID: currentUserID,
+		Token:  h.SessionManager.Token(r.Context()),
+	}); err != nil {
+		auth.WriteError(w, "INTERNAL_ERROR", "failed to revoke sessions", http.StatusInternalServerError)
+		return
+	}
+	if err := h.SessionManager.RenewToken(r.Context()); err != nil {
+		auth.WriteError(w, "INTERNAL_ERROR", "failed to renew session", http.StatusInternalServerError)
 		return
 	}
 
