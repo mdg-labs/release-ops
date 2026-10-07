@@ -6,6 +6,9 @@
     "apps/web",
     "apps/docs"
   ],
+  "overrides": {
+    "postcss-selector-parser": "^7.1.6"
+  },
   "scripts": {
     "dev": "npm run dev -w apps/web",
     "dev:docs": "npm run dev -w apps/docs",
