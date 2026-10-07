@@ -1,6 +1,6 @@
 # Project config — Release Ops
 
-> Supporting file — created by project-setup (layer **phasical**). Lives under `.agents/project/` — **not** inside `.agents/skills/` (`npx skills update` wipes skill directories).
+> Supporting file — created by project-setup (layer **phasical**). Lives under `.agents/project/` — **not** inside `.claude/skills/` (`npx skills update` wipes skill directories).
 
 ## Repository
 
@@ -12,7 +12,7 @@
 | Integration branch | `dev` |
 | Production branch | `main` — agents must not push here |
 | Task branch (Lane P) | `orchestrator/<TASK-ID>` |
-| Worktree (Lane P) | `../release-ops-wt/<TASK-ID>` |
+| Worktree (Lane P) | Managed by Claude Code (Agent `isolation: "worktree"` → `.claude/worktrees/…`); agent switches to the task branch |
 | Plan file | `docs/roadmap.html` |
 | Spec doc glob | `docs/specs.html`, `db/schema.sql`, `docs/stack.html` |
 
@@ -20,12 +20,12 @@
 
 | Field | Value |
 | ----- | ----- |
-| MCP server | `user-phasical` |
+| MCP server | `phasical` — Claude Code tools `mcp__phasical__<tool>` (register with `claude mcp add phasical …`; name must match) |
 | Workspace | MDG-Labs (`X3VbytvC7pKgazK2dAsOQIFtdGYRzdGH`) |
 | Project | Release Ops (`tv679ggt5ier9r5dx70w8ks6`) |
 | Project slug | `RO` — human-readable refs are `RO-<number>` (e.g. `RO-1`, `RO-12`) |
 | Ready status slug | `ready` |
-| GitHub MCP (read) | `user-github` |
+| GitHub MCP (read) | `github` — tools `mcp__github__<tool>` |
 
 **Commits:** use GitHub `[#N]` from `externalLinks.externalId`. Never Phasical task IDs in git.
 
@@ -37,7 +37,7 @@ When the user names a Phasical ref (`RO-1`), GitHub `#N`, or a CUID — **resolv
 | --------- | -------- |
 | `RO-1`, `RO-12`, … | `get_task` `taskId: "RO-1"` (slug + number) |
 | Phasical CUID | `get_task` `taskId: "<cuid>"` |
-| GitHub `#36` or issue URL | `list_tasks` `projectId` + match `externalLinks.externalId`, or `user-github` `issue_read` |
+| GitHub `#36` or issue URL | `list_tasks` `projectId` + match `externalLinks.externalId`, or `github` `issue_read` |
 | Epic subtasks | `get_task` parent → `get_task_relations` `taskId` → filter `relationType: subtask` |
 | Epic prerequisites | `get_task_relations` → filter `relationType: blocks` |
 | Roadmap ID in description (`E01`, …) | `list_tasks` `projectId` — filter description for `Roadmap ID: E01` |
@@ -96,12 +96,12 @@ search({ query: "RO-1" })                                       # wrong param na
 
 - Phasical/GitHub tasks: `[#N]` in subject
 - Roadmap-only (no Phasical mirror): `[E*-*]` or `[G*]` in subject
-- Body: `fixes #N` when project rules require it (see `.cursor/rules/`)
+- Body: `fixes #N` when project rules require it (see `.claude/rules/`)
 
 ## Optional
 
 | Field | Value |
 | ----- | ----- |
-| Multi-repo workspace | none |
+| Multi-repo workspace | `../release-ops-cloud` (sibling repo; `release-ops.code-workspace` + `.claude/settings.json` `additionalDirectories`) |
 | Slack session-end | not configured |
 | Phase gates | see `doc-index.md` § Phase gates |

@@ -1,0 +1,42 @@
+---
+description: Release Ops project identity, doc precedence, and current-phase awareness
+---
+
+# Release Ops
+
+Self-hosted release monitor — polls releases on GitHub, GitLab, Gitea, Forgejo, and Codeberg; creates tickets when new releases ship. Single Docker container (Next.js + Go); config via Web UI (COSS).
+
+## Tech stack
+
+- Go API + polling (`cmd/server`), `sqlc`, `golang-migrate`, SQLite (`app.db`)
+- Next.js App Router + COSS UI (`apps/web`) — same container image; auth in Go
+- **next-intl** — all UI strings via message files; ESLint enforces no literals (`10-i18n.md`)
+- Vitest (web), `go test` (server), ESLint, Prettier, golangci-lint
+- Docker: one image `ghcr.io/{owner}/release-ops`; GitHub Actions → GHCR
+
+## Repository state
+
+Early phase: product spec in `docs/`; application scaffold not started. Roadmap (`docs/roadmap.html`) follows from spec.
+
+## Spec doc precedence (when docs conflict)
+
+1. `docs/specs.html` — MVP contract, APIs, UI, domain logic
+2. `db/schema.sql` — database schema (canonical DDL; `docs/schema.html` is browser view only)
+3. `docs/stack.html` — tooling choices
+4. `docs/index.html` — doc hub (not implementation roadmap)
+
+Deprecated (do not use): old learning-path HTML under <code>docs/</code> — removed.
+
+## Hard rules
+
+- If behaviour is not defined in a spec doc, **ask before guessing**.
+- Never invent fields, endpoints, or IDs not in the spec.
+- Schema changes only via **sqldiff-generated** migrations — edit `db/schema.sql`, run `make migrate-diff`; never hand-write `migrations/*.sql` (`11-db-migrations.md`)
+- Web UI: **zero hardcoded user-facing strings** — next-intl message keys only (`10-i18n.md`)
+
+## Agent config
+
+- Orchestrator: `.claude/skills/orchestrator/SKILL.md` (from `mdg-labs/skills`)
+- Sub-agent monitoring: `.claude/skills/orchestrator/references/sub-agent-monitoring.md` — mandatory when dispatching sub-agents via the Agent tool
+- Project constants: `.agents/project/orchestrator/project.config.md`
+- Plan file: `docs/index.html`

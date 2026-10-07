@@ -45,7 +45,8 @@ reviews:
   - "!docs/kaneo.openapi.json"
   # Agent/orchestrator config (not application code)
   - "!.agents/**"
-  - "!.cursor/**"
+  - "!.claude/**"
+  - "!CLAUDE.md"
 
   path_instructions:
   - path: "**/*"
@@ -197,7 +198,8 @@ knowledge_base:
   code_guidelines:
     enabled: true
     file_patterns:
-    - "**/.cursor/rules/**"
+    - "**/.claude/rules/**"
+    - "CLAUDE.md"
     - "docs/specs.html"
     - "db/schema.sql"
     - "docs/stack.html"

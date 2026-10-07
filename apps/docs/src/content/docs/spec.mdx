@@ -128,7 +128,7 @@ description: "MVP contract — architecture, APIs, providers, UI, and acceptance
     <li>Review generated <code>.up.sql</code> and <code>.down.sql</code>; commit both.</li>
     <li>Runtime apply: <code>golang-migrate up</code> in entrypoint (unchanged).</li>
   </ol>
-  <p>CI runs <code>npm run db:check</code> — fails if <code>db/schema.sql</code> drifts from applied migrations. Agents: see <code>.cursor/rules/11-db-migrations.mdc</code>.</p>
+  <p>CI runs <code>npm run db:check</code> — fails if <code>db/schema.sql</code> drifts from applied migrations. Agents: see <code>.claude/rules/11-db-migrations.md</code>.</p>
 
   <h3>4.0.1 <code>users</code> &amp; <code>sessions</code></h3>
   <p>Auth tables — written only by Go.</p>
@@ -776,7 +776,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string
     <tr><td>CI</td><td><code>eslint-plugin-i18next</code> — <code>i18next/no-literal-string</code> fails on JSX literals</td></tr>
   </table>
   <p>Allowed without i18n keys: route paths, API enum values, CSS classes, test IDs. Forbidden: <code>&lt;Button&gt;Save&lt;/Button&gt;</code>, <code>toast('Error')</code>.</p>
-  <p>Agents: <code>.cursor/rules/10-i18n.mdc</code>.</p>
+  <p>Agents: <code>.claude/rules/10-i18n.md</code>.</p>
 
   <h2 id="env">9. Environment variables</h2>
   <p>All variables for the <strong>single</strong> container (<code>release-ops</code>). No service-specific Compose splitting.</p>

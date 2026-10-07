@@ -223,7 +223,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <li>Review generated <code>.up.sql</code> and <code>.down.sql</code>; commit both.</li>
     <li>Runtime apply: <code>golang-migrate up</code> in entrypoint (unchanged).</li>
   </ol>
-  <p>CI runs <code>npm run db:check</code> — fails if <code>db/schema.sql</code> drifts from applied migrations. Agents: see <code>.cursor/rules/11-db-migrations.mdc</code>.</p>
+  <p>CI runs <code>npm run db:check</code> — fails if <code>db/schema.sql</code> drifts from applied migrations. Agents: see <code>.claude/rules/11-db-migrations.md</code>.</p>
 
   <h4>Data-loss-safe upgrades</h4>
   <p>Production <code>app.db</code> files may already contain rows. Migrations must <strong>preserve existing data</strong> on upgrade — never emit a bare <code>DROP TABLE</code> on a table that already has rows unless the table is genuinely new.</p>
@@ -1096,7 +1096,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <p><strong>24-hour clock:</strong> All displayed times use 24-hour format (<code>hour12: false</code>) — no AM/PM.</p>
   <p><strong>Poll diagnostics:</strong> Poll run history and dashboard poll health show started/finished timestamps (and poll run event times) with millisecond precision (<code>fractionalSecondDigits: 3</code>). Other screens use medium date + short time without fractional seconds.</p>
   <p>Shared formatters: <code>apps/web/lib/format/datetime.ts</code> (<code>formatAppDateTime</code>, <code>formatPollDiagnosticDateTime</code>).</p>
-  <p>Agents: <code>.cursor/rules/10-i18n.mdc</code>.</p>
+  <p>Agents: <code>.claude/rules/10-i18n.md</code>.</p>
 
   <h2 id="env">9. Environment variables</h2>
   <p>All variables for the <strong>single</strong> container (<code>release-ops</code>). No service-specific Compose splitting.</p>
