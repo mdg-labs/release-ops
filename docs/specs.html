@@ -822,8 +822,11 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
       "openTicketUrl": "https://cloud.kaneo.app/dashboard/workspace/ws-id/project/project-id/task/task-uuid"
     }
   ],
-  "isPolling": false
-}</code></pre>
+  "isPolling": false,
+  "version": "v0.2.0"
+}
+// version: string — the running build: the release tag (v{X.Y.Z}), nightly-{short_sha}, or "dev"
+// when the binary was built without a version (§11.6). Session-protected like the rest of the endpoint.</code></pre>
 
   <h3>7.2 Settings</h3>
   <table>
@@ -971,6 +974,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><code>Sidebar</code> (+ <code>SidebarProvider</code>)</td><td>sidebar primitive docs</td><td>Navigation: Dashboard, Poll runs, Repos, Integrations, Ticket Projects, Notifications, Settings</td></tr>
     <tr><td><code>Frame</code></td><td><a href="https://coss.com/ui/r/p-frame-3.json">p-frame-3</a> — multiple separated panels</td><td>Page layout with header area + content</td></tr>
     <tr><td><code>Breadcrumb</code></td><td><a href="https://coss.com/ui/r/p-breadcrumb-3.json">p-breadcrumb-3</a> — home icon</td><td>Sub-page context</td></tr>
+    <tr><td>Sidebar header</td><td>wordmark + <code>Badge</code></td><td>The "Release Ops" wordmark links to the repository root. Next to it, a badge shows <code>version</code> from <code>GET /api/v1/status</code>: a release tag (<code>v{X.Y.Z}</code>) links to <code>/releases/tag/v{X.Y.Z}</code>, <code>nightly-{short_sha}</code> links to <code>/commit/{short_sha}</code>, <code>dev</code> is plain text. Links open in a new tab (<code>rel="noopener noreferrer"</code>). No badge while the status request is loading or failed. Both hidden when the sidebar is collapsed to icons.</td></tr>
     <tr><td><code>Toaster</code></td><td><a href="https://coss.com/ui/r/p-toast-2.json">p-toast-2</a> — semantic types</td><td>Global feedback (success/error)</td></tr>
     <tr><td><code>Spinner</code></td><td><a href="https://coss.com/ui/r/p-spinner-1.json">p-spinner-1</a></td><td>Loading states</td></tr>
   </table>
@@ -1303,7 +1307,10 @@ jobs:
     tags:        # newline-separated (nightly, abc1234, latest, v0.2.0)
       required: true
     ref:         # optional checkout ref
-      default: ""</code></pre>
+      default: ""
+    version:     # optional; passed as the APP_VERSION build arg
+      default: ""   # release.yml: the release tag; dev.yml: nightly-{short_sha}</code></pre>
+  <p>Version stamping: the root <code>Dockerfile</code> takes <code>ARG APP_VERSION</code> (default <code>dev</code>; an empty value also builds as <code>dev</code>) and sets <code>internal/buildinfo.Version</code> on the server binary with <code>-ldflags "-X"</code>. Go serves it as <code>version</code> on <code>GET /api/v1/status</code> (§7.1); the web app reads it through the existing <code>/api/go</code> proxy.</p>
   <p>Build: Docker Buildx, registry cache (<code>ghcr.io/{owner}/release-ops:buildcache</code>), no runtime secret in image.</p>
 
   <h3>11.7 MVP CI requirements</h3>

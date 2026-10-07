@@ -71,6 +71,7 @@ export type StatusResponse = {
   lastRun: PollRun | null;
   repos: StatusRepo[];
   isPolling: boolean;
+  version: string;
 };
 
 export type Settings = {

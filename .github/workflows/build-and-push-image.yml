@@ -12,6 +12,11 @@ on:
         required: false
         type: string
         default: ""
+      version:
+        description: Version stamped into the image (release tag or nightly-<short sha>); empty builds as dev
+        required: false
+        type: string
+        default: ""
 
 jobs:
   build:
@@ -59,5 +64,7 @@ jobs:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            APP_VERSION=${{ inputs.version }}
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/release-ops:buildcache
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/release-ops:buildcache,mode=max

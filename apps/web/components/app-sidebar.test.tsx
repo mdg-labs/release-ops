@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MockAgent, setGlobalDispatcher } from "undici";
-import { AppSidebar } from "@/components/app-sidebar";
+import { AppSidebar, versionHref } from "@/components/app-sidebar";
 import { SidebarProvider } from "@/components/ui/sidebar";
 
 const ORIGIN = "http://localhost:3000";
@@ -60,6 +60,22 @@ vi.mock("@/lib/hooks/use-session", () => ({
     isError: false,
   }),
 }));
+
+const REPO_URL = "https://github.com/mdg-labs/release-ops";
+
+function interceptStatus(
+  pool: ReturnType<MockAgent["get"]>,
+  reply: { version?: string; statusCode?: number },
+) {
+  const statusCode = reply.statusCode ?? 200;
+  pool
+    .intercept({ path: "/api/go/api/v1/status", method: "GET" })
+    .reply(
+      statusCode,
+      statusCode === 200 ? { version: reply.version } : { error: {} },
+      { headers: { "content-type": "application/json" } },
+    );
+}
 
 function renderSidebar() {
   const queryClient = new QueryClient({
@@ -132,6 +148,63 @@ describe("AppSidebar", () => {
     expect(profileLink).toHaveAttribute("href", "/profile");
   });
 
+  it("links the wordmark to the repository in a new tab", () => {
+    renderSidebar();
+
+    const wordmark = screen.getByTestId("sidebar-wordmark");
+    expect(wordmark).toHaveTextContent("common.appTitle");
+    expect(wordmark).toHaveAttribute("href", REPO_URL);
+    expect(wordmark).toHaveAttribute("target", "_blank");
+    expect(wordmark).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("shows a release version linked to its release page", async () => {
+    interceptStatus(mockAgent.get(ORIGIN), { version: "v0.1.0" });
+
+    renderSidebar();
+
+    const badge = await screen.findByTestId("sidebar-version");
+    expect(badge).toHaveTextContent("v0.1.0");
+    expect(badge).toHaveAttribute("href", `${REPO_URL}/releases/tag/v0.1.0`);
+    expect(badge).toHaveAttribute("target", "_blank");
+    expect(badge).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("shows a nightly version linked to its commit", async () => {
+    interceptStatus(mockAgent.get(ORIGIN), { version: "nightly-abc1234" });
+
+    renderSidebar();
+
+    const badge = await screen.findByTestId("sidebar-version");
+    expect(badge).toHaveTextContent("nightly-abc1234");
+    expect(badge).toHaveAttribute("href", `${REPO_URL}/commit/abc1234`);
+  });
+
+  it("shows the dev version without a link", async () => {
+    interceptStatus(mockAgent.get(ORIGIN), { version: "dev" });
+
+    renderSidebar();
+
+    const badge = await screen.findByTestId("sidebar-version");
+    expect(badge).toHaveTextContent("dev");
+    expect(badge).not.toHaveAttribute("href");
+  });
+
+  it("renders no version badge when the status request fails", async () => {
+    interceptStatus(mockAgent.get(ORIGIN), { statusCode: 500 });
+
+    renderSidebar();
+
+    await waitFor(() =>
+      expect(mockAgent.pendingInterceptors()).toHaveLength(0),
+    );
+    expect(screen.queryByTestId("sidebar-version")).not.toBeInTheDocument();
+    expect(screen.getByTestId("sidebar-wordmark")).toHaveAttribute(
+      "href",
+      REPO_URL,
+    );
+  });
+
   it("posts to auth logout when logout is clicked", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool
@@ -146,6 +219,21 @@ describe("AppSidebar", () => {
     fireEvent.click(screen.getByTestId("sidebar-logout"));
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/login"));
+  });
+});
+
+describe("versionHref", () => {
+  it.each([
+    ["v0.1.0", `${REPO_URL}/releases/tag/v0.1.0`],
+    ["v1.2.3-rc.1", `${REPO_URL}/releases/tag/v1.2.3-rc.1`],
+    ["nightly-abc1234", `${REPO_URL}/commit/abc1234`],
+    ["dev", null],
+    ["", null],
+    ["0.1.0", null],
+    ["v1.0.0/../../x", null],
+    ["nightly-xyz", null],
+  ])("maps %j to %j", (version, expected) => {
+    expect(versionHref(version)).toBe(expected);
   });
 });
 

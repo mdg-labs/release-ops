@@ -18,6 +18,8 @@ import { useTranslations } from "next-intl";
 import type React from "react";
 import { apiClient } from "@/lib/api/client";
 import { useSession } from "@/lib/hooks/use-session";
+import { useStatus } from "@/lib/hooks/use-status";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -70,6 +72,24 @@ const NAV_ITEMS = [
   },
 ] as const;
 
+const REPO_URL = "https://github.com/mdg-labs/release-ops";
+const RELEASE_VERSION = /^v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
+const NIGHTLY_VERSION = /^nightly-([0-9a-f]{7,40})$/;
+
+/** GitHub page for a running version: release tag, nightly commit, or none (dev). */
+export function versionHref(version: string): string | null {
+  if (RELEASE_VERSION.test(version)) {
+    return `${REPO_URL}/releases/tag/${version}`;
+  }
+
+  const nightly = NIGHTLY_VERSION.exec(version);
+  if (nightly) {
+    return `${REPO_URL}/commit/${nightly[1]}`;
+  }
+
+  return null;
+}
+
 function isNavActive(pathname: string, href: string): boolean {
   if (href === "/") {
     return pathname === "/";
@@ -83,10 +103,13 @@ export function AppSidebar(): React.ReactElement {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: session } = useSession();
+  const { data: status } = useStatus();
   const tNav = useTranslations("nav");
   const tAuth = useTranslations("auth");
   const tCommon = useTranslations("common");
 
+  const version = status?.version || null;
+  const versionLink = version ? versionHref(version) : null;
   const profileLabel = session?.user?.email ?? tNav("profile");
 
   const logout = useMutation({
@@ -101,9 +124,35 @@ export function AppSidebar(): React.ReactElement {
   return (
     <Sidebar collapsible="icon" variant="inset">
       <SidebarHeader className="border-sidebar-border border-b p-4">
-        <span className="truncate font-semibold text-sm group-data-[collapsible=icon]:hidden">
-          {tCommon("appTitle")}
-        </span>
+        <div className="flex items-center gap-2 group-data-[collapsible=icon]:hidden">
+          <a
+            className="truncate font-semibold text-sm hover:underline"
+            data-testid="sidebar-wordmark"
+            href={REPO_URL}
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            {tCommon("appTitle")}
+          </a>
+          {version ? (
+            <Badge
+              data-testid="sidebar-version"
+              render={
+                versionLink ? (
+                  <a
+                    href={versionLink}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  />
+                ) : undefined
+              }
+              size="sm"
+              variant="outline"
+            >
+              {version}
+            </Badge>
+          ) : null}
+        </div>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
