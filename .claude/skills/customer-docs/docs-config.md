@@ -101,7 +101,7 @@ Re-scan `apps/web/app/` on every run: a `page.tsx` without a row here is a new p
 | Release sources | GitHub, GitLab, Gitea, Forgejo, Codeberg |
 | Ticket integrations | Kaneo, Jira, Linear |
 
-Kaneo replaced the earlier ticket integration in migration `000007`; existing installs must delete the old integration before upgrading and re-create it as Kaneo (see `README.md` upgrade notes). Customer docs describe Kaneo only and link the README upgrade note from the FAQ instead of documenting the old integration.
+Customer docs describe these three ticket integrations (Kaneo, Jira, Linear) and the five release sources. The FAQ's upgrade entry links Getting started § Upgrading and the README "Upgrading" section.
 
 ## Screenshots
 
