@@ -276,7 +276,7 @@ func TestCreateIntegrationPassesSecretToStore(t *testing.T) {
 	router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
 	cookie := seedSession(t, sm)
 
-	body := `{"kind":"github","name":"GitHub PAT","secret":"ghp_test_token"}`
+	body := `{"kind":"github","name":"GitHub PAT","secret":"{\"token\":\"ghp_test_token\"}"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/integrations", strings.NewReader(body))
 	req.AddCookie(cookie)
 	rec := httptest.NewRecorder()
@@ -288,8 +288,8 @@ func TestCreateIntegrationPassesSecretToStore(t *testing.T) {
 	if repo.createInput == nil {
 		t.Fatal("expected Create to be called")
 	}
-	if string(repo.createInput.Secret) != "ghp_test_token" {
-		t.Fatalf("secret = %q, want ghp_test_token", repo.createInput.Secret)
+	if string(repo.createInput.Secret) != `{"token":"ghp_test_token"}` {
+		t.Fatalf("secret = %q, want the submitted token payload", repo.createInput.Secret)
 	}
 
 	resp := integrationResponseShape(t, rec.Body.Bytes())
@@ -400,13 +400,13 @@ func TestPatchIntegrationReplacesSecretWhenProvided(t *testing.T) {
 			},
 		},
 		secrets: map[string][]byte{
-			"int-1": []byte("old-token"),
+			"int-1": []byte(`{"token":"old-token"}`),
 		},
 	}
 	router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
 	cookie := seedSession(t, sm)
 
-	body := `{"name":"GitHub","secret":"new-token"}`
+	body := `{"name":"GitHub","secret":"{\"token\":\"new-token\"}"}`
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/integrations/int-1", strings.NewReader(body))
 	req.AddCookie(cookie)
 	rec := httptest.NewRecorder()
@@ -418,8 +418,8 @@ func TestPatchIntegrationReplacesSecretWhenProvided(t *testing.T) {
 	if repo.updateInput == nil || repo.updateInput.Secret == nil {
 		t.Fatal("expected Update with secret replacement")
 	}
-	if string(repo.secrets["int-1"]) != "new-token" {
-		t.Fatalf("secret = %q, want new-token", repo.secrets["int-1"])
+	if string(repo.secrets["int-1"]) != `{"token":"new-token"}` {
+		t.Fatalf("secret = %q, want the submitted token payload", repo.secrets["int-1"])
 	}
 }
 
@@ -732,9 +732,9 @@ func TestCreateIntegrationAcceptsAllKinds(t *testing.T) {
 		{kind: "gitea", baseURL: "https://gitea.example"},
 		{kind: "forgejo", baseURL: "https://forgejo.example"},
 		{kind: "codeberg"},
-		{kind: "kaneo", baseURL: "https://api.kaneo.example"},
+		{kind: "kaneo", baseURL: "https://api.kaneo.example", secret: `{"api_key":"token"}`},
 		{kind: "jira", baseURL: "https://jira.example", secret: `{"email":"a@b.example","api_token":"tok"}`},
-		{kind: "linear"},
+		{kind: "linear", secret: `{"api_key":"token"}`},
 	}
 
 	for _, tc := range cases {
@@ -744,7 +744,7 @@ func TestCreateIntegrationAcceptsAllKinds(t *testing.T) {
 
 			secret := tc.secret
 			if secret == "" {
-				secret = "token"
+				secret = `{"token":"token"}`
 			}
 
 			repo := &mockIntegrationRepo{}
@@ -969,7 +969,7 @@ func TestCreateIntegrationPassesDefaultFlagToStore(t *testing.T) {
 	router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
 	cookie := seedSession(t, sm)
 
-	body := `{"kind":"github","name":"GitHub PAT","secret":"ghp_test_token","isDefault":true}`
+	body := `{"kind":"github","name":"GitHub PAT","secret":"{\"token\":\"ghp_test_token\"}","isDefault":true}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/integrations", strings.NewReader(body))
 	req.AddCookie(cookie)
 	rec := httptest.NewRecorder()
@@ -1029,7 +1029,7 @@ func TestPatchIntegrationDefaultFlag(t *testing.T) {
 				"int-1": {ID: "int-1", Kind: "github", Name: "GitHub", HasSecret: true, IsDefault: true},
 				"int-2": {ID: "int-2", Kind: "linear", Name: "Linear", HasSecret: true},
 			},
-			secrets: map[string][]byte{"int-1": []byte("a"), "int-2": []byte("b")},
+			secrets: map[string][]byte{"int-1": []byte(`{"token":"a"}`), "int-2": []byte("b")},
 		}
 	}
 	patch := func(t *testing.T, repo *mockIntegrationRepo, id, body string) *httptest.ResponseRecorder {
@@ -1097,4 +1097,497 @@ func TestPatchIntegrationDefaultFlag(t *testing.T) {
 			t.Fatalf("status = %d; body = %s", rec.Code, rec.Body.String())
 		}
 	})
+}
+
+var sourceKindCases = []struct {
+	kind    string
+	baseURL string
+}{
+	{kind: "github"},
+	{kind: "gitlab", baseURL: "https://gitlab.example"},
+	{kind: "gitea", baseURL: "https://gitea.example"},
+	{kind: "forgejo", baseURL: "https://forgejo.example"},
+	{kind: "codeberg"},
+}
+
+// malformedSourceSecrets cannot be read by source.ParseTokenSecret.
+var malformedSourceSecrets = map[string]string{
+	"bare token":       "hunter2",
+	"JSON string":      `"hunter2"`,
+	"JSON array":       `["hunter2"]`,
+	"token not string": `{"token":12345}`,
+	"truncated":        `{"token":"hunter2"`,
+}
+
+func patchIntegration(t *testing.T, router http.Handler, cookie *http.Cookie, id string, payload map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/integrations/"+id, strings.NewReader(string(body)))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func errorMessage(t *testing.T, body []byte) string {
+	t.Helper()
+
+	var resp struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("decode error body %s: %v", body, err)
+	}
+	return resp.Error.Message
+}
+
+func TestCreateIntegrationRejectsMalformedSourceSecret(t *testing.T) {
+	t.Parallel()
+
+	for _, kc := range sourceKindCases {
+		for name, secret := range malformedSourceSecrets {
+			kc, secret := kc, secret
+			t.Run(kc.kind+"/"+name, func(t *testing.T) {
+				t.Parallel()
+
+				repo := &mockIntegrationRepo{}
+				router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+				cookie := seedSession(t, sm)
+
+				payload := map[string]string{"kind": kc.kind, "name": "Source", "secret": secret}
+				if kc.baseURL != "" {
+					payload["baseUrl"] = kc.baseURL
+				}
+				rec := postIntegration(t, router, cookie, payload)
+
+				if rec.Code != http.StatusBadRequest {
+					t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+				}
+				if repo.createInput != nil {
+					t.Fatal("expected no Create for a malformed source secret")
+				}
+				if strings.Contains(rec.Body.String(), "hunter2") || strings.Contains(rec.Body.String(), "12345") {
+					t.Fatalf("response echoes the submitted secret: %s", rec.Body.String())
+				}
+			})
+		}
+	}
+}
+
+func TestPatchIntegrationRejectsMalformedSourceSecret(t *testing.T) {
+	t.Parallel()
+
+	const stored = `{"token":"keep-me"}`
+	for _, kc := range sourceKindCases {
+		for name, secret := range malformedSourceSecrets {
+			kc, secret := kc, secret
+			t.Run(kc.kind+"/"+name, func(t *testing.T) {
+				t.Parallel()
+
+				var baseURL *string
+				if kc.baseURL != "" {
+					baseURL = &kc.baseURL
+				}
+				repo := &mockIntegrationRepo{
+					items: map[string]*store.Integration{
+						"int-1": {ID: "int-1", Kind: kc.kind, Name: "Source", BaseURL: baseURL, HasSecret: true},
+					},
+					secrets: map[string][]byte{"int-1": []byte(stored)},
+				}
+				router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+				cookie := seedSession(t, sm)
+
+				rec := patchIntegration(t, router, cookie, "int-1", map[string]string{"name": "Source", "secret": secret})
+
+				if rec.Code != http.StatusBadRequest {
+					t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+				}
+				if repo.updateInput != nil {
+					t.Fatal("expected no Update for a malformed source secret")
+				}
+				if string(repo.secrets["int-1"]) != stored {
+					t.Fatalf("stored secret changed: %q", repo.secrets["int-1"])
+				}
+				if strings.Contains(rec.Body.String(), "hunter2") || strings.Contains(rec.Body.String(), "12345") {
+					t.Fatalf("response echoes the submitted secret: %s", rec.Body.String())
+				}
+			})
+		}
+	}
+}
+
+// emptyTokenSecrets parse as "no token".
+var emptyTokenSecrets = map[string]string{
+	"empty token":      `{"token":""}`,
+	"blank token":      `{"token":"   "}`,
+	"no token field":   `{}`,
+	"null":             `null`,
+	"whitespace only":  "   ",
+	"unrelated fields": `{"other":"x"}`,
+}
+
+func TestGitLabIntegrationRequiresToken(t *testing.T) {
+	t.Parallel()
+
+	const baseURL = "https://gitlab.example"
+	const stored = `{"token":"keep-me"}`
+
+	for name, secret := range emptyTokenSecrets {
+		secret := secret
+		t.Run("create/"+name, func(t *testing.T) {
+			t.Parallel()
+
+			repo := &mockIntegrationRepo{}
+			router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+			cookie := seedSession(t, sm)
+
+			rec := postIntegration(t, router, cookie, map[string]string{
+				"kind": "gitlab", "name": "GitLab", "baseUrl": baseURL, "secret": secret,
+			})
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+			if got := errorMessage(t, rec.Body.Bytes()); got != "token is required" {
+				t.Fatalf("message = %q, want %q", got, "token is required")
+			}
+			if repo.createInput != nil {
+				t.Fatal("expected no Create without a GitLab token")
+			}
+		})
+
+		t.Run("patch/"+name, func(t *testing.T) {
+			t.Parallel()
+
+			base := baseURL
+			repo := &mockIntegrationRepo{
+				items: map[string]*store.Integration{
+					"int-1": {ID: "int-1", Kind: "gitlab", Name: "GitLab", BaseURL: &base, HasSecret: true},
+				},
+				secrets: map[string][]byte{"int-1": []byte(stored)},
+			}
+			router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+			cookie := seedSession(t, sm)
+
+			rec := patchIntegration(t, router, cookie, "int-1", map[string]string{"name": "GitLab", "secret": secret})
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+			if got := errorMessage(t, rec.Body.Bytes()); got != "token is required" {
+				t.Fatalf("message = %q, want %q", got, "token is required")
+			}
+			if repo.updateInput != nil {
+				t.Fatal("expected no Update without a GitLab token")
+			}
+			if string(repo.secrets["int-1"]) != stored {
+				t.Fatalf("stored secret changed: %q", repo.secrets["int-1"])
+			}
+		})
+	}
+}
+
+func TestCreateIntegrationStoresEmptyPayloadForEmptyTokenOnOptionalKinds(t *testing.T) {
+	t.Parallel()
+
+	for _, kc := range sourceKindCases {
+		if kc.kind == "gitlab" {
+			continue
+		}
+		for name, secret := range emptyTokenSecrets {
+			kc, secret := kc, secret
+			t.Run(kc.kind+"/"+name, func(t *testing.T) {
+				t.Parallel()
+
+				repo := &mockIntegrationRepo{}
+				router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+				cookie := seedSession(t, sm)
+
+				payload := map[string]string{"kind": kc.kind, "name": "Source", "secret": secret}
+				if kc.baseURL != "" {
+					payload["baseUrl"] = kc.baseURL
+				}
+				rec := postIntegration(t, router, cookie, payload)
+
+				if rec.Code != http.StatusCreated {
+					t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+				}
+				if repo.createInput == nil {
+					t.Fatal("expected Create to be called")
+				}
+				if len(repo.createInput.Secret) != 0 {
+					t.Fatalf("stored secret = %q, want an empty payload", repo.createInput.Secret)
+				}
+				if got := integrationResponseShape(t, rec.Body.Bytes())["hasSecret"]; got != false {
+					t.Fatalf("hasSecret = %v, want false", got)
+				}
+			})
+		}
+	}
+}
+
+func TestPatchIntegrationRefusesEmptyTokenOnOptionalKinds(t *testing.T) {
+	t.Parallel()
+
+	const stored = `{"token":"keep-me"}`
+	for _, kc := range sourceKindCases {
+		if kc.kind == "gitlab" {
+			continue
+		}
+		for name, secret := range emptyTokenSecrets {
+			kc, secret := kc, secret
+			t.Run(kc.kind+"/"+name, func(t *testing.T) {
+				t.Parallel()
+
+				var baseURL *string
+				if kc.baseURL != "" {
+					baseURL = &kc.baseURL
+				}
+				repo := &mockIntegrationRepo{
+					items: map[string]*store.Integration{
+						"int-1": {ID: "int-1", Kind: kc.kind, Name: "Source", BaseURL: baseURL, HasSecret: true},
+					},
+					secrets: map[string][]byte{"int-1": []byte(stored)},
+				}
+				router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+				cookie := seedSession(t, sm)
+
+				rec := patchIntegration(t, router, cookie, "int-1", map[string]string{"name": "Source", "secret": secret})
+
+				if rec.Code != http.StatusBadRequest {
+					t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+				}
+				if repo.updateInput != nil {
+					t.Fatal("expected no Update for an empty-token secret")
+				}
+				if string(repo.secrets["int-1"]) != stored {
+					t.Fatalf("stored secret changed: %q", repo.secrets["int-1"])
+				}
+			})
+		}
+	}
+}
+
+func TestPatchIntegrationEmptyTokenDoesNotMoveBaseURL(t *testing.T) {
+	t.Parallel()
+
+	const stored = `{"token":"keep-me"}`
+	base := "https://gitea.example"
+	repo := &mockIntegrationRepo{
+		items: map[string]*store.Integration{
+			"int-1": {ID: "int-1", Kind: "gitea", Name: "Gitea", BaseURL: &base, HasSecret: true},
+		},
+		secrets: map[string][]byte{"int-1": []byte(stored)},
+	}
+	router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+	cookie := seedSession(t, sm)
+
+	rec := patchIntegration(t, router, cookie, "int-1", map[string]string{
+		"name": "Gitea", "baseUrl": "https://attacker.example", "secret": `{"token":""}`,
+	})
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if repo.updateInput != nil {
+		t.Fatal("expected no Update")
+	}
+	if string(repo.secrets["int-1"]) != stored || *repo.items["int-1"].BaseURL != base {
+		t.Fatalf("stored integration changed: secret %q, baseUrl %q", repo.secrets["int-1"], *repo.items["int-1"].BaseURL)
+	}
+}
+
+func TestIntegrationAcceptsValidSourceTokenPayloads(t *testing.T) {
+	t.Parallel()
+
+	const secret = `{"token":"tok_valid"}`
+	for _, kc := range sourceKindCases {
+		kc := kc
+		t.Run(kc.kind+"/create", func(t *testing.T) {
+			t.Parallel()
+
+			repo := &mockIntegrationRepo{}
+			router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+			cookie := seedSession(t, sm)
+
+			payload := map[string]string{"kind": kc.kind, "name": "Source", "secret": secret}
+			if kc.baseURL != "" {
+				payload["baseUrl"] = kc.baseURL
+			}
+			rec := postIntegration(t, router, cookie, payload)
+
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+			}
+			if string(repo.createInput.Secret) != secret {
+				t.Fatalf("stored secret = %q, want %q", repo.createInput.Secret, secret)
+			}
+			if got := integrationResponseShape(t, rec.Body.Bytes())["hasSecret"]; got != true {
+				t.Fatalf("hasSecret = %v, want true", got)
+			}
+		})
+
+		t.Run(kc.kind+"/patch", func(t *testing.T) {
+			t.Parallel()
+
+			var baseURL *string
+			if kc.baseURL != "" {
+				baseURL = &kc.baseURL
+			}
+			repo := &mockIntegrationRepo{
+				items: map[string]*store.Integration{
+					"int-1": {ID: "int-1", Kind: kc.kind, Name: "Source", BaseURL: baseURL, HasSecret: true},
+				},
+				secrets: map[string][]byte{"int-1": []byte(`{"token":"old"}`)},
+			}
+			router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+			cookie := seedSession(t, sm)
+
+			rec := patchIntegration(t, router, cookie, "int-1", map[string]string{"name": "Source", "secret": secret})
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusOK, rec.Body.String())
+			}
+			if string(repo.secrets["int-1"]) != secret {
+				t.Fatalf("stored secret = %q, want %q", repo.secrets["int-1"], secret)
+			}
+		})
+	}
+}
+
+var apiKeyKindCases = []struct {
+	kind    string
+	baseURL string
+}{
+	{kind: "kaneo", baseURL: "https://api.kaneo.example"},
+	{kind: "linear"},
+}
+
+// malformedAPIKeySecrets cannot be read by ticket.ParseKaneoSecret or ParseLinearSecret.
+var malformedAPIKeySecrets = map[string]string{
+	"bare key":       "lin_hunter2",
+	"JSON string":    `"lin_hunter2"`,
+	"truncated":      `{"api_key":"lin_hunter2"`,
+	"key not string": `{"api_key":12345}`,
+	"empty api_key":  `{"api_key":""}`,
+	"blank api_key":  `{"api_key":"   "}`,
+	"wrong field":    `{"token":"lin_hunter2"}`,
+	"null":           `null`,
+	"empty object":   `{}`,
+	"JSON array":     `["lin_hunter2"]`,
+}
+
+func TestCreateIntegrationRejectsMalformedAPIKeySecret(t *testing.T) {
+	t.Parallel()
+
+	for _, kc := range apiKeyKindCases {
+		for name, secret := range malformedAPIKeySecrets {
+			kc, secret := kc, secret
+			t.Run(kc.kind+"/"+name, func(t *testing.T) {
+				t.Parallel()
+
+				repo := &mockIntegrationRepo{}
+				router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+				cookie := seedSession(t, sm)
+
+				payload := map[string]string{"kind": kc.kind, "name": "Tickets", "secret": secret}
+				if kc.baseURL != "" {
+					payload["baseUrl"] = kc.baseURL
+				}
+				rec := postIntegration(t, router, cookie, payload)
+
+				if rec.Code != http.StatusBadRequest {
+					t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+				}
+				if repo.createInput != nil {
+					t.Fatal("expected no Create for a malformed api_key secret")
+				}
+				if strings.Contains(rec.Body.String(), "hunter2") || strings.Contains(rec.Body.String(), "12345") {
+					t.Fatalf("response echoes the submitted secret: %s", rec.Body.String())
+				}
+			})
+		}
+	}
+}
+
+func TestPatchIntegrationRejectsMalformedAPIKeySecret(t *testing.T) {
+	t.Parallel()
+
+	const stored = `{"api_key":"keep-me"}`
+	for _, kc := range apiKeyKindCases {
+		for name, secret := range malformedAPIKeySecrets {
+			kc, secret := kc, secret
+			t.Run(kc.kind+"/"+name, func(t *testing.T) {
+				t.Parallel()
+
+				var baseURL *string
+				if kc.baseURL != "" {
+					baseURL = &kc.baseURL
+				}
+				repo := &mockIntegrationRepo{
+					items: map[string]*store.Integration{
+						"int-1": {ID: "int-1", Kind: kc.kind, Name: "Tickets", BaseURL: baseURL, HasSecret: true},
+					},
+					secrets: map[string][]byte{"int-1": []byte(stored)},
+				}
+				router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+				cookie := seedSession(t, sm)
+
+				rec := patchIntegration(t, router, cookie, "int-1", map[string]string{"name": "Tickets", "secret": secret})
+
+				if rec.Code != http.StatusBadRequest {
+					t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+				}
+				if repo.updateInput != nil {
+					t.Fatal("expected no Update for a malformed api_key secret")
+				}
+				if string(repo.secrets["int-1"]) != stored {
+					t.Fatalf("stored secret changed: %q", repo.secrets["int-1"])
+				}
+				if strings.Contains(rec.Body.String(), "hunter2") || strings.Contains(rec.Body.String(), "12345") {
+					t.Fatalf("response echoes the submitted secret: %s", rec.Body.String())
+				}
+			})
+		}
+	}
+}
+
+func TestPatchIntegrationReplacesAPIKeySecretWhenValid(t *testing.T) {
+	t.Parallel()
+
+	const fresh = `{"api_key":"fresh"}`
+	for _, kc := range apiKeyKindCases {
+		kc := kc
+		t.Run(kc.kind, func(t *testing.T) {
+			t.Parallel()
+
+			var baseURL *string
+			if kc.baseURL != "" {
+				baseURL = &kc.baseURL
+			}
+			repo := &mockIntegrationRepo{
+				items: map[string]*store.Integration{
+					"int-1": {ID: "int-1", Kind: kc.kind, Name: "Tickets", BaseURL: baseURL, HasSecret: true},
+				},
+				secrets: map[string][]byte{"int-1": []byte(`{"api_key":"old"}`)},
+			}
+			router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+			cookie := seedSession(t, sm)
+
+			rec := patchIntegration(t, router, cookie, "int-1", map[string]string{"name": "Tickets", "secret": fresh})
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusOK, rec.Body.String())
+			}
+			if repo.updateInput == nil || string(repo.updateInput.Secret) != fresh {
+				t.Fatalf("updateInput = %+v, want secret %q", repo.updateInput, fresh)
+			}
+		})
+	}
 }
