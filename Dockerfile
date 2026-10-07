@@ -55,4 +55,8 @@ ENV NODE_ENV=production \
 EXPOSE 3000
 VOLUME ["/data"]
 
+# Probes Next.js and, through its proxy, the Go API.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD curl -fsS -o /dev/null "http://127.0.0.1:${PORT}/api/go/healthz" || exit 1
+
 ENTRYPOINT ["/app/entrypoint.sh"]

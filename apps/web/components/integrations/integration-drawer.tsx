@@ -62,7 +62,6 @@ type IntegrationDrawerProps = {
 
 type KindOption = { label: string; value: IntegrationKind };
 
-
 function normalizeBaseUrl(value: string): string {
   return value.trim().replace(/\/+$/, "");
 }
