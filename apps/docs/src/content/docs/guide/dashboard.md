@@ -16,7 +16,7 @@ See at a glance when Release Ops last checked your repos, whether anything faile
 
 The **System status** card shows the **Last poll**:
 
-- A badge with the state of the last run. It reads **Polling** while a poll is in progress, otherwise **Success** or **Failed**. **No runs** shows only when no poll run exists at all. A run where only some repos had errors shows as partial. **Running** appears only for a run still marked as running while no poll is active.
+- A badge with the state of the last run. It reads **Polling** while a poll is in progress, otherwise **Success** or **Failed**. **No runs** shows only when no poll run exists at all. A run where only some repos had errors shows as **Partial**. **Running** appears only for a run still marked as running while no poll is active.
 - **Poll interval**: how often Release Ops polls on its own, in minutes.
 - **Started** and **Finished**, **Repos checked** and **Tickets created** for the last run. **Finished** shows **In progress** while the run is active.
 
@@ -51,7 +51,7 @@ With no repos, the table shows **No monitored repos** and an **Add repo** button
 
 | Field | Description |
 | ----- | ----------- |
-| Last poll badge | **Polling** while a poll is in progress. Otherwise the state of the last run: **Success**, **Failed**, partial, **Running** (a run still marked as running while no poll is active) or **No runs** (no run exists yet). |
+| Last poll badge | **Polling** while a poll is in progress. Otherwise the state of the last run: **Success**, **Failed**, **Partial**, **Running** (a run still marked as running while no poll is active) or **No runs** (no run exists yet). |
 | Poll interval | Minutes between automatic polls. Change it on [Settings](../settings/). |
 | Repos checked | How many enabled repos the last run looked at. |
 | Tickets created | How many tickets the last run created. |

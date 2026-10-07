@@ -92,7 +92,8 @@
       "success": "Success",
       "failed": "Failed",
       "partial": "Partial",
-      "running": "Running"
+      "running": "Running",
+      "unknown": "Unknown"
     },
     "runTrigger": {
       "manual": "Manual",
