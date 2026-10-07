@@ -29,6 +29,7 @@ jobs:
       packages: write
     uses: ./.github/workflows/build-and-push-image.yml
     with:
+      version: nightly-${{ needs.meta.outputs.short_sha }}
       tags: |
         nightly
         ${{ needs.meta.outputs.short_sha }}

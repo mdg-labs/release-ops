@@ -1,9 +1,9 @@
 ---
-title: Introduction
-description: Self-hosted release monitor with a web UI — poll releases and create tickets when they ship.
+title: Release Ops
+description: Self-hosted release monitor that turns new upstream releases into tickets and notifications.
 template: splash
 hero:
-  tagline: Self-hosted release monitor — one Docker container, full control.
+  tagline: Know when the projects you depend on ship a new release, and get a ticket for it automatically.
   actions:
     - text: Get started
       link: /release-ops/getting-started/
@@ -15,69 +15,43 @@ hero:
       variant: minimal
 ---
 
-import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+## What Release Ops is
 
-<p class="lede">
-    Self-hosted release monitor with a web UI: poll releases on GitHub, GitLab, Gitea, Forgejo, and Codeberg;
-    create tickets in Kaneo, Jira, or Linear when a real new release ships.
-    One Docker container for self-hosting — no multi-service Compose.
-  </p>
+Release Ops is a self-hosted release monitor. You list the repositories you care about. Release Ops checks them on a schedule and creates a ticket when a new release ships.
 
-  
+- **Sources:** GitHub, GitLab, Gitea, Forgejo and Codeberg.
+- **Tickets:** Kaneo, Jira or Linear. You can combine any source with any ticket system, and send tickets to several projects or teams.
+- **Notifications:** Send a message to any Shoutrrr target, such as Slack or ntfy, when a ticket is created, when a check fails, or when a ticket is superseded.
+- **Status at a glance:** The web UI shows the last check, errors and an overview of your repos.
 
-  <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">Spec precedence</h2>
-  <ol>
-    <li><a href="/release-ops/spec/">specs.html</a> — MVP contract</li>
-    <li><a href="/release-ops/schema/">schema.html</a> (browser view) · <a href="https://github.com/mdg-labs/release-ops/blob/dev/db/schema.sql"><code>db/schema.sql</code></a> — database</li>
-    <li><a href="/release-ops/stack/">stack.html</a> — tooling</li>
-  </ol>
+You configure everything in the web UI. Release Ops runs as a single Docker container that you host yourself.
 
-  <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">MVP at a glance</h2>
-  <p>
-    <span class="tag">Go</span>
-    <span class="tag">SQLite</span>
-    <span class="tag">Next.js</span>
-    <span class="tag">COSS</span>
-    <span class="tag">Go auth</span>
-    <span class="tag">GitHub</span>
-    <span class="tag">GitLab</span>
-    <span class="tag">Gitea</span>
-    <span class="tag">Forgejo</span>
-    <span class="tag">Codeberg</span>
-    <span class="tag">Kaneo</span>
-    <span class="tag">Jira</span>
-    <span class="tag">Linear</span>
-    <span class="tag">Shoutrrr</span>
-  </p>
-  <ul>
-    <li>Sources: GitHub, GitLab, Gitea, Forgejo, Codeberg · Tickets: Kaneo, Jira, Linear (all from day 1)</li>
-    <li>Ticket integrations with <strong>multiple project/team targets</strong> — each with its own open/done/cancelled/superseded mapping</li>
-    <li>Open-ticket idempotency: default <code>supersede</code>; alternatives <code>merge</code> or <code>skip_if_open</code></li>
-    <li>Notifications via Shoutrrr (Slack, ntfy, …) — no custom chat integrations</li>
-    <li>Admin UI for repos, integrations, ticket projects, notifications, poll interval</li>
-    <li>CI: entrypoint workflows + reusable CI/release/image build (dev → nightly, main → VERSION draft, release → GHCR)</li>
-    <li>Baseline / skip / create — no ticket on first sight of a repo</li>
-  </ul>
-  
+## How it works
 
-<CardGrid>
-  <LinkCard title="Getting started" href="/release-ops/getting-started/">
-    Docker Compose setup, env vars, admin bootstrap, troubleshooting.
-  </LinkCard>
-  <LinkCard title="Product specification" href="/release-ops/spec/">
-    Architecture, schema, APIs, providers, UI, MVP acceptance criteria.
-  </LinkCard>
-  <LinkCard title="Tech stack" href="/release-ops/stack/">
-    Go, Next.js, COSS, session auth, SQLite, Docker.
-  </LinkCard>
-  <LinkCard title="Database schema" href="/release-ops/schema/">
-    SQLite app.db — HTML view; canonical DDL in db/schema.sql.
-  </LinkCard>
-  <LinkCard title="MVP checklist" href="/release-ops/mvp-checklist/">
-    Sign-off against all 15 acceptance criteria.
-  </LinkCard>
-  <LinkCard title="Roadmap" href="/release-ops/roadmap/">
-    Implementation phases — epics, leaf tasks, spec backlinks.
-  </LinkCard>
-</CardGrid>
+```text
+Source repository  →  Poll  →  Ticket + notification
+GitHub, GitLab,       Latest     Kaneo, Jira or Linear,
+Gitea, Forgejo,       stable     plus Shoutrrr targets
+Codeberg              release
+```
 
+1. **Source:** You add a repository from one of the supported sources.
+2. **Poll:** Release Ops checks the latest stable release at the interval you set. The first check of a new repo only records the current release, so adding a repo does not create a ticket for the release that already exists.
+3. **Ticket and notification:** When the release changes, Release Ops creates a ticket in the ticket project you chose and notifies your targets. If an earlier ticket for the same repo is still open, the default is to supersede it. You can merge instead, or skip the new ticket.
+
+## Who it is for
+
+Release Ops is for small self-hosting dev and ops teams, and for individuals, who want new releases of the projects they depend on turned into tickets automatically. If you track upstream versions by hand or by watching release feeds, Release Ops puts those releases where you already plan your work.
+
+## What it is not
+
+Release Ops keeps a deliberately small scope:
+
+- **No other sources.** Only the five sources above are supported. Bitbucket and Azure DevOps, for example, are not.
+- **No roles or permissions.** Everyone who is signed in has the same access.
+- **No public sign-up.** The first account is created during setup, and everyone else joins through an invitation.
+- **Not a multi-service deployment.** There is one container and one public port, with no separate web and worker services to run.
+
+## Next steps
+
+Follow [Getting started](/release-ops/getting-started/) to run Release Ops with Docker Compose and sign in for the first time. The code lives on [GitHub](https://github.com/mdg-labs/release-ops).

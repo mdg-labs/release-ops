@@ -118,6 +118,7 @@ func TestIntegrationBaselineCreateSupersede(t *testing.T) {
 	run1 := env.runPollCycle(t, ctx)
 	assertRunSuccess(t, ctx, env, run1, 0, 0)
 	assertEventActions(t, ctx, env, run1, []string{poll.ActionBaseline})
+	assertEventRef(t, ctx, env, run1, 0, "", "", "v1.0.0")
 
 	repo, err := env.store.Repos().Get(ctx, env.repoID)
 	if err != nil {
@@ -137,11 +138,13 @@ func TestIntegrationBaselineCreateSupersede(t *testing.T) {
 	run2 := env.runPollCycle(t, ctx)
 	assertRunSuccess(t, ctx, env, run2, 0, 0)
 	assertEventActions(t, ctx, env, run2, []string{poll.ActionSkip})
+	assertEventRef(t, ctx, env, run2, 0, "", "", "")
 
 	// Poll 3: create — new tag v2.0.0.
 	run3 := env.runPollCycle(t, ctx)
 	assertRunSuccess(t, ctx, env, run3, 1, 0)
 	assertEventActions(t, ctx, env, run3, []string{poll.ActionCreate})
+	assertEventRef(t, ctx, env, run3, 0, "ticket-1", "https://tickets.example/ticket-1", "v2.0.0")
 
 	if env.tickets.createCalls != 1 {
 		t.Fatalf("CreateTicket calls = %d, want 1 after create poll", env.tickets.createCalls)
@@ -165,6 +168,18 @@ func TestIntegrationBaselineCreateSupersede(t *testing.T) {
 	run4 := env.runPollCycle(t, ctx)
 	assertRunSuccess(t, ctx, env, run4, 1, 1)
 	assertEventActions(t, ctx, env, run4, []string{poll.ActionSupersede, poll.ActionCreate})
+	assertEventRef(t, ctx, env, run4, 0, "ticket-1", "https://tickets.example/ticket-1", "v3.0.0")
+	assertEventRef(t, ctx, env, run4, 1, "ticket-2", "https://tickets.example/ticket-2", "v3.0.0")
+
+	events, err := env.store.Poll().ListEventsByRunID(ctx, run4)
+	if err != nil {
+		t.Fatalf("ListEventsByRunID %s: %v", run4, err)
+	}
+	for i, ev := range events {
+		if ev.SourceKind == nil || *ev.SourceKind != "github" || ev.ProjectPath == nil || *ev.ProjectPath != "org/integration-repo" {
+			t.Fatalf("run4 event[%d] repo = %v %v, want github org/integration-repo", i, ev.SourceKind, ev.ProjectPath)
+		}
+	}
 
 	if env.tickets.createCalls != 2 {
 		t.Fatalf("CreateTicket calls = %d, want 2 after supersede poll", env.tickets.createCalls)
@@ -188,6 +203,26 @@ func TestIntegrationBaselineCreateSupersede(t *testing.T) {
 	}
 	if repo.LastKnownTag == nil || *repo.LastKnownTag != "v3.0.0" {
 		t.Fatalf("LastKnownTag = %v, want v3.0.0", repo.LastKnownTag)
+	}
+
+	// Deleting the repo keeps the events but drops the joined repo fields.
+	if err := env.store.Repos().Delete(ctx, env.repoID); err != nil {
+		t.Fatalf("Delete repo: %v", err)
+	}
+	events, err = env.store.Poll().ListEventsByRunID(ctx, run4)
+	if err != nil {
+		t.Fatalf("ListEventsByRunID after repo delete: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("events after repo delete = %d, want 2", len(events))
+	}
+	for i, ev := range events {
+		if ev.MonitoredRepoID != nil || ev.SourceKind != nil || ev.ProjectPath != nil {
+			t.Fatalf("event[%d] after repo delete = %v %v %v, want nil repo fields", i, ev.MonitoredRepoID, ev.SourceKind, ev.ProjectPath)
+		}
+		if ev.TicketExternalID == nil || ev.ReleaseTag == nil {
+			t.Fatalf("event[%d] lost its ticket ref / tag after repo delete", i)
+		}
 	}
 }
 
@@ -372,6 +407,34 @@ func assertEventActions(t *testing.T, ctx context.Context, env *pollIntegrationE
 		}
 		if events[i].MonitoredRepoID == nil || *events[i].MonitoredRepoID != env.repoID {
 			t.Fatalf("run %s event[%d] repoId = %v, want %s", runID, i, events[i].MonitoredRepoID, env.repoID)
+		}
+	}
+}
+
+// assertEventRef checks the ticket id, ticket URL and release tag persisted on one event;
+// an empty want means the column must be NULL.
+func assertEventRef(t *testing.T, ctx context.Context, env *pollIntegrationEnv, runID string, index int, wantID, wantURL, wantTag string) {
+	t.Helper()
+
+	events, err := env.store.Poll().ListEventsByRunID(ctx, runID)
+	if err != nil {
+		t.Fatalf("ListEventsByRunID %s: %v", runID, err)
+	}
+	ev := events[index]
+	for _, c := range []struct {
+		name string
+		got  *string
+		want string
+	}{
+		{"ticket_external_id", ev.TicketExternalID, wantID},
+		{"ticket_url", ev.TicketURL, wantURL},
+		{"release_tag", ev.ReleaseTag, wantTag},
+	} {
+		switch {
+		case c.want == "" && c.got != nil:
+			t.Fatalf("run %s event[%d] %s = %q, want NULL", runID, index, c.name, *c.got)
+		case c.want != "" && (c.got == nil || *c.got != c.want):
+			t.Fatalf("run %s event[%d] %s = %v, want %q", runID, index, c.name, c.got, c.want)
 		}
 	}
 }

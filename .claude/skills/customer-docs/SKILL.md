@@ -22,14 +22,14 @@ All release-ops specifics (docs root, synced vs hand-written files, sidebar file
 | This skill | `.claude/skills/customer-docs/SKILL.md` |
 | Release-ops config + glossary | `.claude/skills/customer-docs/docs-config.md` |
 | Style rules | `.claude/skills/customer-docs/style-guide.md` |
-| Templates | `.claude/skills/customer-docs/page-doc-template.md`, `getting-started-template.md` |
+| Templates | `.claude/skills/customer-docs/page-doc-template.md`, `getting-started-template.md`, `landing-page-template.md` |
 | Coverage inventory (created on first approved write) | `.agents/project/customer-docs/coverage.md` |
-| Docs content root | `apps/docs/src/content/docs/` (`guide/`, `concepts/`, `faq.md`) |
+| Docs content root | `apps/docs/src/content/docs/` (`index.mdx` landing page, `guide/`, `concepts/`, `faq.md`) |
 | Sidebar | `apps/docs/astro.config.mjs` |
 | App routes / nav / labels (read-only) | `apps/web/app/`, `apps/web/components/app-sidebar.tsx`, `apps/web/messages/en.json` |
 | Behaviour spec (read-only) | `docs/specs.html`, `db/schema.sql`, `README.md` |
 
-Never hand-edit the synced files listed in `docs-config.md` § Synced files (`getting-started.md`, `mvp-checklist.md`, `spec.mdx`, `stack.mdx`, `schema.mdx`, `index.mdx` under `apps/docs/src/content/docs/`). Edit their sources in `docs/` and run `npm run docs:sync`.
+Never hand-edit the one synced file listed in `docs-config.md` § Synced files (`getting-started.md` under `apps/docs/src/content/docs/`). Edit its source `docs/getting-started.md` and run `npm run docs:sync`. `index.mdx` is hand-written; edit it only through the approval gate below. Release Ops is self-hosted only: never mention a hosted or cloud version.
 
 ---
 
@@ -73,7 +73,7 @@ Default when ambiguous: Mode 3 if `coverage.md` exists, else Mode 1.
 
 ### Phase 2 — Write (after approval only)
 
-1. Write pages batch-by-batch from [page-doc-template.md](page-doc-template.md) and [getting-started-template.md](getting-started-template.md) at the paths in `docs-config.md` § Route → doc map.
+1. Write pages batch-by-batch from [page-doc-template.md](page-doc-template.md), [getting-started-template.md](getting-started-template.md) and, for `index.mdx` and `concepts/product-overview.md`, [landing-page-template.md](landing-page-template.md) at the paths in `docs-config.md` § Route → doc map.
 2. Add sidebar entries in `apps/docs/astro.config.mjs` ("User guide" / "Concepts" groups).
 3. Run `npm run docs:build` to check the site builds and links resolve. On failure, fix the docs; never touch app code.
 4. Update `.agents/project/customer-docs/coverage.md` (route → doc path → last-synced SHA → status).
@@ -254,7 +254,8 @@ Phase 2 (after approval):
 
 - Any doc, sidebar, `docs/` source, coverage or glossary write before explicit approval of the written proposal
 - Skipping the written proposal, or moving to Phase 2 in the same turn as Phase 1
-- Hand-editing synced files in `apps/docs/src/content/docs/` (edit `docs/` sources instead)
+- Hand-editing the synced `getting-started.md` in `apps/docs/src/content/docs/` (edit `docs/getting-started.md` instead)
+- Mentioning a hosted, cloud or managed Release Ops, or linking hand-written customer pages to the internal spec, stack, schema, MVP checklist or roadmap (the synced `getting-started.md` links them as GitHub URLs only; keep those)
 - Modifying application code (`apps/web`, `cmd/`, `internal/`, `db/`, `migrations/`) — read-only
 - Fabricating behaviour, UI labels or screenshots; capturing screenshots
 - Exposing internal table/column names, code identifiers, env var names (outside the install guide), secrets or internal URLs

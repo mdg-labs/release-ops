@@ -89,7 +89,7 @@ func (m *scheduleTestPollRepo) ListRuns(context.Context, int64, int64) ([]store.
 	return nil, errors.New("not implemented")
 }
 
-func (m *scheduleTestPollRepo) InsertEvent(context.Context, string, *string, string, *string) (*store.PollRunEvent, error) {
+func (m *scheduleTestPollRepo) InsertEvent(context.Context, string, *string, string, *string, store.PollEventRef) (*store.PollRunEvent, error) {
 	return &store.PollRunEvent{ID: "event-1"}, nil
 }
 

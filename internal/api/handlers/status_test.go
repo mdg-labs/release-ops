@@ -15,6 +15,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/api/handlers"
 	apimw "github.com/mdg-labs/release-ops/internal/api/middleware"
+	"github.com/mdg-labs/release-ops/internal/buildinfo"
 	"github.com/mdg-labs/release-ops/internal/store"
 )
 
@@ -138,7 +139,7 @@ func (m *mockStatusPollRepo) ListRuns(_ context.Context, limit, offset int64) ([
 	return out, nil
 }
 
-func (m *mockStatusPollRepo) InsertEvent(_ context.Context, _ string, _ *string, _ string, _ *string) (*store.PollRunEvent, error) {
+func (m *mockStatusPollRepo) InsertEvent(_ context.Context, _ string, _ *string, _ string, _ *string, _ store.PollEventRef) (*store.PollRunEvent, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -427,11 +428,16 @@ func TestGetStatusIncludesLastRunAndIsPolling(t *testing.T) {
 			TicketsSuperseded int64  `json:"ticketsSuperseded"`
 			Errors            []any  `json:"errors"`
 		} `json:"lastRun"`
-		IsPolling bool `json:"isPolling"`
+		IsPolling bool   `json:"isPolling"`
+		Version   string `json:"version"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
+	if resp.Version == "" || resp.Version != buildinfo.Current() {
+		t.Fatalf("version = %q, want %q", resp.Version, buildinfo.Current())
+	}
+	t.Logf("status version = %q", resp.Version)
 	if resp.LastRun == nil {
 		t.Fatal("lastRun is null, want object")
 	}

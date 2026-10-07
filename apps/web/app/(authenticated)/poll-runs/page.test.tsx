@@ -4,7 +4,7 @@ import {
   fireEvent,
   render,
   screen,
-  waitFor,
+  within,
 } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -113,7 +113,7 @@ describe("PollRunsPage", () => {
     expect(await screen.findByText("No poll runs yet")).toBeTruthy();
   });
 
-  it("opens run detail drawer from table row", async () => {
+  it("opens run detail dialog from table row", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool
       .intercept({
@@ -137,6 +137,11 @@ describe("PollRunsPage", () => {
             action: "create",
             detail: "TASK-99",
             createdAt: "2026-08-07T10:04:00.000Z",
+            sourceKind: "github",
+            projectPath: "acme/widget",
+            ticketExternalId: "TASK-99",
+            ticketUrl: "https://tracker.example/TASK-99",
+            releaseTag: "v1.2.0",
           },
         ],
       });
@@ -148,9 +153,14 @@ describe("PollRunsPage", () => {
     expect(row).toBeTruthy();
     fireEvent.click(row!);
 
-    await waitFor(async () => {
-      expect(await screen.findByText("Poll run details")).toBeTruthy();
-    });
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("Poll run details")).toBeTruthy();
+    expect(await within(dialog).findByText("acme/widget")).toBeTruthy();
+    expect(
+      (
+        await within(dialog).findByRole("link", { name: "TASK-99" })
+      ).getAttribute("href"),
+    ).toBe("https://tracker.example/TASK-99");
   });
 
   it("uses a mobile-friendly responsive root layout", async () => {

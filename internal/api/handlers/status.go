@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mdg-labs/release-ops/internal/api/auth"
+	"github.com/mdg-labs/release-ops/internal/buildinfo"
 	"github.com/mdg-labs/release-ops/internal/poll"
 	"github.com/mdg-labs/release-ops/internal/providers/source"
 	"github.com/mdg-labs/release-ops/internal/providers/ticket"
@@ -29,6 +30,7 @@ type statusResponse struct {
 	LastRun             *pollRunResponse     `json:"lastRun"`
 	Repos               []statusRepoResponse `json:"repos"`
 	IsPolling           bool                 `json:"isPolling"`
+	Version             string               `json:"version"`
 }
 
 type statusRepoResponse struct {
@@ -109,6 +111,7 @@ func (h *StatusHandlers) Get(w http.ResponseWriter, r *http.Request) {
 		LastRun:             lastRun,
 		Repos:               repoResponses,
 		IsPolling:           isPolling,
+		Version:             buildinfo.Current(),
 	})
 }
 

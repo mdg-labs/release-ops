@@ -22,7 +22,10 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY migrations ./migrations
 ENV CGO_ENABLED=0
-RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server && \
+# Release tag (v1.2.3) or nightly-<short sha>; empty or unset builds as "dev".
+ARG APP_VERSION=dev
+RUN VERSION="${APP_VERSION:-dev}" && \
+    go build -trimpath -ldflags="-s -w -X github.com/mdg-labs/release-ops/internal/buildinfo.Version=${VERSION}" -o /out/server ./cmd/server && \
     go build -trimpath -ldflags="-s -w" -o /out/seed-admin ./cmd/seed-admin
 
 FROM node:22-bookworm-slim AS runtime

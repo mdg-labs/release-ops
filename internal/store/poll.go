@@ -44,6 +44,23 @@ type PollRunEvent struct {
 	Action          string
 	Detail          *string
 	CreatedAt       string
+
+	TicketExternalID *string
+	TicketURL        *string
+	ReleaseTag       *string
+
+	// SourceKind and ProjectPath come from the monitored repo the event belongs to;
+	// both are nil once the repo is deleted. They are read-only and never written.
+	SourceKind  *string
+	ProjectPath *string
+}
+
+// PollEventRef is the ticket and release an event refers to (poll_run_events.ticket_external_id,
+// ticket_url, release_tag); every field is optional.
+type PollEventRef struct {
+	TicketExternalID *string
+	TicketURL        *string
+	ReleaseTag       *string
 }
 
 // PollRepository updates poll state on monitored repos and manages poll run audit rows.
@@ -53,7 +70,7 @@ type PollRepository interface {
 	FinishRun(ctx context.Context, id string, status string, reposChecked, ticketsCreated, ticketsSuperseded int64, errorsJSON string) (*PollRun, error)
 	GetRun(ctx context.Context, id string) (*PollRun, error)
 	ListRuns(ctx context.Context, limit, offset int64) ([]PollRun, error)
-	InsertEvent(ctx context.Context, pollRunID string, monitoredRepoID *string, action string, detail *string) (*PollRunEvent, error)
+	InsertEvent(ctx context.Context, pollRunID string, monitoredRepoID *string, action string, detail *string, ref PollEventRef) (*PollRunEvent, error)
 	ListEventsByRunID(ctx context.Context, pollRunID string) ([]PollRunEvent, error)
 }
 
@@ -148,14 +165,18 @@ func (r pollRepo) InsertEvent(
 	monitoredRepoID *string,
 	action string,
 	detail *string,
+	ref PollEventRef,
 ) (*PollRunEvent, error) {
 	row, err := r.store.q.InsertEvent(ctx, db.InsertEventParams{
-		ID:              newID(),
-		PollRunID:       pollRunID,
-		MonitoredRepoID: stringPtrToNull(monitoredRepoID),
-		Action:          action,
-		Detail:          stringPtrToNull(detail),
-		CreatedAt:       nowUTC(),
+		ID:               newID(),
+		PollRunID:        pollRunID,
+		MonitoredRepoID:  stringPtrToNull(monitoredRepoID),
+		Action:           action,
+		Detail:           stringPtrToNull(detail),
+		CreatedAt:        nowUTC(),
+		TicketExternalID: stringPtrToNull(ref.TicketExternalID),
+		TicketUrl:        stringPtrToNull(ref.TicketURL),
+		ReleaseTag:       stringPtrToNull(ref.ReleaseTag),
 	})
 	if err != nil {
 		return nil, err
@@ -170,7 +191,20 @@ func (r pollRepo) ListEventsByRunID(ctx context.Context, pollRunID string) ([]Po
 	}
 	out := make([]PollRunEvent, len(rows))
 	for i, row := range rows {
-		out[i] = *pollRunEventFromRow(row)
+		ev := pollRunEventFromRow(db.PollRunEvent{
+			ID:               row.ID,
+			PollRunID:        row.PollRunID,
+			MonitoredRepoID:  row.MonitoredRepoID,
+			Action:           row.Action,
+			Detail:           row.Detail,
+			CreatedAt:        row.CreatedAt,
+			TicketExternalID: row.TicketExternalID,
+			TicketUrl:        row.TicketUrl,
+			ReleaseTag:       row.ReleaseTag,
+		})
+		ev.SourceKind = nullStringPtr(row.SourceKind)
+		ev.ProjectPath = nullStringPtr(row.ProjectPath)
+		out[i] = *ev
 	}
 	return out, nil
 }
@@ -195,11 +229,14 @@ func pollRunFromRow(row pollRunRow) *PollRun {
 
 func pollRunEventFromRow(row db.PollRunEvent) *PollRunEvent {
 	return &PollRunEvent{
-		ID:              row.ID,
-		PollRunID:       row.PollRunID,
-		MonitoredRepoID: nullStringPtr(row.MonitoredRepoID),
-		Action:          row.Action,
-		Detail:          nullStringPtr(row.Detail),
-		CreatedAt:       row.CreatedAt,
+		ID:               row.ID,
+		PollRunID:        row.PollRunID,
+		MonitoredRepoID:  nullStringPtr(row.MonitoredRepoID),
+		Action:           row.Action,
+		Detail:           nullStringPtr(row.Detail),
+		CreatedAt:        row.CreatedAt,
+		TicketExternalID: nullStringPtr(row.TicketExternalID),
+		TicketURL:        nullStringPtr(row.TicketUrl),
+		ReleaseTag:       nullStringPtr(row.ReleaseTag),
 	}
 }

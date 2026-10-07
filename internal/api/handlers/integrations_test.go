@@ -55,6 +55,7 @@ func (m *mockIntegrationRepo) Create(_ context.Context, input store.CreateIntegr
 		Name:      input.Name,
 		BaseURL:   input.BaseURL,
 		HasSecret: len(input.Secret) > 0,
+		IsDefault: input.IsDefault,
 		CreatedAt: "2026-08-07T10:00:00.000Z",
 		UpdatedAt: "2026-08-07T10:00:00.000Z",
 	}
@@ -110,6 +111,9 @@ func (m *mockIntegrationRepo) Update(_ context.Context, id string, input store.U
 	m.updateInput = &input
 	item.Name = input.Name
 	item.BaseURL = input.BaseURL
+	if input.IsDefault != nil {
+		item.IsDefault = *input.IsDefault
+	}
 	if input.Secret != nil {
 		m.secrets[id] = append([]byte(nil), input.Secret...)
 		item.HasSecret = len(input.Secret) > 0
@@ -192,7 +196,7 @@ func integrationResponseShape(t *testing.T, body []byte) map[string]any {
 	if err := json.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("decode response: %v; body = %s", err, body)
 	}
-	for _, key := range []string{"id", "kind", "name", "baseUrl", "hasSecret", "createdAt", "updatedAt"} {
+	for _, key := range []string{"id", "kind", "name", "baseUrl", "hasSecret", "isDefault", "createdAt", "updatedAt"} {
 		if _, ok := resp[key]; !ok {
 			t.Fatalf("response missing %q: %s", key, body)
 		}
@@ -646,4 +650,141 @@ func TestIntegrationsRequireSession(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
+}
+
+func TestCreateIntegrationPassesDefaultFlagToStore(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockIntegrationRepo{}
+	router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+	cookie := seedSession(t, sm)
+
+	body := `{"kind":"github","name":"GitHub PAT","secret":"ghp_test_token","isDefault":true}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/integrations", strings.NewReader(body))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	if repo.createInput == nil || !repo.createInput.IsDefault {
+		t.Fatalf("createInput = %+v, want IsDefault true", repo.createInput)
+	}
+	if resp := integrationResponseShape(t, rec.Body.Bytes()); resp["isDefault"] != true {
+		t.Fatalf("isDefault = %v, want true", resp["isDefault"])
+	}
+}
+
+func TestCreateIntegrationRejectsDefaultOnTicketKinds(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		kind    string
+		baseURL string
+	}{
+		{kind: "kaneo", baseURL: `,"baseUrl":"https://kaneo.example"`},
+		{kind: "jira", baseURL: `,"baseUrl":"https://jira.example"`},
+		{kind: "linear"},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			t.Parallel()
+
+			repo := &mockIntegrationRepo{}
+			router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+			cookie := seedSession(t, sm)
+
+			body := fmt.Sprintf(`{"kind":%q,"name":"Ticket","secret":"token","isDefault":true%s}`, tc.kind, tc.baseURL)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/integrations", strings.NewReader(body))
+			req.AddCookie(cookie)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+			if repo.createInput != nil {
+				t.Fatalf("Create called despite rejected default flag: %+v", repo.createInput)
+			}
+		})
+	}
+}
+
+func TestPatchIntegrationDefaultFlag(t *testing.T) {
+	t.Parallel()
+
+	newRepo := func() *mockIntegrationRepo {
+		return &mockIntegrationRepo{
+			items: map[string]*store.Integration{
+				"int-1": {ID: "int-1", Kind: "github", Name: "GitHub", HasSecret: true, IsDefault: true},
+				"int-2": {ID: "int-2", Kind: "linear", Name: "Linear", HasSecret: true},
+			},
+			secrets: map[string][]byte{"int-1": []byte("a"), "int-2": []byte("b")},
+		}
+	}
+	patch := func(t *testing.T, repo *mockIntegrationRepo, id, body string) *httptest.ResponseRecorder {
+		t.Helper()
+
+		router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/integrations/"+id, strings.NewReader(body))
+		req.AddCookie(seedSession(t, sm))
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	t.Run("omitted leaves the flag unchanged", func(t *testing.T) {
+		t.Parallel()
+
+		repo := newRepo()
+		rec := patch(t, repo, "int-1", `{"name":"GitHub renamed"}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d; body = %s", rec.Code, rec.Body.String())
+		}
+		if repo.updateInput == nil || repo.updateInput.IsDefault != nil {
+			t.Fatalf("updateInput = %+v, want IsDefault nil", repo.updateInput)
+		}
+		if resp := integrationResponseShape(t, rec.Body.Bytes()); resp["isDefault"] != true {
+			t.Fatalf("isDefault = %v, want true", resp["isDefault"])
+		}
+	})
+
+	t.Run("false clears the flag", func(t *testing.T) {
+		t.Parallel()
+
+		repo := newRepo()
+		rec := patch(t, repo, "int-1", `{"name":"GitHub","isDefault":false}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d; body = %s", rec.Code, rec.Body.String())
+		}
+		if repo.updateInput == nil || repo.updateInput.IsDefault == nil || *repo.updateInput.IsDefault {
+			t.Fatalf("updateInput = %+v, want IsDefault false", repo.updateInput)
+		}
+		if resp := integrationResponseShape(t, rec.Body.Bytes()); resp["isDefault"] != false {
+			t.Fatalf("isDefault = %v, want false", resp["isDefault"])
+		}
+	})
+
+	t.Run("true on a ticket kind is rejected", func(t *testing.T) {
+		t.Parallel()
+
+		repo := newRepo()
+		rec := patch(t, repo, "int-2", `{"name":"Linear","isDefault":true}`)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+		}
+		if repo.updateInput != nil {
+			t.Fatalf("Update called despite rejected default flag: %+v", repo.updateInput)
+		}
+	})
+
+	t.Run("false on a ticket kind is accepted", func(t *testing.T) {
+		t.Parallel()
+
+		repo := newRepo()
+		rec := patch(t, repo, "int-2", `{"name":"Linear","isDefault":false}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d; body = %s", rec.Code, rec.Body.String())
+		}
+	})
 }

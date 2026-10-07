@@ -54,6 +54,12 @@ type pollRunEventResponse struct {
 	Action          string  `json:"action"`
 	Detail          *string `json:"detail"`
 	CreatedAt       string  `json:"createdAt"`
+
+	SourceKind       *string `json:"sourceKind"`
+	ProjectPath      *string `json:"projectPath"`
+	TicketExternalID *string `json:"ticketExternalId"`
+	TicketURL        *string `json:"ticketUrl"`
+	ReleaseTag       *string `json:"releaseTag"`
 }
 
 type triggerPollResponse struct {
@@ -181,6 +187,12 @@ func pollRunEventFromStore(event *store.PollRunEvent) pollRunEventResponse {
 		Action:          event.Action,
 		Detail:          event.Detail,
 		CreatedAt:       event.CreatedAt,
+
+		SourceKind:       event.SourceKind,
+		ProjectPath:      event.ProjectPath,
+		TicketExternalID: event.TicketExternalID,
+		TicketURL:        event.TicketURL,
+		ReleaseTag:       event.ReleaseTag,
 	}
 }
 

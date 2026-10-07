@@ -14,6 +14,7 @@ type Integration struct {
 	Name      string
 	BaseURL   *string
 	HasSecret bool
+	IsDefault bool
 	CreatedAt string
 	UpdatedAt string
 }
@@ -24,6 +25,9 @@ type CreateIntegrationInput struct {
 	Name    string
 	BaseURL *string
 	Secret  []byte
+	// IsDefault marks the integration as the default for its kind; the previous default of
+	// that kind loses the flag in the same transaction.
+	IsDefault bool
 }
 
 // UpdateIntegrationInput updates mutable integration fields.
@@ -31,6 +35,9 @@ type UpdateIntegrationInput struct {
 	Name    string
 	BaseURL *string
 	Secret  []byte // nil = leave existing encrypted payload unchanged
+	// IsDefault nil = leave the flag unchanged. true moves the kind's default to this
+	// integration; false clears it.
+	IsDefault *bool
 }
 
 // IntegrationRepository manages integration credentials with encrypt-on-write.
@@ -55,17 +62,39 @@ func (r integrationRepo) Create(ctx context.Context, input CreateIntegrationInpu
 		return nil, err
 	}
 
+	tx, err := r.store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+	q := r.store.q.WithTx(tx)
+
 	now := nowUTC()
-	row, err := r.store.q.CreateIntegration(ctx, db.CreateIntegrationParams{
-		ID:               newID(),
+	id := newID()
+	if input.IsDefault {
+		if err := q.ClearDefaultIntegrationForKind(ctx, db.ClearDefaultIntegrationForKindParams{
+			Kind: input.Kind,
+			ID:   id,
+		}); err != nil {
+			return nil, err
+		}
+	}
+	row, err := q.CreateIntegration(ctx, db.CreateIntegrationParams{
+		ID:               id,
 		Kind:             input.Kind,
 		Name:             input.Name,
 		BaseUrl:          stringPtrToNull(input.BaseURL),
 		EncryptedPayload: encrypted,
+		IsDefault:        boolToInt64(input.IsDefault),
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	})
 	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return integrationFromRow(row), nil
@@ -96,35 +125,53 @@ func (r integrationRepo) ListByKind(ctx context.Context, kind string) ([]Integra
 }
 
 func (r integrationRepo) Update(ctx context.Context, id string, input UpdateIntegrationInput) (*Integration, error) {
-	existing, err := r.store.q.GetIntegration(ctx, id)
+	tx, err := r.store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+	q := r.store.q.WithTx(tx)
+
+	existing, err := q.GetIntegration(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	now := nowUTC()
-	var row db.Integration
+	encrypted := existing.EncryptedPayload
 	if input.Secret != nil {
-		encrypted, encErr := r.store.cipher.Encrypt(input.Secret)
-		if encErr != nil {
-			return nil, encErr
+		encrypted, err = r.store.cipher.Encrypt(input.Secret)
+		if err != nil {
+			return nil, err
 		}
-		row, err = r.store.q.UpdateIntegration(ctx, db.UpdateIntegrationParams{
-			Name:             input.Name,
-			BaseUrl:          stringPtrToNull(input.BaseURL),
-			EncryptedPayload: encrypted,
-			UpdatedAt:        now,
-			ID:               id,
-		})
-	} else {
-		row, err = r.store.q.UpdateIntegration(ctx, db.UpdateIntegrationParams{
-			Name:             input.Name,
-			BaseUrl:          stringPtrToNull(input.BaseURL),
-			EncryptedPayload: existing.EncryptedPayload,
-			UpdatedAt:        now,
-			ID:               id,
-		})
 	}
+
+	isDefault := existing.IsDefault
+	if input.IsDefault != nil {
+		isDefault = boolToInt64(*input.IsDefault)
+	}
+	if isDefault == 1 {
+		if err := q.ClearDefaultIntegrationForKind(ctx, db.ClearDefaultIntegrationForKindParams{
+			Kind: existing.Kind,
+			ID:   id,
+		}); err != nil {
+			return nil, err
+		}
+	}
+
+	row, err := q.UpdateIntegration(ctx, db.UpdateIntegrationParams{
+		Name:             input.Name,
+		BaseUrl:          stringPtrToNull(input.BaseURL),
+		EncryptedPayload: encrypted,
+		IsDefault:        isDefault,
+		UpdatedAt:        nowUTC(),
+		ID:               id,
+	})
 	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return integrationFromRow(row), nil
@@ -156,6 +203,7 @@ func integrationFromRow(row db.Integration) *Integration {
 		Name:      row.Name,
 		BaseURL:   nullStringPtr(row.BaseUrl),
 		HasSecret: row.EncryptedPayload != "",
+		IsDefault: row.IsDefault == 1,
 		CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt,
 	}

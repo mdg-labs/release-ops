@@ -8,7 +8,8 @@ Fixed configuration for the `customer-docs` skill. These are the real release-op
 | ----- | ----- |
 | Product name | Release Ops |
 | Core use case | Self-hosted release monitor: polls GitHub, GitLab, Gitea, Forgejo and Codeberg for new releases and creates tickets in Kaneo, Jira or Linear when a real new release ships. |
-| Audience | Technical: people who self-host the Docker container and configure it in the web UI (comfortable with Docker, API tokens, repository URLs). |
+| Audience | Small self-hosting dev/ops teams and individuals who want upstream releases of the projects they depend on turned into tickets automatically. Technical: they self-host the Docker container and configure it in the web UI (comfortable with Docker, API tokens, repository URLs). |
+| Deployment model | Self-hosting only. Never mention, hint at or compare with a hosted, cloud or managed version of Release Ops, on any page. |
 | Accounts and roles | No public sign-up. First account is the bootstrap admin (`BOOTSTRAP_ADMIN_*` env or `seed-admin` CLI); everyone else joins through an invitation link. All signed-in users have the same permissions — there are no roles to document. |
 | Behaviour source of truth | `docs/specs.html` (MVP contract, APIs, UI, domain logic), then `db/schema.sql`. Never document behaviour that is not in the spec or the app code. |
 
@@ -18,7 +19,7 @@ Fixed configuration for the `customer-docs` skill. These are the real release-op
 | ----- | ----- |
 | Framework | Astro + Starlight (`apps/docs`, npm workspace) |
 | Published URL | `https://mdg-labs.github.io/release-ops/` (Astro `base: "/release-ops"`) |
-| Deploy | `.github/workflows/docs-pages.yml` — builds on push to `main` (paths `apps/docs/**`, `docs/**`) and publishes to GitHub Pages |
+| Deploy | `.github/workflows/docs-pages.yml` — builds on push to `main` (paths `apps/docs/**`, `docs/**`, `scripts/sync-docs-content.mjs`) and publishes to GitHub Pages |
 | Local preview | `npm run docs:sync && npm run dev:docs` → `http://localhost:4321/release-ops/` |
 | Build check | `npm run docs:build` (runs sync, then `astro build`) |
 | Content root | `apps/docs/src/content/docs/` |
@@ -27,28 +28,31 @@ Fixed configuration for the `customer-docs` skill. These are the real release-op
 
 ### Synced files — never hand-edit
 
-`scripts/sync-docs-content.mjs` (`npm run docs:sync`) regenerates these from `docs/` and overwrites any manual change:
+`scripts/sync-docs-content.mjs` (`npm run docs:sync`) regenerates exactly one file from `docs/` and overwrites any manual change:
 
 | Generated file in `apps/docs/src/content/docs/` | Edit this source instead |
 | ----------------------------------------------- | ------------------------ |
 | `getting-started.md` | `docs/getting-started.md` (operator install guide: Docker Compose, env vars, admin bootstrap) |
-| `mvp-checklist.md` | `docs/mvp-checklist.md` |
-| `spec.mdx`, `stack.mdx`, `schema.mdx` | `docs/specs.html`, `docs/stack.html`, `docs/schema.html` |
-| `index.mdx` (landing page cards) | Generated inside `scripts/sync-docs-content.mjs` — propose changes, do not edit the script without approval |
 
-The sync script writes only that fixed list and deletes nothing, so files under the folders below are safe.
+The sync script rewrites links in that file that point at the internal docs (`specs.html`, `stack.html`, `schema.html`, `mvp-checklist.md`, `roadmap.html`) to their GitHub URLs. The internal docs (spec, stack, schema, MVP checklist, roadmap) stay in `docs/` and are never published as site pages or listed in the sidebar. Hand-written customer pages never link them; only the synced `getting-started.md` links them, and only as GitHub URLs.
+
+`index.mdx` (the landing page at the site root) is hand-written, not synced. Edit it through this skill's proposal gate, following [landing-page-template.md](landing-page-template.md).
+
+The sync script writes only `getting-started.md` and deletes nothing, so every other file is safe.
 
 ### Customer doc layout (hand-written, not synced)
 
 | Doc type | Path | Sidebar group |
 | -------- | ---- | ------------- |
+| Landing page (what it is / isn't / who it's for / how it works) | `apps/docs/src/content/docs/index.mdx` (hand-written, site root, splash template; see [landing-page-template.md](landing-page-template.md)) | none (reached through the site title link) |
 | Install / operator setup | `docs/getting-started.md` (existing; synced) | Start here → "Getting started" |
+| Product overview (what it is / isn't / who it's for, in concept form) | `apps/docs/src/content/docs/concepts/product-overview.md` | Concepts (first item) |
 | First steps in the web UI (getting-started template) | `apps/docs/src/content/docs/guide/first-steps.md` | User guide (first item) |
 | Page docs (one per in-app page) | `apps/docs/src/content/docs/guide/<page>.md` | User guide |
 | Concept pages | `apps/docs/src/content/docs/concepts/<concept>.md` | Concepts |
 | FAQ | `apps/docs/src/content/docs/faq.md` | Start here |
 
-File names: kebab-case. Add each new page to the `sidebar` array in `apps/docs/astro.config.mjs` (`{ label: "<Title>", slug: "guide/<page>" }`), creating the "User guide" and "Concepts" groups between "Start here" and "Reference" on first use.
+File names: kebab-case. Add each new page to the `sidebar` array in `apps/docs/astro.config.mjs` (`{ label: "<Title>", slug: "guide/<page>" }`), creating the "User guide" and "Concepts" groups after "Start here" on first use. The sidebar lists only pages that exist on the site.
 
 ### Frontmatter (Starlight `docsSchema`)
 

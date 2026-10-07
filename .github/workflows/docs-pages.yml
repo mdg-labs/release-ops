@@ -7,7 +7,6 @@ on:
       - "apps/docs/**"
       - "docs/**"
       - "scripts/sync-docs-content.mjs"
-      - "scripts/generate-roadmap.mjs"
       - ".github/workflows/docs-pages.yml"
   workflow_dispatch:
 

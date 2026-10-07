@@ -200,3 +200,149 @@ func TestMonitoredRepoUniqueSourceKindProjectPath(t *testing.T) {
 		t.Fatalf("Create with different source_kind: %v", err)
 	}
 }
+
+func TestIntegrationDefaultMovesWithinKind(t *testing.T) {
+	t.Parallel()
+
+	s, _ := testStore(t)
+	ctx := context.Background()
+	repo := s.Integrations()
+
+	create := func(kind, name string, baseURL *string, isDefault bool) *store.Integration {
+		t.Helper()
+		got, err := repo.Create(ctx, store.CreateIntegrationInput{
+			Kind: kind, Name: name, BaseURL: baseURL, Secret: []byte(`{"token":"x"}`), IsDefault: isDefault,
+		})
+		if err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+		return got
+	}
+	defaults := func() map[string]bool {
+		t.Helper()
+		all, err := repo.List(ctx)
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		out := make(map[string]bool, len(all))
+		for _, it := range all {
+			out[it.Name] = it.IsDefault
+		}
+		return out
+	}
+
+	plain := create("github", "plain", nil, false)
+	if plain.IsDefault {
+		t.Fatal("new integration must not be default unless requested")
+	}
+	first := create("github", "first", nil, true)
+	if !first.IsDefault {
+		t.Fatal("Create with IsDefault did not set the flag")
+	}
+	glURL := "https://gitlab.example"
+	gitlab := create("gitlab", "gl", &glURL, true)
+
+	// Creating a second default moves the flag; other kinds are untouched.
+	second := create("github", "second", nil, true)
+	if got := defaults(); got["first"] || !got["second"] || got["plain"] || !got["gl"] {
+		t.Fatalf("after create-as-default: %v", got)
+	}
+
+	// Updating with true moves it back.
+	yes, no := true, false
+	if _, err := repo.Update(ctx, first.ID, store.UpdateIntegrationInput{Name: "first", IsDefault: &yes}); err != nil {
+		t.Fatalf("Update true: %v", err)
+	}
+	if got := defaults(); !got["first"] || got["second"] || !got["gl"] {
+		t.Fatalf("after update-as-default: %v", got)
+	}
+
+	// nil leaves the flag alone, including on a secret rotation.
+	if _, err := repo.Update(ctx, first.ID, store.UpdateIntegrationInput{Name: "first renamed", Secret: []byte(`{"token":"y"}`)}); err != nil {
+		t.Fatalf("Update nil: %v", err)
+	}
+	if got := defaults(); !got["first renamed"] {
+		t.Fatalf("flag lost on unrelated update: %v", got)
+	}
+
+	// false clears it and leaves the kind without a default.
+	if _, err := repo.Update(ctx, first.ID, store.UpdateIntegrationInput{Name: "first", IsDefault: &no}); err != nil {
+		t.Fatalf("Update false: %v", err)
+	}
+	if got := defaults(); got["first"] || got["second"] || got["plain"] || !got["gl"] {
+		t.Fatalf("after clear: %v", got)
+	}
+
+	// Deleting the default leaves the kind without one; nothing is promoted.
+	if err := repo.Delete(ctx, gitlab.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if err := repo.Delete(ctx, second.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	for name, isDefault := range defaults() {
+		if isDefault {
+			t.Fatalf("%s is default after deleting defaults", name)
+		}
+	}
+}
+
+func TestIntegrationDefaultEnforcedByDatabase(t *testing.T) {
+	t.Parallel()
+
+	s, _ := testStore(t)
+	ctx := context.Background()
+	repo := s.Integrations()
+
+	a, err := repo.Create(ctx, store.CreateIntegrationInput{Kind: "github", Name: "a", Secret: []byte("x"), IsDefault: true})
+	if err != nil {
+		t.Fatalf("Create a: %v", err)
+	}
+	b, err := repo.Create(ctx, store.CreateIntegrationInput{Kind: "github", Name: "b", Secret: []byte("x")})
+	if err != nil {
+		t.Fatalf("Create b: %v", err)
+	}
+	linear, err := repo.Create(ctx, store.CreateIntegrationInput{Kind: "linear", Name: "lin", Secret: []byte("x")})
+	if err != nil {
+		t.Fatalf("Create linear: %v", err)
+	}
+
+	// Bypass the repository: the schema alone must refuse a second default of a kind...
+	if _, err := s.DB().ExecContext(ctx, `UPDATE integrations SET is_default = 1 WHERE id = ?`, b.ID); err == nil {
+		t.Fatal("second default for the same kind was accepted")
+	}
+	// ...a default on a ticket kind...
+	if _, err := s.DB().ExecContext(ctx, `UPDATE integrations SET is_default = 1 WHERE id = ?`, linear.ID); err == nil {
+		t.Fatal("default on a ticket kind was accepted")
+	}
+	// ...and a value other than 0/1.
+	if _, err := s.DB().ExecContext(ctx, `UPDATE integrations SET is_default = 2 WHERE id = ?`, a.ID); err == nil {
+		t.Fatal("is_default = 2 was accepted")
+	}
+}
+
+func TestIntegrationCreateDefaultRollsBackOnFailure(t *testing.T) {
+	t.Parallel()
+
+	s, _ := testStore(t)
+	ctx := context.Background()
+	repo := s.Integrations()
+
+	old, err := repo.Create(ctx, store.CreateIntegrationInput{Kind: "github", Name: "old", Secret: []byte("x"), IsDefault: true})
+	if err != nil {
+		t.Fatalf("Create old: %v", err)
+	}
+	// A github integration with a base URL violates the table CHECK, so the insert fails
+	// after the previous default was cleared.
+	bad := "https://example.test"
+	if _, err := repo.Create(ctx, store.CreateIntegrationInput{Kind: "github", Name: "bad", BaseURL: &bad, Secret: []byte("x"), IsDefault: true}); err == nil {
+		t.Fatal("Create with invalid base URL succeeded")
+	}
+	got, err := repo.Get(ctx, old.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !got.IsDefault {
+		t.Fatal("previous default was cleared although the new default was not created")
+	}
+}

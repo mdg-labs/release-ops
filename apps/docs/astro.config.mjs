@@ -24,23 +24,7 @@ export default defineConfig({
       sidebar: [
         {
           label: "Start here",
-          items: [
-            { label: "Introduction", slug: "index" },
-            { label: "Getting started", slug: "getting-started" },
-            { label: "MVP checklist", slug: "mvp-checklist" },
-          ],
-        },
-        {
-          label: "Reference",
-          items: [
-            { label: "Product specification", slug: "spec" },
-            { label: "Tech stack", slug: "stack" },
-            { label: "Database schema", slug: "schema" },
-          ],
-        },
-        {
-          label: "Project",
-          items: [{ label: "Roadmap", link: "/roadmap/" }],
+          items: [{ label: "Getting started", slug: "getting-started" }],
         },
       ],
       head: [
