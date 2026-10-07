@@ -56,9 +56,9 @@ The orchestrator chat does not edit checkboxes during normal flow except **Lane 
 | `in-review` | **execution agent** — after AC + gate, before the commit |
 | `implemented` | **verifier** — after all layers PASS, PASS comment first (parent epic when its last child passes) |
 | `in-progress` (rework) | **verifier** — after FAIL, FAIL comment first |
-| `done` | **user only** — no agent ever sets `done` |
+| `done` | **Kaneo ↔ GitHub sync** when the `fixes #N` commit lands on `main` and GitHub closes the issue (the user may also set it manually) — no agent ever sets `done` |
 
-Verifier comments go on the Kaneo task, never to GitHub. GitHub issues are read-only for every agent. See `.claude/skills/orchestrator/references/kaneo-sync.md` and `07-commit-linking.md`.
+`implemented` means the commit is on `dev` but not yet on `main`. Verifier comments go on the Kaneo task, never to GitHub. GitHub issues are read-only for every agent; the `fixes #N` commit trailer is the only closing mechanism. See `.claude/skills/orchestrator/references/kaneo-sync.md` and `07-commit-linking.md`.
 
 ## Project config
 

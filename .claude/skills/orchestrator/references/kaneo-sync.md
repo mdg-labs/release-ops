@@ -11,7 +11,7 @@ Orchestrator and sub-agents use this when a prompt includes a **KANEO STATUS SYN
 | Project | Release Ops `z4janvyjsbbb0esishvd9gb8` — ticket key `RO` (refs `RO-<n>`) |
 | Task URL | `https://cloud.kaneo.app/dashboard/workspace/ffM0nW62CAq0BeWqTEQuoqsDySEVyxxj/project/z4janvyjsbbb0esishvd9gb8/task/<taskCuid>` |
 
-Kaneo is the source of truth for task status, AC and verifier comments. GitHub issues in `mdg-labs/release-ops` exist only so commits can carry `[#N]`; **no agent ever writes to a GitHub issue**.
+Kaneo is the source of truth for task status, AC and verifier comments. GitHub issues in `mdg-labs/release-ops` mirror the tasks so commits can carry `[#N]` in the subject and the `fixes #N` trailer in the body; the trailer landing on `main` closes the issue and the Kaneo ↔ GitHub sync moves the task to `done`. **No agent ever writes to a GitHub issue**.
 
 ## Identifiers
 
@@ -19,7 +19,7 @@ Kaneo is the source of truth for task status, AC and verifier comments. GitHub i
 | ---------- | ------- | -------- |
 | Ticket ref | `RO-108` | Humans; lookup via `get_task_by_ticket_id` |
 | Task CUID (`taskId`) | `k3x9…` | Every `mcp__Kaneo__*` write: `update_task_status`, `create_task_comment`, `get_task`, `get_task_relations` |
-| GitHub issue `#N` | `#111` | Commit subject `[#N]` only — resolved read-only |
+| GitHub issue `#N` | `#111` | Commit subject `[#N]` + body trailer `fixes #N` — resolved read-only |
 | Roadmap key | `E03-02` | Commit subject `[E03-02]` when no GitHub issue exists; plan-file row |
 
 Kaneo CUIDs and `RO-<n>` refs **never** appear in commit messages.
@@ -38,11 +38,12 @@ Kaneo CUIDs and `RO-<n>` refs **never** appear in commit messages.
 
 ### Resolving `githubIssueNumber` (read-only)
 
-Kaneo task payloads have **no** `externalLinks`. Resolve `#N` like this:
+Kaneo task payloads have so far carried **no** `externalLinks` (`get_task` / `get_task_by_ticket_id` for RO-108 return none). Resolve `#N` like this:
 
 1. The user gave `#N` → use it (confirm the title with `mcp__github__issue_read`).
-2. Otherwise `mcp__github__search_issues` with owner `mdg-labs`, repo `release-ops`, query = the exact Kaneo task title → take the issue whose title matches exactly.
-3. No exact match → use the roadmap key (`[E*-*]`) if the task has one; else **ask the user**. Never create an issue to get a number.
+2. Optional: the payload has `externalLinks` → use `externalLinks[].externalId` of the issue link. Not observed today; fall through to step 3 when absent.
+3. Otherwise `mcp__github__search_issues` with owner `mdg-labs`, repo `release-ops`, query = the exact Kaneo task title → take the issue whose title matches exactly. This is the primary method.
+4. No exact match → use the roadmap key (`[E*-*]`) if the task has one; else **ask the user**. Never create an issue to get a number.
 
 ## Columns
 
@@ -52,8 +53,8 @@ Kaneo task payloads have **no** `externalLinks`. Resolve `#N` like this:
 | `ready` | Fully specified; orchestrator picks from here | **kaneo-intake** / **kaneo-triage** / user |
 | `in-progress` | Being implemented (also rework after FAIL) | **execution agent** (first action); **verifier** on FAIL |
 | `in-review` | Handed to verifier | **execution agent** (after AC + gate, before commit) |
-| `implemented` | Verified by the verifier | **verifier** after all layers PASS + PASS comment |
-| `done` | Final — accepted by the user | **user only** — no agent ever sets `done` |
+| `implemented` | Verified; commit on `dev`, not yet on `main` | **verifier** after all layers PASS + PASS comment |
+| `done` | Final — fix is on `main` | **Kaneo ↔ GitHub sync** when the `fixes #N` commit lands on `main` and GitHub closes the issue; the user may also set it manually. No agent ever sets `done` |
 
 Intake and triage stop at `ready`.
 
@@ -77,7 +78,7 @@ mcp__Kaneo__update_task_status
 
 - Step 1 covers every listed task: each leaf **and** the parent epic (same batch). Idempotent if already `in-progress`.
 - Transition fails → report `blocked`; do not touch repo files.
-- Step 2 order: session memory `ended` + `duration` → `in-review` on each leaf → one implementation commit with `[#N]`.
+- Step 2 order: session memory `ended` + `duration` → `in-review` on each leaf → one implementation commit with `[#N]` in the subject and `fixes #N` in the body (plus `fixes #<parent-N>` when the parent is listed with `closesParent: yes`).
 
 ### Verifier — PASS (all layers, including 3c3 commit linkage)
 
@@ -87,7 +88,7 @@ Task must already be `in-review`.
 1. Session memory: verification ended + duration
 2. mcp__Kaneo__create_task_comment — PASS template on each leaf (mandatory, FIRST)
 3. mcp__Kaneo__update_task_status → implemented on each leaf
-4. Parent epic listed AND this was its last open child → implemented on the parent too
+4. Parent epic listed with closesParent: yes (its last open child) → PASS comment + implemented on the parent too
 5. Optionally archive/delete local active/<SESSION-ID>.md (never commit)
 ```
 
@@ -99,7 +100,7 @@ Task must already be `in-review`.
 3. Append VERIFICATION FAILED to local active/<SESSION-ID>.md (never commit)
 ```
 
-The verifier never sets `done`, never sets `in-review`, and never writes to GitHub.
+The verifier never sets `done`, never sets `in-review`, and never writes to GitHub. `done` follows from the `fixes #N` trailer reaching `main`.
 
 ## Verifier PASS comment
 
@@ -109,6 +110,7 @@ Posted via `mcp__Kaneo__create_task_comment` on each leaf before `implemented`.
 ## Verified — <SESSION-ID>
 
 **Commit:** `<sha>` — <subject one line>
+**Closes on main via:** `fixes #<N>` (done follows when merged to main)
 
 ### Summary
 
@@ -155,14 +157,14 @@ Posted via `mcp__Kaneo__create_task_comment` on each leaf before `implemented`.
 | Role | `create_task_comment` | Then `update_task_status` |
 | ---- | --------------------- | ------------------------- |
 | Execution | **Never** | `in-progress`, later `in-review` |
-| Verifier PASS | **Mandatory** PASS template on each leaf, first | `implemented` (parent too if epic complete) |
+| Verifier PASS | **Mandatory** PASS template on each leaf, first | `implemented` (parent too when `closesParent: yes`) |
 | Verifier FAIL | **Mandatory** FAIL template on each leaf, first | `in-progress` |
 
 Comments go on the Kaneo task only — never to GitHub issues or PRs.
 
 ## Orchestrator role
 
-- Resolve each leaf's task CUID and `githubIssueNumber` (read-only) before dispatch; fill them into the `tasks:` list of the KANEO STATUS SYNC block.
+- Resolve each leaf's task CUID and `githubIssueNumber` (read-only) before dispatch; fill them into the `tasks:` list of the KANEO STATUS SYNC block. For a listed parent, also fill its `githubIssueNumber` and `closesParent: yes | no`.
 - Run the pre-dispatch gate (`prompt-templates.md` + `.claude/rules/09-sub-agent-prompt-contract.md`) before every Agent call.
 - Check each sub-agent's REQUIRED OUTPUT for the transitions.
 - After a verifier PASS, re-query `get_task` to confirm `implemented`.
@@ -174,8 +176,9 @@ Feature work with 2+ tasks is a parent task with subtask relations (created by *
 
 - Implement **leaf** tasks; each execution + verifier prompt lists the leaf CUID + `githubIssueNumber`, plus the parent CUID.
 - Parent → `in-progress`: the execution agent of the first leaf that starts.
-- Parent → `implemented`: the verifier of the last leaf to PASS. Before dispatching that verifier, the orchestrator computes `CLOSE_PARENTS` (parents whose other children are all `implemented` or `done`) and lists only those parents in its prompt.
-- Parent → `done`: the user.
+- `closesParent` / `CLOSE_PARENTS`: before dispatching a leaf's execution agent, the orchestrator computes `CLOSE_PARENTS` (parents whose other children are all `implemented` or `done`). For those parents the leaf is the final one: its execution prompt lists the parent with `closesParent: yes` and its `githubIssueNumber`, so the commit body carries `fixes #<N>` **and** `fixes #<parent-N>`. Every other leaf gets `closesParent: no` (trailer `fixes #<N>` only). Never put an epic's last remaining leaves in the same Lane P batch: the final leaf always runs alone in Lane S once its siblings are `implemented`, so `CLOSE_PARENTS` is unambiguous.
+- Parent → `implemented`: the verifier of that final leaf, which gets the same parent entry (`closesParent: yes`) and only those parents.
+- Parent → `done`: the Kaneo ↔ GitHub sync when the `fixes #<parent-N>` commit lands on `main` (or the user, manually).
 
 ## MCP tools by role
 
@@ -187,6 +190,7 @@ Feature work with 2+ tasks is a parent task with subtask relations (created by *
 | `create_task_comment` | — | — | PASS and FAIL |
 | `create_task`, `create_task_relation` | — (kaneo-intake / kaneo-triage) | — | — |
 | `mcp__github__issue_read`, `search_issues` | Resolve `#N` | — | — |
+| `fixes #N` commit trailer | — | **Mandatory** in the task commit | Checks it (Layer 3c3) |
 | Any GitHub issue write | **Forbidden** | **Forbidden** | **Forbidden** |
 
 ## Roadmap vs Kaneo
@@ -196,10 +200,24 @@ Feature work with 2+ tasks is a parent task with subtask relations (created by *
 | Plan file checkboxes (`docs/roadmap.html`) | Verifier `[x]` / `[!]` | Only when the task carries a `Roadmap ID` and the plan file is in WRITE SCOPE |
 | Board status | — | Execution `in-progress` → `in-review`; verifier `implemented` |
 | Commit subject | `[E*-*]` when no GitHub issue exists | `[#N]` |
+| Commit body trailer | none | `fixes #N` (+ `fixes #<parent-N>` on the epic's final leaf) |
 
 ## Commit linkage
 
-GitHub links a commit to an issue through `#N` in the subject (`[#111]`). Closing keywords (`fixes #N`, `closes #N`, `resolves #N`) are **forbidden** in commit and PR bodies: they would close the GitHub issue on merge, and issue state is never changed by agents.
+GitHub links a commit to an issue through `#N` in the subject (`[#111]`). Every task commit with a GitHub issue **must** also end its body with the closing trailer `fixes #N`; the final leaf of an epic (`closesParent: yes`) adds `fixes #<parent-N>` on its own line:
+
+```text
+feat(api)[#111]: add Kaneo ticket integration client
+
+Adds the Kaneo REST client and wires it into the ticket dispatcher.
+
+fixes #111
+fixes #108        # only when closesParent: yes
+```
+
+The trailer is the **only** closing mechanism: when the commit lands on `main`, GitHub closes the issue and the Kaneo ↔ GitHub sync moves the task `implemented` → `done`. No agent sets `done` or closes an issue via API. Roadmap-only commits (`[E*-*]`) carry no trailer. PR bodies may also contain closing keywords, but don't need to.
+
+The orchestrator's commit-linkage audit and verifier Layer 3c3 check **both** `[#N]` in the subject and `fixes #N` in the body; a missing trailer is a FAIL.
 
 ## Time tracking
 

@@ -54,7 +54,7 @@ Turn a feature request, codebase change, roadmap epic or rough draft into **`rea
 | Browse / dedupe | `list_tasks` `{ projectId: "z4janvyjsbbb0esishvd9gb8", status?, page?, limit? }` — paginate via `pagination.totalPages` |
 | Relations | `get_task_relations` `{ taskId: "<cuid>" }` |
 
-Kaneo task payloads carry **no** GitHub link. The mirrored GitHub issue number (used by execution agents for `[#N]` commit subjects) is resolved **read-only**: `mcp__github__search_issues` on `mdg-labs/release-ops` with the exact task title → take the exact-title match. If none matches, report "no GitHub mirror" — never create one.
+Kaneo task payloads have so far carried **no** GitHub link. The mirrored GitHub issue number (used by execution agents for the `[#N]` commit subject and the `fixes #N` body trailer) is resolved **read-only**: `externalLinks[].externalId` if the payload ever carries it; otherwise `mcp__github__search_issues` on `mdg-labs/release-ops` with the exact task title → take the exact-title match. If none matches, report "no GitHub mirror" — never create one.
 
 ## GitHub: read-only
 

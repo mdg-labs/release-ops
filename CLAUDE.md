@@ -29,5 +29,5 @@ make migrate-diff name=<change>                # schema change — edit db/schem
 
 The harness expects these Claude Code MCP server names (tool prefix `mcp__<name>__`):
 
-- `Kaneo` — Kaneo board, project Release Ops (`RO-<n>`); source of truth for tasks and status. Agents never set `done` (user only).
-- `github` — read-only for issues (resolve the `#N` for commit subjects). Agents never comment on, label, close or create GitHub issues, and never use closing keywords (`fixes #N`) in commits or PRs.
+- `Kaneo` — Kaneo board, project Release Ops (`RO-<n>`); source of truth for tasks and status. Agents never set `done`: it comes from the Kaneo ↔ GitHub sync when a `fixes #N` commit lands on `main` (or the user sets it).
+- `github` — read-only for issues (resolve the `#N` for commit subjects). Agents never comment on, label, close or create GitHub issues via API. Task commits carry `[#N]` in the subject and a mandatory `fixes #N` trailer in the body — the only way an issue closes (`07-commit-linking.md`).

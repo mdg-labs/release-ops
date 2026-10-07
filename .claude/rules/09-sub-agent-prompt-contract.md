@@ -21,7 +21,7 @@ Source of truth: `.agents/project/orchestrator/prompt-templates.md` — copy blo
 | 3 | `COMMIT CONTRACT — EXECUTION` | § COMMIT CONTRACT — EXECUTION |
 | 4 | `SCOPED CI GATE` | § SCOPED CI GATE |
 | 5 | `DB MIGRATIONS` | § DB MIGRATIONS |
-| 6 | Filled `taskId:` (Kaneo CUID) + `githubIssueNumber:` per leaf task | inside KANEO STATUS SYNC block |
+| 6 | Filled `taskId:` (Kaneo CUID) + `githubIssueNumber:` per leaf task; `closesParent:` + parent `githubIssueNumber:` on a listed parent | inside KANEO STATUS SYNC block |
 | 7 | `SESSION-ID:` with value `<TASK-ID>-<YYYYMMDD>-<4hex>` | orchestrator header |
 | 8 | Verbatim acceptance criteria bullets | Kaneo task description / plan row |
 | 9 | `READ SCOPE:` and `WRITE SCOPE:` with absolute paths | orchestrator header |
@@ -39,7 +39,7 @@ Skip KANEO STATUS SYNC only when the user said **"don't update Kaneo"**. COMMIT 
 | 3 | `━━━ GATE: PASS PATH` and `━━━ GATE: FAIL PATH` | (inside verifier block) |
 | 4 | `KANEO COMMENT CONTRACT` | § KANEO COMMENT CONTRACT |
 | 5 | `SCOPED CI GATE` | § SCOPED CI GATE |
-| 6 | Filled `taskId:` (Kaneo CUID) + `githubIssueNumber:` per leaf task | inside KANEO STATUS SYNC block |
+| 6 | Filled `taskId:` (Kaneo CUID) + `githubIssueNumber:` per leaf task; `closesParent:` + parent `githubIssueNumber:` on a listed parent | inside KANEO STATUS SYNC block |
 | 7 | Same `SESSION-ID:` as the execution agent | orchestrator header |
 | 8 | Verbatim acceptance criteria bullets | Kaneo task description / plan row |
 | 9 | `READ SCOPE:` / `WRITE SCOPE:` (verifier writes Kaneo + plan-file row only) | orchestrator header |
@@ -57,8 +57,9 @@ With Kaneo sync on, the verifier **must** call `mcp__Kaneo__create_task_comment`
 These patterns make the prompt **invalid** — rebuild from prompt-templates before calling Agent:
 
 - `Kaneo PASS` / `Kaneo FAIL` / `leaf implemented` / `set done` — the orchestrator **never** pre-decides the verification outcome
-- Any instruction for an agent to set `done` (user only)
-- Any instruction to comment on, label, assign, close or create a GitHub issue, or to use `fixes` / `closes` / `resolves #N`
+- Any instruction for an agent to set `done` (Kaneo ↔ GitHub sync or the user only)
+- Any instruction to comment on, label, assign, close or create a GitHub issue via API (closing happens only through the `fixes #N` commit trailer)
+- Any instruction to omit the `fixes #N` trailer from a task commit
 - `VERIFIER READ-ONLY` or a read-only `subagent_type` (`Explore`, `Plan`) on a verifier with Kaneo sync on
 - One-line Kaneo instructions (`Kaneo sync on`, `update board`, `git log [#N]`)
 - CI as a lone flag without the full `SCOPED CI GATE` block
@@ -102,7 +103,7 @@ WRITE SCOPE: …
 | **Execution** | `in-progress` first; `in-review` before the commit | **Never** |
 | **Verifier PASS** | `implemented` on leaf (+ parent if listed in `CLOSE_PARENTS`) | **Mandatory** PASS template — **before** `implemented` |
 | **Verifier FAIL** | `in-progress` on leaf (rework) | **Mandatory** FAIL template — **before** `in-progress` |
-| **User** | `done` | — |
+| **Kaneo ↔ GitHub sync** (or the user) | `done` — when the `fixes #N` commit lands on `main`; never an agent | — |
 
 Full templates: `.claude/skills/orchestrator/references/kaneo-sync.md` and prompt-templates § KANEO COMMENT CONTRACT.
 

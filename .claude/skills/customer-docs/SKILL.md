@@ -187,9 +187,10 @@ Full rules: [style-guide.md](style-guide.md).
 
 Follow `.claude/rules/01-git-workflow.md` and the commit-linking rule (rule 07):
 
-- Subject: `docs(docs)[#N]: <summary>` when the work belongs to a Kaneo task. `#N` is the GitHub issue that mirrors the task, resolved **read-only**: `mcp__github__search_issues` (owner `mdg-labs`, repo `release-ops`, query = exact task title) → exact-title match; or the user gives `#N`.
-- Roadmap-only work with no GitHub issue: `docs(docs)[E<x>-<y>]: <summary>`. Neither available: ask the user.
-- Never the Kaneo CUID or `RO-<n>` in a commit. No closing keywords (`fixes`/`closes`/`resolves #N`). Never write to GitHub issues.
+- Subject: `docs(docs)[#N]: <summary>` when the work belongs to a Kaneo task. `#N` is the GitHub issue that mirrors the task, resolved **read-only**: the user gives `#N`; or `externalLinks[].externalId` if the Kaneo payload ever carries it; otherwise `mcp__github__search_issues` (owner `mdg-labs`, repo `release-ops`, query = exact task title) → exact-title match.
+- Body: task commits with `[#N]` **must** end with the trailer `fixes #N` — the only way the issue closes (GitHub closes it when the commit lands on `main`; the Kaneo ↔ GitHub sync then sets `done`).
+- Roadmap-only work with no GitHub issue: `docs(docs)[E<x>-<y>]: <summary>`, no trailer. Neither available: ask the user.
+- Never the Kaneo CUID or `RO-<n>` in a commit. Never write to GitHub issues (the trailer is not an issue write).
 - Stage explicit paths only (no `git add .` / `-A`). Never push unless the user asks.
 - Gate: docs-only changes skip `npm test`/`npm run lint`; run `npm run docs:build` instead.
 
@@ -258,4 +259,4 @@ Phase 2 (after approval):
 - Modifying application code (`apps/web`, `cmd/`, `internal/`, `db/`, `migrations/`) — read-only
 - Fabricating behaviour, UI labels or screenshots; capturing screenshots
 - Exposing internal table/column names, code identifiers, env var names (outside the install guide), secrets or internal URLs
-- `git add .`, push without explicit request, closing keywords, any GitHub issue write
+- `git add .`, push without explicit request, a `[#N]` commit without the `fixes #N` trailer, any GitHub issue write

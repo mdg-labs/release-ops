@@ -20,16 +20,16 @@ description: Git branch policy, commit format, staging rules, never-push default
 Subject ≤72 chars, imperative mood, **scoped**. Task commits carry the GitHub issue number per `07-commit-linking.md`.
 
 ```
-feat(<scope>)[#123]: <summary>
-fix(<scope>)[#123]: <summary>
-chore(<scope>)[E03-02]: <summary>   # roadmap-only, no GitHub issue
+feat(<scope>)[#123]: <summary>     # body ends with: fixes #123 (mandatory)
+fix(<scope>)[#123]: <summary>      # body ends with: fixes #123 (mandatory)
+chore(<scope>)[E03-02]: <summary>   # roadmap-only, no GitHub issue, no trailer
 ```
 
 **Allowed scopes**: release-ops, api, db, config, ci, docs, deps
 
 Plan-file verifier commits: `chore(docs)[E03-02]: mark E03-02 verified`
 
-No closing keywords (`fixes` / `closes` / `resolves #N`) in commit or PR bodies — agents never change GitHub issue state.
+Task commits **must** end their body with `fixes #N` (the final leaf of an epic also `fixes #<parent-N>`). When the commit lands on `main`, GitHub closes the issue and the Kaneo ↔ GitHub sync moves the task to `done`. That trailer is the only closing mechanism — agents never change GitHub issue state via API. PR bodies may also carry closing keywords; they don't need to.
 
 Session memory (`.agents/project/agent-memory/`) is **gitignored** — never commit session files.
 

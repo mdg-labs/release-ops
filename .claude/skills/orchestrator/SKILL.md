@@ -6,7 +6,8 @@ description: >-
   dispatches execution and verifier sub-agents with doc references (not pasted
   spec content), and runs verification after each batch. Execution agents set
   in-progress then in-review; verifiers set implemented after PASS (comment
-  first) or in-progress after FAIL; done is set by the user only. Use when the
+  first) or in-progress after FAIL; done comes only from the Kaneo-GitHub sync
+  when the `fixes #N` commit lands on main (or the user). Use when the
   user asks to orchestrate, delegate end-to-end, run the roadmap, implement a
   Kaneo task or epic (e.g. RO-108) or GitHub issue (e.g. #111), or coordinate
   parallel implementation tasks.
@@ -41,7 +42,7 @@ All of these are project-owned — edit them in place.
 
 - Read the **plan file** `docs/roadmap.html` (whole file): epics, leaf rows, dependencies, Doc Ref, AC
 - Read **Kaneo task payloads** via `mcp__Kaneo__*`: title, description (the AC contract), relations, column
-- Resolve GitHub `#N` **read-only** via `mcp__github__search_issues` / `mcp__github__issue_read`
+- Resolve GitHub `#N` **read-only** via `mcp__github__search_issues` / `mcp__github__issue_read` (or `externalLinks[].externalId` if a Kaneo payload ever carries it)
 - Read `.agents/project/orchestrator/*` and `.agents/project/workspace-notes.md`; write durable learnings to workspace notes
 - Use the todo list in **Kaneo mode** / **chat mode**
 - In **plan-file mode**, edit the plan file for status reconciliation or **Lane P batch prep** (`[~]` at batch start)
@@ -61,7 +62,7 @@ All of these are project-owned — edit them in place.
 - Paste spec bodies or whole task descriptions into prompts — pass paths, `§` refs, extracted AC, file paths, deps
 - Mix Lane P and Lane S tasks in one batch
 - Let execution agents commit to `dev` during an in-flight Lane P batch
-- Set Kaneo `done` (user only) or write anything to a GitHub issue (comment, label, assignee, state, create, close)
+- Set Kaneo `done` (Kaneo ↔ GitHub sync or the user only) or write anything to a GitHub issue (comment, label, assignee, state, create, close) — issues close only through the `fixes #N` commit trailer
 
 **Bash allowed only for:** `workspace-notes.md`, the commit-linkage audit (`git log --grep`), plan-reconciliation commits.
 
@@ -85,7 +86,7 @@ All of these are project-owned — edit them in place.
 | **Handed off** | — | Execution → `in-review` | — |
 | **Verified** | Verifier → `[x]` | Verifier PASS → comment → `implemented` | todo `completed` after PASS |
 | **Failed** | Verifier → `[!]` | Verifier FAIL → comment → `in-progress` | todo `pending` |
-| **Done** | — | **User only** | — |
+| **Done** | — | Kaneo ↔ GitHub sync when the `fixes #N` commit lands on `main` (or the user) | — |
 
 Default to **plan-file mode** only when the user asks for roadmap work and names no Kaneo task or GitHub issue. Roadmap leaves were imported to Kaneo (descriptions carry `Roadmap ID: E*-*`); when a roadmap leaf has a Kaneo mirror, run it in Kaneo mode and update the plan checkbox as well.
 
@@ -107,7 +108,7 @@ Present a **batch plan**, then **start batch 1** unless the user said `plan only
 
 **Skipped (implemented/done):** —
 **Blocked:** —
-**Epic linkage:** parent in-progress when first child starts; parent implemented on last child PASS
+**Epic linkage:** parent in-progress when first child starts; last child carries `closesParent: yes` (`fixes #<parent-N>`); parent implemented on last child PASS
 
 → Starting batch 1…
 ```
@@ -122,7 +123,7 @@ User modifiers: `serial` · `from E05` / `from RO-<n>` · `plan only` · `don't 
 2. Read `.agents/project/workspace-notes.md`.
 3. **Pick mode** (plan-file / Kaneo / chat).
 4. **Plan-file:** read `docs/roadmap.html` — next `[ ]` row with satisfied deps.
-5. **Kaneo:** load task(s) per the lookup rules (`get_task_by_ticket_id` for `RO-<n>`, then `get_task_relations` for epics); resolve each leaf's `githubIssueNumber` read-only.
+5. **Kaneo:** load task(s) per the lookup rules (`get_task_by_ticket_id` for `RO-<n>`, then `get_task_relations` for epics); resolve each leaf's (and epic's) `githubIssueNumber` read-only.
 6. **Present batch plan** → dispatch batch 1 (unless paused).
 
 **Commits:** one local commit per task. **Never push** unless the user explicitly asks; never push to `main`.
@@ -136,9 +137,9 @@ User modifiers: `serial` · `from E05` / `from RO-<n>` · `plan only` · `don't 
 | `backlog` / `ready` | kaneo-intake / kaneo-triage / user | Intake and triage stop at `ready` |
 | `in-progress` | **Execution** | First action, before session memory (leaf + parent epic) |
 | `in-review` | **Execution** | After AC + scoped gate, before the commit |
-| `implemented` | **Verifier** | All layers PASS, PASS comment posted first; parent when last child passes |
+| `implemented` | **Verifier** | All layers PASS, PASS comment posted first; parent when last child passes. Means: commit on `dev`, not yet on `main` |
 | `in-progress` (rework) | **Verifier** | Any layer FAIL, FAIL comment posted first |
-| `done` | **User only** | Never by an agent |
+| `done` | **Kaneo ↔ GitHub sync** (or the user) | When the `fixes #N` commit lands on `main` and GitHub closes the issue. Never by an agent |
 
 Details: `.claude/skills/orchestrator/references/kaneo-sync.md`.
 
@@ -151,8 +152,10 @@ Details: `.claude/skills/orchestrator/references/kaneo-sync.md`.
 After **every verifier PASS**, before advancing the queue:
 
 ```bash
-# Kaneo task with GitHub issue #111:
+# Kaneo task with GitHub issue #111 — subject [#111] AND body trailer fixes #111:
 git log <base>..HEAD --grep='\[#111\]'
+git log <base>..HEAD --grep='\[#111\]' --format='%B' | grep -E '^fixes #111$'
+# Final leaf of an epic (closesParent: yes) — also fixes #<parent-N>
 
 # Roadmap-only task E03-02:
 git log <base>..HEAD --grep='\[E03-02\]'
@@ -162,12 +165,13 @@ git log <base>..HEAD --grep='\[E03-02\]'
 
 | Result | Action |
 | ------ | ------ |
-| Matching `[#N]` / `[E*-*]` commit found | OK — record progress |
+| Matching `[#N]` commit found with `fixes #N` in its body (+ `fixes #<parent-N>` when `closesParent: yes`) | OK — record progress |
+| Matching `[E*-*]` commit found (roadmap-only, no trailer) | OK — record progress |
 | No matching commit | **FAIL** — re-dispatch execution |
+| `[#N]` commit without the `fixes #N` trailer (or final leaf missing `fixes #<parent-N>`) | **FAIL** — the issue would never close and the task never reach `done`; execution must replace the commit before push |
 | Uncommitted WRITE SCOPE changes | **FAIL** — execution did not finish its handoff |
-| Commit body contains `fixes` / `closes` / `resolves #N` | **FAIL** — closing keywords are forbidden; execution must replace the commit before push |
 
-Verifier Layer 3c3 runs the same check — a missing task commit is a **FAIL** even if AC and CI pass.
+Verifier Layer 3c3 runs the same check — a missing task commit or missing trailer is a **FAIL** even if AC and CI pass.
 
 ---
 
@@ -181,7 +185,7 @@ Build each prompt from:
 2. **AC** — verbatim bullets from the Kaneo description or plan row
 3. **Doc references** — Doc Ref / `§` citations via `doc-index.md`
 4. **READ SCOPE / WRITE SCOPE** — absolute paths under the repo root; verifier WRITE SCOPE = Kaneo MCP + authorized plan-file row only
-5. **Epic context** — parent CUID, sibling deps, `CLOSE_PARENTS` for the final child's verifier
+5. **Epic context** — parent CUID, sibling deps, `CLOSE_PARENTS` for the final child (execution prompt lists the parent with `closesParent: yes` + its `githubIssueNumber` for the trailer; its verifier gets the same entry)
 6. **KANEO STATUS SYNC** — execution or verifier variant, verbatim incl. STATUS SYNC TABLE; `tasks:` filled with CUIDs + `githubIssueNumber`
 7. **KANEO COMMENT CONTRACT** — every verifier prompt when Kaneo sync is on
 8. **COMMIT CONTRACT — EXECUTION** — every execution prompt (even with Kaneo sync off)
@@ -201,7 +205,7 @@ Copy blocks **verbatim**; never summarize KANEO STATUS SYNC, COMMENT CONTRACT or
 2. Read the epic's **Suggested implementation order** in its description.
 3. Build the batch plan; satisfy blocking relations and prose deps.
 4. The first leaf's execution agent sets the epic `in-progress`.
-5. The last leaf's verifier (listed in `CLOSE_PARENTS`) sets the epic `implemented`. The user sets `done`.
+5. The last leaf is dispatched with the parent in `CLOSE_PARENTS` (`closesParent: yes`): its commit carries `fixes #<N>` and `fixes #<parent-N>`, and its verifier sets the epic `implemented`. The epic reaches `done` via the Kaneo ↔ GitHub sync when that commit lands on `main` (or the user sets it).
 
 ### Sub-agent types
 
@@ -243,7 +247,7 @@ Shared root files (`package.json`, `package-lock.json`, `go.mod`, `.github/workf
 
 **Default when uncertain:** Lane S.
 
-**Force Lane S for:** `db/schema.sql` / `migrations/` changes, shared types or API contracts (`internal/api`, `apps/web` API client), root tooling, incomplete dependency chains, merge conflicts on `dev`.
+**Force Lane S for:** `db/schema.sql` / `migrations/` changes, shared types or API contracts (`internal/api`, `apps/web` API client), root tooling, incomplete dependency chains, merge conflicts on `dev`, and the **final remaining leaf of an epic** (run it alone, after its siblings are `implemented`, so exactly one commit carries `fixes #<parent-N>`).
 
 **Lane P hard rules:**
 
@@ -288,14 +292,14 @@ Always: **execute → verify (per task) → integrate (Lane P) → batch verify 
 2. Session memory + implementation (WRITE SCOPE only)
 3. Scoped CI gate green
 4. Session memory ended + duration → Kaneo in-review
-5. ONE implementation commit with [#N] (COMMIT CONTRACT)
+5. ONE implementation commit with [#N] + body trailer fixes #N (COMMIT CONTRACT)
 ```
 
 - Step 1 fails → **blocked**, no repo changes.
 - Session memory: `.agents/project/agent-memory/active/<SESSION-ID>.md`; `started` after `in-progress` succeeds.
 - Stage explicit paths only; never commit `agent-memory/**`; never push.
 
-**Forbidden for execution:** `implemented` or `done`; `create_task_comment`; Kaneo IDs or `RO-<n>` in commits; closing keywords; any GitHub issue write; committing before `in-review`; implementing before `in-progress`.
+**Forbidden for execution:** `implemented` or `done`; `create_task_comment`; Kaneo IDs or `RO-<n>` in commits; a `[#N]` commit without the `fixes #N` trailer; any GitHub issue write; committing before `in-review`; implementing before `in-progress`.
 
 ### Lane P (isolated task branch)
 
@@ -305,10 +309,16 @@ Same flow on `orchestrator/<TASK-ID>` only. Never check out `dev`. Plan file rea
 
 ```
 feat(api)[#111]: <imperative summary>
-fix(db)[E03-02]: <imperative summary>   # roadmap-only, no GitHub issue
+
+<optional prose>
+
+fixes #111
+fixes #108        # only on the final leaf of an epic (closesParent: yes)
+
+fix(db)[E03-02]: <imperative summary>   # roadmap-only, no GitHub issue, no trailer
 ```
 
-Subject ≤72 chars; scopes `release-ops`, `api`, `db`, `config`, `ci`, `docs`, `deps`. No `fixes` / `closes` / `resolves #N` in the body. See `.claude/rules/07-commit-linking.md`.
+Subject ≤72 chars; scopes `release-ops`, `api`, `db`, `config`, `ci`, `docs`, `deps`. Body trailer `fixes #N` is **mandatory** on task commits with a GitHub issue — it is the only way the issue closes; the Kaneo ↔ GitHub sync then moves the task to `done` once the commit is on `main`. See `.claude/rules/07-commit-linking.md`.
 
 ---
 
@@ -328,7 +338,7 @@ Never reuse a verifier thread across batches. The verifier is **not** read-only 
 - 3b. Doc-contract deviations (`docs/specs.html`, `db/schema.sql`, `docs/stack.html`) with file:line + fix hint
 - 3c. Security baseline: credentials/tokens handled as `docs/specs.html` requires (encrypted at rest, never logged); auth enforced in Go
 - 3c2. New env vars match `docs/specs.html#env`
-- 3c3. **Commit linkage** — `git log --grep='\[#N\]'` (or `\[E*-*\]`) finds the task commit; no closing keywords in its body
+- 3c3. **Commit linkage** — `git log --grep='\[#N\]'` (or `\[E*-*\]`) finds the task commit **and** its body carries `fixes #N` (+ `fixes #<parent-N>` when `closesParent: yes`); missing trailer → FAIL. Roadmap-only `[E*-*]`: no trailer
 - 3c4. **i18n** — no literal UI strings in `apps/web/` (`.claude/rules/10-i18n.md`)
 - 3c5. **Plan file integrity** — PLAN FILE GUARD; unauthorized row changes → FAIL
 - 3d. **DB migrations** — hand-written or hand-edited `migrations/*.sql` → FAIL
@@ -389,7 +399,7 @@ Path: `.agents/project/agent-memory/` — **never committed**.
 5. Lane P: integrate → batch verify.
 6. Commit-linkage audit for every PASS.
 7. Reconcile plan checkboxes / Kaneo columns (confirm `implemented` via `get_task`); update workspace notes.
-8. Repeat, then report batch results + next steps. Remind the user that `implemented` tasks await their `done`.
+8. Repeat, then report batch results + next steps. Remind the user that `implemented` tasks reach `done` when their `fixes #N` commits land on `main` (or they set `done` manually).
 
 ---
 
@@ -404,7 +414,7 @@ Path: `.agents/project/agent-memory/` — **never committed**.
 - Marking an epic `implemented` before all in-scope subtasks PASS
 - **Any agent setting Kaneo `done`**
 - **Any agent writing to a GitHub issue** (comment, label, assignee, state, create, close)
-- **`fixes` / `closes` / `resolves #N` in a commit or PR body**
+- **A `[#N]` task commit without the `fixes #N` trailer** (or the epic's final leaf without `fixes #<parent-N>`)
 - Execution agent setting `implemented`, or posting a Kaneo comment
 - Skipping the commit-linkage audit after a verifier PASS
 - Marking verified without a `[#N]` / `[E*-*]` commit in history

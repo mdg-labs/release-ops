@@ -46,10 +46,10 @@ Create status: ready
 ## Hard rules
 
 1. **GitHub is read-only.** Read Dependabot alerts and, for `#N` resolution, issues. Nothing else.
-2. **Never dismiss an alert** (UI, `gh api -X PATCH … state=dismissed`, or any MCP tool) — rule `08-dependabot-alerts.md`. The alert closes on its own once the bump lands on `dev`.
+2. **Never dismiss an alert** (UI, `gh api -X PATCH … state=dismissed`, or any MCP tool) — rule `08-dependabot-alerts.md`. The alert closes on its own once the bump reaches the default branch.
 3. **Never touch GitHub issues**: no create, comment, label, assign, edit, close or reopen. Kaneo is the only place this skill writes.
 4. **No code changes** during triage: no `package.json`, lockfile, `go.mod`, `Dockerfile` or workflow edits, no commits.
-5. **Stop at `ready`.** Never set `in-progress`, `in-review`, `implemented` or `done` (`done` is set by the user only).
+5. **Stop at `ready`.** Never set `in-progress`, `in-review`, `implemented` or `done` (`done` comes from the Kaneo ↔ GitHub sync when the `fixes #N` commit lands on `main`, or from the user).
 6. Never put the Kaneo task CUID or `RO-<n>` in a commit message.
 
 ## Alert access — MCP vs gh CLI
@@ -176,13 +176,14 @@ Land the fix on `dev`. The Dependabot alert closes automatically once the vulner
 
 - [ ] `<package_name>` resolved to `>= <patched_version>` in `<manifest_path>` (and lockfile where applicable)
 - [ ] Gate passes: <ecosystem gate command>
-- [ ] Commit: `fix(deps)[#N]: bump <package_name> to <patched_version> (<CVE or GHSA>)`
+- [ ] Commit: `fix(deps)[#N]: bump <package_name> to <patched_version> (<CVE or GHSA>)`, body ending with `fixes #N`
 ```
 
 ### Phase 4 — Read-only `#N` lookup and summary
 
-The fix commit needs the GitHub issue number that mirrors the Kaneo task. Kaneo payloads carry no `externalLinks`; resolve it read-only:
+The fix commit needs the GitHub issue number that mirrors the Kaneo task. Kaneo payloads have so far carried no `externalLinks`; resolve it read-only:
 
+0. Optional: the payload has `externalLinks` → use `externalLinks[].externalId` of the issue link (not observed today).
 1. `mcp__github__search_issues` (owner `mdg-labs`, repo `release-ops`, query = the exact task title) → take the exact-title match as `#N`.
 2. No match (the mirror may not exist yet) → report "no GitHub mirror found"; the implementer resolves `#N` the same way before committing, or asks the user. Never create the issue yourself.
 
@@ -192,16 +193,18 @@ Report in chat:
 - Duplicate result: open duplicate `RO-<n>` + URL (no create), or "none"
 - Created task: `RO-<n>`, task URL, status `ready`, priority, label used (`deps` / `ci` / none)
 - GitHub `#N` if found (read-only lookup), else "not found yet"
-- Next step: "implement RO-<n>" via `/orchestrator`; fix commit `fix(deps)[#N]: bump <pkg> to <ver> (CVE-…)`
+- Next step: "implement RO-<n>" via `/orchestrator`; fix commit `fix(deps)[#N]: bump <pkg> to <ver> (CVE-…)` with body trailer `fixes #N`
 
 ## Fix commit convention (for the implementer)
 
 ```text
 fix(deps)[#N]: bump <pkg> to <ver> (CVE-YYYY-NNNNN)
+
+fixes #N
 ```
 
 - `#N` = GitHub issue mirroring the Kaneo task (read-only lookup above). Use the GHSA ID in parentheses when there is no CVE.
-- No closing keywords (`fixes #N`, `closes #N`, `resolves #N`) in the subject, body or PR description.
+- The body **must** end with the `fixes #N` trailer (rule 07): when the commit lands on `main`, GitHub closes the issue and the Kaneo ↔ GitHub sync moves the task to `done`. No trailer only when there is no GitHub issue (roadmap key instead).
 - Never the Kaneo CUID or `RO-<n>`. Stage explicit paths only. Never push unless the user asks.
 
 ## Tools
@@ -215,4 +218,4 @@ fix(deps)[#N]: bump <pkg> to <ver> (CVE-YYYY-NNNNN)
 | `mcp__Kaneo__create_task` | Create task in `ready` |
 | `mcp__Kaneo__list_workspace_labels`, `attach_label_to_task`, `create_label` | `deps` / `ci` label |
 
-**Forbidden:** dismissing or otherwise modifying alerts; any GitHub issue write (create, comment, label, edit, close); setting any status other than `ready`; creating a duplicate when an open task exists; code or dependency changes during triage; closing keywords in commits.
+**Forbidden:** dismissing or otherwise modifying alerts; any GitHub issue write (create, comment, label, edit, close); setting any status other than `ready`; creating a duplicate when an open task exists; code or dependency changes during triage; closing issues any way other than the `fixes #N` commit trailer.

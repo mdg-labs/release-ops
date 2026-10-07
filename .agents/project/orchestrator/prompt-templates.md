@@ -36,10 +36,10 @@ Search the assembled prompt for these **required markers**. Any missing → **do
 
 | Role | Required markers (all must be present) |
 | ---- | -------------------------------------- |
-| **Execution** | `KANEO STATUS SYNC — EXECUTION`, `━━━ STATUS SYNC TABLE`, `COMMIT CONTRACT — EXECUTION`, `SCOPED CI GATE`, `DB MIGRATIONS`, `SESSION-ID:`, filled `taskId:` + `githubIssueNumber:` |
-| **Verifier** | `KANEO STATUS SYNC — VERIFIER`, `━━━ STATUS SYNC TABLE`, `━━━ GATE: PASS PATH`, `━━━ GATE: FAIL PATH`, `KANEO COMMENT CONTRACT`, `SCOPED CI GATE`, `SESSION-ID:`, filled `taskId:` + `githubIssueNumber:` |
+| **Execution** | `KANEO STATUS SYNC — EXECUTION`, `━━━ STATUS SYNC TABLE`, `COMMIT CONTRACT — EXECUTION`, `SCOPED CI GATE`, `DB MIGRATIONS`, `SESSION-ID:`, filled `taskId:` + `githubIssueNumber:` (+ `closesParent:` on a listed parent) |
+| **Verifier** | `KANEO STATUS SYNC — VERIFIER`, `━━━ STATUS SYNC TABLE`, `━━━ GATE: PASS PATH`, `━━━ GATE: FAIL PATH`, `KANEO COMMENT CONTRACT`, `SCOPED CI GATE`, `SESSION-ID:`, filled `taskId:` + `githubIssueNumber:` (+ `closesParent:` on a listed parent) |
 
-**Forbidden** (prompt is invalid if present): `Kaneo PASS`, `Kaneo FAIL`, `leaf implemented`, `set done`, `VERIFIER READ-ONLY`, read-only `subagent_type` `Explore` / `Plan` for a verifier with Kaneo sync on, one-line CI instructions without the SCOPED CI GATE block, any instruction to comment on / label / close / create a GitHub issue.
+**Forbidden** (prompt is invalid if present): `Kaneo PASS`, `Kaneo FAIL`, `leaf implemented`, `set done`, `VERIFIER READ-ONLY`, read-only `subagent_type` `Explore` / `Plan` for a verifier with Kaneo sync on, one-line CI instructions without the SCOPED CI GATE block, any instruction to comment on / label / close / create a GitHub issue (closing happens only through the `fixes #N` commit trailer).
 
 **Enforcement:** missing marker → orchestrator must not dispatch. Sub-agent skipping a mandatory block → verifier **FAIL** + orchestrator recovery.
 
@@ -64,10 +64,12 @@ projectId: z4janvyjsbbb0esishvd9gb8   (Release Ops, ticket key RO)
 tasks:
   - taskId: <kaneo-task-cuid>            # leaf — REQUIRED (CUID, not RO-<n>)
     ticket: RO-<n>
-    githubIssueNumber: <N>               # resolved read-only by orchestrator — REQUIRED for commits
+    githubIssueNumber: <N>               # resolved read-only by orchestrator — REQUIRED for commits ([#N] + fixes #N)
     title: <task title>
   - taskId: <parent-cuid>                # epic parent — include when leaf is a subtask
     ticket: RO-<n>
+    githubIssueNumber: <parent-N>        # resolved read-only — used only when closesParent: yes
+    closesParent: yes | no               # yes ONLY on the final leaf that completes the epic (CLOSE_PARENTS)
 
 ━━━ STATUS SYNC TABLE (execution agent — follow exactly) ━━━
 
@@ -96,25 +98,27 @@ Session memory: create .agents/project/agent-memory/active/<SESSION-ID>.md AFTER
 Strict order — do NOT commit before step 2b:
   a. Session memory header: set ended + duration (wall-clock from started)
   b. mcp__Kaneo__update_task_status → in-review for each LEAF taskId
-  c. Single implementation commit (COMMIT CONTRACT) — subject MUST include [#<N>]
+  c. Single implementation commit (COMMIT CONTRACT) — subject MUST include [#<N>];
+     body MUST end with `fixes #<N>` (plus `fixes #<parent-N>` when closesParent: yes)
 
 ━━━ FORBIDDEN ━━━
 - Starting implementation before step 1 (in-progress) succeeds
 - update_task_status → implemented (verifier only)
-- update_task_status → done (user only — no agent ever sets done)
+- update_task_status → done (no agent ever sets done — the GitHub sync sets it when the fixes #N commit lands on main; the user may set it manually)
 - update_task_status → ready or backlog
 - create_task_comment (verifier only)
 - Committing before step 2b (in-review)
 - Committing session memory or .agents/project/agent-memory/**
 - Kaneo task CUID or RO-<n> in any commit message
-- fixes / closes / resolves #<N> (or any closing keyword) in commit or PR bodies
-- any GitHub issue write — no comment, label, assignee, state change, creation or closing
+- A task commit ([#<N>]) without the `fixes #<N>` trailer (and `fixes #<parent-N>` when closesParent: yes)
+- any GitHub issue write — no comment, label, assignee, state change, creation or closing via API
+  (the fixes trailer in the commit is the only closing mechanism)
 
 ━━━ REQUIRED OUTPUT (end of run) ━━━
 Report per leaf task: taskId, ticket, githubIssueNumber,
   step 1 ready→in-progress ✓ (and parent ✓ if listed),
   step 2 in-progress→in-review ✓,
-  commit <sha> with subject line.
+  commit <sha> with subject line + fixes trailer(s).
 If any gate failed → report blocked with the step that failed.
 ```
 
@@ -123,7 +127,8 @@ If any gate failed → report blocked with the step that failed.
 ```text
 COMMIT CONTRACT — EXECUTION (MANDATORY on every execution prompt):
 
-Purpose: verifier Layer 3c3 greps git log for [#<N>]. Missing → FAIL even if AC passes.
+Purpose: verifier Layer 3c3 greps git log for [#<N>] in the subject AND `fixes #<N>` in the body.
+Either missing → FAIL even if AC passes.
 
 Branch:
   - Lane S: dev (integration branch)
@@ -140,9 +145,13 @@ Subject format (≤72 chars):
   Roadmap-only (no GitHub issue): use the roadmap key, e.g. [E03-02], instead of [#N]
 
 Body:
-  - Optional plain-prose context only
-  - Closing keywords are FORBIDDEN: no fixes / closes / resolves #<N> (any casing).
-    They would close the GitHub issue on merge; agents never change GitHub issue state.
+  - Optional plain-prose context
+  - Trailer (MANDATORY on every task commit with a GitHub issue — the only way the issue closes):
+      fixes #<N>
+      fixes #<parent-N>        # ONLY when closesParent: yes (final leaf of the epic)
+    When the commit lands on main, GitHub closes the issue and the Kaneo ↔ GitHub sync
+    moves the task implemented → done. Agents never set done and never close issues via API.
+  - Roadmap-only tasks (no GitHub issue): no trailer
   - No Kaneo CUIDs or RO-<n> refs
 
 Staging:
@@ -152,7 +161,12 @@ Staging:
 
 Examples:
   feat(api)[#111]: add Kaneo ticket integration client
-  fix(db)[E03-02]: add releases baseline index
+
+  Adds the Kaneo REST client and wires it into the ticket dispatcher.
+
+  fixes #111
+
+  fix(db)[E03-02]: add releases baseline index      # roadmap-only — no trailer
 
 Pre-commit:
   - SCOPED CI GATE (below) green — failure → blocked, no commit
@@ -185,6 +199,8 @@ tasks:
     githubIssueNumber: <N>
   - taskId: <parent-cuid>                # epic — ONLY when listed in CLOSE_PARENTS (this leaf completes it)
     ticket: RO-<n>
+    githubIssueNumber: <parent-N>
+    closesParent: yes
 
 ━━━ STATUS SYNC TABLE (verifier — follow exactly) ━━━
 
@@ -199,19 +215,22 @@ Do NOT transition to in-review — you are verifying work already handed off.
 
 Comments are REQUIRED on both PASS and FAIL — BEFORE the matching status transition.
 Use the KANEO COMMENT CONTRACT block (below) for create_task_comment bodies.
-done is NEVER set by you — the user moves implemented tasks to done.
+done is NEVER set by you — the Kaneo ↔ GitHub sync moves implemented → done when the
+fixes #<N> commit lands on main (the user may also set done manually).
+implemented = verified, commit on dev, not yet on main.
 
 ━━━ GATE: VERIFY (no status change yet) ━━━
 Complete Layers 1–3 while the task stays in-review.
 Layer 3c3 MUST PASS before the PASS path: git log --grep='\[#<N>\]' (or the roadmap key)
-finds the task commit, and its body has no closing keyword.
+finds the task commit, AND its body carries the trailer `fixes #<N>` (plus `fixes #<parent-N>`
+when closesParent: yes). Missing trailer → FAIL. Roadmap-only tasks ([E*-*]): no trailer required.
 
 ━━━ GATE: PASS PATH (comment, then status sync) ━━━
 Strict order:
   1. Session memory: verification ended + duration
   2. mcp__Kaneo__create_task_comment — PASS comment on each leaf taskId (mandatory)
   3. mcp__Kaneo__update_task_status → implemented for each leaf taskId
-  4. Parent listed (CLOSE_PARENTS) → implemented on the parent too
+  4. Parent listed with closesParent: yes (CLOSE_PARENTS) → PASS comment + implemented on the parent too
   5. Optionally archive/delete local session memory (never commit)
 
 ━━━ GATE: FAIL PATH (comment, then status sync) ━━━
@@ -224,15 +243,15 @@ Strict order:
 ━━━ FORBIDDEN ━━━
 - update_task_status → implemented without create_task_comment first (PASS path)
 - update_task_status → in-progress without create_task_comment first (FAIL path)
-- update_task_status → done (user only)
+- update_task_status → done (ever — done comes from the GitHub sync when the fix lands on main, or the user)
 - update_task_status → in-review (execution agent already did this)
 - update_task_status → ready or backlog on FAIL (use in-progress — rework goes back to execution)
 - create_task_comment with investigation/triage prose (PASS/FAIL templates only)
-- any GitHub issue write — no comment, label, assignee, state change, creation or closing
+- any GitHub issue write — no comment, label, assignee, state change, creation or closing via API
 
 ━━━ REQUIRED OUTPUT (end of run) ━━━
 Report per leaf task: taskId, ticket, githubIssueNumber, verification PASS|FAIL,
-  comment posted ✓, final status (implemented | in-progress),
+  comment posted ✓, fixes trailer ✓, final status (implemented | in-progress),
   parent epic status if listed.
 ```
 
@@ -255,6 +274,7 @@ PASS comment — post to EACH leaf taskId BEFORE implemented:
   Title line: ## Verified — <SESSION-ID>
   Required sections:
     - **Commit:** `<sha>` — <subject one line>  (from git log, Layer 3c3)
+    - **Closes on main via:** `fixes #<N>` (done follows when merged to main)
     - ### Summary — 1–3 bullets what shipped
     - ### Scope — key paths touched
     - ### Automated checks — npm test / npm run lint / npm run db:check / go test + golangci-lint: PASS|FAIL|n/a

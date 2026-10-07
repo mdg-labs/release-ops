@@ -77,7 +77,7 @@ If **kaneo-triage** runs as a sub-agent, the parent must not `update_task` / `cr
 
 `get_task` takes the CUID only — `get_task("RO-108")` fails. Record: CUID, `RO-<number>`, title, description, status.
 
-Kaneo payloads carry no GitHub link. To report the mirrored GitHub issue (used for `[#N]` commit subjects), use `mcp__github__search_issues` on `mdg-labs/release-ops` with the exact task title and take the exact-title match — read only, and report "no GitHub mirror" if none.
+Kaneo payloads have so far carried no GitHub link. To report the mirrored GitHub issue (used for the `[#N]` commit subject and the `fixes #N` body trailer), use `externalLinks[].externalId` if the payload ever carries it; otherwise `mcp__github__search_issues` on `mdg-labs/release-ops` with the exact task title and take the exact-title match — read only, and report "no GitHub mirror" if none.
 
 ## Workflow
 

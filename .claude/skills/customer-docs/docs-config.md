@@ -134,4 +134,4 @@ File: `.agents/project/customer-docs/coverage.md` (created on the first approved
 | Subject (Kaneo task with GitHub mirror) | `docs(docs)[#N]: <summary>` — `#N` resolved read-only (see `SKILL.md` § Commits) |
 | Subject (roadmap item, no GitHub issue) | `docs(docs)[E<x>-<y>]: <summary>` |
 | Scope | `docs` (allowed scopes: release-ops, api, db, config, ci, docs, deps) |
-| Closing keywords | Never (`fixes`/`closes`/`resolves #N` are forbidden) |
+| Body trailer | `fixes #N` — mandatory on `[#N]` commits; none on roadmap-only `[E<x>-<y>]` commits |
