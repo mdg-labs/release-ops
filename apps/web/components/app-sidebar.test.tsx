@@ -85,13 +85,15 @@ function renderSidebar() {
     },
   });
 
-  return render(
+  render(
     <QueryClientProvider client={queryClient}>
       <SidebarProvider>
         <AppSidebar />
       </SidebarProvider>
     </QueryClientProvider>,
   );
+
+  return queryClient;
 }
 
 describe("AppSidebar", () => {
@@ -202,6 +204,21 @@ describe("AppSidebar", () => {
     expect(screen.getByTestId("sidebar-wordmark")).toHaveAttribute(
       "href",
       REPO_URL,
+    );
+  });
+
+  it("hides the version badge when a status refetch fails", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    interceptStatus(pool, { version: "v0.1.0" });
+
+    const queryClient = renderSidebar();
+    expect(await screen.findByTestId("sidebar-version")).toBeInTheDocument();
+
+    interceptStatus(pool, { statusCode: 500 });
+    await queryClient.refetchQueries();
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("sidebar-version")).not.toBeInTheDocument(),
     );
   });
 

@@ -104,12 +104,13 @@ export function AppSidebar(): React.ReactElement {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: session } = useSession();
-  const { data: status } = useStatus();
+  const { data: status, isError: statusFailed } = useStatus();
   const tNav = useTranslations("nav");
   const tAuth = useTranslations("auth");
   const tCommon = useTranslations("common");
 
-  const version = status?.version || null;
+  // A failed refetch keeps the last data; show no badge then (spec §8).
+  const version = statusFailed ? null : status?.version || null;
   const versionLink = version ? versionHref(version) : null;
   const profileLabel = session?.user?.email ?? tNav("profile");
 
