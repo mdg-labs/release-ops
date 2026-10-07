@@ -28,3 +28,8 @@ See `project.config.md` § **Task lookup**. Summary:
 _added: YYYY-MM-DD_
 
 -->
+
+## Board MCP in cloud sessions
+
+In claude.ai cloud sessions the board MCP is exposed as `Kaneo` (`mcp__Kaneo__*`), not `phasical`. Same tool names/args (`get_task`, `update_task_status`, `create_task_comment`). Workspace `ffM0nW62CAq0BeWqTEQuoqsDySEVyxxj`, project `z4janvyjsbbb0esishvd9gb8` (slug `RO`) — differs from IDs in `project.config.md`. `get_task("RO-N")` fails (no active workspace) → `search` with `workspaceId`+`projectId` to get the CUID, then `get_task(cuid)`. Tasks have no `externalLinks` here → resolve GitHub `#N` via `github` `search_issues` by title (e.g. RO-106 → #108). Column slugs: backlog, ready, in-progress, in-review, implemented, done.
+_added: 2026-10-07_
