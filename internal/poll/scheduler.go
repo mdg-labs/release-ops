@@ -2,6 +2,7 @@ package poll
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -167,6 +168,13 @@ func (s *Scheduler) RunAll(ctx context.Context, runID string) error {
 				RepoID:  repo.ID,
 				Message: pollErr.Error(),
 			})
+			// A failure before the engine evaluated the repo is recorded like an
+			// engine-reported error: error event, last_error, notification. Errors
+			// returned by the engine itself are not: it owns the repo's poll state.
+			var preErr *preEngineError
+			if errors.As(pollErr, &preErr) {
+				eval = s.recordPollFailure(ctx, repo, pollErr)
+			}
 		} else if eval.hasError() {
 			// The engine reports fetch/ticket failures as an error action with a nil error.
 			runErrors = append(runErrors, RunErrorEntry{
@@ -191,6 +199,22 @@ func (s *Scheduler) RunAll(ctx context.Context, runID string) error {
 	return nil
 }
 
+// recordPollFailure persists pollErr as the repo's last_error and returns the error
+// evaluation to record. The evaluation is returned even when last_error cannot be
+// stored, so the event and the notification are not lost with it.
+func (s *Scheduler) recordPollFailure(ctx context.Context, repo store.MonitoredRepo, pollErr error) *RepoEvaluation {
+	eval, err := s.engine.recordError(ctx, repo, pollErr)
+	if err != nil {
+		slog.Error("record poll failure", "repoId", repo.ID, "error", err)
+		return &RepoEvaluation{
+			Actions: []string{ActionError},
+			Repo:    &repo,
+			Detail:  pollErr.Error(),
+		}
+	}
+	return eval
+}
+
 func (s *Scheduler) pollOneRepo(
 	ctx context.Context,
 	runID string,
@@ -203,7 +227,34 @@ func (s *Scheduler) pollOneRepo(
 	return s.defaultPollRepo(ctx, repo, integrations)
 }
 
+// preEngineError marks a failure that happened before the engine evaluated the repo,
+// so the engine has not touched the repo's poll state. Errors returned by
+// EvaluateRepo are never wrapped: the engine may already have stored new state.
+type preEngineError struct{ err error }
+
+func (e *preEngineError) Error() string { return e.err.Error() }
+func (e *preEngineError) Unwrap() error { return e.err }
+
+// pollInputs is everything the engine needs to evaluate one repo.
+type pollInputs struct {
+	sourceProvider source.SourceProvider
+	ticketProject  ticket.TicketProject
+	ticketProvider ticket.TicketProvider
+	repoWebURL     string
+}
+
 func (s *Scheduler) defaultPollRepo(ctx context.Context, repo store.MonitoredRepo, integrations *integrationCache) (*RepoEvaluation, error) {
+	in, err := s.prepareRepoPoll(ctx, repo, integrations)
+	if err != nil {
+		return nil, &preEngineError{err: err}
+	}
+	release, fetchErr := in.sourceProvider.GetLatestRelease(ctx, repo.ProjectPath, source.ReleaseOptions{
+		IncludePrereleases: repo.IncludePrereleases,
+	})
+	return s.engine.EvaluateRepo(ctx, repo, release, fetchErr, in.ticketProject, in.ticketProvider, in.repoWebURL)
+}
+
+func (s *Scheduler) prepareRepoPoll(ctx context.Context, repo store.MonitoredRepo, integrations *integrationCache) (*pollInputs, error) {
 	if s.ticketProjects == nil || s.integrations == nil {
 		return nil, errors.New("ticket projects and integrations repositories are required")
 	}
@@ -230,7 +281,7 @@ func (s *Scheduler) defaultPollRepo(ctx context.Context, repo store.MonitoredRep
 		s.httpClient,
 	)
 	if err != nil {
-		return nil, err
+		return nil, redactSecretParseError(err)
 	}
 
 	var sourceIntegration *resolvedIntegration
@@ -258,10 +309,12 @@ func (s *Scheduler) defaultPollRepo(ctx context.Context, repo store.MonitoredRep
 		return nil, err
 	}
 
-	release, fetchErr := sourceProvider.GetLatestRelease(ctx, repo.ProjectPath, source.ReleaseOptions{
-		IncludePrereleases: repo.IncludePrereleases,
-	})
-	return s.engine.EvaluateRepo(ctx, repo, release, fetchErr, ticketProject, ticketProvider, repoWebURL)
+	return &pollInputs{
+		sourceProvider: sourceProvider,
+		ticketProject:  ticketProject,
+		ticketProvider: ticketProvider,
+		repoWebURL:     repoWebURL,
+	}, nil
 }
 
 func (s *Scheduler) recordEvaluation(
@@ -416,11 +469,24 @@ func (c *integrationCache) get(ctx context.Context, id string) (*resolvedIntegra
 	}
 	secret, err := c.repo.DecryptPayload(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("decrypt integration: %w", err)
+		slog.Error("decrypt integration payload", "integrationId", id, "error", err)
+		return nil, errors.New("decrypt integration: secret could not be decrypted")
 	}
 	entry := &resolvedIntegration{integration: integration, secret: secret}
 	c.entries[id] = entry
 	return entry, nil
+}
+
+// redactSecretParseError replaces a JSON decoding error raised while reading an
+// integration secret: its text can quote a fragment of the decrypted payload, and
+// the message is stored on the repo, in a poll event and sent to notification targets.
+func redactSecretParseError(err error) error {
+	var syntaxErr *json.SyntaxError
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &syntaxErr) || errors.As(err, &typeErr) {
+		return errors.New("integration secret is malformed")
+	}
+	return err
 }
 
 func (s *Scheduler) newSourceProvider(repo store.MonitoredRepo, integration *resolvedIntegration) (source.SourceProvider, error) {
@@ -429,7 +495,7 @@ func (s *Scheduler) newSourceProvider(repo store.MonitoredRepo, integration *res
 	if integration != nil {
 		parsed, err := source.ParseTokenSecret(integration.secret)
 		if err != nil {
-			return nil, fmt.Errorf("parse source integration payload: %w", err)
+			return nil, fmt.Errorf("parse source integration payload: %w", redactSecretParseError(err))
 		}
 		token = parsed
 		baseURL = integration.integration.BaseURL

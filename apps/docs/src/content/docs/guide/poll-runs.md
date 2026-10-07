@@ -67,7 +67,7 @@ See [Open-ticket policy](../../concepts/open-ticket-policy/) for when each of th
 
 ### A run has no events
 
-The dialog shows **No events recorded for this run.** This happens when no repo was enabled during the run, so nothing was checked. It also happens when a repo could not be checked at all, for example because its ticket project or ticket integration could not be loaded. In that case the run is **Failed** or **Partial**, **Repos checked** is not zero and the **Errors** list names the repo, but no event is recorded for it.
+The dialog shows **No events recorded for this run.** This happens when no repo was enabled during the run, so nothing was checked. A repo that could not be checked, for example because its ticket project or ticket integration could not be loaded, still gets an **Error** event with the reason in **Detail**.
 
 ### A run is Partial or Failed
 
