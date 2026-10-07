@@ -34,6 +34,14 @@ var sourceIntegrationKinds = map[string]struct{}{
 	"codeberg": {},
 }
 
+// optionalTokenKinds may be created without a token (unauthenticated access, specs §4.2).
+var optionalTokenKinds = map[string]struct{}{
+	"github":   {},
+	"gitea":    {},
+	"forgejo":  {},
+	"codeberg": {},
+}
+
 var errDefaultSourceKindOnly = errors.New("isDefault can only be set on source integrations")
 
 // IntegrationTester validates stored integration credentials.
@@ -113,8 +121,12 @@ func (h *IntegrationHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Secret == "" {
-		auth.WriteError(w, "VALIDATION_ERROR", "secret is required", http.StatusBadRequest)
-		return
+		// An optional-token kind created without a token stores an empty payload, which
+		// reads as "no secret" and as an unauthenticated source.
+		if _, optional := optionalTokenKinds[req.Kind]; !optional {
+			auth.WriteError(w, "VALIDATION_ERROR", "secret is required", http.StatusBadRequest)
+			return
+		}
 	}
 	if err := validateBaseURL(req.Kind, req.BaseURL); err != nil {
 		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)

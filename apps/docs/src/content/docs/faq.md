@@ -33,7 +33,7 @@ The ticket's status is not in any of the status lists of its ticket project, so 
 
 ## Are my tokens and URLs safe?
 
-Release Ops stores integration tokens and notification URLs encrypted and never shows them again after you save them. The list only shows **Configured**.
+Release Ops stores integration tokens and notification URLs encrypted and never shows them again after you save them. The integrations list only shows whether a token is set: **Configured** or **Missing**. **Missing** means no token is set, which is fine for public repos on GitHub, Gitea, Forgejo and Codeberg.
 
 ## Can I give users different permissions?
 

@@ -507,4 +507,204 @@ describe("IntegrationsView", () => {
       isDefault: true,
     });
   });
+  describe("token on Add", () => {
+    async function openAddDrawer() {
+      const pool = mockAgent.get(ORIGIN);
+      pool
+        .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+        .reply(200, []);
+      renderIntegrationsPage();
+      await screen.findByText("No integrations yet");
+      fireEvent.click(
+        screen.getAllByRole("button", { name: "Add integration" })[0],
+      );
+      return { pool, dialog: await screen.findByRole("dialog") };
+    }
+
+    async function pickKind(dialog: HTMLElement, kindLabel: string) {
+      fireEvent.click(within(dialog).getByRole("combobox"));
+      await waitFor(() => {
+        expect(screen.getByRole("listbox")).toBeInTheDocument();
+      });
+      const option = screen.getByRole("option", { name: kindLabel });
+      fireEvent.pointerDown(option, {
+        pointerId: 1,
+        pointerType: "mouse",
+        buttons: 1,
+      });
+      fireEvent.pointerUp(option, { pointerId: 1, pointerType: "mouse" });
+      fireEvent.click(option);
+    }
+
+    it("creates a GitHub integration without a token", async () => {
+      const { pool, dialog } = await openAddDrawer();
+      let postBody: string | undefined;
+      pool
+        .intercept({ path: "/api/go/api/v1/integrations", method: "POST" })
+        .reply((opts) => {
+          postBody = opts.body?.toString();
+          return {
+            statusCode: 201,
+            data: JSON.stringify({
+              ...sampleIntegrations[0],
+              hasSecret: false,
+            }),
+            responseOptions: {
+              headers: { "content-type": "application/json" },
+            },
+          };
+        });
+      pool
+        .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+        .reply(200, [{ ...sampleIntegrations[0], hasSecret: false }]);
+
+      const token = within(dialog).getByLabelText(/Token/);
+      expect(token).not.toBeRequired();
+      expect(
+        within(dialog)
+          .getByText(/^Token/)
+          .querySelector("span"),
+      ).toBeNull();
+
+      fireEvent.change(within(dialog).getByLabelText(/^Name/), {
+        target: { value: "Public GitHub" },
+      });
+      fireEvent.submit(
+        within(dialog).getByRole("button", { name: "Save" }).closest("form")!,
+      );
+
+      await waitFor(() => {
+        expect(postBody).toBeDefined();
+      });
+      expect(JSON.parse(postBody ?? "{}")).toMatchObject({
+        kind: "github",
+        name: "Public GitHub",
+        secret: "",
+      });
+      const row = (await screen.findByText("GitHub Org")).closest("tr")!;
+      expect(within(row).getByText("Missing")).toBeInTheDocument();
+      expect(within(row).queryByText("Configured")).toBeNull();
+    });
+
+    it("refuses Linear without an API key", async () => {
+      const { pool, dialog } = await openAddDrawer();
+      let postSent = false;
+      pool
+        .intercept({ path: "/api/go/api/v1/integrations", method: "POST" })
+        .reply(() => {
+          postSent = true;
+          return { statusCode: 201, data: "{}" };
+        });
+
+      await pickKind(dialog, "Linear");
+      const secret = await within(dialog).findByLabelText(/API key/);
+      expect(secret).toBeRequired();
+      fireEvent.change(within(dialog).getByLabelText(/^Name/), {
+        target: { value: "Team Linear" },
+      });
+      fireEvent.submit(
+        within(dialog).getByRole("button", { name: "Save" }).closest("form")!,
+      );
+
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+        "Token or API key is required.",
+      );
+      expect(postSent).toBe(false);
+    });
+
+    it("refuses GitLab without a token", async () => {
+      const { dialog } = await openAddDrawer();
+
+      await pickKind(dialog, "GitLab");
+      expect(await within(dialog).findByLabelText(/Token/)).toBeRequired();
+    });
+  });
+
+  it("lets a tokenless GitHub integration be renamed without a token", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, [{ ...sampleIntegrations[0], hasSecret: false }]);
+    let patchBody: string | undefined;
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations/int-1", method: "PATCH" })
+      .reply((opts) => {
+        patchBody = opts.body?.toString();
+        return {
+          statusCode: 200,
+          data: JSON.stringify(sampleIntegrations[0]),
+          responseOptions: { headers: { "content-type": "application/json" } },
+        };
+      });
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, sampleIntegrations);
+
+    renderIntegrationsPage();
+    const row = (await screen.findByText("GitHub Org")).closest("tr")!;
+    expect(within(row).getByText("Missing")).toBeInTheDocument();
+    expect(within(row).queryByText("Configured")).toBeNull();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit GitHub Org" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByText("Configured")).toBeNull();
+    expect(within(dialog).getByLabelText(/Token/)).not.toBeRequired();
+    fireEvent.change(within(dialog).getByLabelText(/^Name/), {
+      target: { value: "Renamed" },
+    });
+    fireEvent.submit(
+      within(dialog).getByRole("button", { name: "Save" }).closest("form")!,
+    );
+
+    await waitFor(() => {
+      expect(patchBody).toBeDefined();
+    });
+    expect(JSON.parse(patchBody ?? "{}")).toMatchObject({
+      name: "Renamed",
+      secret: null,
+    });
+  });
+
+  it("still requires a token when a tokenless Gitea base URL changes", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, [
+        {
+          id: "int-4",
+          kind: "gitea",
+          name: "Gitea Lab",
+          baseUrl: "https://gitea.example.com",
+          hasSecret: false,
+          isDefault: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ]);
+    let patchSent = false;
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations/int-4", method: "PATCH" })
+      .reply(() => {
+        patchSent = true;
+        return { statusCode: 200, data: "{}" };
+      });
+
+    renderIntegrationsPage();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit Gitea Lab" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/Base URL/), {
+      target: { value: "https://attacker.example" },
+    });
+    fireEvent.submit(
+      within(dialog).getByRole("button", { name: "Save" }).closest("form")!,
+    );
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Re-enter the token or API key when you change the base URL.",
+    );
+    expect(patchSent).toBe(false);
+  });
 });

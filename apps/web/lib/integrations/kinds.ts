@@ -23,6 +23,17 @@ export function kindRequiresBaseUrl(kind: string): boolean {
   return BASE_URL_KINDS.has(kind as IntegrationKind);
 }
 
+const TOKEN_OPTIONAL_KINDS = new Set<IntegrationKind>([
+  "github",
+  "gitea",
+  "forgejo",
+  "codeberg",
+]);
+
+export function kindTokenOptional(kind: string): boolean {
+  return TOKEN_OPTIONAL_KINDS.has(kind as IntegrationKind);
+}
+
 export function kindUsesApiKeyLabel(kind: string): boolean {
   return kind === "kaneo" || kind === "linear";
 }

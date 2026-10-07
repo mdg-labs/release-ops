@@ -4,6 +4,7 @@ import {
   INTEGRATION_KINDS,
   kindIsJira,
   kindRequiresBaseUrl,
+  kindTokenOptional,
   kindUsesApiKeyLabel,
 } from "@/lib/integrations/kinds";
 
@@ -27,6 +28,15 @@ describe("integration kinds", () => {
     expect(kindRequiresBaseUrl("jira")).toBe(true);
     expect(kindRequiresBaseUrl("github")).toBe(false);
     expect(kindRequiresBaseUrl("linear")).toBe(false);
+  });
+
+  it("makes the token optional for the source kinds the spec allows", () => {
+    for (const kind of ["github", "gitea", "forgejo", "codeberg"]) {
+      expect(kindTokenOptional(kind)).toBe(true);
+    }
+    for (const kind of ["gitlab", "kaneo", "jira", "linear"]) {
+      expect(kindTokenOptional(kind)).toBe(false);
+    }
   });
 
   it("identifies Jira-specific fields", () => {
