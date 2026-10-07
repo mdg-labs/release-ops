@@ -31,6 +31,25 @@ Open [http://localhost:3000](http://localhost:3000) and sign in with your bootst
 
 Pre-built images: `ghcr.io/mdg-labs/release-ops:latest` (release) and `:nightly` (dev branch).
 
+## Upgrading
+
+### Phasical → Kaneo (migration `000007_rename_phasical_to_kaneo`)
+
+The Phasical ticket integration has been replaced by **Kaneo** (`kind = kaneo`, e.g. base URL `https://cloud.kaneo.app`). Existing Phasical integrations are **not** converted.
+
+**Before upgrading**, delete every Phasical integration in the web UI. You must first delete the monitored repos and ticket projects that use it. After the upgrade, re-create the integration as Kaneo.
+
+If an instance still has a `phasical` integration, migration 000007 aborts on startup. The schema change is rolled back, but `schema_migrations` is left at version **7 / dirty**. To recover:
+
+1. Stop the container. Then, against the SQLite volume (`APP_DB_PATH`, default `/data/app.db`), reset the migration state to 6 with the upstream [golang-migrate CLI](https://github.com/golang-migrate/migrate) `migrate -path migrations -database "sqlite:///data/app.db" force 6`. Alternatively, run `UPDATE schema_migrations SET version = 6, dirty = 0;` with `sqlite3`. The bundled `/app/migrate` only supports `up`/`down`.
+2. Delete the Phasical rows together with their dependent ticket projects and monitored repos:
+   ```sql
+   DELETE FROM monitored_repos WHERE ticket_project_id IN (SELECT id FROM ticket_projects WHERE integration_id IN (SELECT id FROM integrations WHERE kind = 'phasical'));
+   DELETE FROM ticket_projects WHERE integration_id IN (SELECT id FROM integrations WHERE kind = 'phasical');
+   DELETE FROM integrations WHERE kind = 'phasical';
+   ```
+3. Restart the container. Migration 000007 then applies cleanly.
+
 ## Documentation
 
 **Published site:** [mdg-labs.github.io/release-ops](https://mdg-labs.github.io/release-ops/)
