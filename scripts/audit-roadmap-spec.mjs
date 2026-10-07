@@ -57,7 +57,7 @@ const REQUIREMENTS = [
   { id: "HOOK-POLL-RUN", area: "web", requirement: "usePollRun", match: (t) => text(t).includes("usepollrun") },
   { id: "HOOK-POLL-TRIGGER", area: "web", requirement: "useTriggerPoll", match: (t) => text(t).includes("usetriggerpoll") },
 
-  // ── Policy (spec §4.0, §8.5, cursor rules) ──
+  // ── Policy (spec §4.0, §8.5, .claude/rules) ──
   { id: "I18N-NEXT-INTL", area: "web", requirement: "next-intl provider + messages/en.json", match: (t) => text(t).includes("next-intl") && text(t).includes("messages/en.json") },
   { id: "I18N-ESLINT", area: "web", requirement: "eslint-plugin-i18next no-literal-string", match: (t) => text(t).includes("eslint-plugin-i18next") || text(t).includes("i18next/no-literal-string") },
   { id: "DB-MIGRATE-DIFF", area: "db", requirement: "scripts/migrate-diff.mjs sqldiff workflow", match: (t) => text(t).includes("migrate-diff") && text(t).includes("sqldiff") },

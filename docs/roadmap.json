@@ -1218,7 +1218,7 @@
         "specs.html#ci",
         "stack.html"
       ],
-      "description": "## Context\n\napps/web/messages/en.json; useTranslations; eslint-plugin-i18next no-literal-string.\n\n## Spec references\n\n- [§8.5 Internationalization (i18n)](specs.html#i18n)\n- [§11 CI/CD (GitHub Actions)](specs.html#ci)\n\n## Stack references\n\n- [Tech stack — Frontend (Next.js + COSS)](stack.html)\n- [Tech stack — Quality](stack.html)\n\n## Implementation notes\n\n- next-intl App Router provider\n- messages/en.json namespaces: common, auth, dashboard, repos, integrations, ticket-projects, notifications, settings\n- eslint-plugin-i18next in eslint.config.mjs\n\n## Files\n\n- `apps/web/messages/en.json`\n- `apps/web/i18n/request.ts`\n- `apps/web/eslint.config.mjs`\n\n## Acceptance criteria\n\n- [ ] next-intl installed and configured\n- [ ] messages/en.json with namespaces: common, auth, dashboard, repos\n- [ ] messages/en.json includes integrations, ticket-projects, notifications, settings\n- [ ] eslint-plugin-i18next configured\n- [ ] i18next/no-literal-string error on literals\n- [ ] npm run lint passes on scaffold\n- [ ] Document in .cursor/rules/10-i18n.mdc\n\n## Tests\n\n- `npm run lint`\n\n---\n\n**Roadmap ID:** E08-01",
+      "description": "## Context\n\napps/web/messages/en.json; useTranslations; eslint-plugin-i18next no-literal-string.\n\n## Spec references\n\n- [§8.5 Internationalization (i18n)](specs.html#i18n)\n- [§11 CI/CD (GitHub Actions)](specs.html#ci)\n\n## Stack references\n\n- [Tech stack — Frontend (Next.js + COSS)](stack.html)\n- [Tech stack — Quality](stack.html)\n\n## Implementation notes\n\n- next-intl App Router provider\n- messages/en.json namespaces: common, auth, dashboard, repos, integrations, ticket-projects, notifications, settings\n- eslint-plugin-i18next in eslint.config.mjs\n\n## Files\n\n- `apps/web/messages/en.json`\n- `apps/web/i18n/request.ts`\n- `apps/web/eslint.config.mjs`\n\n## Acceptance criteria\n\n- [ ] next-intl installed and configured\n- [ ] messages/en.json with namespaces: common, auth, dashboard, repos\n- [ ] messages/en.json includes integrations, ticket-projects, notifications, settings\n- [ ] eslint-plugin-i18next configured\n- [ ] i18next/no-literal-string error on literals\n- [ ] npm run lint passes on scaffold\n- [ ] Document in .claude/rules/10-i18n.md\n\n## Tests\n\n- `npm run lint`\n\n---\n\n**Roadmap ID:** E08-01",
       "acceptance_criteria": [
         "next-intl installed and configured",
         "messages/en.json with namespaces: common, auth, dashboard, repos",
@@ -1226,7 +1226,7 @@
         "eslint-plugin-i18next configured",
         "i18next/no-literal-string error on literals",
         "npm run lint passes on scaffold",
-        "Document in .cursor/rules/10-i18n.mdc"
+        "Document in .claude/rules/10-i18n.md"
       ],
       "files": [
         "apps/web/messages/en.json",

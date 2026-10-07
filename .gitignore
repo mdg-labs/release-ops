@@ -12,3 +12,5 @@ coverage
 apps/web/tsconfig.tsbuildinfo
 apps/docs/dist/
 apps/docs/.astro/
+.claude/worktrees/
+.claude/settings.local.json

@@ -356,7 +356,7 @@ export function registerP00P14({ epic, leaf }) {
   leaf("P00-10", "P00", "Configure next-intl provider and message files", "web", {
     depends_on: ["P00-03"],
     context:
-      "All user-facing UI copy must use next-intl per specs.html#i18n and .cursor/rules/10-i18n.mdc. " +
+      "All user-facing UI copy must use next-intl per specs.html#i18n and .claude/rules/10-i18n.md. " +
       "MVP ships English only (messages/en.json) but the provider must be in place before any page ships real copy. " +
       "No hardcoded strings in components — enforced by ESLint in P00-11.",
     specs: [
@@ -423,7 +423,7 @@ export function registerP00P14({ epic, leaf }) {
       "i18next/no-literal-string error on <span>Hardcoded</span> in test",
       "npm run lint passes on scaffold using t() keys only",
       "CI web lint job will run same config (P27-07)",
-      "Rule documented in .cursor/rules/10-i18n.mdc cross-ref",
+      "Rule documented in .claude/rules/10-i18n.md cross-ref",
       "aria-label must use t() — not ignored by rule",
       "Toast messages must use t() — verified in mutation hooks P17-05",
       "No disable comments added project-wide",

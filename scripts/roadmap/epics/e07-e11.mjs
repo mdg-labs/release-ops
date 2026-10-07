@@ -163,7 +163,7 @@ export function registerE07E11({ epic, leaf }) {
       "eslint-plugin-i18next configured",
       "i18next/no-literal-string error on literals",
       "npm run lint passes on scaffold",
-      "Document in .cursor/rules/10-i18n.mdc",
+      "Document in .claude/rules/10-i18n.md",
     ],
     files: ["apps/web/messages/en.json", "apps/web/i18n/request.ts", "apps/web/eslint.config.mjs"],
     tests: ["npm run lint"],

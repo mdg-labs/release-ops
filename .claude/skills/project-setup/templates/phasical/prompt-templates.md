@@ -1,7 +1,7 @@
-# Prompt templates — Release Ops
+# Prompt templates — {PROJECT_NAME}
 
 > **Orchestrator:** copy blocks below **verbatim** into sub-agent prompts (fill `<placeholders>` per task).  
-> **project-setup:** customized for this repo — **never remove** PHASICAL SYNC or COMMIT CONTRACT blocks.  
+> **project-setup:** customize `{PLACEHOLDERS}` for this repo — **never remove** PHASICAL SYNC or COMMIT CONTRACT blocks.  
 > Reference: `.claude/skills/orchestrator/references/phasical-sync.md`
 
 ## How to assemble an execution prompt
@@ -60,7 +60,7 @@ trigger condition is met. Do NOT pause for user approval. This is expected board
 discretionary work.
 
 MCP server: phasical  (Claude Code tools: mcp__phasical__<tool>)
-projectId: tv679ggt5ier9r5dx70w8ks6
+projectId: {PROJECT_ID}
 
 tasks:
   - taskId: <phasical-cuid>              # leaf — REQUIRED
@@ -121,7 +121,7 @@ COMMIT CONTRACT — EXECUTION (MANDATORY on every execution prompt):
 Purpose: verifier Layer 3c3 checks git log for this commit. Missing [#N] → FAIL even if AC passes.
 
 Branch:
-  - Lane S: dev (current integration branch)
+  - Lane S: {INTEGRATION_BRANCH} (current integration branch)
   - Lane P: orchestrator/<TASK-ID> only — NEVER commit to integration branch
 
 Exactly ONE implementation commit per task (task files only).
@@ -130,7 +130,7 @@ Subject format (≤72 chars):
   <type>(<scope>)[#<N>]: <imperative summary>
 
   <type>: feat | fix | chore | refactor | docs | test | ci | build | perf
-  <scope>: one of — release-ops, api, db, config, ci, docs, deps
+  <scope>: one of — {ALLOWED_SCOPES}
   [#<N>]: githubIssueNumber from PHASICAL SYNC block — square brackets REQUIRED
   Roadmap-only (no GitHub mirror): use [P*-*] instead of [#N]
 
@@ -143,12 +143,12 @@ Staging:
   - NEVER stage .agents/project/agent-memory/**
 
 Examples:
-  feat(api)[#42]: add GitHub release baseline check
-  fix(db)[#42]: correct releases table migration
+  feat({EXAMPLE_SCOPE})[#42]: add vehicle expiry check
+  fix({EXAMPLE_SCOPE})[#42]: correct timezone in expiry job
 
 Pre-commit:
   - Run SCOPED CI GATE (below) — failure → blocked, no commit
-  - DB changes → edit db/schema.sql + make migrate-diff only (see DB MIGRATIONS)
+  - DB changes → {MIGRATION_CMD} only (see DB MIGRATIONS)
 
 Handoff order (with PHASICAL SYNC):
   in-progress → implement → session ended → in-review → THEN commit
@@ -168,7 +168,7 @@ trigger condition is met. Do NOT pause for user approval. This is expected board
 discretionary work.
 
 MCP server: phasical  (Claude Code tools: mcp__phasical__<tool>)
-projectId: tv679ggt5ier9r5dx70w8ks6
+projectId: {PROJECT_ID}
 
 tasks:
   - taskId: <phasical-cuid>              # leaf — REQUIRED
@@ -278,21 +278,18 @@ SESSION TIME TRACKING (when PHASICAL SYNC present):
 ```text
 SCOPED CI GATE (mandatory before commit and in verifier Layer 2):
 - Map staged/committed paths → package filter(s) per doc-index.md
-- Run: npm test && npm run lint
-- Docs-only changes under docs/: skip test gate; run markdown/HTML sanity only if applicable
+- Run: {SCOPED_CI_CMD}
 - On failure → blocked; no commit
-- Full workspace gate only before push (if user explicitly asks to push): npm test && npm run lint && npm run typecheck
+- Full workspace gate only before push (if user explicitly asks to push)
 ```
 
 ## DB MIGRATIONS
 
 ```text
 DB MIGRATIONS (mandatory in every execution prompt):
-- Schema changes → edit db/schema.sql only, then: make migrate-diff name=<change>
-- Tool: scripts/migrate-diff.mjs (SQLite sqldiff) — generates migrations/*.sql; golang-migrate applies at runtime
-- Never hand-write or hand-edit migrations/*.sql
-- CI: npm run db:check must pass when db/schema.sql or migrations/ in scope
-- If sqlite3/sqldiff unavailable → report blocked; no manual SQL workaround
+- Schema changes → use project migration CLI only ({MIGRATION_CMD})
+- Never hand-write migration.sql or create migration directories manually
+- If CLI cannot run → report blocked; no SQL workaround
 ```
 
 ## PLAN FILE GUARD
@@ -314,6 +311,6 @@ WORKTREE ISOLATION (Lane P mandatory):
 - First action (Bash, in the worktree Claude Code created): git switch -c orchestrator/<TASK-ID> <STAGING_BASE_SHA>
 - WORK BRANCH: orchestrator/<TASK-ID>
 - STAGING_BASE_SHA: <pin at batch start>
-- Then: npm install (fresh worktree has no node_modules)
+- First shell action: pnpm install (fresh worktree has no node_modules)
 - Never checkout integration branch during execution
 ```

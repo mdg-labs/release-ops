@@ -24,7 +24,7 @@
 | Web typecheck | `npm run typecheck` (in `apps/web`) |
 | CI layout | `docs/specs.html#ci` — `pr` / `dev` / `main` / `release` entrypoints |
 
-Map committed paths per `.cursor/rules/06-local-ci-before-commit.mdc`.
+Map committed paths per `.claude/rules/06-local-ci-before-commit.md`.
 
 ## Phase gates
 

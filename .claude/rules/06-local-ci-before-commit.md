@@ -1,0 +1,37 @@
+---
+description: Run scoped CI before every task commit; full gate only before push
+---
+
+# Local CI before commit
+
+## Scoped gate (every task commit and verifier Layer 2)
+
+Single-package Node repo — run project scripts for affected work:
+
+```bash
+npm test && npm run lint && npm run db:check
+```
+
+- `apps/web/**`: lint includes **i18n** (`eslint-plugin-i18next` — no literal UI strings)
+- `db/schema.sql` or `migrations/**`: run **`npm run db:check`** (sqldiff drift vs `db/schema.sql`)
+
+- `docs/**` only: skip test/lint until `package.json` exists; validate edits match linked phase doc
+- `src/**`, `drizzle/**`, config files: run full scoped gate above
+- Mark checks `n/a` when scripts are not defined yet for the current phase
+
+On failure → `blocked`; no commit.
+
+## Full gate (pre-push only)
+
+When the user **explicitly asks to push**:
+
+```bash
+npm test && npm run lint && npm run typecheck && npm run db:check
+```
+
+Sub-agents must **not** run the full gate during routine task execution unless push is requested.
+
+## Rules
+
+- Derive scope from WRITE ∪ READ paths (see `doc-index.md`).
+- Lane P parallel agents: use per-worktree `WORK_ROOT`; never global `pkill` that kills sibling agents.
