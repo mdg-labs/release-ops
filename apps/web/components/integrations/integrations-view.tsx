@@ -27,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
+import { ApiError } from "@/lib/api/client";
 import { useIntegrations } from "@/lib/hooks/use-integrations";
 import type { Integration } from "@/lib/query/types";
 
@@ -49,6 +50,7 @@ export function IntegrationsView(): React.ReactElement {
 
   const [drawer, setDrawer] = useState<DrawerState>({ mode: "closed" });
   const [deleteTarget, setDeleteTarget] = useState<Integration | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const drawerOpen = drawer.mode !== "closed";
   const isEmpty = !isLoading && integrations?.length === 0;
@@ -236,17 +238,30 @@ export function IntegrationsView(): React.ReactElement {
 
       <DeleteIntegrationDialog
         integration={deleteTarget}
+        error={deleteError}
         isDeleting={deleteIntegration.isPending}
         onConfirm={async () => {
           if (!deleteTarget) {
             return;
           }
-          await deleteIntegration.mutateAsync(deleteTarget.id);
-          setDeleteTarget(null);
+          setDeleteError(null);
+          try {
+            await deleteIntegration.mutateAsync(deleteTarget.id);
+            setDeleteTarget(null);
+          } catch (error) {
+            setDeleteError(
+              error instanceof ApiError && error.status === 409
+                ? t("deleteInUse")
+                : error instanceof ApiError && error.message
+                  ? error.message
+                  : t("deleteFailed"),
+            );
+          }
         }}
         onOpenChange={(open) => {
           if (!open) {
             setDeleteTarget(null);
+            setDeleteError(null);
           }
         }}
         open={deleteTarget !== null}

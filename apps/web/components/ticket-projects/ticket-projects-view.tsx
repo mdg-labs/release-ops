@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ApiError } from "@/lib/api/client";
 import { useIntegrations } from "@/lib/hooks/use-integrations";
 import { useTicketProjects } from "@/lib/hooks/use-ticket-projects";
 import type { TicketProject } from "@/lib/query/types";
@@ -50,6 +51,7 @@ export function TicketProjectsView(): React.ReactElement {
 
   const [drawer, setDrawer] = useState<DrawerState>({ mode: "closed" });
   const [deleteTarget, setDeleteTarget] = useState<TicketProject | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const integrationNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -236,17 +238,30 @@ export function TicketProjectsView(): React.ReactElement {
       />
 
       <DeleteTicketProjectDialog
+        error={deleteError}
         isDeleting={deleteTicketProject.isPending}
         onConfirm={async () => {
           if (!deleteTarget) {
             return;
           }
-          await deleteTicketProject.mutateAsync(deleteTarget.id);
-          setDeleteTarget(null);
+          setDeleteError(null);
+          try {
+            await deleteTicketProject.mutateAsync(deleteTarget.id);
+            setDeleteTarget(null);
+          } catch (error) {
+            setDeleteError(
+              error instanceof ApiError && error.status === 409
+                ? t("deleteInUse")
+                : error instanceof ApiError && error.message
+                  ? error.message
+                  : t("deleteFailed"),
+            );
+          }
         }}
         onOpenChange={(open) => {
           if (!open) {
             setDeleteTarget(null);
+            setDeleteError(null);
           }
         }}
         open={deleteTarget !== null}

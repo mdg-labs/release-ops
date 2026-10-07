@@ -222,6 +222,82 @@ describe("IntegrationsView", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the delete dialog open and explains an in-use integration", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, sampleIntegrations);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/integrations/int-1",
+        method: "DELETE",
+      })
+      .reply(409, {
+        error: {
+          code: "CONFLICT",
+          message: "integration is referenced by repos or ticket projects",
+        },
+      });
+
+    renderIntegrationsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Delete GitHub Org" }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect(
+      await within(dialog).findByText(messages.integrations.deleteInUse),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        within(dialog).getByRole("button", { name: "Delete" }),
+      ).toBeEnabled();
+    });
+  });
+
+  it("shows the server message when deleting an integration fails", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, sampleIntegrations);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/integrations/int-1",
+        method: "DELETE",
+      })
+      .reply(500, {
+        error: { code: "INTERNAL", message: "database is locked" },
+      });
+    pool
+      .intercept({
+        path: "/api/go/api/v1/integrations/int-1",
+        method: "DELETE",
+      })
+      .replyWithError(new Error("socket hang up"));
+
+    renderIntegrationsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Delete GitHub Org" }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect(
+      await within(dialog).findByText("database is locked"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect(
+      await within(dialog).findByText(messages.integrations.deleteFailed),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
+
   it("runs test connection with async toast feedback", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool

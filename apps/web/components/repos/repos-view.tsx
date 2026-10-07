@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ApiError } from "@/lib/api/client";
 import { formatAppDateTime } from "@/lib/format/datetime";
 import { useIntegrations } from "@/lib/hooks/use-integrations";
 import { useNotificationTargets } from "@/lib/hooks/use-notifications";
@@ -55,6 +56,7 @@ export function ReposView(): React.ReactElement {
 
   const [dialog, setDialog] = useState<DialogState>({ mode: "closed" });
   const [deleteTarget, setDeleteTarget] = useState<Repo | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const ticketProjectNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -269,17 +271,28 @@ export function ReposView(): React.ReactElement {
       />
 
       <DeleteRepoDialog
+        error={deleteError}
         isDeleting={deleteRepo.isPending}
         onConfirm={async () => {
           if (!deleteTarget) {
             return;
           }
-          await deleteRepo.mutateAsync(deleteTarget.id);
-          setDeleteTarget(null);
+          setDeleteError(null);
+          try {
+            await deleteRepo.mutateAsync(deleteTarget.id);
+            setDeleteTarget(null);
+          } catch (error) {
+            setDeleteError(
+              error instanceof ApiError && error.message
+                ? error.message
+                : t("deleteFailed"),
+            );
+          }
         }}
         onOpenChange={(open) => {
           if (!open) {
             setDeleteTarget(null);
+            setDeleteError(null);
           }
         }}
         open={deleteTarget !== null}

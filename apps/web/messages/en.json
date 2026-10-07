@@ -176,6 +176,7 @@
     "deleteTitle": "Delete monitored repo?",
     "deleteDescription": "Delete “{path}”? This cannot be undone.",
     "deleteAria": "Delete {path}",
+    "deleteFailed": "Failed to delete repo.",
     "editAria": "Edit {path}",
     "columns": {
       "projectPath": "Project path",
@@ -237,6 +238,8 @@
     "deleteTitle": "Delete integration?",
     "deleteDescription": "Delete “{name}”? This cannot be undone.",
     "deleteAria": "Delete {name}",
+    "deleteFailed": "Failed to delete integration.",
+    "deleteInUse": "This integration is still used by repos or ticket projects. Remove it from those repos and ticket projects first, then delete it.",
     "editAria": "Edit {name}",
     "columns": {
       "name": "Name",
@@ -302,6 +305,8 @@
     "deleteTitle": "Delete ticket project?",
     "deleteDescription": "Delete “{name}”? This cannot be undone.",
     "deleteAria": "Delete {name}",
+    "deleteFailed": "Failed to delete ticket project.",
+    "deleteInUse": "This ticket project is still used by monitored repos. Remove it from those repos first, then delete it.",
     "editAria": "Edit {name}",
     "columns": {
       "integration": "Integration",
