@@ -74,9 +74,11 @@ func (t *Tester) testGitHub(ctx context.Context, secret []byte) error {
 		"Accept":               "application/vnd.github+json",
 		"X-GitHub-Api-Version": "2022-11-28",
 	}
-	if token != "" {
-		headers["Authorization"] = "Bearer " + token
+	if token == "" {
+		// /user answers 401 without a token; /rate_limit is public and sends no credential.
+		return t.doGET(ctx, githubAPIBase+"/rate_limit", headers)
 	}
+	headers["Authorization"] = "Bearer " + token
 	return t.doGET(ctx, githubAPIBase+"/user", headers)
 }
 
@@ -107,11 +109,7 @@ func (t *Tester) testGiteaCompatible(ctx context.Context, baseURL *string, secre
 		return err
 	}
 
-	headers := map[string]string{}
-	if token != "" {
-		headers["Authorization"] = "token " + token
-	}
-	return t.doGET(ctx, root+"/api/v1/user", headers)
+	return t.doGiteaCompatibleGET(ctx, root, token)
 }
 
 func (t *Tester) testCodeberg(ctx context.Context, secret []byte) error {
@@ -120,11 +118,16 @@ func (t *Tester) testCodeberg(ctx context.Context, secret []byte) error {
 		return err
 	}
 
-	headers := map[string]string{}
-	if token != "" {
-		headers["Authorization"] = "token " + token
+	return t.doGiteaCompatibleGET(ctx, codebergBaseURL, token)
+}
+
+// doGiteaCompatibleGET probes the authenticated /api/v1/user with a token and the public
+// /api/v1/version without one (/user answers 401 to an anonymous caller).
+func (t *Tester) doGiteaCompatibleGET(ctx context.Context, root, token string) error {
+	if token == "" {
+		return t.doGET(ctx, root+"/api/v1/version", map[string]string{})
 	}
-	return t.doGET(ctx, codebergBaseURL+"/api/v1/user", headers)
+	return t.doGET(ctx, root+"/api/v1/user", map[string]string{"Authorization": "token " + token})
 }
 
 func (t *Tester) testKaneo(ctx context.Context, baseURL *string, secret []byte) error {

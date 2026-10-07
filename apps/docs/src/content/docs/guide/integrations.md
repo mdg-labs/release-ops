@@ -26,7 +26,7 @@ An integration stores the credentials for one service. There are two kinds:
 3. Enter a **Name** that helps you tell integrations apart.
 4. Enter the **Base URL** if the form shows the field. Use the root address of the service, for example `https://gitea.example.com` or `https://kaneo.example.com`. For Kaneo, Release Ops adds `/api` automatically.
 5. For Jira, enter the **Email** of the token's owner.
-6. Enter the **Token**, **API key** or **API token**. The label depends on the kind. For GitHub, Gitea, Forgejo and Codeberg you can leave it blank to read public repos without a token. A token is recommended for higher rate limits and for private repos.
+6. Enter the **Token**, **API key** or **API token**. The label depends on the kind. For GitHub, Gitea, Forgejo and Codeberg you can leave it blank to read public repos without a token. A token is required for private repos and recommended for higher rate limits.
 7. For a source kind, switch on **Default for this source type** if you want this integration preselected when you add a repo of that source.
 8. Click **Save**.
 
@@ -38,6 +38,8 @@ An integration stores the credentials for one service. There are two kinds:
 2. Click the **Test connection** icon in the **Actions** column. You can also click **Test connection** at the bottom of the edit panel.
 
 **Result:** A message reports **Connection successful** or **Connection failed**. The test uses the credentials already saved, so save your changes first.
+
+With a token, the test checks that the provider accepts it. For a GitHub, Gitea, Forgejo or Codeberg integration without a token, the test only checks that the provider is reachable. It cannot tell you whether a private repo is readable.
 
 ## Edit an integration
 
@@ -71,7 +73,7 @@ Deleting the default integration of a source leaves that source without a defaul
 | Name | A display name for the list and for the pickers on other pages. | Yes |
 | Base URL | The root address of the service. Shown for GitLab, Gitea, Forgejo, Kaneo and Jira. GitHub, Codeberg and Linear use fixed addresses. | Yes, where shown |
 | Email | The email address of the Jira account that owns the API token. Jira only. | Yes, for Jira |
-| Token / API key / API token | The credential. It is called **Token** for the source kinds, **API key** for Kaneo and Linear, and **API token** for Jira. | Yes, except for GitHub, Gitea, Forgejo and Codeberg, where a token is recommended for rate limits and private repos |
+| Token / API key / API token | The credential. It is called **Token** for the source kinds, **API key** for Kaneo and Linear, and **API token** for Jira. | Yes, except for GitHub, Gitea, Forgejo and Codeberg, where a token is required for private repos and recommended for rate limits |
 | Default for this source type | Preselects this integration when you add a repo of the same source. Only one integration per source can be the default. Source kinds only. | No |
 
 The list shows **Name**, **Kind**, **Base URL**, **Secret** and **Actions**. The **Secret** column shows **Configured** when a token is stored and **Missing** when none is set. **Missing** is fine for GitHub, Gitea, Forgejo and Codeberg when you only read public repos. A **Default** badge marks the default integration of a source.

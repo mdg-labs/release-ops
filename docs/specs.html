@@ -654,13 +654,14 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <li>Header with token: <code>Authorization: token {token}</code> (Gitea standard)</li>
     <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>name</code>→<code>Name</code>, <code>html_url</code>→<code>URL</code>, <code>body</code>→<code>Notes</code>, <code>published_at</code>→<code>PublishedAt</code>, <code>prerelease</code>→<code>IsPrerelease</code></li>
     <li>404 = no release; returns latest non-prerelease, non-draft release (Forgejo/GitHub-compatible)</li>
-    <li>Connectivity test: <code>GET {base_url}/api/v1/user</code></li>
+    <li>Connectivity test: with a token <code>GET {base_url}/api/v1/user</code>; without one (token optional, §4.2) <code>GET {base_url}/api/v1/version</code> with no <code>Authorization</code> header (<a href="#providers">§6.4</a>)</li>
   </ul>
 
   <h3>6.4 Ticket: Kaneo / Jira / Linear</h3>
   <p>Factory per integration <code>kind</code>. Reads <code>ticket_projects</code> for create defaults and status mapping.</p>
   <p><strong>Kaneo:</strong> normalize stored <code>base_url</code> by appending <code>/api</code> when missing (same rule as metadata discovery and connectivity test). Ticket CRUD paths are relative to that API root: <code>POST /task/{projectId}</code>, <code>GET /task/{id}</code>, <code>PUT /task/status/{id}</code>, <code>PUT /task/title/{id}</code>, <code>PUT /task/description/{id}</code>, <code>POST /comment/{taskId}</code>. Merge policy uses the dedicated title/description routes (not partial <code>PUT /task/{id}</code>).</p>
   <p>Connectivity tests: GitHub <code>GET /user</code>; GitLab <code>GET /api/v4/user</code>; Gitea/Forgejo/Codeberg <code>GET /api/v1/user</code>; Kaneo <code>GET /api/auth/organization/list</code>; Jira <code>GET /rest/api/3/myself</code>; Linear GraphQL <code>viewer</code>.</p>
+  <p>Tokenless source integrations (token optional for GitHub, Gitea, Forgejo, Codeberg — §4.2): <code>/user</code> answers 401 without a token, so the test probes a public endpoint instead and sends no <code>Authorization</code> header — GitHub <code>GET /rate_limit</code>; Gitea/Forgejo/Codeberg <code>GET {base_url}/api/v1/version</code>. A 2xx is success; any other status or an unreachable host is a failed test. With a token the authenticated probes above are used unchanged. GitLab keeps <code>GET /api/v4/user</code>.</p>
   <p>Kaneo comment content is limited to 10000 characters; longer supersede comments are truncated.</p>
   <p><strong>Kaneo task link:</strong> <code>TicketWebURL</code> strips the trailing <code>/api</code> from the normalized base and returns <code>{web base}/dashboard/workspace/{create_config.workspaceId}/project/{external_project_id}/task/{taskId}</code> — no extra API call. Used for the dashboard <code>openTicketUrl</code> and the supersede comment <code>newTicketUrl</code>. When <code>workspaceId</code> is missing the link is omitted.</p>
 

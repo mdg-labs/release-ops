@@ -254,3 +254,229 @@ func TestTesterMissingBaseURL(t *testing.T) {
 		t.Fatalf("error = %q", err.Error())
 	}
 }
+
+// tokenlessSecrets are the payloads a source integration without a token can store.
+var tokenlessSecrets = map[string][]byte{
+	"empty payload":    {},
+	"empty token":      []byte(`{"token":""}`),
+	"whitespace token": []byte(`{"token":"  "}`),
+}
+
+func TestTesterTokenlessGitHubProbesRateLimitWithoutAuth(t *testing.T) {
+	t.Parallel()
+
+	for name, secret := range tokenlessSecrets {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var gotPath, gotAuth string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.Path
+				gotAuth = r.Header.Get("Authorization")
+				if r.URL.Path != "/rate_limit" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				w.WriteHeader(http.StatusOK)
+			}))
+			t.Cleanup(server.Close)
+
+			tester := integrationtester.New(newHostRewritingClient(server, "api.github.com"))
+			if err := tester.TestConnection(context.Background(), "github", nil, secret); err != nil {
+				t.Fatalf("TestConnection: %v", err)
+			}
+			if gotPath != "/rate_limit" {
+				t.Fatalf("path = %q, want /rate_limit", gotPath)
+			}
+			if gotAuth != "" {
+				t.Fatalf("Authorization = %q, want none", gotAuth)
+			}
+		})
+	}
+}
+
+func TestTesterTokenlessGiteaCompatibleProbesVersionWithoutAuth(t *testing.T) {
+	t.Parallel()
+
+	for _, kind := range []string{"gitea", "forgejo", "codeberg"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+
+			var gotPath, gotAuth string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.Path
+				gotAuth = r.Header.Get("Authorization")
+				if r.URL.Path != "/api/v1/version" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				w.WriteHeader(http.StatusOK)
+			}))
+			t.Cleanup(server.Close)
+
+			var (
+				tester  *integrationtester.Tester
+				baseURL *string
+			)
+			if kind == "codeberg" {
+				tester = integrationtester.New(newHostRewritingClient(server, "codeberg.org"))
+			} else {
+				tester = integrationtester.New(server.Client())
+				base := server.URL
+				baseURL = &base
+			}
+
+			if err := tester.TestConnection(context.Background(), kind, baseURL, []byte(`{"token":""}`)); err != nil {
+				t.Fatalf("TestConnection: %v", err)
+			}
+			if gotPath != "/api/v1/version" {
+				t.Fatalf("path = %q, want /api/v1/version", gotPath)
+			}
+			if gotAuth != "" {
+				t.Fatalf("Authorization = %q, want none", gotAuth)
+			}
+		})
+	}
+}
+
+func TestTesterTokenedSourceKindsKeepAuthenticatedUserProbe(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		kind     string
+		wantPath string
+		wantAuth string
+	}{
+		{kind: "github", wantPath: "/user", wantAuth: "Bearer tok"},
+		{kind: "gitea", wantPath: "/api/v1/user", wantAuth: "token tok"},
+		{kind: "forgejo", wantPath: "/api/v1/user", wantAuth: "token tok"},
+		{kind: "codeberg", wantPath: "/api/v1/user", wantAuth: "token tok"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.kind, func(t *testing.T) {
+			t.Parallel()
+
+			var gotPath, gotAuth string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.Path
+				gotAuth = r.Header.Get("Authorization")
+				w.WriteHeader(http.StatusOK)
+			}))
+			t.Cleanup(server.Close)
+
+			var (
+				client  *http.Client
+				baseURL *string
+			)
+			switch tc.kind {
+			case "github":
+				client = newHostRewritingClient(server, "api.github.com")
+			case "codeberg":
+				client = newHostRewritingClient(server, "codeberg.org")
+			default:
+				client = server.Client()
+				base := server.URL
+				baseURL = &base
+			}
+
+			tester := integrationtester.New(client)
+			if err := tester.TestConnection(context.Background(), tc.kind, baseURL, []byte(`{"token":"tok"}`)); err != nil {
+				t.Fatalf("TestConnection: %v", err)
+			}
+			if gotPath != tc.wantPath {
+				t.Fatalf("path = %q, want %q", gotPath, tc.wantPath)
+			}
+			if gotAuth != tc.wantAuth {
+				t.Fatalf("Authorization = %q, want %q", gotAuth, tc.wantAuth)
+			}
+		})
+	}
+}
+
+func TestTesterTokenlessPublicProbeServerErrorFails(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		kind       string
+		publicPath string
+	}{
+		{kind: "github", publicPath: "/rate_limit"},
+		{kind: "gitea", publicPath: "/api/v1/version"},
+		{kind: "forgejo", publicPath: "/api/v1/version"},
+		{kind: "codeberg", publicPath: "/api/v1/version"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.kind, func(t *testing.T) {
+			t.Parallel()
+
+			// Only the public endpoint fails, so a test that still probed /user would pass.
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == tc.publicPath {
+					w.WriteHeader(http.StatusBadGateway)
+					return
+				}
+				w.WriteHeader(http.StatusOK)
+			}))
+			t.Cleanup(server.Close)
+
+			var (
+				client  *http.Client
+				baseURL *string
+			)
+			switch tc.kind {
+			case "github":
+				client = newHostRewritingClient(server, "api.github.com")
+			case "codeberg":
+				client = newHostRewritingClient(server, "codeberg.org")
+			default:
+				client = server.Client()
+				base := server.URL
+				baseURL = &base
+			}
+
+			tester := integrationtester.New(client)
+			err := tester.TestConnection(context.Background(), tc.kind, baseURL, nil)
+			if err == nil {
+				t.Fatal("expected error when the public probe returns 502")
+			}
+			if !strings.Contains(err.Error(), "502") {
+				t.Fatalf("error = %q, want status 502 mention", err.Error())
+			}
+		})
+	}
+}
+
+func TestTesterTokenlessPublicProbeUnreachableFails(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	client := newHostRewritingClient(server, "api.github.com")
+	server.Close()
+
+	tester := integrationtester.New(client)
+	if err := tester.TestConnection(context.Background(), "github", nil, nil); err == nil {
+		t.Fatal("expected error when the public probe is unreachable")
+	}
+}
+
+func TestTesterTokenlessGitLabKeepsUserProbe(t *testing.T) {
+	t.Parallel()
+
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(server.Close)
+
+	tester := integrationtester.New(server.Client())
+	baseURL := server.URL
+	if err := tester.TestConnection(context.Background(), "gitlab", &baseURL, []byte(`{"token":""}`)); err == nil {
+		t.Fatal("expected error for unauthorized gitlab probe")
+	}
+	if gotPath != "/api/v4/user" {
+		t.Fatalf("path = %q, want /api/v4/user", gotPath)
+	}
+}
