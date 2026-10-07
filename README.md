@@ -82,7 +82,7 @@ Keep `APP_ENCRYPTION_KEY` safe and stable: stored credentials can't be decrypted
 
 Open [http://localhost:3000](http://localhost:3000) and sign in with your bootstrap admin credentials. Remove `BOOTSTRAP_ADMIN_*` after the first successful login.
 
-Pre-built images: `ghcr.io/mdg-labs/release-ops:latest` (release) and `:nightly` (dev branch). All environment variables are listed in `.env.example` and [spec §9](https://mdg-labs.github.io/release-ops/spec/#env).
+Pre-built images: `ghcr.io/mdg-labs/release-ops:latest` (release) and `:nightly` (dev branch). All environment variables are listed in `.env.example` and [spec §9](https://github.com/mdg-labs/release-ops/blob/dev/docs/specs.html).
 
 ## Self-hosted vs cloud
 
@@ -96,14 +96,17 @@ The database migrations were reset to a single baseline. A `/data` volume create
 
 **Published site:** [mdg-labs.github.io/release-ops](https://mdg-labs.github.io/release-ops/)
 
-| Document                                                                   | Description                                                      |
-| -------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| [Getting started](https://mdg-labs.github.io/release-ops/getting-started/) | Docker Compose setup, env vars, admin bootstrap, troubleshooting |
-| [Product spec](https://mdg-labs.github.io/release-ops/spec/)               | Architecture, APIs, providers, MVP acceptance criteria           |
-| [Tech stack](https://mdg-labs.github.io/release-ops/stack/)                | Go, Next.js, COSS, SQLite, CI/CD                                 |
-| [Database schema](https://mdg-labs.github.io/release-ops/schema/)          | SQLite `app.db` tables (canonical DDL: `db/schema.sql`)          |
-| [MVP checklist](https://mdg-labs.github.io/release-ops/mvp-checklist/)     | Release sign-off against all 15 acceptance criteria              |
-| [Roadmap](https://mdg-labs.github.io/release-ops/roadmap/)                 | Implementation phases (`docs/roadmap.json`)                      |
+| Document                                                                                | Description                                                      |
+| --------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| [Introduction](https://mdg-labs.github.io/release-ops/)                                 | What Release Ops is, what it is not and who it is for            |
+| [Getting started](https://mdg-labs.github.io/release-ops/getting-started/)              | Docker Compose setup, env vars, admin bootstrap, troubleshooting |
+| [Product spec](https://github.com/mdg-labs/release-ops/blob/dev/docs/specs.html)        | Architecture, APIs, providers, MVP acceptance criteria (repo)    |
+| [Tech stack](https://github.com/mdg-labs/release-ops/blob/dev/docs/stack.html)          | Go, Next.js, COSS, SQLite, CI/CD (repo)                          |
+| [Database schema](https://github.com/mdg-labs/release-ops/blob/dev/db/schema.sql)       | SQLite `app.db` tables, canonical DDL (repo)                     |
+| [MVP checklist](https://github.com/mdg-labs/release-ops/blob/dev/docs/mvp-checklist.md) | Release sign-off against all 15 acceptance criteria (repo)       |
+| [Roadmap](https://github.com/mdg-labs/release-ops/blob/dev/docs/roadmap.html)           | Implementation phases (`docs/roadmap.json`, repo)                |
+
+The published site covers installation and the product overview; the spec, stack, schema, checklist and roadmap live in the repository only.
 
 Operator quick reference (repo): [docs/getting-started.md](docs/getting-started.md).  
 Build the docs site locally: `npm run docs:sync && npm run dev:docs`.
@@ -127,7 +130,7 @@ npm test && npm run lint && npm run typecheck
 | `make db-migration name=<change>` | Generate migration from `db/schema.sql` changes |
 | `make sqlc-generate`              | Regenerate typed SQL from `queries/`          |
 
-Local Go server expects `SESSION_SECRET`, `APP_ENCRYPTION_KEY`, and `APP_DB_PATH` (see [spec §9](https://mdg-labs.github.io/release-ops/spec/#env)).
+Local Go server expects `SESSION_SECRET`, `APP_ENCRYPTION_KEY`, and `APP_DB_PATH` (see [spec §9](https://github.com/mdg-labs/release-ops/blob/dev/docs/specs.html)).
 
 ## Architecture
 
@@ -141,11 +144,11 @@ Browser → Next.js (:3000) → /api/go/* proxy → Go API (:8080, loopback)
 - **Next.js** — COSS UI, React Query, next-intl; proxies API calls and forwards session cookies
 - **SQLite** — single `app.db` file; Go is the only writer
 
-See [spec §2 — Architecture](https://mdg-labs.github.io/release-ops/spec/#architecture) for the full contract.
+See [spec §2 — Architecture](https://github.com/mdg-labs/release-ops/blob/dev/docs/specs.html) for the full contract.
 
 ## CI/CD
 
-GitHub Actions on `dev` and `main`: Go lint/test/build, web lint/test/typecheck, `db:check`, Docker image push to GHCR. See [spec §11](https://mdg-labs.github.io/release-ops/spec/#ci).
+GitHub Actions on `dev` and `main`: Go lint/test/build, web lint/test/typecheck, `db:check`, Docker image push to GHCR. See [spec §11](https://github.com/mdg-labs/release-ops/blob/dev/docs/specs.html).
 
 ## Attribution
 
@@ -187,7 +190,7 @@ Release Ops is built with these open-source projects (among others). Thank you t
 | [GitHub Actions](https://github.com/features/actions) | CI/CD              |
 | [SQLite](https://www.sqlite.org/)                     | Embedded database  |
 
-Full dependency lists: `go.mod`, `apps/web/package.json`, and the [tech stack doc](https://mdg-labs.github.io/release-ops/stack/).
+Full dependency lists: `go.mod`, `apps/web/package.json`, and the [tech stack doc](https://github.com/mdg-labs/release-ops/blob/dev/docs/stack.html).
 
 ## Contributing
 

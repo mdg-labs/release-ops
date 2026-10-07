@@ -38,7 +38,7 @@ cp .env.example .env   # set SESSION_SECRET and APP_ENCRYPTION_KEY
 | `make db-migration name=<change>` | Generate a migration from `db/schema.sql` changes |
 | `make sqlc-generate`  | Regenerate typed SQL from `queries/`         |
 
-The local Go server expects `SESSION_SECRET`, `APP_ENCRYPTION_KEY` and `APP_DB_PATH` (see [spec §9](https://mdg-labs.github.io/release-ops/spec/#env)). To run the full stack in one container instead, use `docker compose up -d` as described in the [README](README.md#quick-start).
+The local Go server expects `SESSION_SECRET`, `APP_ENCRYPTION_KEY` and `APP_DB_PATH` (see [spec §9](https://github.com/mdg-labs/release-ops/blob/dev/docs/specs.html)). To run the full stack in one container instead, use `docker compose up -d` as described in the [README](README.md#quick-start).
 
 ## Checks before you open a PR
 
@@ -95,4 +95,4 @@ Use `getTranslations` from `next-intl/server` in server components. `npm run lin
 
 ## Specs
 
-Behaviour is defined in [`docs/specs.html`](https://mdg-labs.github.io/release-ops/spec/), with `db/schema.sql` as the canonical schema. If something isn't covered there, open an issue to discuss it before you implement it.
+Behaviour is defined in [`docs/specs.html`](https://github.com/mdg-labs/release-ops/blob/dev/docs/specs.html), with `db/schema.sql` as the canonical schema. If something isn't covered there, open an issue to discuss it before you implement it.

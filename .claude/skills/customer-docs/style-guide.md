@@ -6,12 +6,13 @@ Voice, structure and terminology rules for the Release Ops docs site (`apps/docs
 
 | Rule | Detail |
 | ---- | ------ |
-| Audience | People who self-host Release Ops and configure it in the web UI: technical, but not Release Ops developers. Assume Docker and API tokens are familiar; do not explain Go, Next.js or the database. |
+| Audience | Small self-hosting dev/ops teams and individuals who configure Release Ops in the web UI: technical, but not Release Ops developers. Assume Docker and API tokens are familiar; do not explain Go, Next.js or the database. |
 | Person | Second person ("you") |
 | Tense | Present tense |
 | Steps | Imperative ("Click **Save**", not "The user should click") |
 | Sentences | Short; one idea per sentence |
 | Fluff | No marketing hype or empty superlatives |
+| Deployment model | Self-hosting only. Never mention a hosted, cloud or managed version |
 | Language | English only (baseline) |
 
 ## Task orientation
@@ -83,7 +84,14 @@ Insert `<!-- SCREENSHOT: short description -->` where a visual helps (HTML comme
 - File names: **kebab-case**
 - Doc titles: Title Case for H1; sentence case for descriptions
 - Cross-links: relative paths within the docs site (`../integrations/`) so they work under the `/release-ops` base
-- Sidebar (`apps/docs/astro.config.mjs`): "User guide" order — First steps, Dashboard, Integrations, Ticket projects, Repos, Poll runs, Notifications, Settings, Users, Profile, Signing in
+- Sidebar (`apps/docs/astro.config.mjs`) groups, in order: "Start here" (Getting started, FAQ), "User guide", "Concepts". The landing page (`index.mdx`) is the site root and has no entry.
+- "User guide" order — First steps, Dashboard, Integrations, Ticket projects, Repos, Poll runs, Notifications, Settings, Users, Profile, Signing in
+- "Concepts" starts with Product overview
+- Never link hand-written customer pages to the internal spec, stack, schema, MVP checklist or roadmap; they are repo-only. The synced `getting-started.md` links them as GitHub URLs only (the sync script rewrites them); keep those links
+
+## Landing page and product overview
+
+Use [landing-page-template.md](landing-page-template.md). The landing page (`index.mdx`) and `concepts/product-overview.md` say what Release Ops is, what it is not, and who it is for, in customer voice. Every claim must trace to `docs/specs.html` §1 or to behaviour in the app.
 
 ## FAQ and concept pages
 
