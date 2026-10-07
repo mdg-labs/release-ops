@@ -151,7 +151,8 @@ The rating is the lowest level whose definition the finding meets after the anti
 - **Critical (constructed).** A new handler is registered outside the `RequireSession` group in `internal/api/routes.go` and returns integrations with decrypted payloads. Any unauthenticated client (2.1) reads every token. Violates T2 and T4.
 - **High (constructed).** The poller follows a redirect from a hostile self-hosted GitLab (2.3) to an attacker host and the request carries the `PRIVATE-TOKEN` header. The token leaks to a host it was not entered for (T10). Not Critical: needs a configured integration pointing at the hostile host.
 - **Medium (constructed).** A client sends its own `X-Forwarded-For` to the proxy, the header reaches Go unchanged, and the client rotates buckets to brute-force login past the limit (T11, 2.1). Bounded by bcrypt cost and password strength.
-- **Low (constructed).** Login skips bcrypt for unknown emails, so response timing reveals which emails are registered (T8). Enumeration only, no account access.
+- **Medium (constructed).** Login skips bcrypt for unknown emails, so response timing reveals which emails are registered (T8, 2.1). Account enumeration, no account access.
+- **Low (constructed).** `/data` is created group-readable, so another account on the Docker host (2.7) reads `app.db`. Needs a position on the host already; the credentials in it stay encrypted under `APP_ENCRYPTION_KEY` (T1).
 - **Not a finding.** A signed-in user deletes another user, or points a Shoutrrr target at `http://127.0.0.1:8080` — by design (§5.1, §5.2).
 - **Info (constructed).** The spec says password change keeps other sessions; the code revokes them. Stricter code, doc drift only.
 
