@@ -24,5 +24,11 @@
   },
   "scriptDocs": {
     "db:check": "Fail if a migration file was edited after generation or db/schema.sql drifts from migrations/ (sqlite-migrate check, pinned as a go.mod tool; needs Go, no database). See docs/specs.html#schema-migrations."
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "@swc/core@1.15.47": true,
+    "@parcel/watcher@2.6.0": true,
+    "unrs-resolver@1.12.2": true
   }
 }
