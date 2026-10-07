@@ -126,6 +126,18 @@ One customer term per concept across all pages. Extend this table (after approva
 | `notification_targets`, Shoutrrr URL | notification target (Shoutrrr URL) |
 | invitation tokens (`auth_tokens`) | invitation (UI: "Invite user", "Pending invitations") |
 | `kind` | integration type (provider) |
+| baseline (first sighting of a repo's release, `baseline` poll event) | baseline (UI event: "Baseline") |
+| `last_known_tag` | last tag (UI: "Last tag"); in prose, the release Release Ops remembers for a repo |
+| `open_ticket_external_id`, open ticket | open ticket (UI: "Open ticket") |
+| `supersede`, `merge`, `skip_if_open` | Supersede, Merge, Skip if open (policy names); poll events "Supersede", "Merge", "Skip open ticket" |
+| `external_project_id` | External project ID (UI label); in prose, the Kaneo project, Jira project or Linear team |
+| `create_config` | Create config (tab), create defaults |
+| `content_templates` | content templates (title, description and supersede comment templates) |
+| `is_default` | Default for this source type (UI label) |
+| `include_prereleases` | Include pre-releases (UI label) |
+| `poll_interval_minutes` | poll interval |
+| `trigger_source` (`manual`, `scheduled`) | Trigger: Manual, Automatic |
+| `smtp`, SMTP configured | outgoing email (quote UI strings that say SMTP verbatim) |
 
 ## Coverage tracking
 
