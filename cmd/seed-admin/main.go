@@ -24,18 +24,42 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if err := run(ctx, os.Args[1:], os.Stdin, os.Stdout); err != nil {
-		stop()
-		log.Fatal(err)
+	err := run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
+	stop()
+	os.Exit(exitCode(err, os.Stderr))
+}
+
+// usageError marks a flag parsing failure the FlagSet has already reported.
+type usageError struct{ error }
+
+func (e usageError) Unwrap() error { return e.error }
+
+// exitCode maps run's result to the process exit status: help requests exit 0,
+// flag errors exit 2 (as flag.ExitOnError does), every other error exits 1.
+// Errors the FlagSet already printed are not printed again.
+func exitCode(err error, stderr io.Writer) int {
+	var uerr usageError
+	switch {
+	case err == nil, errors.Is(err, flag.ErrHelp):
+		return 0
+	case errors.As(err, &uerr):
+		return 2
+	default:
+		_, _ = fmt.Fprintln(stderr, err)
+		return 1
 	}
 }
 
-func run(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) error {
+func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("seed-admin", flag.ContinueOnError)
+	fs.SetOutput(stderr)
 	emailFlag := fs.String("email", "", "admin email address")
 	passwordFlag := fs.String("password", "", "admin password")
 	if err := fs.Parse(args); err != nil {
-		return err
+		if errors.Is(err, flag.ErrHelp) {
+			return err
+		}
+		return usageError{err}
 	}
 
 	cfg, err := config.Load()
