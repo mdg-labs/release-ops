@@ -96,7 +96,9 @@ The Phasical ticket integration has been replaced by **Kaneo** (`kind = kaneo`, 
 
 **Before upgrading**, delete every Phasical integration in the web UI. You must first delete the monitored repos and ticket projects that use it. After the upgrade, re-create the integration as Kaneo.
 
-If an instance still has a `phasical` integration, migration 000007 aborts on startup. The schema change is rolled back, but `schema_migrations` is left at version **7 / dirty**. To recover:
+If an instance still has a `phasical` integration, `/app/migrate` refuses to run migration 000007: the container exits with a message saying how many Phasical integrations block the upgrade, and the database is left untouched. Start the previous image, delete them, then upgrade again.
+
+Databases that already hit the bare `CHECK constraint failed` abort (before this check existed) are left at version **7 / dirty**. To recover:
 
 1. Stop the container. Then, against the SQLite volume (`APP_DB_PATH`, default `/data/app.db`), reset the migration state to 6 with the upstream [golang-migrate CLI](https://github.com/golang-migrate/migrate) `migrate -path migrations -database "sqlite:///data/app.db" force 6`. Alternatively, run `UPDATE schema_migrations SET version = 6, dirty = 0;` with `sqlite3`. The bundled `/app/migrate` only supports `up`/`down`.
 2. Delete the Phasical rows together with their dependent ticket projects and monitored repos. Run the whole block in **one** `sqlite3` session. `sqlite3` has foreign keys off by default, and the pragma makes the cascades clean up notification links and poll events:

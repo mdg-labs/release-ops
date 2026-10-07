@@ -79,9 +79,19 @@ func (c *Config) BootstrapAdminConfigured() bool {
 	return c.BootstrapAdminEmail != "" || c.BootstrapAdminPassword != ""
 }
 
+// Placeholder values shipped in .env.example. They are public, so starting with them
+// would sign sessions and encrypt stored credentials with a key anyone can read.
+const (
+	exampleSessionSecret    = "change-me-use-openssl-rand-base64-32-at-least-32-chars"
+	exampleAppEncryptionKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+)
+
 func (c *Config) validate() error {
 	if c.SessionSecret == "" {
 		return fmt.Errorf("SESSION_SECRET is required")
+	}
+	if c.SessionSecret == exampleSessionSecret {
+		return fmt.Errorf("SESSION_SECRET is the .env.example placeholder; generate one with: openssl rand -base64 32")
 	}
 	if len(c.SessionSecret) < minSessionSecretLen {
 		return fmt.Errorf("SESSION_SECRET must be at least %d bytes", minSessionSecretLen)
@@ -91,6 +101,9 @@ func (c *Config) validate() error {
 	}
 	if len(c.AppEncryptionKey) != encryptionKeyHexLen || !isHex(c.AppEncryptionKey) {
 		return fmt.Errorf("APP_ENCRYPTION_KEY must be %d hex characters", encryptionKeyHexLen)
+	}
+	if strings.EqualFold(c.AppEncryptionKey, exampleAppEncryptionKey) {
+		return fmt.Errorf("APP_ENCRYPTION_KEY is the .env.example placeholder; generate one with: openssl rand -hex 32")
 	}
 	if c.BootstrapAdminEmail != "" && c.BootstrapAdminPassword == "" {
 		return fmt.Errorf("BOOTSTRAP_ADMIN_PASSWORD is required when BOOTSTRAP_ADMIN_EMAIL is set")
