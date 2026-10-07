@@ -10,6 +10,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MockAgent, setGlobalDispatcher } from "undici";
 import { TicketProjectsView } from "@/components/ticket-projects/ticket-projects-view";
+import { integrationDefaultTemplates } from "@/lib/ticket-projects/content-templates";
 import messages from "@/messages/en.json";
 
 const ORIGIN = "http://localhost:3000";
@@ -409,8 +410,60 @@ describe("TicketProjectsView", () => {
       "Superseded: {{ .Supersede.OldTag }} → {{ .Supersede.NewTag }}",
     );
     expect(
-      within(dialog).getByText(".Supersede.NewTicketURL"),
+      within(dialog).getByText("{{ .Supersede.NewTicketURL }}"),
     ).toBeInTheDocument();
+  });
+
+  it("shows the integration default as placeholder for empty templates", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/ticket-projects",
+        method: "GET",
+      })
+      .reply(200, [
+        {
+          ...sampleProjects[0],
+          contentTemplates: {
+            title: "",
+            description: "",
+            supersedeComment: "",
+          },
+        },
+      ]);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/integrations",
+        method: "GET",
+      })
+      .reply(200, ticketIntegrations);
+
+    renderTicketProjectsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit Jira — DEV" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(dialog).getByRole("tab", { name: "Content templates" }),
+    );
+
+    expect(within(dialog).getByLabelText("Title template")).toHaveAttribute(
+      "placeholder",
+      integrationDefaultTemplates("jira").title,
+    );
+    expect(
+      within(dialog).getByLabelText("Description template"),
+    ).toHaveAttribute(
+      "placeholder",
+      integrationDefaultTemplates("jira").description,
+    );
+    expect(
+      within(dialog)
+        .getByLabelText("Description template")
+        .getAttribute("placeholder"),
+    ).toMatch(/^Source: /);
   });
 
   it("saves edited content templates", async () => {

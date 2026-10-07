@@ -1044,8 +1044,8 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>Display name</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-checkbox-group-1.json">p-checkbox-group-1</a></td><td>Status mapping: open / done / cancelled (multi-select from provider statuses)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-tabs-1.json">p-tabs-1</a></td><td>create_config subform per provider kind (selects populated from metadata endpoints); <strong>Content templates</strong> tab (<code>title</code>, <code>description</code>, <code>supersedeComment</code> text areas)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-textarea-1.json">p-textarea-1</a></td><td>Template fields — monospace; placeholder shows Go <code>text/template</code> example (<code>{{ .Release.Tag }}</code>)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-alert-5.json">p-alert-5</a></td><td>Note: mapping is <strong>different per project</strong>; empty template key → integration default; variable reference panel lists MVP paths (§5.4)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-textarea-1.json">p-textarea-1</a></td><td>Template fields — monospace; while a field is empty its placeholder shows the integration-kind default template from §5.4 (plain-text description for Jira, markdown for Kaneo/Linear)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-alert-5.json">p-alert-5</a></td><td>Note: mapping is <strong>different per project</strong>; empty template key → integration default; full-width variable reference table below the three fields lists the MVP variables (§5.4) as insertable syntax (<code>{{ .Repo.SourceKind }}</code>) with a “Works in” column (Title, Description, Supersede comment; <code>.Supersede.*</code> are supersede comment only) and a copy button per row that copies the syntax including braces</td></tr>
   </table>
 
   <h4>/notifications</h4>

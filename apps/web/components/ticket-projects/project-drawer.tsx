@@ -583,6 +583,7 @@ export function ProjectDrawer({
                 value="contentTemplates"
               >
                 <ContentTemplateForm
+                  kind={activeKind}
                   onChange={setContentTemplates}
                   values={contentTemplates}
                 />
