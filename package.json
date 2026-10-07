@@ -7,7 +7,10 @@
     "apps/docs"
   ],
   "overrides": {
-    "postcss-selector-parser": "^7.1.6"
+    "postcss-selector-parser": "^7.1.6",
+    "next": {
+      "postcss": "^8.5.23"
+    }
   },
   "scripts": {
     "dev": "npm run dev -w apps/web",
