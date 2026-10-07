@@ -22,7 +22,8 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY migrations ./migrations
 ENV CGO_ENABLED=0
-RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
+RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server && \
+    go build -trimpath -ldflags="-s -w" -o /out/seed-admin ./cmd/seed-admin
 
 FROM node:22-bookworm-slim AS runtime
 RUN apt-get update && \
@@ -32,8 +33,9 @@ RUN apt-get update && \
 WORKDIR /app
 
 COPY --from=go-build /out/server /app/server
+COPY --from=go-build /out/seed-admin /app/seed-admin
 COPY docker/entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh /app/server
+RUN chmod +x /app/entrypoint.sh /app/server /app/seed-admin
 
 COPY --from=web-build /app/apps/web/.next/standalone ./
 COPY --from=web-build /app/apps/web/.next/static ./apps/web/.next/static
