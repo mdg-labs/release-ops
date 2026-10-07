@@ -57,6 +57,7 @@ func run(cfg *config.Config) {
 		log.Fatalf("app settings: %v", err)
 	}
 
+	notifier := poll.NewNotifier(appStore.Notifications(), nil)
 	engine := poll.NewEngine(appStore.Poll())
 	scheduler, err := poll.NewScheduler(poll.SchedulerConfig{
 		Engine:         engine,
@@ -65,6 +66,7 @@ func run(cfg *config.Config) {
 		TicketProjects: appStore.TicketProjects(),
 		Integrations:   appStore.Integrations(),
 		Poll:           appStore.Poll(),
+		Notifier:       notifier,
 	})
 	if err != nil {
 		log.Fatalf("poll scheduler: %v", err)
@@ -86,6 +88,7 @@ func run(cfg *config.Config) {
 		Store:              appStore,
 		PollRunner:         scheduler,
 		IntegrationTester:  integrationtester.New(nil),
+		NotificationTester: notifier,
 		Mailer:             mailer,
 	})
 	addr := cfg.GoListenAddr()

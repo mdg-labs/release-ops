@@ -7,7 +7,9 @@ import (
 // ClassifyStatus maps a provider-native status slug/name/id to open, done, cancelled, or unknown
 // using ticket_projects.status_mapping (specs §5.2, §6).
 //
-// Matching is case-insensitive. Priority: open, then done, then cancelled.
+// Matching is case-insensitive. Priority: open, then done, then cancelled. A ticket in the
+// mapped superseded status counts as cancelled, so a ticket left superseded by an earlier
+// poll never blocks the repo.
 func ClassifyStatus(mapping StatusMapping, rawStatus string) string {
 	rawStatus = strings.TrimSpace(rawStatus)
 	if rawStatus == "" {
@@ -21,6 +23,9 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string {
 		return StatusDone
 	}
 	if matchesStatus(mapping.Cancelled, rawStatus) {
+		return StatusCancelled
+	}
+	if mapping.Superseded != "" && matchesStatus([]string{mapping.Superseded}, rawStatus) {
 		return StatusCancelled
 	}
 

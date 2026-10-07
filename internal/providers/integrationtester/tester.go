@@ -13,6 +13,9 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/mdg-labs/release-ops/internal/providers/source"
+	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 )
 
 const (
@@ -59,23 +62,6 @@ func (t *Tester) TestConnection(ctx context.Context, kind string, baseURL *strin
 	default:
 		return fmt.Errorf("unsupported integration kind %q", kind)
 	}
-}
-
-type tokenPayload struct {
-	Token string `json:"token"`
-}
-
-type kaneoPayload struct {
-	APIKey string `json:"api_key"`
-}
-
-type jiraPayload struct {
-	Email    string `json:"email"`
-	APIToken string `json:"api_token"`
-}
-
-type linearPayload struct {
-	APIKey string `json:"api_key"`
 }
 
 func (t *Tester) testGitHub(ctx context.Context, secret []byte) error {
@@ -249,47 +235,19 @@ func (t *Tester) doGET(ctx context.Context, endpoint string, headers map[string]
 }
 
 func parseTokenPayload(secret []byte) (string, error) {
-	var creds tokenPayload
-	if err := json.Unmarshal(secret, &creds); err != nil {
-		return "", fmt.Errorf("parse integration secret: %w", err)
-	}
-	return strings.TrimSpace(creds.Token), nil
+	return source.ParseTokenSecret(secret)
 }
 
 func parseKaneoPayload(secret []byte) (string, error) {
-	var creds kaneoPayload
-	if err := json.Unmarshal(secret, &creds); err != nil {
-		return "", fmt.Errorf("parse integration secret: %w", err)
-	}
-	return strings.TrimSpace(creds.APIKey), nil
+	return ticket.ParseKaneoSecret(secret)
 }
 
 func parseJiraPayload(secret []byte) (email, apiToken string, err error) {
-	var creds jiraPayload
-	if err := json.Unmarshal(secret, &creds); err != nil {
-		return "", "", fmt.Errorf("parse integration secret: %w", err)
-	}
-	email = strings.TrimSpace(creds.Email)
-	apiToken = strings.TrimSpace(creds.APIToken)
-	if email == "" {
-		return "", "", errors.New("jira: email is required in integration secret")
-	}
-	if apiToken == "" {
-		return "", "", errors.New("jira: api_token is required in integration secret")
-	}
-	return email, apiToken, nil
+	return ticket.ParseJiraSecret(secret)
 }
 
 func parseLinearPayload(secret []byte) (string, error) {
-	var creds linearPayload
-	if err := json.Unmarshal(secret, &creds); err != nil {
-		return "", fmt.Errorf("parse integration secret: %w", err)
-	}
-	apiKey := strings.TrimSpace(creds.APIKey)
-	if apiKey == "" {
-		return "", errors.New("linear: api_key is required in integration secret")
-	}
-	return apiKey, nil
+	return ticket.ParseLinearSecret(secret)
 }
 
 func requireBaseURL(baseURL *string, kind string) (string, error) {

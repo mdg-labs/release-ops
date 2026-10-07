@@ -204,6 +204,7 @@ const KaneoCreateConfigWorkspaceID = "workspaceId"
 // TicketWebURL implements TicketProvider.
 // Kaneo task pages live at {web}/dashboard/workspace/{workspaceId}/project/{projectId}/task/{taskId};
 // the workspace ID comes from create_config.workspaceId and the project from external_project_id.
+// When workspaceId is missing it returns "" (no link) per specs §6.4.
 func (p *KaneoProvider) TicketWebURL(project TicketProject, externalID string) (string, error) {
 	externalID = strings.TrimSpace(externalID)
 	if externalID == "" {
@@ -218,7 +219,8 @@ func (p *KaneoProvider) TicketWebURL(project TicketProject, externalID string) (
 		workspaceID = strings.TrimSpace(raw)
 	}
 	if workspaceID == "" {
-		return "", errors.New("kaneo: create_config.workspaceId is required for ticket web url")
+		// Specs §6.4: without a workspace the link is omitted.
+		return "", nil
 	}
 	webBase := kaneoWebBase(p.baseURL)
 	return webBase + "/dashboard/workspace/" + url.PathEscape(workspaceID) +

@@ -3,6 +3,7 @@ package poll
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -38,6 +39,19 @@ type RepoEvaluation struct {
 	Actions []string
 	Repo    *store.MonitoredRepo
 	Detail  string
+}
+
+// hasError reports whether the evaluation recorded an error action.
+func (e *RepoEvaluation) hasError() bool {
+	if e == nil {
+		return false
+	}
+	for _, action := range e.Actions {
+		if action == ActionError {
+			return true
+		}
+	}
+	return false
 }
 
 // EvaluateRepo applies release decision logic and updates monitored_repos poll state (specs §5.1–§5.2).
@@ -320,25 +334,8 @@ func (e *Engine) applySupersede(
 		return e.recordError(ctx, repo, fmt.Errorf("create ticket after supersede: %w", err))
 	}
 
-	newTicketURL, err := provider.TicketWebURL(project, externalID)
-	if err != nil {
-		return e.recordError(ctx, repo, fmt.Errorf("resolve new ticket web url: %w", err))
-	}
-
-	supersedeCtx.NewTicketURL = newTicketURL
-	comment, err := e.renderSupersedeComment(repo, release, project, repoWebURL, supersedeCtx)
-	if err != nil {
-		return e.recordError(ctx, repo, fmt.Errorf("render supersede comment: %w", err))
-	}
-
-	if err := provider.UpdateTicketStatus(ctx, oldID, project.StatusMapping.Superseded); err != nil {
-		return e.recordError(ctx, repo, fmt.Errorf("supersede ticket status: %w", err))
-	}
-
-	if err := provider.AddTicketComment(ctx, oldID, comment); err != nil {
-		return e.recordError(ctx, repo, fmt.Errorf("supersede ticket comment: %w", err))
-	}
-
+	// Persist the new ticket before touching the old one so a later failure cannot
+	// orphan it and the next poll does not create a duplicate for the same tag.
 	now := pollNowUTC()
 	tag := release.Tag
 	update := basePollUpdate(repo)
@@ -352,7 +349,60 @@ func (e *Engine) applySupersede(
 	if err != nil {
 		return nil, err
 	}
+
+	// The old ticket is updated best-effort: failures are reported on the repo
+	// (last_error + error event) but never undo the created ticket.
+	if supersedeErr := e.supersedeOldTicket(ctx, repo, release, project, provider, repoWebURL, supersedeCtx, oldID, externalID); supersedeErr != nil {
+		msg := fmt.Sprintf("supersede ticket %s: %v", oldID, supersedeErr)
+		update.LastError = &msg
+		updated, err = e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+		if err != nil {
+			return nil, err
+		}
+		return &RepoEvaluation{Actions: []string{ActionCreate, ActionError}, Repo: updated, Detail: msg}, nil
+	}
+
 	return &RepoEvaluation{Actions: []string{ActionSupersede, ActionCreate}, Repo: updated}, nil
+}
+
+// supersedeOldTicket moves the old ticket to the superseded status and adds the
+// supersede comment (specs §5.2.1 steps 2–5). The status transition is attempted even
+// when the comment cannot be rendered.
+func (e *Engine) supersedeOldTicket(
+	ctx context.Context,
+	repo store.MonitoredRepo,
+	release *source.Release,
+	project ticket.TicketProject,
+	provider ticket.TicketProvider,
+	repoWebURL string,
+	supersedeCtx *tickettemplate.SupersedeContext,
+	oldID, newID string,
+) error {
+	var errs []error
+
+	comment := ""
+	newTicketURL, err := provider.TicketWebURL(project, newID)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("resolve new ticket web url: %w", err))
+	} else {
+		supersedeCtx.NewTicketURL = newTicketURL
+		comment, err = e.renderSupersedeComment(repo, release, project, repoWebURL, supersedeCtx)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("render supersede comment: %w", err))
+		}
+	}
+
+	if err := provider.UpdateTicketStatus(ctx, oldID, project.StatusMapping.Superseded); err != nil {
+		errs = append(errs, fmt.Errorf("status: %w", err))
+	}
+
+	if comment != "" {
+		if err := provider.AddTicketComment(ctx, oldID, comment); err != nil {
+			errs = append(errs, fmt.Errorf("comment: %w", err))
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 func (e *Engine) applyMerge(

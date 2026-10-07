@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mdg-labs/release-ops/internal/poll"
+	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 	"github.com/mdg-labs/release-ops/internal/store"
 )
 
@@ -371,5 +372,51 @@ func TestSchedulerTriggerRecordsManualTriggerSource(t *testing.T) {
 
 	if recordedSource != store.PollTriggerSourceManual {
 		t.Fatalf("trigger_source = %q, want %q", recordedSource, store.PollTriggerSourceManual)
+	}
+}
+
+func TestSchedulerRunAllRecordsEngineErrors(t *testing.T) {
+	t.Parallel()
+
+	repos := []store.MonitoredRepo{
+		{ID: "repo-1", Enabled: true},
+		{ID: "repo-2", Enabled: true},
+	}
+
+	var finishStatus, finishErrors string
+	pollRepo := &schedulerMockPollRepo{
+		finishRunFn: func(_ context.Context, _ string, status string, reposChecked int64, _, _ int64, errorsJSON string) (*store.PollRun, error) {
+			finishStatus = status
+			finishErrors = errorsJSON
+			return &store.PollRun{ReposChecked: reposChecked}, nil
+		},
+	}
+	engine := poll.NewEngine(newMockPollRepo(repos[0]))
+
+	scheduler, err := poll.NewScheduler(poll.SchedulerConfig{
+		Engine: engine,
+		Repos:  &schedulerMockReposRepo{repos: repos},
+		Poll:   pollRepo,
+		// Real engine path: a fetch error comes back as an error action with a nil error.
+		PollRepo: func(ctx context.Context, _ string, repo store.MonitoredRepo) (*poll.RepoEvaluation, error) {
+			if repo.ID == "repo-1" {
+				return engine.EvaluateRepo(ctx, repo, nil, errors.New("rate limited"), ticket.TicketProject{}, nil, "")
+			}
+			return &poll.RepoEvaluation{Actions: []string{poll.ActionSkip}, Repo: &repo}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewScheduler: %v", err)
+	}
+
+	if err := scheduler.RunAll(context.Background(), "run-1"); err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if finishStatus != poll.RunStatusPartial {
+		t.Fatalf("status = %q, want %q", finishStatus, poll.RunStatusPartial)
+	}
+	want := `[{"repoId":"repo-1","message":"rate limited"}]`
+	if finishErrors != want {
+		t.Fatalf("errors_json = %s, want %s", finishErrors, want)
 	}
 }

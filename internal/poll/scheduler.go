@@ -2,7 +2,6 @@ package poll
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -156,20 +155,24 @@ func (s *Scheduler) RunAll(ctx context.Context, runID string) error {
 		runErrors         []RunErrorEntry
 	)
 
+	integrations := newIntegrationCache(s.integrations)
+
 	for i := range repos {
 		repo := repos[i]
 		reposChecked++
 
-		eval, pollErr := s.pollOneRepo(ctx, runID, repo)
+		eval, pollErr := s.pollOneRepo(ctx, runID, repo, integrations)
 		if pollErr != nil {
 			runErrors = append(runErrors, RunErrorEntry{
 				RepoID:  repo.ID,
 				Message: pollErr.Error(),
 			})
-			if eval != nil {
-				s.recordEvaluation(ctx, runID, repo.ID, eval, &ticketsCreated, &ticketsSuperseded)
-			}
-			continue
+		} else if eval.hasError() {
+			// The engine reports fetch/ticket failures as an error action with a nil error.
+			runErrors = append(runErrors, RunErrorEntry{
+				RepoID:  repo.ID,
+				Message: eval.Detail,
+			})
 		}
 		if eval != nil {
 			s.recordEvaluation(ctx, runID, repo.ID, eval, &ticketsCreated, &ticketsSuperseded)
@@ -188,14 +191,19 @@ func (s *Scheduler) RunAll(ctx context.Context, runID string) error {
 	return nil
 }
 
-func (s *Scheduler) pollOneRepo(ctx context.Context, runID string, repo store.MonitoredRepo) (*RepoEvaluation, error) {
+func (s *Scheduler) pollOneRepo(
+	ctx context.Context,
+	runID string,
+	repo store.MonitoredRepo,
+	integrations *integrationCache,
+) (*RepoEvaluation, error) {
 	if s.pollRepoFn != nil {
 		return s.pollRepoFn(ctx, runID, repo)
 	}
-	return s.defaultPollRepo(ctx, runID, repo)
+	return s.defaultPollRepo(ctx, repo, integrations)
 }
 
-func (s *Scheduler) defaultPollRepo(ctx context.Context, _ string, repo store.MonitoredRepo) (*RepoEvaluation, error) {
+func (s *Scheduler) defaultPollRepo(ctx context.Context, repo store.MonitoredRepo, integrations *integrationCache) (*RepoEvaluation, error) {
 	if s.ticketProjects == nil || s.integrations == nil {
 		return nil, errors.New("ticket projects and integrations repositories are required")
 	}
@@ -205,32 +213,47 @@ func (s *Scheduler) defaultPollRepo(ctx context.Context, _ string, repo store.Mo
 		return nil, fmt.Errorf("load ticket project: %w", err)
 	}
 
-	ticketIntegration, err := s.integrations.Get(ctx, tpRow.IntegrationID)
+	ticketIntegration, err := integrations.get(ctx, tpRow.IntegrationID)
 	if err != nil {
 		return nil, fmt.Errorf("load ticket integration: %w", err)
 	}
 
-	ticketProject, err := TicketProjectFromStore(*tpRow, ticketIntegration.Kind)
+	ticketProject, err := TicketProjectFromStore(*tpRow, ticketIntegration.integration.Kind)
 	if err != nil {
 		return nil, err
 	}
 
-	ticketProvider, err := s.resolveTicketProvider(ctx, tpRow.IntegrationID)
+	ticketProvider, err := ticket.NewProviderFromIntegration(
+		ticketIntegration.integration.Kind,
+		ticketIntegration.integration.BaseURL,
+		ticketIntegration.secret,
+		s.httpClient,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	sourceIntegrationBaseURL, err := s.sourceIntegrationBaseURL(ctx, repo)
-	if err != nil {
-		return nil, err
+	var sourceIntegration *resolvedIntegration
+	if repo.SourceIntegrationID != nil && *repo.SourceIntegrationID != "" {
+		sourceIntegration, err = integrations.get(ctx, *repo.SourceIntegrationID)
+		if err != nil {
+			return nil, fmt.Errorf("load source integration: %w", err)
+		}
+		if sourceIntegration.integration.Kind != repo.SourceKind {
+			return nil, fmt.Errorf("integration kind %q does not match repo source_kind %q", sourceIntegration.integration.Kind, repo.SourceKind)
+		}
 	}
 
-	repoWebURL, err := ResolveRepoWebURL(repo, sourceIntegrationBaseURL)
+	var sourceBaseURL *string
+	if sourceIntegration != nil {
+		sourceBaseURL = sourceIntegration.integration.BaseURL
+	}
+	repoWebURL, err := ResolveRepoWebURL(repo, sourceBaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("resolve repo web url: %w", err)
 	}
 
-	sourceProvider, err := s.resolveSourceProvider(ctx, repo)
+	sourceProvider, err := s.newSourceProvider(repo, sourceIntegration)
 	if err != nil {
 		return nil, err
 	}
@@ -367,59 +390,49 @@ func ClampPollIntervalMinutes(minutes int64) int64 {
 	return minutes
 }
 
-type tokenPayload struct {
-	Token string `json:"token"`
+// resolvedIntegration is an integration row with its decrypted secret payload.
+type resolvedIntegration struct {
+	integration *store.Integration
+	secret      []byte
 }
 
-type kaneoPayload struct {
-	APIKey string `json:"api_key"`
+// integrationCache loads and decrypts each integration at most once per poll run.
+type integrationCache struct {
+	repo    store.IntegrationRepository
+	entries map[string]*resolvedIntegration
 }
 
-type jiraPayload struct {
-	Email    string `json:"email"`
-	APIToken string `json:"api_token"`
+func newIntegrationCache(repo store.IntegrationRepository) *integrationCache {
+	return &integrationCache{repo: repo, entries: make(map[string]*resolvedIntegration)}
 }
 
-type linearPayload struct {
-	APIKey string `json:"api_key"`
-}
-
-func (s *Scheduler) sourceIntegrationBaseURL(ctx context.Context, repo store.MonitoredRepo) (*string, error) {
-	if repo.SourceIntegrationID == nil || *repo.SourceIntegrationID == "" {
-		return nil, nil
+func (c *integrationCache) get(ctx context.Context, id string) (*resolvedIntegration, error) {
+	if entry, ok := c.entries[id]; ok {
+		return entry, nil
 	}
-	integration, err := s.integrations.Get(ctx, *repo.SourceIntegrationID)
+	integration, err := c.repo.Get(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("load source integration: %w", err)
+		return nil, err
 	}
-	if integration.Kind != repo.SourceKind {
-		return nil, fmt.Errorf("integration kind %q does not match repo source_kind %q", integration.Kind, repo.SourceKind)
+	secret, err := c.repo.DecryptPayload(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt integration: %w", err)
 	}
-	return integration.BaseURL, nil
+	entry := &resolvedIntegration{integration: integration, secret: secret}
+	c.entries[id] = entry
+	return entry, nil
 }
 
-func (s *Scheduler) resolveSourceProvider(ctx context.Context, repo store.MonitoredRepo) (source.SourceProvider, error) {
+func (s *Scheduler) newSourceProvider(repo store.MonitoredRepo, integration *resolvedIntegration) (source.SourceProvider, error) {
 	var token string
 	var baseURL *string
-
-	if repo.SourceIntegrationID != nil && *repo.SourceIntegrationID != "" {
-		integration, err := s.integrations.Get(ctx, *repo.SourceIntegrationID)
+	if integration != nil {
+		parsed, err := source.ParseTokenSecret(integration.secret)
 		if err != nil {
-			return nil, fmt.Errorf("load source integration: %w", err)
-		}
-		if integration.Kind != repo.SourceKind {
-			return nil, fmt.Errorf("integration kind %q does not match repo source_kind %q", integration.Kind, repo.SourceKind)
-		}
-		payload, err := s.integrations.DecryptPayload(ctx, integration.ID)
-		if err != nil {
-			return nil, fmt.Errorf("decrypt source integration: %w", err)
-		}
-		var creds tokenPayload
-		if err := json.Unmarshal(payload, &creds); err != nil {
 			return nil, fmt.Errorf("parse source integration payload: %w", err)
 		}
-		token = creds.Token
-		baseURL = integration.BaseURL
+		token = parsed
+		baseURL = integration.integration.BaseURL
 	}
 
 	switch repo.SourceKind {
@@ -444,46 +457,5 @@ func (s *Scheduler) resolveSourceProvider(ctx context.Context, repo store.Monito
 		return source.NewForgejoSource(*baseURL, token, s.httpClient)
 	default:
 		return nil, fmt.Errorf("unsupported source_kind %q", repo.SourceKind)
-	}
-}
-
-func (s *Scheduler) resolveTicketProvider(ctx context.Context, integrationID string) (ticket.TicketProvider, error) {
-	integration, err := s.integrations.Get(ctx, integrationID)
-	if err != nil {
-		return nil, fmt.Errorf("load ticket integration: %w", err)
-	}
-
-	payload, err := s.integrations.DecryptPayload(ctx, integration.ID)
-	if err != nil {
-		return nil, fmt.Errorf("decrypt ticket integration: %w", err)
-	}
-
-	switch integration.Kind {
-	case "kaneo":
-		if integration.BaseURL == nil || *integration.BaseURL == "" {
-			return nil, errors.New("kaneo integration requires base_url")
-		}
-		var creds kaneoPayload
-		if err := json.Unmarshal(payload, &creds); err != nil {
-			return nil, fmt.Errorf("parse kaneo payload: %w", err)
-		}
-		return ticket.NewKaneoProvider(*integration.BaseURL, creds.APIKey, s.httpClient)
-	case "jira":
-		if integration.BaseURL == nil || *integration.BaseURL == "" {
-			return nil, errors.New("jira integration requires base_url")
-		}
-		var creds jiraPayload
-		if err := json.Unmarshal(payload, &creds); err != nil {
-			return nil, fmt.Errorf("parse jira payload: %w", err)
-		}
-		return ticket.NewJiraProvider(*integration.BaseURL, creds.Email, creds.APIToken, s.httpClient)
-	case "linear":
-		var creds linearPayload
-		if err := json.Unmarshal(payload, &creds); err != nil {
-			return nil, fmt.Errorf("parse linear payload: %w", err)
-		}
-		return ticket.NewLinearProvider(creds.APIKey, s.httpClient)
-	default:
-		return nil, fmt.Errorf("unsupported ticket integration kind %q", integration.Kind)
 	}
 }

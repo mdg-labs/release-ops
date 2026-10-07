@@ -30,15 +30,19 @@ func TestKaneoTicketWebURL(t *testing.T) {
 	}
 }
 
-func TestKaneoTicketWebURLRequiresWorkspace(t *testing.T) {
+func TestKaneoTicketWebURLOmittedWithoutWorkspace(t *testing.T) {
 	t.Parallel()
 
 	provider, err := ticket.NewKaneoProvider("https://cloud.kaneo.app", "key", nil)
 	if err != nil {
 		t.Fatalf("NewKaneoProvider: %v", err)
 	}
-	if _, err := provider.TicketWebURL(ticket.TicketProject{ExternalProjectID: "proj-1"}, "task-123"); err == nil {
-		t.Fatal("expected error when create_config.workspaceId is missing")
+	got, err := provider.TicketWebURL(ticket.TicketProject{ExternalProjectID: "proj-1"}, "task-123")
+	if err != nil {
+		t.Fatalf("TicketWebURL without workspaceId: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("TicketWebURL without workspaceId = %q, want empty (link omitted, specs §6.4)", got)
 	}
 	if _, err := provider.TicketWebURL(ticket.TicketProject{CreateConfig: map[string]any{"workspaceId": "ws-1"}}, "task-123"); err == nil {
 		t.Fatal("expected error when external_project_id is missing")
