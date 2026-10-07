@@ -42,7 +42,19 @@ type FinishRunParams struct {
 	ID                string         `json:"id"`
 }
 
-func (q *Queries) FinishRun(ctx context.Context, arg FinishRunParams) (PollRun, error) {
+type FinishRunRow struct {
+	ID                string         `json:"id"`
+	StartedAt         string         `json:"started_at"`
+	FinishedAt        sql.NullString `json:"finished_at"`
+	Status            string         `json:"status"`
+	TriggerSource     string         `json:"trigger_source"`
+	ReposChecked      int64          `json:"repos_checked"`
+	TicketsCreated    int64          `json:"tickets_created"`
+	TicketsSuperseded int64          `json:"tickets_superseded"`
+	ErrorsJson        string         `json:"errors_json"`
+}
+
+func (q *Queries) FinishRun(ctx context.Context, arg FinishRunParams) (FinishRunRow, error) {
 	row := q.db.QueryRowContext(ctx, finishRun,
 		arg.FinishedAt,
 		arg.Status,
@@ -52,7 +64,7 @@ func (q *Queries) FinishRun(ctx context.Context, arg FinishRunParams) (PollRun, 
 		arg.ErrorsJson,
 		arg.ID,
 	)
-	var i PollRun
+	var i FinishRunRow
 	err := row.Scan(
 		&i.ID,
 		&i.StartedAt,
@@ -83,9 +95,21 @@ WHERE id = ?
 LIMIT 1
 `
 
-func (q *Queries) GetPollRun(ctx context.Context, id string) (PollRun, error) {
+type GetPollRunRow struct {
+	ID                string         `json:"id"`
+	StartedAt         string         `json:"started_at"`
+	FinishedAt        sql.NullString `json:"finished_at"`
+	Status            string         `json:"status"`
+	TriggerSource     string         `json:"trigger_source"`
+	ReposChecked      int64          `json:"repos_checked"`
+	TicketsCreated    int64          `json:"tickets_created"`
+	TicketsSuperseded int64          `json:"tickets_superseded"`
+	ErrorsJson        string         `json:"errors_json"`
+}
+
+func (q *Queries) GetPollRun(ctx context.Context, id string) (GetPollRunRow, error) {
 	row := q.db.QueryRowContext(ctx, getPollRun, id)
-	var i PollRun
+	var i GetPollRunRow
 	err := row.Scan(
 		&i.ID,
 		&i.StartedAt,
@@ -116,9 +140,21 @@ RETURNING
   errors_json
 `
 
-func (q *Queries) IncrementPollRunReposChecked(ctx context.Context, id string) (PollRun, error) {
+type IncrementPollRunReposCheckedRow struct {
+	ID                string         `json:"id"`
+	StartedAt         string         `json:"started_at"`
+	FinishedAt        sql.NullString `json:"finished_at"`
+	Status            string         `json:"status"`
+	TriggerSource     string         `json:"trigger_source"`
+	ReposChecked      int64          `json:"repos_checked"`
+	TicketsCreated    int64          `json:"tickets_created"`
+	TicketsSuperseded int64          `json:"tickets_superseded"`
+	ErrorsJson        string         `json:"errors_json"`
+}
+
+func (q *Queries) IncrementPollRunReposChecked(ctx context.Context, id string) (IncrementPollRunReposCheckedRow, error) {
 	row := q.db.QueryRowContext(ctx, incrementPollRunReposChecked, id)
-	var i PollRun
+	var i IncrementPollRunReposCheckedRow
 	err := row.Scan(
 		&i.ID,
 		&i.StartedAt,
@@ -149,9 +185,21 @@ RETURNING
   errors_json
 `
 
-func (q *Queries) IncrementPollRunTicketsCreated(ctx context.Context, id string) (PollRun, error) {
+type IncrementPollRunTicketsCreatedRow struct {
+	ID                string         `json:"id"`
+	StartedAt         string         `json:"started_at"`
+	FinishedAt        sql.NullString `json:"finished_at"`
+	Status            string         `json:"status"`
+	TriggerSource     string         `json:"trigger_source"`
+	ReposChecked      int64          `json:"repos_checked"`
+	TicketsCreated    int64          `json:"tickets_created"`
+	TicketsSuperseded int64          `json:"tickets_superseded"`
+	ErrorsJson        string         `json:"errors_json"`
+}
+
+func (q *Queries) IncrementPollRunTicketsCreated(ctx context.Context, id string) (IncrementPollRunTicketsCreatedRow, error) {
 	row := q.db.QueryRowContext(ctx, incrementPollRunTicketsCreated, id)
-	var i PollRun
+	var i IncrementPollRunTicketsCreatedRow
 	err := row.Scan(
 		&i.ID,
 		&i.StartedAt,
@@ -182,9 +230,21 @@ RETURNING
   errors_json
 `
 
-func (q *Queries) IncrementPollRunTicketsSuperseded(ctx context.Context, id string) (PollRun, error) {
+type IncrementPollRunTicketsSupersededRow struct {
+	ID                string         `json:"id"`
+	StartedAt         string         `json:"started_at"`
+	FinishedAt        sql.NullString `json:"finished_at"`
+	Status            string         `json:"status"`
+	TriggerSource     string         `json:"trigger_source"`
+	ReposChecked      int64          `json:"repos_checked"`
+	TicketsCreated    int64          `json:"tickets_created"`
+	TicketsSuperseded int64          `json:"tickets_superseded"`
+	ErrorsJson        string         `json:"errors_json"`
+}
+
+func (q *Queries) IncrementPollRunTicketsSuperseded(ctx context.Context, id string) (IncrementPollRunTicketsSupersededRow, error) {
 	row := q.db.QueryRowContext(ctx, incrementPollRunTicketsSuperseded, id)
-	var i PollRun
+	var i IncrementPollRunTicketsSupersededRow
 	err := row.Scan(
 		&i.ID,
 		&i.StartedAt,
@@ -284,9 +344,21 @@ type InsertRunParams struct {
 	TriggerSource string `json:"trigger_source"`
 }
 
-func (q *Queries) InsertRun(ctx context.Context, arg InsertRunParams) (PollRun, error) {
+type InsertRunRow struct {
+	ID                string         `json:"id"`
+	StartedAt         string         `json:"started_at"`
+	FinishedAt        sql.NullString `json:"finished_at"`
+	Status            string         `json:"status"`
+	TriggerSource     string         `json:"trigger_source"`
+	ReposChecked      int64          `json:"repos_checked"`
+	TicketsCreated    int64          `json:"tickets_created"`
+	TicketsSuperseded int64          `json:"tickets_superseded"`
+	ErrorsJson        string         `json:"errors_json"`
+}
+
+func (q *Queries) InsertRun(ctx context.Context, arg InsertRunParams) (InsertRunRow, error) {
 	row := q.db.QueryRowContext(ctx, insertRun, arg.ID, arg.StartedAt, arg.TriggerSource)
-	var i PollRun
+	var i InsertRunRow
 	err := row.Scan(
 		&i.ID,
 		&i.StartedAt,
@@ -366,15 +438,27 @@ type ListPollRunsParams struct {
 	Offset int64 `json:"offset"`
 }
 
-func (q *Queries) ListPollRuns(ctx context.Context, arg ListPollRunsParams) ([]PollRun, error) {
+type ListPollRunsRow struct {
+	ID                string         `json:"id"`
+	StartedAt         string         `json:"started_at"`
+	FinishedAt        sql.NullString `json:"finished_at"`
+	Status            string         `json:"status"`
+	TriggerSource     string         `json:"trigger_source"`
+	ReposChecked      int64          `json:"repos_checked"`
+	TicketsCreated    int64          `json:"tickets_created"`
+	TicketsSuperseded int64          `json:"tickets_superseded"`
+	ErrorsJson        string         `json:"errors_json"`
+}
+
+func (q *Queries) ListPollRuns(ctx context.Context, arg ListPollRunsParams) ([]ListPollRunsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listPollRuns, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []PollRun
+	var items []ListPollRunsRow
 	for rows.Next() {
-		var i PollRun
+		var i ListPollRunsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.StartedAt,

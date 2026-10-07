@@ -90,25 +90,7 @@ Release Ops is free to self-host under the [AGPL-3.0](LICENSE). A hosted version
 
 ## Upgrading
 
-### Phasical → Kaneo (migration `000007_rename_phasical_to_kaneo`)
-
-The Phasical ticket integration has been replaced by **Kaneo** (`kind = kaneo`, e.g. base URL `https://cloud.kaneo.app`). Existing Phasical integrations are **not** converted.
-
-**Before upgrading**, delete every Phasical integration in the web UI. You must first delete the monitored repos and ticket projects that use it. After the upgrade, re-create the integration as Kaneo.
-
-If an instance still has a `phasical` integration, `/app/migrate` refuses to run migration 000007: the container exits with a message saying how many Phasical integrations block the upgrade, and the database is left untouched. Start the previous image, delete them, then upgrade again.
-
-Databases that already hit the bare `CHECK constraint failed` abort (before this check existed) are left at version **7 / dirty**. To recover:
-
-1. Stop the container. Then, against the SQLite volume (`APP_DB_PATH`, default `/data/app.db`), reset the migration state to 6 with the upstream [golang-migrate CLI](https://github.com/golang-migrate/migrate) `migrate -path migrations -database "sqlite:///data/app.db" force 6`. Alternatively, run `UPDATE schema_migrations SET version = 6, dirty = 0;` with `sqlite3`. The bundled `/app/migrate` only supports `up`/`down`.
-2. Delete the Phasical rows together with their dependent ticket projects and monitored repos. Run the whole block in **one** `sqlite3` session. `sqlite3` has foreign keys off by default, and the pragma makes the cascades clean up notification links and poll events:
-   ```sql
-   PRAGMA foreign_keys = ON;
-   DELETE FROM monitored_repos WHERE ticket_project_id IN (SELECT id FROM ticket_projects WHERE integration_id IN (SELECT id FROM integrations WHERE kind = 'phasical'));
-   DELETE FROM ticket_projects WHERE integration_id IN (SELECT id FROM integrations WHERE kind = 'phasical');
-   DELETE FROM integrations WHERE kind = 'phasical';
-   ```
-3. Restart the container. Migration 000007 then applies cleanly.
+The database migrations were reset to a single baseline. A `/data` volume created by an image from before that reset cannot be opened by this version: stop the container, remove the old `app.db` (or the whole volume) and start again to create a fresh database. This applies once; later releases add migrations on top of the baseline and apply them automatically on start, after saving a snapshot under `/data/snapshots`.
 
 ## Documentation
 
@@ -128,7 +110,7 @@ Build the docs site locally: `npm run docs:sync && npm run dev:docs`.
 
 ## Development
 
-Prerequisites: Go 1.25+, Node.js 22+, `sqlite3` + `sqldiff` (for `npm run db:check`).
+Prerequisites: Go 1.26+, Node.js 22+.
 
 ```bash
 npm install
@@ -142,8 +124,7 @@ npm test && npm run lint && npm run typecheck
 | `npm run dev:docs`                | Starlight docs site (`apps/docs`, port 4321)  |
 | `npm run docs:build`              | Sync + build static docs for GitHub Pages     |
 | `go run ./cmd/server`             | Go API + poll scheduler (port 8080)           |
-| `make migrate-diff name=<change>` | Generate migration from `db/schema.sql` drift |
-| `make migrate-up`                 | Apply pending migrations locally              |
+| `make db-migration name=<change>` | Generate migration from `db/schema.sql` changes |
 | `make sqlc-generate`              | Regenerate typed SQL from `queries/`          |
 
 Local Go server expects `SESSION_SECRET`, `APP_ENCRYPTION_KEY`, and `APP_DB_PATH` (see [spec §9](https://mdg-labs.github.io/release-ops/spec/#env)).
@@ -176,7 +157,7 @@ Release Ops is built with these open-source projects (among others). Thank you t
 | ------------------------------------------------------------- | --------------------- |
 | [chi](https://github.com/go-chi/chi)                          | HTTP router           |
 | [alexedwards/scs](https://github.com/alexedwards/scs)         | Session management    |
-| [golang-migrate](https://github.com/golang-migrate/migrate)   | Database migrations   |
+| [sqlite-migrate](https://github.com/mdg-labs/sqlite-migrate)  | Database migrations   |
 | [sqlc](https://sqlc.dev/)                                     | Typed SQL queries     |
 | [modernc.org/sqlite](https://gitlab.com/cznic/sqlite)         | Pure-Go SQLite driver |
 | [robfig/cron](https://github.com/robfig/cron)                 | Poll scheduler        |

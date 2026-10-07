@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/golang-migrate/migrate/v4"
 	"github.com/mdg-labs/release-ops/internal/crypto"
 	"github.com/mdg-labs/release-ops/internal/store"
 	"github.com/mdg-labs/release-ops/internal/store/db"
+	"github.com/mdg-labs/release-ops/internal/store/storetest"
 )
 
 const testKeyHex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -39,17 +39,7 @@ func testStore(t *testing.T) (*store.Store, *crypto.Cipher) {
 func openMigratedDB(t *testing.T, dbPath string) *sql.DB {
 	t.Helper()
 
-	migrationsURL := migrationSourceURL(t)
-	m, err := newMigrator(t, dbPath, migrationsURL)
-	if err != nil {
-		t.Fatalf("newMigrator: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = m.Close()
-	})
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		t.Fatalf("migrate up: %v", err)
-	}
+	storetest.Migrate(t, dbPath)
 
 	sqlDB, err := store.OpenPath(dbPath)
 	if err != nil {
@@ -224,9 +214,9 @@ func TestUpdatePollStateOnMonitoredRepo(t *testing.T) {
 		LastKnownTag:           &tag,
 		LastReleasePublishedAt: &polledAt,
 		LastPolledAt:           &polledAt,
-		OpenTicketExternalID: &ticketID,
-		OpenTicketTag:        &openTag,
-		LastError:            nil,
+		OpenTicketExternalID:   &ticketID,
+		OpenTicketTag:          &openTag,
+		LastError:              nil,
 	})
 	if err != nil {
 		t.Fatalf("UpdatePollState: %v", err)
@@ -371,10 +361,10 @@ func seedRepoFixture(t *testing.T, s *store.Store, ctx context.Context) repoFixt
 	t.Helper()
 
 	integration, err := s.Integrations().Create(ctx, store.CreateIntegrationInput{
-		Kind:   "kaneo",
-		Name:   "Kaneo",
+		Kind:    "kaneo",
+		Name:    "Kaneo",
 		BaseURL: strPtr("https://api.kaneo.example"),
-		Secret: []byte(`{"api_key":"test"}`),
+		Secret:  []byte(`{"api_key":"test"}`),
 	})
 	if err != nil {
 		t.Fatalf("Create integration: %v", err)

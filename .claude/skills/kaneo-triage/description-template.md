@@ -27,7 +27,7 @@ Title is set separately via the `title` field — see [summary-patterns.md](summ
 
 | Gate | Effect |
 | --- | --- |
-| <condition, constraint or hard rule, e.g. CHECK in `db/schema.sql`, `make migrate-diff`-only rule> | <what breaks or what it forces> |
+| <condition, constraint or hard rule, e.g. CHECK in `db/schema.sql`, `make db-migration`-only rule> | <what breaks or what it forces> |
 
 ## Suspects / work items (ranked)
 
@@ -49,7 +49,7 @@ Title is set separately via the `title` field — see [summary-patterns.md](summ
 
 - [ ] <user-visible or contract outcome>
 - [ ] <behaviour covered by updated/added tests>
-- [ ] Schema change via `make migrate-diff` only; `npm run db:check` passes   <!-- schema work only -->
+- [ ] Schema change via `make db-migration` only; `npm run db:check` passes   <!-- schema work only -->
 - [ ] Reachable via: <entry point> → <fixed behaviour>   <!-- runtime behaviour only -->
 - [ ] `go test ./...`, `golangci-lint run`, `npm test`, `npm run lint`, `npm run typecheck` pass
 

@@ -4,11 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -16,9 +14,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/google/uuid"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/crypto"
@@ -26,6 +21,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/providers/integrationtester"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
+	"github.com/mdg-labs/release-ops/internal/store/storetest"
 	_ "modernc.org/sqlite"
 )
 
@@ -357,17 +353,7 @@ func openRoutesTestDB(t *testing.T) *sql.DB {
 func openRoutesTestDBAt(t *testing.T, dbPath string) *sql.DB {
 	t.Helper()
 
-	migrationsURL := routesTestMigrationSourceURL(t)
-	m, err := newRoutesTestMigrator(t, dbPath, migrationsURL)
-	if err != nil {
-		t.Fatalf("newMigrator: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = m.Close()
-	})
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		t.Fatalf("migrate up: %v", err)
-	}
+	storetest.Migrate(t, dbPath)
 
 	db, err := sql.Open("sqlite", "file:"+dbPath+"?_foreign_keys=on")
 	if err != nil {
@@ -378,37 +364,4 @@ func openRoutesTestDBAt(t *testing.T, dbPath string) *sql.DB {
 		t.Fatalf("ping sqlite: %v", err)
 	}
 	return db
-}
-
-func routesTestMigrationSourceURL(t *testing.T) string {
-	t.Helper()
-
-	root, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatalf("repo root: %v", err)
-	}
-	return "file://" + filepath.Join(root, "migrations")
-}
-
-func newRoutesTestMigrator(t *testing.T, dbPath, migrationsURL string) (*migrate.Migrate, error) {
-	t.Helper()
-
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		return nil, err
-	}
-
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?_foreign_keys=on")
-	if err != nil {
-		return nil, err
-	}
-	t.Cleanup(func() {
-		_ = db.Close()
-	})
-
-	driver, err := sqlite.WithInstance(db, &sqlite.Config{})
-	if err != nil {
-		return nil, err
-	}
-
-	return migrate.NewWithDatabaseInstance(migrationsURL, "sqlite", driver)
 }

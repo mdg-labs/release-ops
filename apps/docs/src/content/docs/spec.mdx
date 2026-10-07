@@ -123,12 +123,23 @@ description: "MVP contract — architecture, APIs, providers, UI, and acceptance
   <h3 id="schema-migrations">4.0 Schema migrations (generated only)</h3>
   <p><strong>Never hand-write</strong> migration SQL. Workflow:</p>
   <ol>
-    <li>Edit <code>db/schema.sql</code> (canonical DDL — not under <code>docs/</code>).</li>
-    <li>Run <code>make migrate-diff name=&lt;change&gt;</code> — <code>scripts/migrate-diff.mjs</code> uses SQLite <code>sqldiff</code> (free, bundled with <code>sqlite3</code>) to generate <code>migrations/*.sql</code>.</li>
-    <li>Review generated <code>.up.sql</code> and <code>.down.sql</code>; commit both.</li>
-    <li>Runtime apply: <code>golang-migrate up</code> in entrypoint (unchanged).</li>
+    <li>Edit <code>db/schema.sql</code> (canonical DDL — not under <code>docs/</code>). Every table is declared <code>STRICT</code>.</li>
+    <li>Run <code>make db-migration name=&lt;change&gt;</code> — <a href="https://github.com/mdg-labs/sqlite-migrate">sqlite-migrate</a> (pinned as a <code>tool</code> in <code>go.mod</code>) diffs <code>db/schema.sql</code> against the existing migrations and writes <code>migrations/&lt;timestamp&gt;_&lt;change&gt;.sql</code> with a checksum header.</li>
+    <li>Review the generated file; commit it unedited. Generated migrations are immutable and there are no down migrations.</li>
+    <li>Runtime apply: the Go server embeds <code>migrations/</code> and applies pending ones on startup, before it opens its connection pool and listens.</li>
   </ol>
-  <p>CI runs <code>npm run db:check</code> — fails if <code>db/schema.sql</code> drifts from applied migrations. Agents: see <code>.claude/rules/11-db-migrations.md</code>.</p>
+  <p>CI runs <code>npm run db:check</code> (<code>sqlite-migrate check</code>) — fails if a migration no longer matches its checksum or if replaying <code>migrations/</code> does not reproduce <code>db/schema.sql</code>. It needs Go only, no database. Agents: see <code>.claude/rules/11-db-migrations.md</code>.</p>
+
+  <h4>Applying migrations safely</h4>
+  <ul>
+    <li><strong>One transaction.</strong> All pending migrations run in a single transaction; a failure rolls the whole batch back, so the database never holds a half-applied or dirty migration state, and the next start reports the same error.</li>
+    <li><strong>Snapshot first.</strong> Before applying, a <code>VACUUM INTO</code> snapshot goes to <code>snapshots/</code> next to <code>app.db</code> (<code>/data/snapshots</code> in the container); the newest three are kept. A start with nothing pending takes no snapshot.</li>
+    <li><strong>Checks before commit.</strong> <code>foreign_key_check</code> and <code>integrity_check</code> run inside the transaction. Foreign keys are suspended while migrating so table rebuilds can span related tables.</li>
+    <li><strong>Destructive changes need consent.</strong> A change that <code>ALTER TABLE</code> cannot express is generated as SQLite's table-rebuild sequence. A change that drops a table or column is refused unless generated with <code>-allow-destructive</code>.</li>
+    <li><strong>Immutable history.</strong> Editing or deleting a migration that a database already applied makes startup fail with a checksum or missing-file error.</li>
+    <li><strong>Existing databases.</strong> Databases created before the migrations were reset to a single baseline are not upgraded; recreate the data volume.</li>
+  </ul>
+  <p><code>internal/store/migrate_test.go</code> covers the runner: a fresh database gets the baseline once and a second start applies nothing; a failing migration leaves the database unchanged; an edited or missing applied migration is rejected; every table is <code>STRICT</code>; and <code>sessions.user_id</code> rejects an unknown user.</p>
 
   <h3>4.0.1 <code>users</code> &amp; <code>sessions</code></h3>
   <p>Auth tables — written only by Go.</p>
@@ -801,7 +812,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string
     <li><strong>One image</strong> <code>ghcr.io/&#123;owner&#125;/release-ops</code> — no separate <code>-web</code> / <code>-worker</code> image.</li>
     <li><code>docker-compose.yml</code>: <strong>one</strong> service <code>release-ops</code>, volume <code>release-ops-data:/data</code>, port <code>3000:3000</code>.</li>
     <li><code>Dockerfile</code> multi-stage: Next standalone build + Go binary + shared runtime layer with <code>docker/entrypoint.sh</code>.</li>
-    <li>Entrypoint: <code>golang-migrate up</code> on <code>app.db</code> → Go on <code>127.0.0.1:8080</code> → Next on <code>:3000</code>.</li>
+    <li>Entrypoint: Go on <code>127.0.0.1:8080</code> (applies pending migrations to <code>app.db</code> before it listens) → Next on <code>:3000</code>.</li>
     <li>Health probe: <code>GET /api/go/healthz</code> or dedicated Next route that proxies Go <code>/healthz</code> — no second service.</li>
     <li>Coolify / simple self-host: one container, one URL, one volume.</li>
     <li>Image publish via GitHub Actions — see <a href="#ci">§11 CI/CD</a>.</li>
@@ -944,7 +955,7 @@ jobs:
     <tr><td>test</td><td><code>go test ./...</code></td><td><code>npm test</code></td></tr>
     <tr><td>typecheck</td><td><code>go vet</code> / optional staticcheck</td><td><code>npm run typecheck</code></td></tr>
     <tr><td>build</td><td><code>go build -o /dev/null ./cmd/server</code></td><td><code>npm run build</code> (production)</td></tr>
-    <tr><td>db</td><td><code>npm run db:check</code> (schema ↔ migrations via <code>sqldiff</code>)</td><td>—</td></tr>
+    <tr><td>db</td><td><code>npm run db:check</code> (schema ↔ migrations via <code>sqlite-migrate check</code>)</td><td>—</td></tr>
   </table>
   <p>All jobs must be green before downstream jobs (images / release) run. No <code>--no-verify</code> in CI.</p>
 

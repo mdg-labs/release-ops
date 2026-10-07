@@ -22,10 +22,10 @@ Start with `.claude/rules/00-project.md` (identity, doc precedence, hard rules) 
 
 ```bash
 npm test && npm run lint && npm run typecheck  # web / root JS — before every commit that touches them
-npm run db:check                               # db/schema.sql, migrations/
+npm run db:check                               # db/schema.sql, migrations/ (sqlite-migrate check; needs Go only)
 go test ./... && golangci-lint run             # Go
 .claude/skills/dev-diff/dev-diff.sh            # dev→main size as CodeRabbit counts it (cap 100)
-make migrate-diff name=<change>                # schema change — edit db/schema.sql first; never hand-write migrations/
+make db-migration name=<change>                # schema change — edit db/schema.sql first; never hand-write migrations/
 ```
 
 ## MCP servers

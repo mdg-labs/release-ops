@@ -91,14 +91,16 @@ reviews:
   - path: "db/schema.sql"
     instructions: |
       Canonical DDL — source of truth for the database. Schema changes must be
-      followed by `make migrate-diff`; never hand-write migrations. Flag any
-      breaking column/type changes and missing indexes on foreign keys.
+      followed by `make db-migration name=<slug>`; never hand-write migrations.
+      Every table must be declared STRICT. Flag any breaking column/type changes
+      and missing indexes on foreign keys.
 
   - path: "migrations/**"
     instructions: |
-      Migrations must be sqldiff-generated from db/schema.sql via
-      `make migrate-diff`. Flag hand-edited or copy-pasted migration SQL.
-      Verify up/down symmetry and that CI `npm run db:check` would pass.
+      Migrations must be generated from db/schema.sql by sqlite-migrate via
+      `make db-migration name=<slug>`. Flag hand-edited or copy-pasted migration SQL
+      and any edit to a migration that already exists (its checksum header must
+      still match). Verify that CI `npm run db:check` would pass.
 
   - path: "apps/web/**"
     instructions: |
@@ -165,9 +167,10 @@ reviews:
       mode: warning
       instructions: |
         If migrations/*.sql or db/schema.sql changed, verify migrations look
-        sqldiff-generated (versioned up/down pair) and schema.sql was updated
-        as the canonical source. Fail if migration SQL appears hand-written or
-        if only migrations changed without a matching schema.sql update.
+        sqlite-migrate-generated (new file with a checksum header, existing files
+        untouched) and schema.sql was updated as the canonical source. Fail if
+        migration SQL appears hand-written or if only migrations changed without
+        a matching schema.sql update.
 
   tools:
     golangci-lint:

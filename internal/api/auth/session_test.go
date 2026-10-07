@@ -2,18 +2,14 @@ package auth_test
 
 import (
 	"database/sql"
-	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
+	"github.com/mdg-labs/release-ops/internal/store/storetest"
 	_ "modernc.org/sqlite"
 )
 
@@ -51,6 +47,7 @@ func TestSessionPersistsAcrossRestart(t *testing.T) {
 	secret := strings.Repeat("s", 32)
 
 	db1 := openMigratedDBAt(t, dbPath)
+	seedSessionUser(t, db1, "user-123")
 	sm1 := auth.NewSessionManager(db1, secret, false)
 
 	var cookie *http.Cookie
@@ -103,53 +100,10 @@ func TestSessionPersistsAcrossRestart(t *testing.T) {
 	}
 }
 
-func migrationSourceURL(t *testing.T) string {
-	t.Helper()
-
-	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
-	if err != nil {
-		t.Fatalf("repo root: %v", err)
-	}
-	return "file://" + filepath.Join(root, "migrations")
-}
-
-func newMigrator(t *testing.T, dbPath, migrationsURL string) (*migrate.Migrate, error) {
-	t.Helper()
-
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		return nil, err
-	}
-
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?_foreign_keys=on")
-	if err != nil {
-		return nil, err
-	}
-	t.Cleanup(func() {
-		_ = db.Close()
-	})
-
-	driver, err := sqlite.WithInstance(db, &sqlite.Config{})
-	if err != nil {
-		return nil, err
-	}
-
-	return migrate.NewWithDatabaseInstance(migrationsURL, "sqlite", driver)
-}
-
 func openMigratedDBAt(t *testing.T, dbPath string) *sql.DB {
 	t.Helper()
 
-	migrationsURL := migrationSourceURL(t)
-	m, err := newMigrator(t, dbPath, migrationsURL)
-	if err != nil {
-		t.Fatalf("newMigrator: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = m.Close()
-	})
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		t.Fatalf("migrate up: %v", err)
-	}
+	storetest.Migrate(t, dbPath)
 
 	db, err := sql.Open("sqlite", "file:"+dbPath+"?_foreign_keys=on")
 	if err != nil {
@@ -168,4 +122,16 @@ func openMigratedDB(t *testing.T) *sql.DB {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "app.db")
 	return openMigratedDBAt(t, dbPath)
+}
+
+func seedSessionUser(t *testing.T, db *sql.DB, id string) {
+	t.Helper()
+
+	_, err := db.Exec(
+		`INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES (?, ?, 'x', '2026-08-06T12:00:00.000Z', '2026-08-06T12:00:00.000Z')`,
+		id, id+"@example.com",
+	)
+	if err != nil {
+		t.Fatalf("seed user %s: %v", id, err)
+	}
 }

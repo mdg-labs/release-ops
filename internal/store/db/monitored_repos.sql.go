@@ -80,7 +80,25 @@ type CreateMonitoredRepoParams struct {
 	UpdatedAt              string         `json:"updated_at"`
 }
 
-func (q *Queries) CreateMonitoredRepo(ctx context.Context, arg CreateMonitoredRepoParams) (MonitoredRepo, error) {
+type CreateMonitoredRepoRow struct {
+	ID                     string         `json:"id"`
+	SourceKind             string         `json:"source_kind"`
+	ProjectPath            string         `json:"project_path"`
+	Enabled                int64          `json:"enabled"`
+	IncludePrereleases     int64          `json:"include_prereleases"`
+	SourceIntegrationID    sql.NullString `json:"source_integration_id"`
+	TicketProjectID        string         `json:"ticket_project_id"`
+	OpenTicketExternalID   sql.NullString `json:"open_ticket_external_id"`
+	OpenTicketTag          sql.NullString `json:"open_ticket_tag"`
+	LastKnownTag           sql.NullString `json:"last_known_tag"`
+	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
+	LastPolledAt           sql.NullString `json:"last_polled_at"`
+	LastError              sql.NullString `json:"last_error"`
+	CreatedAt              string         `json:"created_at"`
+	UpdatedAt              string         `json:"updated_at"`
+}
+
+func (q *Queries) CreateMonitoredRepo(ctx context.Context, arg CreateMonitoredRepoParams) (CreateMonitoredRepoRow, error) {
 	row := q.db.QueryRowContext(ctx, createMonitoredRepo,
 		arg.ID,
 		arg.SourceKind,
@@ -98,7 +116,7 @@ func (q *Queries) CreateMonitoredRepo(ctx context.Context, arg CreateMonitoredRe
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
-	var i MonitoredRepo
+	var i CreateMonitoredRepoRow
 	err := row.Scan(
 		&i.ID,
 		&i.SourceKind,
@@ -151,9 +169,27 @@ WHERE id = ?
 LIMIT 1
 `
 
-func (q *Queries) GetMonitoredRepo(ctx context.Context, id string) (MonitoredRepo, error) {
+type GetMonitoredRepoRow struct {
+	ID                     string         `json:"id"`
+	SourceKind             string         `json:"source_kind"`
+	ProjectPath            string         `json:"project_path"`
+	Enabled                int64          `json:"enabled"`
+	IncludePrereleases     int64          `json:"include_prereleases"`
+	SourceIntegrationID    sql.NullString `json:"source_integration_id"`
+	TicketProjectID        string         `json:"ticket_project_id"`
+	OpenTicketExternalID   sql.NullString `json:"open_ticket_external_id"`
+	OpenTicketTag          sql.NullString `json:"open_ticket_tag"`
+	LastKnownTag           sql.NullString `json:"last_known_tag"`
+	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
+	LastPolledAt           sql.NullString `json:"last_polled_at"`
+	LastError              sql.NullString `json:"last_error"`
+	CreatedAt              string         `json:"created_at"`
+	UpdatedAt              string         `json:"updated_at"`
+}
+
+func (q *Queries) GetMonitoredRepo(ctx context.Context, id string) (GetMonitoredRepoRow, error) {
 	row := q.db.QueryRowContext(ctx, getMonitoredRepo, id)
-	var i MonitoredRepo
+	var i GetMonitoredRepoRow
 	err := row.Scan(
 		&i.ID,
 		&i.SourceKind,
@@ -279,15 +315,33 @@ FROM monitored_repos
 ORDER BY project_path
 `
 
-func (q *Queries) ListMonitoredRepos(ctx context.Context) ([]MonitoredRepo, error) {
+type ListMonitoredReposRow struct {
+	ID                     string         `json:"id"`
+	SourceKind             string         `json:"source_kind"`
+	ProjectPath            string         `json:"project_path"`
+	Enabled                int64          `json:"enabled"`
+	IncludePrereleases     int64          `json:"include_prereleases"`
+	SourceIntegrationID    sql.NullString `json:"source_integration_id"`
+	TicketProjectID        string         `json:"ticket_project_id"`
+	OpenTicketExternalID   sql.NullString `json:"open_ticket_external_id"`
+	OpenTicketTag          sql.NullString `json:"open_ticket_tag"`
+	LastKnownTag           sql.NullString `json:"last_known_tag"`
+	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
+	LastPolledAt           sql.NullString `json:"last_polled_at"`
+	LastError              sql.NullString `json:"last_error"`
+	CreatedAt              string         `json:"created_at"`
+	UpdatedAt              string         `json:"updated_at"`
+}
+
+func (q *Queries) ListMonitoredRepos(ctx context.Context) ([]ListMonitoredReposRow, error) {
 	rows, err := q.db.QueryContext(ctx, listMonitoredRepos)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []MonitoredRepo
+	var items []ListMonitoredReposRow
 	for rows.Next() {
-		var i MonitoredRepo
+		var i ListMonitoredReposRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SourceKind,
@@ -348,9 +402,27 @@ type SetMonitoredRepoEnabledParams struct {
 	ID        string `json:"id"`
 }
 
-func (q *Queries) SetMonitoredRepoEnabled(ctx context.Context, arg SetMonitoredRepoEnabledParams) (MonitoredRepo, error) {
+type SetMonitoredRepoEnabledRow struct {
+	ID                     string         `json:"id"`
+	SourceKind             string         `json:"source_kind"`
+	ProjectPath            string         `json:"project_path"`
+	Enabled                int64          `json:"enabled"`
+	IncludePrereleases     int64          `json:"include_prereleases"`
+	SourceIntegrationID    sql.NullString `json:"source_integration_id"`
+	TicketProjectID        string         `json:"ticket_project_id"`
+	OpenTicketExternalID   sql.NullString `json:"open_ticket_external_id"`
+	OpenTicketTag          sql.NullString `json:"open_ticket_tag"`
+	LastKnownTag           sql.NullString `json:"last_known_tag"`
+	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
+	LastPolledAt           sql.NullString `json:"last_polled_at"`
+	LastError              sql.NullString `json:"last_error"`
+	CreatedAt              string         `json:"created_at"`
+	UpdatedAt              string         `json:"updated_at"`
+}
+
+func (q *Queries) SetMonitoredRepoEnabled(ctx context.Context, arg SetMonitoredRepoEnabledParams) (SetMonitoredRepoEnabledRow, error) {
 	row := q.db.QueryRowContext(ctx, setMonitoredRepoEnabled, arg.Enabled, arg.UpdatedAt, arg.ID)
-	var i MonitoredRepo
+	var i SetMonitoredRepoEnabledRow
 	err := row.Scan(
 		&i.ID,
 		&i.SourceKind,
@@ -411,7 +483,25 @@ type UpdateMonitoredRepoParams struct {
 	ID                  string         `json:"id"`
 }
 
-func (q *Queries) UpdateMonitoredRepo(ctx context.Context, arg UpdateMonitoredRepoParams) (MonitoredRepo, error) {
+type UpdateMonitoredRepoRow struct {
+	ID                     string         `json:"id"`
+	SourceKind             string         `json:"source_kind"`
+	ProjectPath            string         `json:"project_path"`
+	Enabled                int64          `json:"enabled"`
+	IncludePrereleases     int64          `json:"include_prereleases"`
+	SourceIntegrationID    sql.NullString `json:"source_integration_id"`
+	TicketProjectID        string         `json:"ticket_project_id"`
+	OpenTicketExternalID   sql.NullString `json:"open_ticket_external_id"`
+	OpenTicketTag          sql.NullString `json:"open_ticket_tag"`
+	LastKnownTag           sql.NullString `json:"last_known_tag"`
+	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
+	LastPolledAt           sql.NullString `json:"last_polled_at"`
+	LastError              sql.NullString `json:"last_error"`
+	CreatedAt              string         `json:"created_at"`
+	UpdatedAt              string         `json:"updated_at"`
+}
+
+func (q *Queries) UpdateMonitoredRepo(ctx context.Context, arg UpdateMonitoredRepoParams) (UpdateMonitoredRepoRow, error) {
 	row := q.db.QueryRowContext(ctx, updateMonitoredRepo,
 		arg.SourceKind,
 		arg.ProjectPath,
@@ -422,7 +512,7 @@ func (q *Queries) UpdateMonitoredRepo(ctx context.Context, arg UpdateMonitoredRe
 		arg.UpdatedAt,
 		arg.ID,
 	)
-	var i MonitoredRepo
+	var i UpdateMonitoredRepoRow
 	err := row.Scan(
 		&i.ID,
 		&i.SourceKind,
@@ -483,7 +573,25 @@ type UpdatePollStateParams struct {
 	ID                     string         `json:"id"`
 }
 
-func (q *Queries) UpdatePollState(ctx context.Context, arg UpdatePollStateParams) (MonitoredRepo, error) {
+type UpdatePollStateRow struct {
+	ID                     string         `json:"id"`
+	SourceKind             string         `json:"source_kind"`
+	ProjectPath            string         `json:"project_path"`
+	Enabled                int64          `json:"enabled"`
+	IncludePrereleases     int64          `json:"include_prereleases"`
+	SourceIntegrationID    sql.NullString `json:"source_integration_id"`
+	TicketProjectID        string         `json:"ticket_project_id"`
+	OpenTicketExternalID   sql.NullString `json:"open_ticket_external_id"`
+	OpenTicketTag          sql.NullString `json:"open_ticket_tag"`
+	LastKnownTag           sql.NullString `json:"last_known_tag"`
+	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
+	LastPolledAt           sql.NullString `json:"last_polled_at"`
+	LastError              sql.NullString `json:"last_error"`
+	CreatedAt              string         `json:"created_at"`
+	UpdatedAt              string         `json:"updated_at"`
+}
+
+func (q *Queries) UpdatePollState(ctx context.Context, arg UpdatePollStateParams) (UpdatePollStateRow, error) {
 	row := q.db.QueryRowContext(ctx, updatePollState,
 		arg.OpenTicketExternalID,
 		arg.OpenTicketTag,
@@ -494,7 +602,7 @@ func (q *Queries) UpdatePollState(ctx context.Context, arg UpdatePollStateParams
 		arg.UpdatedAt,
 		arg.ID,
 	)
-	var i MonitoredRepo
+	var i UpdatePollStateRow
 	err := row.Scan(
 		&i.ID,
 		&i.SourceKind,

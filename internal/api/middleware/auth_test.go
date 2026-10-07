@@ -2,21 +2,17 @@ package middleware_test
 
 import (
 	"database/sql"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	apimw "github.com/mdg-labs/release-ops/internal/api/middleware"
+	"github.com/mdg-labs/release-ops/internal/store/storetest"
 	_ "modernc.org/sqlite"
 )
 
@@ -61,6 +57,8 @@ func TestRequireSessionAllowsValidSession(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	sm := auth.NewSessionManager(db, strings.Repeat("s", 32), false)
+
+	seedSessionUser(t, db, "user-123")
 
 	var gotUserID string
 	r := chi.NewRouter()
@@ -111,39 +109,7 @@ func openMigratedDB(t *testing.T) *sql.DB {
 
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "app.db")
-
-	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
-	if err != nil {
-		t.Fatalf("repo root: %v", err)
-	}
-	migrationsURL := "file://" + filepath.Join(root, "migrations")
-
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
-	migrateDB, err := sql.Open("sqlite", "file:"+dbPath+"?_foreign_keys=on")
-	if err != nil {
-		t.Fatalf("open sqlite for migrate: %v", err)
-	}
-
-	driver, err := sqlite.WithInstance(migrateDB, &sqlite.Config{})
-	if err != nil {
-		_ = migrateDB.Close()
-		t.Fatalf("sqlite driver: %v", err)
-	}
-
-	m, err := migrate.NewWithDatabaseInstance(migrationsURL, "sqlite", driver)
-	if err != nil {
-		_ = migrateDB.Close()
-		t.Fatalf("newMigrator: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = m.Close()
-	})
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		t.Fatalf("migrate up: %v", err)
-	}
+	storetest.Migrate(t, dbPath)
 
 	db, err := sql.Open("sqlite", "file:"+dbPath+"?_foreign_keys=on")
 	if err != nil {
@@ -157,4 +123,16 @@ func openMigratedDB(t *testing.T) *sql.DB {
 		_ = db.Close()
 	})
 	return db
+}
+
+func seedSessionUser(t *testing.T, db *sql.DB, id string) {
+	t.Helper()
+
+	_, err := db.Exec(
+		`INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES (?, ?, 'x', '2026-08-06T12:00:00.000Z', '2026-08-06T12:00:00.000Z')`,
+		id, id+"@example.com",
+	)
+	if err != nil {
+		t.Fatalf("seed user %s: %v", id, err)
+	}
 }

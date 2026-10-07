@@ -8,7 +8,7 @@ Self-hosted release monitor — polls releases on GitHub, GitLab, Gitea, Forgejo
 
 ## Tech stack
 
-- Go API + polling (`cmd/server`), `sqlc`, `golang-migrate`, SQLite (`app.db`)
+- Go API + polling (`cmd/server`), `sqlc`, `sqlite-migrate`, SQLite (`app.db`)
 - Next.js App Router + COSS UI (`apps/web`) — same container image; auth in Go
 - **next-intl** — all UI strings via message files; ESLint enforces no literals (`10-i18n.md`)
 - Vitest (web), `go test` (server), ESLint, Prettier, golangci-lint
@@ -31,7 +31,7 @@ Deprecated (do not use): old learning-path HTML under <code>docs/</code> — rem
 
 - If behaviour is not defined in a spec doc, **ask before guessing**.
 - Never invent fields, endpoints, or IDs not in the spec.
-- Schema changes only via **sqldiff-generated** migrations — edit `db/schema.sql`, run `make migrate-diff`; never hand-write `migrations/*.sql` (`11-db-migrations.md`)
+- Schema changes only via **sqlite-migrate-generated** migrations — edit `db/schema.sql` (every table `STRICT`), run `make db-migration name=<change>`; never hand-write `migrations/*.sql` (`11-db-migrations.md`)
 - Web UI: **zero hardcoded user-facing strings** — next-intl message keys only (`10-i18n.md`)
 
 ## Agent config

@@ -1,72 +1,64 @@
-package store_test
+package store
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
-	"github.com/mdg-labs/release-ops/internal/store"
+	"github.com/mdg-labs/release-ops/migrations"
+	sqlitemigrate "github.com/mdg-labs/sqlite-migrate"
 	_ "modernc.org/sqlite"
 )
 
-func TestMigrateUpCreatesSchema(t *testing.T) {
+var wantTables = []string{
+	"app_settings",
+	"auth_tokens",
+	"integrations",
+	"monitored_repo_notifications",
+	"monitored_repos",
+	"notification_targets",
+	"poll_run_events",
+	"poll_runs",
+	"sessions",
+	"ticket_projects",
+	"users",
+}
+
+func TestMigrateCreatesStrictSchemaOnce(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "app.db")
-	migrationsURL := migrationSourceURL(t)
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "app.db")
 
-	m, err := newMigrator(t, dbPath, migrationsURL)
+	applied, err := Migrate(ctx, dbPath)
 	if err != nil {
-		t.Fatalf("newMigrator: %v", err)
+		t.Fatalf("Migrate: %v", err)
 	}
-	t.Cleanup(func() {
-		_, _ = m.Close()
-	})
-
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		t.Fatalf("migrate up: %v", err)
+	if len(applied) != 1 {
+		t.Fatalf("applied on empty db = %d migrations, want 1", len(applied))
 	}
+	snapshotsAfterFirst := snapshotCount(t, dbPath)
 
-	version, dirty, err := m.Version()
+	db, err := OpenPath(dbPath)
 	if err != nil {
-		t.Fatalf("migration version: %v", err)
+		t.Fatalf("OpenPath: %v", err)
 	}
-	if dirty {
-		t.Fatal("migration version is dirty")
-	}
-	if version != 7 {
-		t.Fatalf("migration version = %d, want 7", version)
-	}
+	t.Cleanup(func() { _ = db.Close() })
 
-	db, err := store.OpenPath(dbPath)
-	if err != nil {
-		t.Fatalf("open migrated db: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = db.Close()
-	})
-
-	wantTables := []string{
-		"app_settings",
-		"auth_tokens",
-		"integrations",
-		"monitored_repo_notifications",
-		"monitored_repos",
-		"notification_targets",
-		"poll_run_events",
-		"poll_runs",
-		"sessions",
-		"ticket_projects",
-		"users",
-	}
 	for _, table := range wantTables {
-		if !tableExists(t, db, table) {
-			t.Fatalf("table %q missing after migrate up", table)
+		var strict, count int
+		if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(strict), 0) FROM pragma_table_list WHERE schema = 'main' AND name = ?`, table).Scan(&count, &strict); err != nil {
+			t.Fatalf("table_list %q: %v", table, err)
+		}
+		if count != 1 {
+			t.Fatalf("table %q missing after migrate", table)
+		}
+		if strict != 1 {
+			t.Fatalf("table %q is not STRICT", table)
 		}
 	}
 
@@ -78,347 +70,177 @@ func TestMigrateUpCreatesSchema(t *testing.T) {
 		t.Fatalf("foreign_keys = %d, want 1", foreignKeys)
 	}
 
-	var triggerSourceExists int
-	if err := db.QueryRow(
-		`SELECT COUNT(*) FROM pragma_table_info('poll_runs') WHERE name = 'trigger_source'`,
-	).Scan(&triggerSourceExists); err != nil {
-		t.Fatalf("poll_runs.trigger_source column lookup: %v", err)
+	again, err := Migrate(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("second Migrate: %v", err)
 	}
-	if triggerSourceExists != 1 {
-		t.Fatal("poll_runs.trigger_source column missing after migrate up")
+	if len(again) != 0 {
+		t.Fatalf("second Migrate applied %d migrations, want 0", len(again))
 	}
-
-	var releasePublishedAtExists int
-	if err := db.QueryRow(
-		`SELECT COUNT(*) FROM pragma_table_info('monitored_repos') WHERE name = 'last_release_published_at'`,
-	).Scan(&releasePublishedAtExists); err != nil {
-		t.Fatalf("monitored_repos.last_release_published_at column lookup: %v", err)
-	}
-	if releasePublishedAtExists != 1 {
-		t.Fatal("monitored_repos.last_release_published_at column missing after migrate up")
-	}
-
-	var includePrereleasesExists int
-	if err := db.QueryRow(
-		`SELECT COUNT(*) FROM pragma_table_info('monitored_repos') WHERE name = 'include_prereleases'`,
-	).Scan(&includePrereleasesExists); err != nil {
-		t.Fatalf("monitored_repos.include_prereleases column lookup: %v", err)
-	}
-	if includePrereleasesExists != 1 {
-		t.Fatal("monitored_repos.include_prereleases column missing after migrate up")
-	}
-
-	var contentTemplatesExists int
-	if err := db.QueryRow(
-		`SELECT COUNT(*) FROM pragma_table_info('ticket_projects') WHERE name = 'content_templates'`,
-	).Scan(&contentTemplatesExists); err != nil {
-		t.Fatalf("ticket_projects.content_templates column lookup: %v", err)
-	}
-	if contentTemplatesExists != 1 {
-		t.Fatal("ticket_projects.content_templates column missing after migrate up")
+	if got := snapshotCount(t, dbPath); got != snapshotsAfterFirst {
+		t.Fatalf("snapshots after no-op Migrate = %d, want %d", got, snapshotsAfterFirst)
 	}
 }
 
-func TestMigrateUpPreservesSeedData(t *testing.T) {
+func TestSessionsUserIDForeignKey(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "app.db")
-	migrationsURL := migrationSourceURL(t)
-
-	m, err := newMigrator(t, dbPath, migrationsURL)
-	if err != nil {
-		t.Fatalf("newMigrator: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = m.Close()
-	})
-
-	if err := m.Migrate(1); err != nil && err != migrate.ErrNoChange {
-		t.Fatalf("migrate to version 1: %v", err)
-	}
-
-	db, err := store.OpenPath(dbPath)
-	if err != nil {
-		t.Fatalf("open db at version 1: %v", err)
-	}
-
-	const (
-		settingsUpdatedAt = "2026-01-01T00:00:00Z"
-		pollRunID         = "run-seed-1"
-		pollEventID       = "evt-seed-1"
-	)
-	if _, err := db.Exec(
-		`INSERT INTO app_settings (id, poll_interval_minutes, updated_at) VALUES (1, 120, ?)`,
-		settingsUpdatedAt,
-	); err != nil {
-		t.Fatalf("seed app_settings: %v", err)
-	}
-	if _, err := db.Exec(
-		`INSERT INTO poll_runs (
-			id, started_at, status, repos_checked, tickets_created, tickets_superseded, errors_json
-		) VALUES (?, ?, 'success', 2, 1, 0, '[]')`,
-		pollRunID,
-		settingsUpdatedAt,
-	); err != nil {
-		t.Fatalf("seed poll_runs: %v", err)
-	}
-	if _, err := db.Exec(
-		`INSERT INTO poll_run_events (id, poll_run_id, action, created_at) VALUES (?, ?, 'baseline', ?)`,
-		pollEventID,
-		pollRunID,
-		settingsUpdatedAt,
-	); err != nil {
-		t.Fatalf("seed poll_run_events: %v", err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatalf("close seeded db: %v", err)
-	}
-
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		t.Fatalf("migrate up from version 1: %v", err)
-	}
-
-	db, err = store.OpenPath(dbPath)
-	if err != nil {
-		t.Fatalf("open migrated db: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = db.Close()
-	})
-
-	assertRowCount(t, db, "app_settings", 1)
-	assertRowCount(t, db, "poll_runs", 1)
-	assertRowCount(t, db, "poll_run_events", 1)
-
-	var pollInterval int
-	if err := db.QueryRow(
-		`SELECT poll_interval_minutes FROM app_settings WHERE id = 1`,
-	).Scan(&pollInterval); err != nil {
-		t.Fatalf("read app_settings: %v", err)
-	}
-	if pollInterval != 120 {
-		t.Fatalf("poll_interval_minutes = %d, want 120", pollInterval)
-	}
-
-	var triggerSource string
-	if err := db.QueryRow(
-		`SELECT trigger_source FROM poll_runs WHERE id = ?`,
-		pollRunID,
-	).Scan(&triggerSource); err != nil {
-		t.Fatalf("read poll_runs.trigger_source: %v", err)
-	}
-	if triggerSource != "scheduled" {
-		t.Fatalf("trigger_source = %q, want scheduled", triggerSource)
-	}
-}
-
-const kaneoMigrationTS = "2026-10-07T00:00:00Z"
-
-// seedReferencedIntegrations migrates to version 6 and inserts integrations with referencing
-// ticket_projects / monitored_repos rows (parents of RESTRICT and NO ACTION foreign keys).
-func seedReferencedIntegrations(t *testing.T, dbPath, migrationsURL string) {
-	t.Helper()
-
-	m, err := newMigrator(t, dbPath, migrationsURL)
-	if err != nil {
-		t.Fatalf("newMigrator: %v", err)
-	}
-	if err := m.Migrate(6); err != nil && err != migrate.ErrNoChange {
-		t.Fatalf("migrate to version 6: %v", err)
-	}
-	_, _ = m.Close()
-
-	db, err := store.OpenPath(dbPath)
-	if err != nil {
-		t.Fatalf("open db at version 6: %v", err)
-	}
-	defer func() { _ = db.Close() }()
-
-	const ts = kaneoMigrationTS
-	seed := []string{
-		`INSERT INTO integrations (id, kind, name, base_url, encrypted_payload, created_at, updated_at)
-		 VALUES ('int-jira', 'jira', 'Jira', 'https://jira.example', 'x', '` + ts + `', '` + ts + `')`,
-		`INSERT INTO integrations (id, kind, name, base_url, encrypted_payload, created_at, updated_at)
-		 VALUES ('int-gitlab', 'gitlab', 'GitLab', 'https://gitlab.example', 'x', '` + ts + `', '` + ts + `')`,
-		`INSERT INTO ticket_projects (id, integration_id, external_project_id, name, create_config, status_mapping, created_at, updated_at)
-		 VALUES ('tp-1', 'int-jira', 'DEV', 'Dev', '{}', '{}', '` + ts + `', '` + ts + `')`,
-		`INSERT INTO monitored_repos (id, source_kind, source_integration_id, project_path, ticket_project_id, created_at, updated_at)
-		 VALUES ('repo-1', 'gitlab', 'int-gitlab', 'group/repo', 'tp-1', '` + ts + `', '` + ts + `')`,
-	}
-	for _, stmt := range seed {
-		if _, err := db.Exec(stmt); err != nil {
-			t.Fatalf("seed: %v\n%s", err, stmt)
-		}
-	}
-}
-
-// TestMigrateKaneoKindRebuildPreservesReferencingRows covers 000007 (integrations table rebuild
-// for the kind CHECK rename) on the production path (docker/entrypoint.sh / tools/migrate use a
-// plain sqlite:// URL): child rows survive, FKs stay intact, kaneo is accepted, phasical rejected.
-func TestMigrateKaneoKindRebuildPreservesReferencingRows(t *testing.T) {
-	t.Parallel()
-
+	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "app.db")
-	migrationsURL := migrationSourceURL(t)
-	seedReferencedIntegrations(t, dbPath, migrationsURL)
-
-	m, err := migrate.New(migrationsURL, "sqlite://"+dbPath)
+	if _, err := Migrate(ctx, dbPath); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	db, err := OpenPath(dbPath)
 	if err != nil {
-		t.Fatalf("migrate.New: %v", err)
+		t.Fatalf("OpenPath: %v", err)
 	}
-	t.Cleanup(func() {
-		_, _ = m.Close()
-	})
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		t.Fatalf("migrate up to 7: %v", err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	insertSession := func(token string, userID any) error {
+		_, err := db.Exec(
+			`INSERT INTO sessions (token, data, expiry, user_id) VALUES (?, x'00', 2460000.5, ?)`,
+			token, userID,
+		)
+		return err
 	}
 
-	db, err := store.OpenPath(dbPath)
-	if err != nil {
-		t.Fatalf("open migrated db: %v", err)
+	if err := insertSession("t-unknown", "no-such-user"); err == nil {
+		t.Fatal("session with unknown user_id accepted, want foreign key failure")
 	}
-	t.Cleanup(func() {
-		_ = db.Close()
-	})
-
-	assertRowCount(t, db, "integrations", 2)
-	assertRowCount(t, db, "ticket_projects", 1)
-	assertRowCount(t, db, "monitored_repos", 1)
-
-	rows, err := db.Query(`PRAGMA foreign_key_check`)
-	if err != nil {
-		t.Fatalf("foreign_key_check: %v", err)
-	}
-	hasViolation := rows.Next()
-	_ = rows.Close()
-	if hasViolation {
-		t.Fatal("foreign key violations after migration 7")
+	if err := insertSession("t-anon", nil); err != nil {
+		t.Fatalf("session without user_id: %v", err)
 	}
 
-	if _, err := db.Exec(`DELETE FROM integrations WHERE id = 'int-jira'`); err == nil {
-		t.Fatal("deleting a referenced integration succeeded; ticket_projects FK lost after rebuild")
-	}
 	if _, err := db.Exec(
-		`INSERT INTO integrations (id, kind, name, base_url, encrypted_payload, created_at, updated_at)
-		 VALUES ('int-kaneo', 'kaneo', 'Kaneo', 'https://cloud.kaneo.app', 'x', ?, ?)`,
-		kaneoMigrationTS, kaneoMigrationTS,
+		`INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES ('u1', 'u1@example.com', 'x', 't', 't')`,
 	); err != nil {
-		t.Fatalf("insert kaneo integration: %v", err)
+		t.Fatalf("insert user: %v", err)
 	}
-	if _, err := db.Exec(
-		`INSERT INTO integrations (id, kind, name, base_url, encrypted_payload, created_at, updated_at)
-		 VALUES ('int-phasical', 'phasical', 'Phasical', 'https://p.example', 'x', ?, ?)`,
-		kaneoMigrationTS, kaneoMigrationTS,
-	); err == nil {
-		t.Fatal("insert phasical integration succeeded; want CHECK failure")
+	if err := insertSession("t-known", "u1"); err != nil {
+		t.Fatalf("session with known user_id: %v", err)
+	}
+
+	if _, err := db.Exec(`DELETE FROM sessions WHERE user_id = 'u1'`); err != nil {
+		t.Fatalf("delete user sessions: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM users WHERE id = 'u1'`); err != nil {
+		t.Fatalf("delete user after its sessions: %v", err)
 	}
 }
 
-// TestMigrateKaneoKindRebuildFailsSafeWithEnforcedForeignKeys: when the migration connection
-// enforces foreign keys (PRAGMA foreign_keys=OFF is a no-op inside golang-migrate's transaction),
-// rebuilding a referenced table must fail and roll back — never drop or cascade child rows.
-func TestMigrateKaneoKindRebuildFailsSafeWithEnforcedForeignKeys(t *testing.T) {
+func TestApplyMigrationsFailureLeavesDatabaseUnchanged(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "app.db")
-	migrationsURL := migrationSourceURL(t)
-	seedReferencedIntegrations(t, dbPath, migrationsURL)
+	baseline := loadEmbedded(t, ctx)
 
-	m, err := newMigrator(t, dbPath, migrationsURL)
-	if err != nil {
-		t.Fatalf("newMigrator: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = m.Close()
-	})
-	if err := m.Up(); err == nil {
-		t.Fatal("migrate up succeeded with enforced foreign keys; want rollback error")
+	if _, err := applyMigrations(ctx, dbPath, baseline); err != nil {
+		t.Fatalf("apply baseline: %v", err)
 	}
 
-	db, err := store.OpenPath(dbPath)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
+	broken := testMigration(t, ctx, "20990101000000_broken.sql",
+		"CREATE TABLE half_applied (id TEXT PRIMARY KEY) STRICT;\nINSERT INTO missing_table (id) VALUES ('x');\n")
+	_, err := applyMigrations(ctx, dbPath, append(append([]sqlitemigrate.Migration{}, baseline...), broken))
+	if err == nil {
+		t.Fatal("broken migration applied without error")
 	}
-	t.Cleanup(func() {
-		_ = db.Close()
-	})
-	assertRowCount(t, db, "integrations", 2)
-	assertRowCount(t, db, "ticket_projects", 1)
-	assertRowCount(t, db, "monitored_repos", 1)
+	if !strings.Contains(err.Error(), "missing_table") {
+		t.Fatalf("error = %q, want it to name the failing statement's cause", err)
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	var halfApplied, recorded int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name = 'half_applied'`).Scan(&halfApplied); err != nil {
+		t.Fatalf("lookup half_applied: %v", err)
+	}
+	if halfApplied != 0 {
+		t.Fatal("table from the failed migration exists, want the whole batch rolled back")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&recorded); err != nil {
+		t.Fatalf("count schema_migrations: %v", err)
+	}
+	if recorded != len(baseline) {
+		t.Fatalf("recorded migrations = %d, want %d", recorded, len(baseline))
+	}
+
+	if _, err := applyMigrations(ctx, dbPath, append(append([]sqlitemigrate.Migration{}, baseline...), broken)); err == nil {
+		t.Fatal("next start with the broken migration succeeded, want the same error")
+	}
+}
+
+func TestApplyMigrationsRejectsEditedAppliedMigration(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "app.db")
+	baseline := loadEmbedded(t, ctx)
+	if _, err := applyMigrations(ctx, dbPath, baseline); err != nil {
+		t.Fatalf("apply baseline: %v", err)
+	}
+
+	edited := testMigration(t, ctx, baseline[0].Filename, baseline[0].SQL+"\n-- edited\n")
+	_, err := applyMigrations(ctx, dbPath, []sqlitemigrate.Migration{edited})
+	var mismatch *sqlitemigrate.ChecksumMismatchError
+	if !errors.As(err, &mismatch) {
+		t.Fatalf("error = %v, want ChecksumMismatchError", err)
+	}
+
+	_, err = applyMigrations(ctx, dbPath, nil)
+	var missing *sqlitemigrate.MissingMigrationError
+	if !errors.As(err, &missing) {
+		t.Fatalf("error = %v, want MissingMigrationError", err)
+	}
 }
 
 func TestOpenUsesAppDBPathEnv(t *testing.T) {
 	t.Setenv("APP_DB_PATH", filepath.Join(t.TempDir(), "env.db"))
 
-	db, err := store.Open()
+	db, err := Open()
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	t.Cleanup(func() {
-		_ = db.Close()
-	})
+	t.Cleanup(func() { _ = db.Close() })
 
-	if store.DBPath() != os.Getenv("APP_DB_PATH") {
-		t.Fatalf("DBPath() = %q, want %q", store.DBPath(), os.Getenv("APP_DB_PATH"))
+	if DBPath() != os.Getenv("APP_DB_PATH") {
+		t.Fatalf("DBPath() = %q, want %q", DBPath(), os.Getenv("APP_DB_PATH"))
 	}
 }
 
-func migrationSourceURL(t *testing.T) string {
+func loadEmbedded(t *testing.T, ctx context.Context) []sqlitemigrate.Migration {
 	t.Helper()
 
-	root, err := filepath.Abs(filepath.Join("..", ".."))
+	all, err := sqlitemigrate.LoadDir(ctx, migrations.FS, ".")
 	if err != nil {
-		t.Fatalf("repo root: %v", err)
+		t.Fatalf("LoadDir: %v", err)
 	}
-	return "file://" + filepath.Join(root, "migrations")
+	if len(all) == 0 {
+		t.Fatal("no embedded migrations")
+	}
+	return all
 }
 
-func newMigrator(t *testing.T, dbPath, migrationsURL string) (*migrate.Migrate, error) {
+func testMigration(t *testing.T, ctx context.Context, filename, body string) sqlitemigrate.Migration {
 	t.Helper()
 
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		return nil, err
-	}
-
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?_foreign_keys=on")
+	m, err := sqlitemigrate.Load(ctx, filename, strings.NewReader(body))
 	if err != nil {
-		return nil, err
+		t.Fatalf("Load %s: %v", filename, err)
 	}
-	t.Cleanup(func() {
-		_ = db.Close()
-	})
-
-	driver, err := sqlite.WithInstance(db, &sqlite.Config{})
-	if err != nil {
-		return nil, err
-	}
-
-	return migrate.NewWithDatabaseInstance(migrationsURL, "sqlite", driver)
+	return m
 }
 
-func assertRowCount(t *testing.T, db *sql.DB, table string, want int) {
+func snapshotCount(t *testing.T, dbPath string) int {
 	t.Helper()
 
-	var count int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil {
-		t.Fatalf("count %s: %v", table, err)
-	}
-	if count != want {
-		t.Fatalf("%s row count = %d, want %d", table, count, want)
-	}
-}
-
-func tableExists(t *testing.T, db *sql.DB, name string) bool {
-	t.Helper()
-
-	var count int
-	err := db.QueryRow(
-		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`,
-		name,
-	).Scan(&count)
+	entries, err := os.ReadDir(filepath.Join(filepath.Dir(dbPath), "snapshots"))
 	if err != nil {
-		t.Fatalf("lookup table %q: %v", name, err)
+		t.Fatalf("read snapshots dir: %v", err)
 	}
-	return count == 1
+	return len(entries)
 }

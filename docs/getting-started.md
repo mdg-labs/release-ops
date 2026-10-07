@@ -137,7 +137,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Migrations run automatically on container start via `golang-migrate`.
+Migrations run automatically when the container starts.
 
 ## Troubleshooting
 

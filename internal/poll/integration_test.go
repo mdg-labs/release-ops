@@ -4,20 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/mdg-labs/release-ops/internal/crypto"
 	"github.com/mdg-labs/release-ops/internal/poll"
 	"github.com/mdg-labs/release-ops/internal/providers/source"
 	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 	"github.com/mdg-labs/release-ops/internal/store"
+	"github.com/mdg-labs/release-ops/internal/store/storetest"
 	_ "modernc.org/sqlite"
 )
 
@@ -104,11 +101,11 @@ func (m *integrationTicketProvider) TicketWebURL(_ ticket.TicketProject, externa
 }
 
 type pollIntegrationEnv struct {
-	store    *store.Store
+	store     *store.Store
 	scheduler *poll.Scheduler
-	source   *sequentialSource
-	tickets  *integrationTicketProvider
-	repoID   string
+	source    *sequentialSource
+	tickets   *integrationTicketProvider
+	repoID    string
 }
 
 func TestIntegrationBaselineCreateSupersede(t *testing.T) {
@@ -382,17 +379,7 @@ func assertEventActions(t *testing.T, ctx context.Context, env *pollIntegrationE
 func openIntegrationDB(t *testing.T, dbPath string) *sql.DB {
 	t.Helper()
 
-	migrationsURL := integrationMigrationSourceURL(t)
-	m, err := newIntegrationMigrator(t, dbPath, migrationsURL)
-	if err != nil {
-		t.Fatalf("newIntegrationMigrator: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = m.Close()
-	})
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		t.Fatalf("migrate up: %v", err)
-	}
+	storetest.Migrate(t, dbPath)
 
 	sqlDB, err := store.OpenPath(dbPath)
 	if err != nil {
@@ -411,39 +398,6 @@ func seedIntegrationAppSettings(t *testing.T, sqlDB *sql.DB) {
 	if err != nil {
 		t.Fatalf("seed app_settings: %v", err)
 	}
-}
-
-func integrationMigrationSourceURL(t *testing.T) string {
-	t.Helper()
-
-	root, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatalf("repo root: %v", err)
-	}
-	return "file://" + filepath.Join(root, "migrations")
-}
-
-func newIntegrationMigrator(t *testing.T, dbPath, migrationsURL string) (*migrate.Migrate, error) {
-	t.Helper()
-
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		return nil, err
-	}
-
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?_foreign_keys=on")
-	if err != nil {
-		return nil, err
-	}
-	t.Cleanup(func() {
-		_ = db.Close()
-	})
-
-	driver, err := sqlite.WithInstance(db, &sqlite.Config{})
-	if err != nil {
-		return nil, err
-	}
-
-	return migrate.NewWithDatabaseInstance(migrationsURL, "sqlite", driver)
 }
 
 func integrationStrPtr(s string) *string {

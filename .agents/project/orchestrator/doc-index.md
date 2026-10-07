@@ -35,7 +35,7 @@ Full mapping: `.claude/rules/06-local-ci-before-commit.md`.
 
 | Gate | Blocks |
 | ---- | ------ |
-| `db-migrations` | Schema changes: edit `db/schema.sql` → `make migrate-diff name=<change>` only; `npm run db:check` (`.claude/rules/11-db-migrations.md`) |
+| `db-migrations` | Schema changes: edit `db/schema.sql` → `make db-migration name=<change>` only; `npm run db:check` (`.claude/rules/11-db-migrations.md`) |
 | `i18n` | No hardcoded UI strings in `apps/web/` — next-intl keys only (`.claude/rules/10-i18n.md`) |
 
 ## Hot files (never parallelize)

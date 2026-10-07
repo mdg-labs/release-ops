@@ -9,7 +9,7 @@ npm workspaces repo (`apps/web`, `apps/docs`) plus a Go module. Run the checks f
 | Paths | Checks |
 |-------|--------|
 | `apps/web/**`, root `package.json` / `package-lock.json` | `npm test && npm run lint && npm run typecheck` — lint includes **i18n** (`eslint-plugin-i18next`, no literal UI strings) |
-| `db/schema.sql`, `migrations/**` | **`npm run db:check`** (sqldiff drift vs `db/schema.sql`; needs `sqlite3` and `sqldiff`) |
+| `db/schema.sql`, `migrations/**` | **`npm run db:check`** (`sqlite-migrate check`: checksums + drift vs `db/schema.sql`; needs only Go) |
 | `cmd/**`, `internal/**`, `queries/**`, `tools/**`, `sqlc.yaml`, `go.mod` / `go.sum` | `gofmt -l .`, `go vet ./...`, `go test ./... && golangci-lint run` |
 | `apps/docs/**` | `npm run docs:build` |
 | `docs/**` only | no test/lint gate; every `§`/anchor added or touched resolves |

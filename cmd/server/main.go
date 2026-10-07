@@ -31,6 +31,14 @@ func run(cfg *config.Config) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	applied, err := store.Migrate(ctx, cfg.AppDBPath)
+	if err != nil {
+		log.Fatalf("migrations: %v", err)
+	}
+	for _, m := range applied {
+		log.Printf("migrations: applied %s_%s", m.Version, m.Slug)
+	}
+
 	db, err := store.OpenPath(cfg.AppDBPath)
 	if err != nil {
 		log.Fatalf("database: %v", err)
