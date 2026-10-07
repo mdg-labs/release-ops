@@ -36,6 +36,7 @@ type Integration struct {
 	EncryptedPayload string         `json:"encrypted_payload"`
 	CreatedAt        string         `json:"created_at"`
 	UpdatedAt        string         `json:"updated_at"`
+	IsDefault        int64          `json:"is_default"`
 }
 
 type MonitoredRepo struct {

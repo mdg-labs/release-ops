@@ -83,6 +83,8 @@ export function RepoDialog({
   const [projectPath, setProjectPath] = useState("");
   const [ticketProjectId, setTicketProjectId] = useState("");
   const [sourceIntegrationId, setSourceIntegrationId] = useState("");
+  const [integrationChosen, setIntegrationChosen] = useState(false);
+  const [resetCount, setResetCount] = useState(0);
   const [notificationTargetIds, setNotificationTargetIds] = useState<string[]>(
     [],
   );
@@ -115,6 +117,15 @@ export function RepoDialog({
       }));
   }, [integrations, sourceKind]);
 
+  const defaultIntegrationId = useMemo(
+    () =>
+      integrations.find(
+        (integration) =>
+          integration.kind === sourceKind && integration.isDefault,
+      )?.id ?? "",
+    [integrations, sourceKind],
+  );
+
   const integrationSelectItems: SelectOption[] = useMemo(() => {
     if (!requiresIntegration) {
       return [
@@ -136,6 +147,8 @@ export function RepoDialog({
     }
 
     setFormError(null);
+    setIntegrationChosen(false);
+    setResetCount((count) => count + 1);
     if (mode === "edit" && repo) {
       setSourceKind(repo.sourceKind as SourceKind);
       setProjectPath(repo.projectPath);
@@ -164,6 +177,15 @@ export function RepoDialog({
       setSourceIntegrationId("");
     }
   }, [sourceKind, sourceIntegrationId, sourceIntegrationItems]);
+
+  // The kind's default credential is only a preselection while adding a repo; an
+  // explicit pick (including "None") is kept until the kind changes.
+  useEffect(() => {
+    if (!open || mode !== "create" || integrationChosen) {
+      return;
+    }
+    setSourceIntegrationId(defaultIntegrationId);
+  }, [open, mode, integrationChosen, defaultIntegrationId, resetCount]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -244,6 +266,7 @@ export function RepoDialog({
                 onValueChange={(value) => {
                   if (value) {
                     setSourceKind(value.value);
+                    setIntegrationChosen(false);
                   }
                 }}
                 value={
@@ -328,6 +351,7 @@ export function RepoDialog({
                   onValueChange={(value) => {
                     if (value) {
                       setSourceIntegrationId(value.value);
+                      setIntegrationChosen(true);
                     }
                   }}
                   value={

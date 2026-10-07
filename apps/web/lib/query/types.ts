@@ -131,6 +131,7 @@ export type Integration = {
   name: string;
   baseUrl: string | null;
   hasSecret: boolean;
+  isDefault: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -140,12 +141,14 @@ export type CreateIntegrationInput = {
   name: string;
   baseUrl?: string | null;
   secret: string;
+  isDefault?: boolean;
 };
 
 export type UpdateIntegrationInput = {
   name: string;
   baseUrl?: string | null;
   secret?: string | null;
+  isDefault?: boolean;
 };
 
 export type TestConnectionResponse = {

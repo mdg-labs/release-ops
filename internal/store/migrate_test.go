@@ -125,6 +125,46 @@ func TestPollRunEventTicketRefMigrationKeepsExistingEvents(t *testing.T) {
 	}
 }
 
+func TestIntegrationDefaultMigrationKeepsExistingIntegrations(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "app.db")
+	all := loadEmbedded(t, ctx)
+	if len(all) < 3 {
+		t.Fatalf("embedded migrations = %d, want at least three", len(all))
+	}
+
+	if _, err := applyMigrations(ctx, dbPath, all[:2]); err != nil {
+		t.Fatalf("apply earlier migrations: %v", err)
+	}
+	raw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	for _, stmt := range []string{
+		`INSERT INTO integrations (id, kind, name, base_url, encrypted_payload, created_at, updated_at) VALUES ('int-1', 'github', 'legacy', NULL, 'enc', 't', 't')`,
+		`INSERT INTO integrations (id, kind, name, base_url, encrypted_payload, created_at, updated_at) VALUES ('int-2', 'github', 'legacy two', NULL, 'enc', 't', 't')`,
+	} {
+		if _, err := raw.Exec(stmt); err != nil {
+			t.Fatalf("seed %q: %v", stmt, err)
+		}
+	}
+
+	if _, err := applyMigrations(ctx, dbPath, all); err != nil {
+		t.Fatalf("apply remaining migrations: %v", err)
+	}
+
+	var count, defaults int
+	if err := raw.QueryRow(`SELECT COUNT(*), COALESCE(SUM(is_default), 0) FROM integrations`).Scan(&count, &defaults); err != nil {
+		t.Fatalf("read integrations: %v", err)
+	}
+	if count != 2 || defaults != 0 {
+		t.Fatalf("integrations = %d rows, %d default, want 2 rows and none default", count, defaults)
+	}
+}
+
 func TestSessionsUserIDForeignKey(t *testing.T) {
 	t.Parallel()
 

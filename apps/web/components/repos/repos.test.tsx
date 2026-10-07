@@ -22,6 +22,7 @@ const sampleIntegrations = [
     name: "GitHub Org",
     baseUrl: null,
     hasSecret: true,
+    isDefault: false,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   },
@@ -31,6 +32,7 @@ const sampleIntegrations = [
     name: "Self-hosted GitLab",
     baseUrl: "https://gitlab.example.com",
     hasSecret: true,
+    isDefault: false,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   },
@@ -116,9 +118,31 @@ function renderReposPage() {
   );
 }
 
+function withDefaults(...ids: string[]) {
+  return sampleIntegrations.map((integration) => ({
+    ...integration,
+    isDefault: ids.includes(integration.id),
+  }));
+}
+
+async function pickOption(name: string) {
+  await waitFor(() => {
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+  });
+  const option = screen.getByRole("option", { name });
+  fireEvent.pointerDown(option, {
+    pointerId: 1,
+    pointerType: "mouse",
+    buttons: 1,
+  });
+  fireEvent.pointerUp(option, { pointerId: 1, pointerType: "mouse" });
+  fireEvent.click(option);
+}
+
 function mockListEndpoints(
   pool: ReturnType<MockAgent["get"]>,
   repos = sampleRepos,
+  integrations: unknown[] = sampleIntegrations,
 ) {
   pool
     .intercept({ path: "/api/go/api/v1/repos", method: "GET" })
@@ -128,7 +152,7 @@ function mockListEndpoints(
     .reply(200, sampleTicketProjects);
   pool
     .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
-    .reply(200, sampleIntegrations);
+    .reply(200, integrations);
   pool
     .intercept({
       path: "/api/go/api/v1/notification-targets",
@@ -342,6 +366,107 @@ describe("ReposView", () => {
       sourceIntegrationId: "int-github",
       ticketProjectId: "tp-1",
     });
+  });
+
+  it("preselects the default integration of the source kind on create", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    mockListEndpoints(pool, [], withDefaults("int-github", "int-gitlab"));
+
+    renderReposPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add repo" }));
+
+    const dialog = await screen.findByRole("dialog");
+    const kindCombobox = within(dialog).getAllByRole("combobox")[0];
+    await waitFor(() => {
+      expect(within(dialog).getAllByRole("combobox")[2]).toHaveTextContent(
+        "GitHub Org",
+      );
+    });
+
+    fireEvent.click(kindCombobox);
+    await pickOption("GitLab");
+
+    await waitFor(() => {
+      expect(within(dialog).getAllByRole("combobox")[2]).toHaveTextContent(
+        "Self-hosted GitLab",
+      );
+    });
+  });
+
+  it("keeps None selectable after the default was preselected", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    mockListEndpoints(pool, [], withDefaults("int-github"));
+
+    let postBody: string | undefined;
+    pool
+      .intercept({ path: "/api/go/api/v1/repos", method: "POST" })
+      .reply((opts) => {
+        postBody = opts.body?.toString();
+        return {
+          statusCode: 201,
+          data: JSON.stringify({ ...sampleRepos[0], id: "repo-new" }),
+          responseOptions: { headers: { "content-type": "application/json" } },
+        };
+      });
+    pool
+      .intercept({ path: "/api/go/api/v1/repos", method: "GET" })
+      .reply(200, []);
+    pool
+      .intercept({ path: "/api/go/api/v1/status", method: "GET" })
+      .reply(200, {
+        pollIntervalMinutes: 360,
+        lastRun: null,
+        repos: [],
+        isPolling: false,
+      });
+
+    renderReposPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add repo" }));
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/Project path/), {
+      target: { value: "org/no-token" },
+    });
+    const integrationCombobox = within(dialog).getAllByRole("combobox")[2];
+    await waitFor(() => {
+      expect(integrationCombobox).toHaveTextContent("GitHub Org");
+    });
+
+    fireEvent.click(integrationCombobox);
+    await pickOption("None");
+    await waitFor(() => {
+      expect(integrationCombobox).toHaveTextContent("None");
+    });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(postBody).toBeDefined();
+    });
+    expect(JSON.parse(postBody ?? "{}")).toMatchObject({
+      sourceKind: "github",
+      projectPath: "org/no-token",
+      sourceIntegrationId: null,
+    });
+  });
+
+  it("does not apply the default when editing an existing repo", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    mockListEndpoints(pool, sampleRepos, withDefaults("int-github"));
+
+    renderReposPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit org/app" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    const integrationCombobox = within(dialog).getAllByRole("combobox")[2];
+    expect(integrationCombobox).toHaveTextContent("None");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(integrationCombobox).toHaveTextContent("None");
   });
 
   it("preserves github source integration when editing repo", async () => {

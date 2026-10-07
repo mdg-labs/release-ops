@@ -24,6 +24,17 @@ var validIntegrationKinds = map[string]struct{}{
 	"linear":   {},
 }
 
+// sourceIntegrationKinds are the kinds that can be marked as a default credential.
+var sourceIntegrationKinds = map[string]struct{}{
+	"github":   {},
+	"gitlab":   {},
+	"gitea":    {},
+	"forgejo":  {},
+	"codeberg": {},
+}
+
+var errDefaultSourceKindOnly = errors.New("isDefault can only be set on source integrations")
+
 // IntegrationTester validates stored integration credentials.
 type IntegrationTester interface {
 	TestConnection(ctx context.Context, kind string, baseURL *string, secret []byte) error
@@ -41,6 +52,7 @@ type integrationResponse struct {
 	Name      string  `json:"name"`
 	BaseURL   *string `json:"baseUrl"`
 	HasSecret bool    `json:"hasSecret"`
+	IsDefault bool    `json:"isDefault"`
 	CreatedAt string  `json:"createdAt"`
 	UpdatedAt string  `json:"updatedAt"`
 }
@@ -50,12 +62,16 @@ type createIntegrationRequest struct {
 	Name    string  `json:"name"`
 	BaseURL *string `json:"baseUrl"`
 	Secret  string  `json:"secret"`
+	// IsDefault marks the integration as the default for its source kind.
+	IsDefault bool `json:"isDefault"`
 }
 
 type patchIntegrationRequest struct {
 	Name    string  `json:"name"`
 	BaseURL *string `json:"baseUrl"`
 	Secret  *string `json:"secret"`
+	// IsDefault nil leaves the flag unchanged.
+	IsDefault *bool `json:"isDefault"`
 }
 
 type testConnectionResponse struct {
@@ -103,12 +119,17 @@ func (h *IntegrationHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := validateDefaultFlag(req.Kind, req.IsDefault); err != nil {
+		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	created, err := h.Integrations.Create(r.Context(), store.CreateIntegrationInput{
-		Kind:    req.Kind,
-		Name:    req.Name,
-		BaseURL: req.BaseURL,
-		Secret:  []byte(req.Secret),
+		Kind:      req.Kind,
+		Name:      req.Name,
+		BaseURL:   req.BaseURL,
+		Secret:    []byte(req.Secret),
+		IsDefault: req.IsDefault,
 	})
 	if err != nil {
 		auth.WriteError(w, "INTERNAL_ERROR", "failed to create integration", http.StatusInternalServerError)
@@ -155,6 +176,13 @@ func (h *IntegrationHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.IsDefault != nil {
+		if err := validateDefaultFlag(existing.Kind, *req.IsDefault); err != nil {
+			auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
 	// The stored secret may only be sent to the host it was entered for: moving an
 	// integration to another base URL requires re-entering the secret.
 	if req.Secret == nil && normalizedBaseURL(baseURL) != normalizedBaseURL(existing.BaseURL) {
@@ -163,8 +191,9 @@ func (h *IntegrationHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := store.UpdateIntegrationInput{
-		Name:    req.Name,
-		BaseURL: baseURL,
+		Name:      req.Name,
+		BaseURL:   baseURL,
+		IsDefault: req.IsDefault,
 	}
 	if req.Secret != nil {
 		if *req.Secret == "" {
@@ -276,6 +305,7 @@ func integrationFromStore(item *store.Integration) integrationResponse {
 		Name:      item.Name,
 		BaseURL:   item.BaseURL,
 		HasSecret: item.HasSecret,
+		IsDefault: item.IsDefault,
 		CreatedAt: item.CreatedAt,
 		UpdatedAt: item.UpdatedAt,
 	}
@@ -284,6 +314,16 @@ func integrationFromStore(item *store.Integration) integrationResponse {
 func validateIntegrationKind(kind string) error {
 	if _, ok := validIntegrationKinds[kind]; !ok {
 		return errors.New("kind must be one of: github, gitlab, gitea, forgejo, codeberg, kaneo, jira, linear")
+	}
+	return nil
+}
+
+func validateDefaultFlag(kind string, isDefault bool) error {
+	if !isDefault {
+		return nil
+	}
+	if _, ok := sourceIntegrationKinds[kind]; !ok {
+		return errDefaultSourceKindOnly
 	}
 	return nil
 }

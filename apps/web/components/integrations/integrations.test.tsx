@@ -23,6 +23,7 @@ const sampleIntegrations = [
     name: "GitHub Org",
     baseUrl: null,
     hasSecret: true,
+    isDefault: true,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   },
@@ -32,6 +33,7 @@ const sampleIntegrations = [
     name: "Company Jira",
     baseUrl: "https://company.atlassian.net",
     hasSecret: true,
+    isDefault: false,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   },
@@ -86,6 +88,7 @@ describe("IntegrationsView", () => {
     globalThis.fetch = originalFetch;
     await mockAgent.close();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("renders empty state when no integrations exist", async () => {
@@ -247,5 +250,99 @@ describe("IntegrationsView", () => {
     await waitFor(() =>
       expect(screen.getByText("Connection successful")).toBeInTheDocument(),
     );
+  });
+
+  it("marks the default integration with a badge", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, sampleIntegrations);
+
+    renderIntegrationsPage();
+
+    const githubRow = (await screen.findByText("GitHub Org")).closest("tr");
+    const jiraRow = screen.getByText("Company Jira").closest("tr");
+    expect(githubRow).not.toBeNull();
+    expect(jiraRow).not.toBeNull();
+    expect(within(githubRow as HTMLElement).getByText("Default")).toBeVisible();
+    expect(within(jiraRow as HTMLElement).queryByText("Default")).toBeNull();
+  });
+
+  it("offers the default switch for source kinds only", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, sampleIntegrations);
+
+    renderIntegrationsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit GitHub Org" }),
+    );
+    let dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByRole("switch", {
+        name: "Default for this source type",
+      }),
+    ).toHaveAttribute("aria-checked", "true");
+
+    cleanup();
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, sampleIntegrations);
+    renderIntegrationsPage();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit Company Jira" }),
+    );
+    dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).queryByRole("switch", {
+        name: "Default for this source type",
+      }),
+    ).toBeNull();
+  });
+
+  it("sends isDefault when saving a source integration", async () => {
+    vi.stubGlobal("PointerEvent", MouseEvent);
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, [{ ...sampleIntegrations[0], isDefault: false }]);
+
+    let patchBody: string | undefined;
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations/int-1", method: "PATCH" })
+      .reply((opts) => {
+        patchBody = opts.body?.toString();
+        return {
+          statusCode: 200,
+          data: JSON.stringify({ ...sampleIntegrations[0], isDefault: true }),
+          responseOptions: { headers: { "content-type": "application/json" } },
+        };
+      });
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, sampleIntegrations);
+
+    renderIntegrationsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit GitHub Org" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    const toggle = within(dialog).getByRole("switch", {
+      name: "Default for this source type",
+    });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    fireEvent.click(toggle);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchBody).toBeDefined();
+    });
+    expect(JSON.parse(patchBody ?? "{}")).toMatchObject({
+      name: "GitHub Org",
+      isDefault: true,
+    });
   });
 });

@@ -63,6 +63,11 @@ CREATE TABLE integrations (
   encrypted_payload TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  -- Preselected in the Add Repo dialog; source kinds only, at most one per kind.
+  is_default INTEGER NOT NULL DEFAULT 0 CHECK (
+    is_default IN (0, 1)
+    AND (is_default = 0 OR kind IN ('github', 'gitlab', 'gitea', 'forgejo', 'codeberg'))
+  ),
   CHECK (
     (kind = 'github' AND base_url IS NULL)
     OR (kind = 'gitlab' AND base_url IS NOT NULL)
@@ -74,6 +79,8 @@ CREATE TABLE integrations (
     OR (kind = 'linear' AND base_url IS NULL)
   )
 ) STRICT;
+
+CREATE UNIQUE INDEX idx_integrations_default_kind ON integrations (kind) WHERE is_default = 1;
 
 -- One row per target project/team under a ticket integration.
 -- Status mapping and create defaults are per project (workflows differ).

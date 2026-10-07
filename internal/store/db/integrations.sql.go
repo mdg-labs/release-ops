@@ -10,6 +10,24 @@ import (
 	"database/sql"
 )
 
+const clearDefaultIntegrationForKind = `-- name: ClearDefaultIntegrationForKind :exec
+UPDATE integrations
+SET is_default = 0
+WHERE kind = ?
+  AND is_default = 1
+  AND id <> ?
+`
+
+type ClearDefaultIntegrationForKindParams struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+}
+
+func (q *Queries) ClearDefaultIntegrationForKind(ctx context.Context, arg ClearDefaultIntegrationForKindParams) error {
+	_, err := q.db.ExecContext(ctx, clearDefaultIntegrationForKind, arg.Kind, arg.ID)
+	return err
+}
+
 const countIntegrationReferences = `-- name: CountIntegrationReferences :one
 SELECT
   (
@@ -43,8 +61,10 @@ INSERT INTO integrations (
   base_url,
   encrypted_payload,
   created_at,
-  updated_at
+  updated_at,
+  is_default
 ) VALUES (
+  ?,
   ?,
   ?,
   ?,
@@ -53,7 +73,7 @@ INSERT INTO integrations (
   ?,
   ?
 )
-RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at
+RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at, is_default
 `
 
 type CreateIntegrationParams struct {
@@ -64,6 +84,7 @@ type CreateIntegrationParams struct {
 	EncryptedPayload string         `json:"encrypted_payload"`
 	CreatedAt        string         `json:"created_at"`
 	UpdatedAt        string         `json:"updated_at"`
+	IsDefault        int64          `json:"is_default"`
 }
 
 func (q *Queries) CreateIntegration(ctx context.Context, arg CreateIntegrationParams) (Integration, error) {
@@ -75,6 +96,7 @@ func (q *Queries) CreateIntegration(ctx context.Context, arg CreateIntegrationPa
 		arg.EncryptedPayload,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.IsDefault,
 	)
 	var i Integration
 	err := row.Scan(
@@ -85,6 +107,7 @@ func (q *Queries) CreateIntegration(ctx context.Context, arg CreateIntegrationPa
 		&i.EncryptedPayload,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsDefault,
 	)
 	return i, err
 }
@@ -107,7 +130,8 @@ SELECT
   base_url,
   encrypted_payload,
   created_at,
-  updated_at
+  updated_at,
+  is_default
 FROM integrations
 WHERE id = ?
 LIMIT 1
@@ -124,6 +148,7 @@ func (q *Queries) GetIntegration(ctx context.Context, id string) (Integration, e
 		&i.EncryptedPayload,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsDefault,
 	)
 	return i, err
 }
@@ -136,7 +161,8 @@ SELECT
   base_url,
   encrypted_payload,
   created_at,
-  updated_at
+  updated_at,
+  is_default
 FROM integrations
 WHERE kind = ?
 ORDER BY name
@@ -159,6 +185,7 @@ func (q *Queries) ListByKind(ctx context.Context, kind string) ([]Integration, e
 			&i.EncryptedPayload,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.IsDefault,
 		); err != nil {
 			return nil, err
 		}
@@ -181,7 +208,8 @@ SELECT
   base_url,
   encrypted_payload,
   created_at,
-  updated_at
+  updated_at,
+  is_default
 FROM integrations
 ORDER BY name
 `
@@ -203,6 +231,7 @@ func (q *Queries) ListIntegrations(ctx context.Context) ([]Integration, error) {
 			&i.EncryptedPayload,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.IsDefault,
 		); err != nil {
 			return nil, err
 		}
@@ -223,15 +252,17 @@ SET
   name = ?,
   base_url = ?,
   encrypted_payload = ?,
+  is_default = ?,
   updated_at = ?
 WHERE id = ?
-RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at
+RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at, is_default
 `
 
 type UpdateIntegrationParams struct {
 	Name             string         `json:"name"`
 	BaseUrl          sql.NullString `json:"base_url"`
 	EncryptedPayload string         `json:"encrypted_payload"`
+	IsDefault        int64          `json:"is_default"`
 	UpdatedAt        string         `json:"updated_at"`
 	ID               string         `json:"id"`
 }
@@ -241,6 +272,7 @@ func (q *Queries) UpdateIntegration(ctx context.Context, arg UpdateIntegrationPa
 		arg.Name,
 		arg.BaseUrl,
 		arg.EncryptedPayload,
+		arg.IsDefault,
 		arg.UpdatedAt,
 		arg.ID,
 	)
@@ -253,6 +285,7 @@ func (q *Queries) UpdateIntegration(ctx context.Context, arg UpdateIntegrationPa
 		&i.EncryptedPayload,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsDefault,
 	)
 	return i, err
 }
@@ -263,7 +296,7 @@ SET
   name = ?,
   updated_at = ?
 WHERE id = ?
-RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at
+RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at, is_default
 `
 
 type UpdateIntegrationNameParams struct {
@@ -283,6 +316,7 @@ func (q *Queries) UpdateIntegrationName(ctx context.Context, arg UpdateIntegrati
 		&i.EncryptedPayload,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsDefault,
 	)
 	return i, err
 }

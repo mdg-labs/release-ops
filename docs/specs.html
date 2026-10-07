@@ -280,6 +280,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <tr><td><code>base_url</code></td><td>TEXT NULL</td><td>See table below</td></tr>
     <tr><td><code>encrypted_payload</code></td><td>TEXT</td><td>Encrypted JSON</td></tr>
     <tr><td><code>created_at</code>, <code>updated_at</code></td><td>TEXT</td><td>UTC ISO8601</td></tr>
+    <tr><td><code>is_default</code></td><td>INTEGER</td><td>0 | 1, default 0. Source kinds only (CHECK); at most one row per <code>kind</code> has 1 (partial unique index <code>idx_integrations_default_kind</code>). UI preselection in Add Repo only — the poller reads <code>monitored_repos.source_integration_id</code> and never falls back to the default</td></tr>
   </table>
   <table>
     <tr><th>kind</th><th>Role</th><th>base_url</th></tr>
@@ -840,9 +841,9 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <h3>7.3 Integrations</h3>
   <table>
     <tr><th>Method</th><th>Path</th><th>Notes</th></tr>
-    <tr><td>GET</td><td><code>/api/v1/integrations</code></td><td>List without secrets</td></tr>
-    <tr><td>POST</td><td><code>/api/v1/integrations</code></td><td>Create with <code>kind</code>, <code>name</code>, <code>baseUrl?</code>, <code>secret</code> (one-time)</td></tr>
-    <tr><td>PATCH</td><td><code>/api/v1/integrations/{id}</code></td><td><code>name</code>, optional <code>secret</code> (replace)</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/integrations</code></td><td>List without secrets; each item carries <code>isDefault</code></td></tr>
+    <tr><td>POST</td><td><code>/api/v1/integrations</code></td><td>Create with <code>kind</code>, <code>name</code>, <code>baseUrl?</code>, <code>secret</code> (one-time), <code>isDefault?</code> (source kinds only, else 400; setting <code>true</code> moves the flag from the kind's previous default in one transaction)</td></tr>
+    <tr><td>PATCH</td><td><code>/api/v1/integrations/{id}</code></td><td><code>name</code>, optional <code>secret</code> (replace), optional <code>isDefault</code> (omitted = unchanged; <code>true</code> on a ticket kind → 400)</td></tr>
     <tr><td>DELETE</td><td><code>/api/v1/integrations/{id}</code></td><td>409 if still referenced by repos or ticket projects</td></tr>
     <tr><td>POST</td><td><code>/api/v1/integrations/{id}/test</code></td><td>Connectivity per kind (§6.3)</td></tr>
   </table>
@@ -853,6 +854,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   "name": "GitHub PAT",
   "baseUrl": null,
   "hasSecret": true,
+  "isDefault": false,
   "createdAt": "...",
   "updatedAt": "..."
 }</code></pre>
@@ -1027,7 +1029,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><a href="https://coss.com/ui/r/p-table-3.json">p-table-3</a></td><td>Repo list (bulk enable/disable — post-MVP)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-dialog-1.json">p-dialog-1</a> form</td><td>Add / Edit Repo</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-alert-dialog-1.json">p-alert-dialog-1</a></td><td>Delete confirmation</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td>Source kind, source integration, <strong>ticket project</strong></td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td>Source kind, source integration (Add: preselects the source kind's default integration, initially and when the kind changes; <em>None</em> stays selectable for optional kinds; Edit never applies the default), <strong>ticket project</strong></td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-checkbox-group-1.json">p-checkbox-group-1</a></td><td>Optional: notification targets per repo</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-switch-1.json">p-switch-1</a></td><td>Enabled toggle; <strong>Include pre-releases</strong> toggle (default off)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-badge-1.json">p-badge-1</a></td><td>source_kind + ticket project name in tables</td></tr>
@@ -1064,6 +1066,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><a href="https://coss.com/ui/r/p-drawer-10.json">p-drawer-10</a> edit form</td><td>Create/Edit Integration (mobile-friendly)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>Name; Base URL (gitlab, gitea, forgejo, kaneo, jira)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-field-2.json">p-field-2</a></td><td>Jira: email field</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-switch-1.json">p-switch-1</a></td><td>"Default for this source type" (source kinds only); the list row shows a "Default" badge. Deleting the default leaves the kind without one; the first integration of a kind is not made default automatically</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-input-1.json">p-input-1</a> type password</td><td>Token / API Key (never re-display)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>"Test connection"</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-toast-5.json">p-toast-5</a> promise</td><td>Test connection async feedback</td></tr>

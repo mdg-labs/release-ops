@@ -153,7 +153,12 @@ export function IntegrationsView(): React.ReactElement {
                 {integrations?.map((integration) => (
                   <TableRow key={integration.id}>
                     <TableCell className="font-medium">
-                      {integration.name}
+                      <span className="flex items-center gap-2">
+                        {integration.name}
+                        {integration.isDefault ? (
+                          <Badge variant="info">{t("defaultBadge")}</Badge>
+                        ) : null}
+                      </span>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">
