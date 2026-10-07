@@ -14,7 +14,7 @@ by adding its PR number.
 - **wiring** — a service built but never constructed in `cmd/server` (notifier not passed to the scheduler or the notification test endpoint), so the feature silently does nothing — PR 112
 - **wiring** — a value read once at image build instead of at runtime (`APP_TIMEZONE` frozen into a statically rendered layout), so the container ignores the deployment's environment — dev 8190afc
 - **scope** — a documented behaviour implemented only for the common case (GitLab base URL path prefix dropped, so instances under a subpath 404 into "no release"; Jira `initialStatus` not applied after create) — PR 112
-- **scope** — a filter that matches more than its documented rule (`git log --grep` over the whole message where only the subject and a trailer were meant to count) — PR 133
+- **scope** — a filter that matches more or less than its documented rule (`git log --grep` over the whole message where only the subject and a trailer were meant to count; a SemVer tag pattern that rejects a prerelease and build suffix together) — PR 133, PR 153
 - **scope** — a provider payload field sent unconditionally or empty where the remote API rejects it (Jira priority when unset, empty ADF text) — PR 112
 
 ## Partial failure and atomicity
@@ -39,11 +39,12 @@ by adding its PR number.
 - **input** — email addresses compared case-sensitively, or display-name forms (`Name <a@b>`) accepted where a bare address is expected — PR 112
 
 ## Docs
-- **docs** — a worked example or table row that contradicts the rule it illustrates, or states an invariant without the gap the same doc records elsewhere — PR 133, PR 140
+- **docs** — a worked example or table row that contradicts the rule it illustrates, or states an invariant without the gap the same doc records elsewhere (or the partial-failure path the code takes) — PR 133, PR 140, PR 153
 - **docs** — a page that declares itself a mirror of a canonical file (`db/schema.sql`, `docs/specs.html`) left stale when that file changes, because only the canonical file was edited — PR 140
 
 ## UI states
 - **ui** — rate-limited (429) and server (5xx) responses shown as "invalid credentials" — PR 112
+- **ui** — a "hidden while loading or failed" state gated on `data` alone; TanStack Query keeps the last data after a failed refetch, so check `isError` too — PR 153
 
 ## Release and CI
 - **ci** — a release workflow that builds from the branch head at publish time instead of the release tag, so the tagged image and the tag differ — PR 112
