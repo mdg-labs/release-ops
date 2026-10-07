@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
+	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 	"github.com/mdg-labs/release-ops/internal/store"
 )
 
@@ -119,6 +120,10 @@ func (h *IntegrationHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := validateIntegrationSecret(req.Kind, req.Secret); err != nil {
+		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
+		return
+	}
 	if err := validateDefaultFlag(req.Kind, req.IsDefault); err != nil {
 		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
 		return
@@ -198,6 +203,10 @@ func (h *IntegrationHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 	if req.Secret != nil {
 		if *req.Secret == "" {
 			auth.WriteError(w, "VALIDATION_ERROR", "secret cannot be empty", http.StatusBadRequest)
+			return
+		}
+		if err := validateIntegrationSecret(existing.Kind, *req.Secret); err != nil {
+			auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
 			return
 		}
 		secret := []byte(*req.Secret)
@@ -316,6 +325,25 @@ func validateIntegrationKind(kind string) error {
 		return errors.New("kind must be one of: github, gitlab, gitea, forgejo, codeberg, kaneo, jira, linear")
 	}
 	return nil
+}
+
+// validateIntegrationSecret rejects a secret the provider could never use, so a
+// broken credential is refused at save time instead of failing every later call.
+func validateIntegrationSecret(kind, secret string) error {
+	if kind != "jira" {
+		return nil
+	}
+	_, _, err := ticket.ParseJiraSecret([]byte(secret))
+	if err == nil {
+		return nil
+	}
+	// A JSON error can quote part of the submitted secret; never echo it back.
+	var syntaxErr *json.SyntaxError
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &syntaxErr) || errors.As(err, &typeErr) {
+		return errors.New("jira secret must be a JSON object with email and api_token")
+	}
+	return err
 }
 
 func validateDefaultFlag(kind string, isDefault bool) error {

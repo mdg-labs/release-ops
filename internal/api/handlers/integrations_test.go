@@ -422,6 +422,164 @@ func TestPatchIntegrationReplacesSecretWhenProvided(t *testing.T) {
 	}
 }
 
+func TestPatchIntegrationRejectsBrokenJiraSecret(t *testing.T) {
+	t.Parallel()
+
+	const stored = `{"email":"old@example.com","api_token":"old-token"}`
+	cases := map[string]string{
+		"empty email":       `{"email":"","api_token":"new-token"}`,
+		"missing email":     `{"api_token":"new-token"}`,
+		"blank email":       `{"email":"   ","api_token":"new-token"}`,
+		"empty api_token":   `{"email":"a@b.example","api_token":""}`,
+		"missing api_token": `{"email":"a@b.example"}`,
+		"not JSON":          `hunter2`,
+		"not an object":     `"hunter2"`,
+	}
+
+	for name, secret := range cases {
+		secret := secret
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			baseURL := "https://jira.example"
+			repo := &mockIntegrationRepo{
+				items: map[string]*store.Integration{
+					"int-1": {ID: "int-1", Kind: "jira", Name: "Jira", BaseURL: &baseURL, HasSecret: true},
+				},
+				secrets: map[string][]byte{"int-1": []byte(stored)},
+			}
+			router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+			cookie := seedSession(t, sm)
+
+			payload, err := json.Marshal(map[string]string{"name": "Jira", "secret": secret})
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			req := httptest.NewRequest(http.MethodPatch, "/api/v1/integrations/int-1", strings.NewReader(string(payload)))
+			req.AddCookie(cookie)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+			if repo.updateInput != nil {
+				t.Fatal("expected no Update for a broken Jira secret")
+			}
+			if string(repo.secrets["int-1"]) != stored {
+				t.Fatalf("stored secret changed: %q", repo.secrets["int-1"])
+			}
+			if strings.Contains(rec.Body.String(), "hunter2") {
+				t.Fatalf("response echoes the submitted secret: %s", rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestPatchIntegrationAcceptsValidJiraSecret(t *testing.T) {
+	t.Parallel()
+
+	baseURL := "https://jira.example"
+	repo := &mockIntegrationRepo{
+		items: map[string]*store.Integration{
+			"int-1": {ID: "int-1", Kind: "jira", Name: "Jira", BaseURL: &baseURL, HasSecret: true},
+		},
+		secrets: map[string][]byte{"int-1": []byte(`{"email":"old@example.com","api_token":"old"}`)},
+	}
+	router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+	cookie := seedSession(t, sm)
+
+	const next = `{"email":"new@example.com","api_token":"new"}`
+	payload, err := json.Marshal(map[string]string{"name": "Jira", "secret": next})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/integrations/int-1", strings.NewReader(string(payload)))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if string(repo.secrets["int-1"]) != next {
+		t.Fatalf("secret = %q, want %q", repo.secrets["int-1"], next)
+	}
+}
+
+func TestPatchJiraNameOnlyKeepsStoredSecret(t *testing.T) {
+	t.Parallel()
+
+	const stored = `{"email":"old@example.com","api_token":"old"}`
+	baseURL := "https://jira.example"
+	repo := &mockIntegrationRepo{
+		items: map[string]*store.Integration{
+			"int-1": {ID: "int-1", Kind: "jira", Name: "Jira", BaseURL: &baseURL, HasSecret: true},
+		},
+		secrets: map[string][]byte{"int-1": []byte(stored)},
+	}
+	router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+	cookie := seedSession(t, sm)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/integrations/int-1", strings.NewReader(`{"name":"Renamed"}`))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if repo.updateInput == nil || repo.updateInput.Secret != nil {
+		t.Fatalf("updateInput = %+v, want an update without a secret", repo.updateInput)
+	}
+	if string(repo.secrets["int-1"]) != stored {
+		t.Fatalf("stored secret changed: %q", repo.secrets["int-1"])
+	}
+}
+
+func TestCreateIntegrationRejectsBrokenJiraSecret(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"empty email":     `{"email":"","api_token":"tok"}`,
+		"missing email":   `{"api_token":"tok"}`,
+		"empty api_token": `{"email":"a@b.example","api_token":""}`,
+		"not JSON":        `hunter2`,
+	}
+
+	for name, secret := range cases {
+		secret := secret
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			repo := &mockIntegrationRepo{}
+			router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
+			cookie := seedSession(t, sm)
+
+			payload, err := json.Marshal(map[string]string{
+				"kind": "jira", "name": "Jira", "baseUrl": "https://jira.example", "secret": secret,
+			})
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/integrations", strings.NewReader(string(payload)))
+			req.AddCookie(cookie)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+			if repo.createInput != nil {
+				t.Fatal("expected no Create for a broken Jira secret")
+			}
+			if strings.Contains(rec.Body.String(), "hunter2") {
+				t.Fatalf("response echoes the submitted secret: %s", rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestDeleteIntegrationConflictWhenReferenced(t *testing.T) {
 	t.Parallel()
 
@@ -566,6 +724,7 @@ func TestCreateIntegrationAcceptsAllKinds(t *testing.T) {
 	cases := []struct {
 		kind    string
 		baseURL string
+		secret  string
 	}{
 		{kind: "github"},
 		{kind: "gitlab", baseURL: "https://gitlab.example"},
@@ -573,7 +732,7 @@ func TestCreateIntegrationAcceptsAllKinds(t *testing.T) {
 		{kind: "forgejo", baseURL: "https://forgejo.example"},
 		{kind: "codeberg"},
 		{kind: "kaneo", baseURL: "https://api.kaneo.example"},
-		{kind: "jira", baseURL: "https://jira.example"},
+		{kind: "jira", baseURL: "https://jira.example", secret: `{"email":"a@b.example","api_token":"tok"}`},
 		{kind: "linear"},
 	}
 
@@ -582,6 +741,11 @@ func TestCreateIntegrationAcceptsAllKinds(t *testing.T) {
 		t.Run(tc.kind, func(t *testing.T) {
 			t.Parallel()
 
+			secret := tc.secret
+			if secret == "" {
+				secret = "token"
+			}
+
 			repo := &mockIntegrationRepo{}
 			router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
 			cookie := seedSession(t, sm)
@@ -589,11 +753,11 @@ func TestCreateIntegrationAcceptsAllKinds(t *testing.T) {
 			var body string
 			if tc.baseURL != "" {
 				body = fmt.Sprintf(
-					`{"kind":%q,"name":%q,"baseUrl":%q,"secret":"token"}`,
-					tc.kind, tc.kind+" integration", tc.baseURL,
+					`{"kind":%q,"name":%q,"baseUrl":%q,"secret":%q}`,
+					tc.kind, tc.kind+" integration", tc.baseURL, secret,
 				)
 			} else {
-				body = fmt.Sprintf(`{"kind":%q,"name":%q,"secret":"token"}`, tc.kind, tc.kind+" integration")
+				body = fmt.Sprintf(`{"kind":%q,"name":%q,"secret":%q}`, tc.kind, tc.kind+" integration", secret)
 			}
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/integrations", strings.NewReader(body))

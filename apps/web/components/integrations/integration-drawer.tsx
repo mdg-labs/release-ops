@@ -105,6 +105,7 @@ export function IntegrationDrawer({
   const requiresBaseUrl = kindRequiresBaseUrl(activeKind);
   const showEmail = kindIsJira(activeKind);
   const isSourceKind = (SOURCE_KINDS as readonly string[]).includes(activeKind);
+  const emailRequired = mode === "create" || secret.trim() !== "";
   const secretLabel = kindUsesApiKeyLabel(activeKind)
     ? t("apiKey")
     : kindIsJira(activeKind)
@@ -152,12 +153,16 @@ export function IntegrationDrawer({
     }
 
     const trimmedEmail = email.trim();
+    const trimmedSecret = secret.trim();
     if (showEmail && mode === "create" && !trimmedEmail) {
       setFormError(t("validation.emailRequired"));
       return;
     }
+    if (showEmail && mode === "edit" && trimmedSecret && !trimmedEmail) {
+      setFormError(t("validation.emailRequiredForNewToken"));
+      return;
+    }
 
-    const trimmedSecret = secret.trim();
     const secretRequired = mode === "create" || !integration?.hasSecret;
     if (secretRequired && !trimmedSecret) {
       setFormError(t("validation.secretRequired"));
@@ -328,7 +333,8 @@ export function IntegrationDrawer({
             {showEmail ? (
               <Field name="email">
                 <FieldLabel htmlFor={emailId}>
-                  {t("jiraEmail")} <span aria-hidden="true">*</span>
+                  {t("jiraEmail")}{" "}
+                  {emailRequired ? <span aria-hidden="true">*</span> : null}
                 </FieldLabel>
                 <Input
                   autoComplete="email"

@@ -178,6 +178,92 @@ describe("IntegrationsView", () => {
     expect(within(dialog).getByLabelText(/API token/)).toBeInTheDocument();
   });
 
+  it("refuses a new Jira API token with a blank email", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, sampleIntegrations);
+    let patchSent = false;
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations/int-2", method: "PATCH" })
+      .reply(() => {
+        patchSent = true;
+        return { statusCode: 200, data: "{}" };
+      });
+
+    renderIntegrationsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit Company Jira" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog)
+        .getByText(/^Email/)
+        .querySelector("span"),
+    ).toBeNull();
+
+    fireEvent.change(within(dialog).getByLabelText(/API token/), {
+      target: { value: "new-token" },
+    });
+    expect(
+      within(dialog)
+        .getByText(/^Email/)
+        .querySelector("span"),
+    ).not.toBeNull();
+
+    fireEvent.submit(
+      within(dialog).getByRole("button", { name: "Save" }).closest("form")!,
+    );
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Enter the Jira email when you replace the API token.",
+    );
+    expect(patchSent).toBe(false);
+  });
+
+  it("sends a new Jira secret with both email and token", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, sampleIntegrations);
+    let patchBody: string | undefined;
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations/int-2", method: "PATCH" })
+      .reply((opts) => {
+        patchBody = opts.body?.toString();
+        return {
+          statusCode: 200,
+          data: JSON.stringify(sampleIntegrations[1]),
+          responseOptions: { headers: { "content-type": "application/json" } },
+        };
+      });
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, sampleIntegrations);
+
+    renderIntegrationsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit Company Jira" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/^Email/), {
+      target: { value: "me@example.com" },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/API token/), {
+      target: { value: "new-token" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchBody).toBeDefined();
+    });
+    expect(JSON.parse(patchBody ?? "{}").secret).toBe(
+      JSON.stringify({ email: "me@example.com", api_token: "new-token" }),
+    );
+  });
+
   it("does not re-display stored secret when editing", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool
