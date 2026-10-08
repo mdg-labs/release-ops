@@ -65,6 +65,10 @@ func run(cfg *config.Config) {
 		log.Fatalf("app settings: %v", err)
 	}
 
+	if err := reconcilePollRuns(ctx, appStore.Poll()); err != nil {
+		log.Fatalf("poll runs: %v", err)
+	}
+
 	notifier := poll.NewNotifier(appStore.Notifications(), nil)
 	engine := poll.NewEngine(appStore.Poll())
 	scheduler, err := poll.NewScheduler(poll.SchedulerConfig{
@@ -105,4 +109,17 @@ func run(cfg *config.Config) {
 	if err := api.Serve(ctx, addr, handler); err != nil {
 		log.Fatalf("server: %v", err)
 	}
+}
+
+// reconcilePollRuns finishes the runs a previous process left running. It must run
+// before the scheduler starts, so it can never touch a run of this process.
+func reconcilePollRuns(ctx context.Context, polls store.PollRepository) error {
+	n, err := poll.ReconcileInterruptedRuns(ctx, polls)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		log.Printf("poll runs: marked %d interrupted run(s) as failed", n)
+	}
+	return nil
 }

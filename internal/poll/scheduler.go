@@ -19,6 +19,9 @@ import (
 // MinPollIntervalMinutes is the minimum allowed cron interval (specs §4.1).
 const MinPollIntervalMinutes int64 = 5
 
+// finishRunTimeout bounds the write that records a run's final state.
+const finishRunTimeout = 5 * time.Second
+
 // ErrAlreadyRunning is returned when a poll is requested while another run is active.
 var ErrAlreadyRunning = errors.New("poll already running")
 
@@ -146,7 +149,12 @@ func (s *Scheduler) IsPolling() bool {
 func (s *Scheduler) RunAll(ctx context.Context, runID string) error {
 	repos, err := s.repos.ListEnabled(ctx)
 	if err != nil {
-		return fmt.Errorf("list enabled repos: %w", err)
+		listErr := fmt.Errorf("list enabled repos: %w", err)
+		slog.Error("poll run failed before polling", "runId", runID, "error", listErr)
+		if finishErr := s.finishRun(ctx, runID, RunStatusFailed, 0, 0, 0, []RunErrorEntry{{Message: "enabled repos could not be listed"}}); finishErr != nil {
+			return errors.Join(listErr, finishErr)
+		}
+		return listErr
 	}
 
 	var (
@@ -154,11 +162,16 @@ func (s *Scheduler) RunAll(ctx context.Context, runID string) error {
 		ticketsCreated    int64
 		ticketsSuperseded int64
 		runErrors         []RunErrorEntry
+		interrupted       bool
 	)
 
 	integrations := newIntegrationCache(s.integrations)
 
 	for i := range repos {
+		if ctx.Err() != nil {
+			interrupted = true
+			break
+		}
 		repo := repos[i]
 		reposChecked++
 
@@ -187,13 +200,33 @@ func (s *Scheduler) RunAll(ctx context.Context, runID string) error {
 		}
 	}
 
+	status := RunFinishStatus(reposChecked, int64(len(runErrors)))
+	if interrupted {
+		// Repos were left unpolled, so the run is never a success.
+		runErrors = append(runErrors, RunErrorEntry{Message: interruptedRunMessage})
+		if status == RunStatusSuccess {
+			status = RunStatusPartial
+		}
+	}
+	return s.finishRun(ctx, runID, status, reposChecked, ticketsCreated, ticketsSuperseded, runErrors)
+}
+
+// finishRun stores the run's final state. The write ignores ctx cancellation: a run cut
+// short by shutdown would otherwise stay "running" with its errors lost.
+func (s *Scheduler) finishRun(
+	ctx context.Context,
+	runID, status string,
+	reposChecked, ticketsCreated, ticketsSuperseded int64,
+	runErrors []RunErrorEntry,
+) error {
 	errorsJSON, err := EncodeRunErrors(runErrors)
 	if err != nil {
 		return fmt.Errorf("encode run errors: %w", err)
 	}
 
-	status := RunFinishStatus(reposChecked, int64(len(runErrors)))
-	if _, err := s.poll.FinishRun(ctx, runID, status, reposChecked, ticketsCreated, ticketsSuperseded, errorsJSON); err != nil {
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finishRunTimeout)
+	defer cancel()
+	if _, err := s.poll.FinishRun(writeCtx, runID, status, reposChecked, ticketsCreated, ticketsSuperseded, errorsJSON); err != nil {
 		return fmt.Errorf("finish poll run: %w", err)
 	}
 	return nil
