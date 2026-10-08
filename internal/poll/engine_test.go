@@ -3,6 +3,7 @@ package poll_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -60,6 +61,12 @@ func (m *mockPollRepo) UpdatePollState(_ context.Context, repoID string, update 
 		repo.LastError = &v
 	} else {
 		repo.LastError = nil
+	}
+	// Like the store, the marker is replaced by every write.
+	repo.PendingTicketTag = nil
+	if update.PendingTicketTag != nil {
+		v := *update.PendingTicketTag
+		repo.PendingTicketTag = &v
 	}
 	m.repos[repoID] = repo
 	out := repo
@@ -685,6 +692,70 @@ func TestEvaluateRepoSupersedeKeepsNewTicketWhenOldTicketUpdateFails(t *testing.
 	}
 }
 
+// targetsUnreadPollRepo stores every update, then reports that the repo's notification
+// targets could not be read afterwards, the way the store does.
+type targetsUnreadPollRepo struct {
+	*mockPollRepo
+}
+
+func (r targetsUnreadPollRepo) UpdatePollState(ctx context.Context, repoID string, update store.PollStateUpdate) (*store.MonitoredRepo, error) {
+	updated, err := r.mockPollRepo.UpdatePollState(ctx, repoID, update)
+	if err != nil {
+		return nil, err
+	}
+	updated.NotificationTargetIDs = nil
+	return updated, fmt.Errorf("%w: database is locked", store.ErrNotificationTargetsUnread)
+}
+
+func TestEvaluateRepoSupersedeCompletesWhenTargetReadFailsAfterWrites(t *testing.T) {
+	t.Parallel()
+
+	repo := baseRepo()
+	last := "v1.0.0"
+	openID := "old-ticket"
+	repo.LastKnownTag = &last
+	repo.OpenTicketExternalID = &openID
+	repo.OpenTicketTag = &last
+	repo.NotificationTargetIDs = []string{"t1"}
+
+	pollRepo := newMockPollRepo(repo)
+	engine := poll.NewEngine(targetsUnreadPollRepo{pollRepo})
+	provider := &mockTicketProvider{
+		statuses: map[string]string{openID: "in-progress"},
+		createID: "new-ticket",
+	}
+
+	got, err := engine.EvaluateRepo(
+		context.Background(),
+		repo,
+		testRelease("v2.0.0"),
+		nil,
+		testTicketProject(ticket.PolicySupersede),
+		provider,
+		testRepoWebURL(),
+	)
+	if err != nil {
+		t.Fatalf("EvaluateRepo: %v", err)
+	}
+	if len(got.Actions) != 2 || got.Actions[0] != poll.ActionSupersede || got.Actions[1] != poll.ActionCreate {
+		t.Fatalf("actions = %v, want [supersede create]", got.Actions)
+	}
+	// One write for the pending marker and one for the new ticket: the committed write
+	// whose target read failed counts as saved and is not repeated.
+	if len(pollRepo.updates) != 2 {
+		t.Fatalf("poll state writes = %d, want 2", len(pollRepo.updates))
+	}
+	if got.Repo.OpenTicketExternalID == nil || *got.Repo.OpenTicketExternalID != "new-ticket" {
+		t.Fatalf("OpenTicketExternalID = %v, want new-ticket", got.Repo.OpenTicketExternalID)
+	}
+	if got.Repo.PendingTicketTag != nil {
+		t.Fatalf("PendingTicketTag = %q, want cleared with the new ticket", *got.Repo.PendingTicketTag)
+	}
+	if len(got.Repo.NotificationTargetIDs) != 1 || got.Repo.NotificationTargetIDs[0] != "t1" {
+		t.Fatalf("NotificationTargetIDs = %v, want the ids the repo was loaded with", got.Repo.NotificationTargetIDs)
+	}
+}
+
 func TestEvaluateRepoTreatsSupersededStatusAsClosed(t *testing.T) {
 	t.Parallel()
 
@@ -710,5 +781,98 @@ func TestEvaluateRepoTreatsSupersededStatusAsClosed(t *testing.T) {
 	}
 	if len(got.Actions) != 1 || got.Actions[0] != poll.ActionCreate {
 		t.Fatalf("actions = %v, want [create]", got.Actions)
+	}
+}
+
+// failLinkPollRepo rejects every write that stores a ticket link and cancels cancel on
+// the first one, the way a shutdown arrives while the write is being retried.
+type failLinkPollRepo struct {
+	*mockPollRepo
+	cancel   context.CancelFunc
+	attempts int
+}
+
+func (r *failLinkPollRepo) UpdatePollState(ctx context.Context, repoID string, update store.PollStateUpdate) (*store.MonitoredRepo, error) {
+	if update.OpenTicketExternalID != nil && *update.OpenTicketExternalID != "" {
+		r.attempts++
+		if r.cancel != nil {
+			r.cancel()
+		}
+		return nil, errors.New("database is locked")
+	}
+	return r.mockPollRepo.UpdatePollState(ctx, repoID, update)
+}
+
+func TestEvaluateRepoStopsRetryingLinkWriteWhenContextIsDone(t *testing.T) {
+	t.Parallel()
+
+	repo := baseRepo()
+	last := "v1.0.0"
+	repo.LastKnownTag = &last
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pollRepo := &failLinkPollRepo{mockPollRepo: newMockPollRepo(repo), cancel: cancel}
+	engine := poll.NewEngine(pollRepo)
+	provider := &mockTicketProvider{createID: "ticket-v2"}
+
+	_, err := engine.EvaluateRepo(ctx, repo, testRelease("v2.0.0"), nil, testTicketProject(ticket.PolicySupersede), provider, testRepoWebURL())
+	if err == nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("EvaluateRepo error = %v, want it to wrap context.Canceled", err)
+	}
+	if pollRepo.attempts != 1 {
+		t.Fatalf("link write attempts = %d, want 1 once the context is done", pollRepo.attempts)
+	}
+	if got := pollRepo.repos[repo.ID].PendingTicketTag; got == nil || *got != "v2.0.0" {
+		t.Fatalf("PendingTicketTag = %v, want v2.0.0 kept for the next poll", got)
+	}
+}
+
+func TestEvaluateRepoKeepsPendingMarkerOnStepsThatCreateNothing(t *testing.T) {
+	t.Parallel()
+
+	pending := "v2.0.0"
+	last := "v1.0.0"
+	openID := "old-ticket"
+
+	cases := []struct {
+		name    string
+		policy  string
+		open    bool
+		release string
+		fetch   error
+	}{
+		{name: "skip", release: "v1.0.0"},
+		{name: "fetch error", release: "v2.0.0", fetch: errors.New("provider down")},
+		{name: "merge", policy: ticket.PolicyMerge, open: true, release: "v2.0.0"},
+		{name: "skip if open", policy: ticket.PolicySkipIfOpen, open: true, release: "v2.0.0"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			repo := baseRepo()
+			repo.LastKnownTag = &last
+			repo.PendingTicketTag = &pending
+			if tc.open {
+				repo.OpenTicketExternalID = &openID
+			}
+			pollRepo := newMockPollRepo(repo)
+			engine := poll.NewEngine(pollRepo)
+			provider := &mockTicketProvider{statuses: map[string]string{openID: "in-progress"}}
+
+			var release *source.Release
+			if tc.fetch == nil {
+				release = testRelease(tc.release)
+			}
+			if _, err := engine.EvaluateRepo(context.Background(), repo, release, tc.fetch, testTicketProject(tc.policy), provider, testRepoWebURL()); err != nil {
+				t.Fatalf("EvaluateRepo: %v", err)
+			}
+			if got := pollRepo.repos[repo.ID].PendingTicketTag; got == nil || *got != pending {
+				t.Fatalf("PendingTicketTag = %v, want %q kept", got, pending)
+			}
+			if provider.createCalls != 0 {
+				t.Fatalf("CreateTicket calls = %d, want 0", provider.createCalls)
+			}
+		})
 	}
 }

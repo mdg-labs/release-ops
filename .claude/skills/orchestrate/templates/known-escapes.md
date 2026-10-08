@@ -39,12 +39,13 @@ by adding its PR number.
 - **input** — email addresses compared case-sensitively, or display-name forms (`Name <a@b>`) accepted where a bare address is expected — PR 112
 
 ## Docs
-- **docs** — a worked example or table row that contradicts the rule it illustrates, or states an invariant without the gap the same doc records elsewhere (or the partial-failure path the code takes) — PR 133, PR 140, PR 153
+- **docs** — a worked example or table row that contradicts the rule it illustrates, or states an invariant without the gap the same doc records elsewhere (or the partial-failure path the code takes) — PR 133, PR 140, PR 153, PR 167
 - **docs** — a page that declares itself a mirror of a canonical file (`db/schema.sql`, `docs/specs.html`) left stale when that file changes, because only the canonical file was edited — PR 140
 
 ## UI states
 - **ui** — rate-limited (429) and server (5xx) responses shown as "invalid credentials" — PR 112
 - **ui** — a "hidden while loading or failed" state gated on `data` alone; TanStack Query keeps the last data after a failed refetch, so check `isError` too — PR 153
+- **ui** — an async action's result applied to whatever dialog is open when it settles, so a dismissed dialog's late failure (or success) lands on the next one; guard each attempt and invalidate it on close — PR 167
 
 ## Release and CI
 - **ci** — a release workflow that builds from the branch head at publish time instead of the release tag, so the tagged image and the tag differ — PR 112

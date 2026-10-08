@@ -6,6 +6,8 @@ import { PageHeader } from "@/components/common/page-header";
 import { LastRunErrors } from "@/components/dashboard/last-run-errors";
 import { RepoStatusTable } from "@/components/dashboard/repo-status-table";
 import { StatusCard } from "@/components/dashboard/status-card";
+import { toastManager } from "@/components/ui/toast";
+import { ApiError } from "@/lib/api/client";
 import { useTriggerPoll } from "@/lib/hooks/use-poll";
 import { useStatus } from "@/lib/hooks/use-status";
 
@@ -30,6 +32,30 @@ export function DashboardView(): React.ReactElement {
     };
   }, [data?.isPolling, refetch]);
 
+  function handleRunPoll(): void {
+    triggerPoll.mutate(undefined, {
+      onError: (error) => {
+        if (error instanceof ApiError && error.status === 409) {
+          toastManager.add({
+            title: t("pollAlreadyRunning"),
+            type: "error",
+          });
+          void refetch();
+          return;
+        }
+
+        toastManager.add({
+          title: t("triggerFailed"),
+          description:
+            error instanceof ApiError && error.message
+              ? error.message
+              : undefined,
+          type: "error",
+        });
+      },
+    });
+  }
+
   const lastRunErrors = data?.lastRun?.errors ?? [];
 
   return (
@@ -50,9 +76,7 @@ export function DashboardView(): React.ReactElement {
           isLoading={isLoading}
           isPolling={isPolling}
           isTriggerPending={triggerPoll.isPending}
-          onRunPoll={() => {
-            triggerPoll.mutate();
-          }}
+          onRunPoll={handleRunPoll}
           status={data}
         />
       </section>

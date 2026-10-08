@@ -58,6 +58,7 @@ RETURNING
   last_release_published_at,
   last_polled_at,
   last_error,
+  pending_ticket_tag,
   created_at,
   updated_at
 `
@@ -94,6 +95,7 @@ type CreateMonitoredRepoRow struct {
 	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
 	LastPolledAt           sql.NullString `json:"last_polled_at"`
 	LastError              sql.NullString `json:"last_error"`
+	PendingTicketTag       sql.NullString `json:"pending_ticket_tag"`
 	CreatedAt              string         `json:"created_at"`
 	UpdatedAt              string         `json:"updated_at"`
 }
@@ -131,6 +133,7 @@ func (q *Queries) CreateMonitoredRepo(ctx context.Context, arg CreateMonitoredRe
 		&i.LastReleasePublishedAt,
 		&i.LastPolledAt,
 		&i.LastError,
+		&i.PendingTicketTag,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -162,6 +165,7 @@ SELECT
   last_release_published_at,
   last_polled_at,
   last_error,
+  pending_ticket_tag,
   created_at,
   updated_at
 FROM monitored_repos
@@ -183,6 +187,7 @@ type GetMonitoredRepoRow struct {
 	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
 	LastPolledAt           sql.NullString `json:"last_polled_at"`
 	LastError              sql.NullString `json:"last_error"`
+	PendingTicketTag       sql.NullString `json:"pending_ticket_tag"`
 	CreatedAt              string         `json:"created_at"`
 	UpdatedAt              string         `json:"updated_at"`
 }
@@ -204,6 +209,7 @@ func (q *Queries) GetMonitoredRepo(ctx context.Context, id string) (GetMonitored
 		&i.LastReleasePublishedAt,
 		&i.LastPolledAt,
 		&i.LastError,
+		&i.PendingTicketTag,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -225,6 +231,7 @@ SELECT
   mr.last_release_published_at,
   mr.last_polled_at,
   mr.last_error,
+  mr.pending_ticket_tag,
   mr.created_at,
   mr.updated_at,
   COALESCE(GROUP_CONCAT(mrn.notification_target_id), '') AS notification_target_ids
@@ -249,6 +256,7 @@ type ListEnabledRow struct {
 	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
 	LastPolledAt           sql.NullString `json:"last_polled_at"`
 	LastError              sql.NullString `json:"last_error"`
+	PendingTicketTag       sql.NullString `json:"pending_ticket_tag"`
 	CreatedAt              string         `json:"created_at"`
 	UpdatedAt              string         `json:"updated_at"`
 	NotificationTargetIds  interface{}    `json:"notification_target_ids"`
@@ -277,6 +285,7 @@ func (q *Queries) ListEnabled(ctx context.Context) ([]ListEnabledRow, error) {
 			&i.LastReleasePublishedAt,
 			&i.LastPolledAt,
 			&i.LastError,
+			&i.PendingTicketTag,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.NotificationTargetIds,
@@ -309,6 +318,7 @@ SELECT
   last_release_published_at,
   last_polled_at,
   last_error,
+  pending_ticket_tag,
   created_at,
   updated_at
 FROM monitored_repos
@@ -329,6 +339,7 @@ type ListMonitoredReposRow struct {
 	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
 	LastPolledAt           sql.NullString `json:"last_polled_at"`
 	LastError              sql.NullString `json:"last_error"`
+	PendingTicketTag       sql.NullString `json:"pending_ticket_tag"`
 	CreatedAt              string         `json:"created_at"`
 	UpdatedAt              string         `json:"updated_at"`
 }
@@ -356,6 +367,7 @@ func (q *Queries) ListMonitoredRepos(ctx context.Context) ([]ListMonitoredReposR
 			&i.LastReleasePublishedAt,
 			&i.LastPolledAt,
 			&i.LastError,
+			&i.PendingTicketTag,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -392,6 +404,7 @@ RETURNING
   last_release_published_at,
   last_polled_at,
   last_error,
+  pending_ticket_tag,
   created_at,
   updated_at
 `
@@ -416,6 +429,7 @@ type SetMonitoredRepoEnabledRow struct {
 	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
 	LastPolledAt           sql.NullString `json:"last_polled_at"`
 	LastError              sql.NullString `json:"last_error"`
+	PendingTicketTag       sql.NullString `json:"pending_ticket_tag"`
 	CreatedAt              string         `json:"created_at"`
 	UpdatedAt              string         `json:"updated_at"`
 }
@@ -437,6 +451,7 @@ func (q *Queries) SetMonitoredRepoEnabled(ctx context.Context, arg SetMonitoredR
 		&i.LastReleasePublishedAt,
 		&i.LastPolledAt,
 		&i.LastError,
+		&i.PendingTicketTag,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -468,6 +483,7 @@ RETURNING
   last_release_published_at,
   last_polled_at,
   last_error,
+  pending_ticket_tag,
   created_at,
   updated_at
 `
@@ -497,6 +513,7 @@ type UpdateMonitoredRepoRow struct {
 	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
 	LastPolledAt           sql.NullString `json:"last_polled_at"`
 	LastError              sql.NullString `json:"last_error"`
+	PendingTicketTag       sql.NullString `json:"pending_ticket_tag"`
 	CreatedAt              string         `json:"created_at"`
 	UpdatedAt              string         `json:"updated_at"`
 }
@@ -527,6 +544,7 @@ func (q *Queries) UpdateMonitoredRepo(ctx context.Context, arg UpdateMonitoredRe
 		&i.LastReleasePublishedAt,
 		&i.LastPolledAt,
 		&i.LastError,
+		&i.PendingTicketTag,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -542,6 +560,7 @@ SET
   last_release_published_at = ?,
   last_polled_at = ?,
   last_error = ?,
+  pending_ticket_tag = ?,
   updated_at = ?
 WHERE id = ?
 RETURNING
@@ -558,6 +577,7 @@ RETURNING
   last_release_published_at,
   last_polled_at,
   last_error,
+  pending_ticket_tag,
   created_at,
   updated_at
 `
@@ -569,6 +589,7 @@ type UpdatePollStateParams struct {
 	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
 	LastPolledAt           sql.NullString `json:"last_polled_at"`
 	LastError              sql.NullString `json:"last_error"`
+	PendingTicketTag       sql.NullString `json:"pending_ticket_tag"`
 	UpdatedAt              string         `json:"updated_at"`
 	ID                     string         `json:"id"`
 }
@@ -587,6 +608,7 @@ type UpdatePollStateRow struct {
 	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
 	LastPolledAt           sql.NullString `json:"last_polled_at"`
 	LastError              sql.NullString `json:"last_error"`
+	PendingTicketTag       sql.NullString `json:"pending_ticket_tag"`
 	CreatedAt              string         `json:"created_at"`
 	UpdatedAt              string         `json:"updated_at"`
 }
@@ -599,6 +621,7 @@ func (q *Queries) UpdatePollState(ctx context.Context, arg UpdatePollStateParams
 		arg.LastReleasePublishedAt,
 		arg.LastPolledAt,
 		arg.LastError,
+		arg.PendingTicketTag,
 		arg.UpdatedAt,
 		arg.ID,
 	)
@@ -617,6 +640,7 @@ func (q *Queries) UpdatePollState(ctx context.Context, arg UpdatePollStateParams
 		&i.LastReleasePublishedAt,
 		&i.LastPolledAt,
 		&i.LastError,
+		&i.PendingTicketTag,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

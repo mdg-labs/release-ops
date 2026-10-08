@@ -4,6 +4,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
@@ -365,6 +366,178 @@ describe("TicketProjectsView", () => {
     expect(
       await screen.findByText("Delete “Jira — DEV”? This cannot be undone."),
     ).toBeInTheDocument();
+  });
+
+  it("keeps the delete dialog open and explains an in-use ticket project", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/ticket-projects", method: "GET" })
+      .reply(200, sampleProjects);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, ticketIntegrations);
+    pool
+      .intercept({
+        path: `/api/go/api/v1/ticket-projects/${sampleProjects[0].id}`,
+        method: "DELETE",
+      })
+      .reply(409, {
+        error: {
+          code: "CONFLICT",
+          message: "ticket project is referenced by monitored repos",
+        },
+      });
+
+    renderTicketProjectsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Delete Jira — DEV" }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect(
+      await within(dialog).findByText(messages["ticket-projects"].deleteInUse),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        within(dialog).getByRole("button", { name: "Delete" }),
+      ).toBeEnabled();
+    });
+  });
+
+  it("shows the server message when deleting a ticket project fails", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/ticket-projects", method: "GET" })
+      .reply(200, sampleProjects);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, ticketIntegrations);
+    pool
+      .intercept({
+        path: `/api/go/api/v1/ticket-projects/${sampleProjects[0].id}`,
+        method: "DELETE",
+      })
+      .reply(500, {
+        error: { code: "INTERNAL", message: "database is locked" },
+      });
+    pool
+      .intercept({
+        path: `/api/go/api/v1/ticket-projects/${sampleProjects[0].id}`,
+        method: "DELETE",
+      })
+      .replyWithError(new Error("socket hang up"));
+
+    renderTicketProjectsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Delete Jira — DEV" }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect(
+      await within(dialog).findByText("database is locked"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect(
+      await within(dialog).findByText(messages["ticket-projects"].deleteFailed),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
+
+  it("drops a delete failure that settles after its dialog was closed", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/ticket-projects", method: "GET" })
+      .reply(200, sampleProjects);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, ticketIntegrations);
+    pool
+      .intercept({
+        path: `/api/go/api/v1/ticket-projects/${sampleProjects[0].id}`,
+        method: "DELETE",
+      })
+      .reply(500, {
+        error: { code: "INTERNAL", message: "database is locked" },
+      })
+      .delay(200);
+
+    renderTicketProjectsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Delete Jira — DEV" }),
+    );
+    const first = await screen.findByRole("alertdialog");
+    fireEvent.click(within(first).getByRole("button", { name: "Delete" }));
+    fireEvent.click(within(first).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Jira — DEV" }));
+    const second = await screen.findByRole("alertdialog");
+    await waitFor(() => {
+      expect(
+        within(second).getByRole("button", { name: "Delete" }),
+      ).toBeEnabled();
+    });
+
+    expect(within(second).queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
+
+  it("shows checkbox-style hints under the status mapping lists", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/ticket-projects", method: "GET" })
+      .reply(200, sampleProjects);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, ticketIntegrations);
+    pool
+      .intercept({
+        path: /\/api\/go\/api\/v1\/integrations\/int-jira\/ticket-metadata\/.*/,
+        method: "GET",
+      })
+      .reply(200, {
+        items: [
+          { id: "To Do", name: "To Do" },
+          { id: "Done", name: "Done" },
+        ],
+      })
+      .persist();
+
+    renderTicketProjectsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit Jira — DEV" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(dialog).getByRole("tab", { name: "Status mapping" }),
+    );
+
+    expect(
+      await within(dialog).findByText(
+        "Select every status that counts as open.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Select every status that counts as done."),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Select every status that counts as cancelled."),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByText("Comma-separated status values."),
+    ).not.toBeInTheDocument();
   });
 
   it("pre-fills edit drawer values", async () => {

@@ -2,7 +2,7 @@
 
 import { LayoutListIcon, PencilIcon, Trash2Icon } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/components/common/page-header";
 import { DeleteTicketProjectDialog } from "@/components/ticket-projects/delete-ticket-project-dialog";
 import { ProjectDrawer } from "@/components/ticket-projects/project-drawer";
@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ApiError } from "@/lib/api/client";
 import { useIntegrations } from "@/lib/hooks/use-integrations";
 import { useTicketProjects } from "@/lib/hooks/use-ticket-projects";
 import type { TicketProject } from "@/lib/query/types";
@@ -50,6 +51,10 @@ export function TicketProjectsView(): React.ReactElement {
 
   const [drawer, setDrawer] = useState<DrawerState>({ mode: "closed" });
   const [deleteTarget, setDeleteTarget] = useState<TicketProject | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Bumped when the delete dialog closes, so a delete that settles after
+  // its dialog was dismissed cannot touch the dialog opened next.
+  const deleteAttempt = useRef(0);
 
   const integrationNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -236,17 +241,37 @@ export function TicketProjectsView(): React.ReactElement {
       />
 
       <DeleteTicketProjectDialog
+        error={deleteError}
         isDeleting={deleteTicketProject.isPending}
         onConfirm={async () => {
           if (!deleteTarget) {
             return;
           }
-          await deleteTicketProject.mutateAsync(deleteTarget.id);
-          setDeleteTarget(null);
+          const attempt = ++deleteAttempt.current;
+          setDeleteError(null);
+          try {
+            await deleteTicketProject.mutateAsync(deleteTarget.id);
+            if (attempt === deleteAttempt.current) {
+              setDeleteTarget(null);
+            }
+          } catch (error) {
+            if (attempt !== deleteAttempt.current) {
+              return;
+            }
+            setDeleteError(
+              error instanceof ApiError && error.status === 409
+                ? t("deleteInUse")
+                : error instanceof ApiError && error.message
+                  ? error.message
+                  : t("deleteFailed"),
+            );
+          }
         }}
         onOpenChange={(open) => {
           if (!open) {
+            deleteAttempt.current += 1;
             setDeleteTarget(null);
+            setDeleteError(null);
           }
         }}
         open={deleteTarget !== null}

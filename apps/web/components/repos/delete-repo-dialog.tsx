@@ -18,6 +18,7 @@ type DeleteRepoDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
+  error: string | null;
   isDeleting: boolean;
 };
 
@@ -26,6 +27,7 @@ export function DeleteRepoDialog({
   open,
   onOpenChange,
   onConfirm,
+  error,
   isDeleting,
 }: DeleteRepoDialogProps): React.ReactElement {
   const t = useTranslations("repos");
@@ -39,6 +41,11 @@ export function DeleteRepoDialog({
           <AlertDialogDescription>
             {t("deleteDescription", { path: repo?.projectPath ?? "" })}
           </AlertDialogDescription>
+          {error ? (
+            <p className="text-destructive-foreground text-sm" role="alert">
+              {error}
+            </p>
+          ) : null}
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="ghost" />}>

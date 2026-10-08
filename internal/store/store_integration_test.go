@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mdg-labs/release-ops/internal/providers/source"
+	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 	"github.com/mdg-labs/release-ops/internal/store"
 )
 
@@ -81,6 +83,78 @@ func TestIntegrationCRUDRoundtrip(t *testing.T) {
 	_, err = s.Integrations().Get(ctx, created.ID)
 	if !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("Get after delete: %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestIntegrationWithoutSecretReportsNoSecret(t *testing.T) {
+	t.Parallel()
+
+	s, _ := testStore(t)
+	ctx := context.Background()
+
+	created, err := s.Integrations().Create(ctx, store.CreateIntegrationInput{
+		Kind: "github",
+		Name: "Public GitHub",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.HasSecret {
+		t.Fatal("created.HasSecret = true, want false for an integration without a token")
+	}
+
+	listed, err := s.Integrations().List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(listed) != 1 || listed[0].HasSecret {
+		t.Fatalf("List = %+v, want one integration without a secret", listed)
+	}
+
+	payload, err := s.Integrations().DecryptPayload(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("DecryptPayload: %v", err)
+	}
+	token, err := source.ParseTokenSecret(payload)
+	if err != nil {
+		t.Fatalf("ParseTokenSecret: %v", err)
+	}
+	if token != "" {
+		t.Fatalf("token = %q, want empty (unauthenticated)", token)
+	}
+
+	// A payload-less integration is never a usable ticket integration.
+	if _, _, err := ticket.ParseJiraSecret(payload); err == nil {
+		t.Fatal("ParseJiraSecret accepted an empty payload")
+	}
+	if _, err := ticket.ParseKaneoSecret(payload); err == nil {
+		t.Fatal("ParseKaneoSecret accepted an empty payload")
+	}
+
+	renamed, err := s.Integrations().Update(ctx, created.ID, store.UpdateIntegrationInput{Name: "Renamed"})
+	if err != nil {
+		t.Fatalf("Update without secret: %v", err)
+	}
+	if renamed.HasSecret {
+		t.Fatal("HasSecret = true after an update without a secret, want false")
+	}
+
+	withToken, err := s.Integrations().Update(ctx, created.ID, store.UpdateIntegrationInput{
+		Name:   "Renamed",
+		Secret: []byte(`{"token":"ghp_added"}`),
+	})
+	if err != nil {
+		t.Fatalf("Update with secret: %v", err)
+	}
+	if !withToken.HasSecret {
+		t.Fatal("HasSecret = false after adding a token, want true")
+	}
+	payload, err = s.Integrations().DecryptPayload(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("DecryptPayload after update: %v", err)
+	}
+	if token, _ := source.ParseTokenSecret(payload); token != "ghp_added" {
+		t.Fatalf("token = %q, want ghp_added", token)
 	}
 }
 

@@ -10,6 +10,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
+	"github.com/mdg-labs/release-ops/internal/providers/source"
+	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 	"github.com/mdg-labs/release-ops/internal/store"
 )
 
@@ -28,6 +30,14 @@ var validIntegrationKinds = map[string]struct{}{
 var sourceIntegrationKinds = map[string]struct{}{
 	"github":   {},
 	"gitlab":   {},
+	"gitea":    {},
+	"forgejo":  {},
+	"codeberg": {},
+}
+
+// optionalTokenKinds may be created without a token (unauthenticated access, specs §4.2).
+var optionalTokenKinds = map[string]struct{}{
+	"github":   {},
 	"gitea":    {},
 	"forgejo":  {},
 	"codeberg": {},
@@ -112,10 +122,19 @@ func (h *IntegrationHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Secret == "" {
-		auth.WriteError(w, "VALIDATION_ERROR", "secret is required", http.StatusBadRequest)
-		return
+		// An optional-token kind created without a token stores an empty payload, which
+		// reads as "no secret" and as an unauthenticated source.
+		if _, optional := optionalTokenKinds[req.Kind]; !optional {
+			auth.WriteError(w, "VALIDATION_ERROR", "secret is required", http.StatusBadRequest)
+			return
+		}
 	}
 	if err := validateBaseURL(req.Kind, req.BaseURL); err != nil {
+		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
+		return
+	}
+	secret, err := validateIntegrationSecret(req.Kind, req.Secret)
+	if err != nil {
 		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -128,7 +147,7 @@ func (h *IntegrationHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		Kind:      req.Kind,
 		Name:      req.Name,
 		BaseURL:   req.BaseURL,
-		Secret:    []byte(req.Secret),
+		Secret:    []byte(secret),
 		IsDefault: req.IsDefault,
 	})
 	if err != nil {
@@ -200,8 +219,18 @@ func (h *IntegrationHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 			auth.WriteError(w, "VALIDATION_ERROR", "secret cannot be empty", http.StatusBadRequest)
 			return
 		}
-		secret := []byte(*req.Secret)
-		input.Secret = secret
+		secret, err := validateIntegrationSecret(existing.Kind, *req.Secret)
+		if err != nil {
+			auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
+			return
+		}
+		if secret == "" {
+			// A source secret without a token is the tokenless form. A replacement must carry
+			// a credential; omitting the secret keeps the stored one.
+			auth.WriteError(w, "VALIDATION_ERROR", "secret must contain a token; omit secret to keep the stored one", http.StatusBadRequest)
+			return
+		}
+		input.Secret = []byte(secret)
 	}
 
 	updated, err := h.Integrations.Update(r.Context(), id, input)
@@ -316,6 +345,59 @@ func validateIntegrationKind(kind string) error {
 		return errors.New("kind must be one of: github, gitlab, gitea, forgejo, codeberg, kaneo, jira, linear")
 	}
 	return nil
+}
+
+// validateIntegrationSecret rejects a secret the provider could never use, so a
+// broken credential is refused at save time instead of failing every later call. It
+// returns the secret to store: a source secret without a token comes back empty, the
+// tokenless form that reports no secret.
+func validateIntegrationSecret(kind, secret string) (string, error) {
+	if _, ok := sourceIntegrationKinds[kind]; ok {
+		return validateSourceSecret(kind, secret)
+	}
+	var err error
+	var shape string
+	switch kind {
+	case "jira":
+		_, _, err = ticket.ParseJiraSecret([]byte(secret))
+		shape = "jira secret must be a JSON object with email and api_token"
+	case "kaneo":
+		_, err = ticket.ParseKaneoSecret([]byte(secret))
+		shape = "kaneo secret must be a JSON object with api_key"
+	case "linear":
+		_, err = ticket.ParseLinearSecret([]byte(secret))
+		shape = "linear secret must be a JSON object with api_key"
+	default:
+		return secret, nil
+	}
+	if err == nil {
+		return secret, nil
+	}
+	// A JSON error can quote part of the submitted secret; never echo it back.
+	var syntaxErr *json.SyntaxError
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &syntaxErr) || errors.As(err, &typeErr) {
+		return "", errors.New(shape)
+	}
+	return "", err
+}
+
+// validateSourceSecret checks a source secret with the parser the poller uses. GitLab
+// requires a token (specs §4.2); the other source kinds treat an empty token as
+// unauthenticated access and store no payload for it.
+func validateSourceSecret(kind, secret string) (string, error) {
+	token, err := source.ParseTokenSecret([]byte(secret))
+	if err != nil {
+		// A JSON error can quote part of the submitted secret; never echo it back.
+		return "", errors.New("secret must be a JSON object with a token field")
+	}
+	if token != "" {
+		return secret, nil
+	}
+	if _, optional := optionalTokenKinds[kind]; !optional {
+		return "", errors.New("token is required")
+	}
+	return "", nil
 }
 
 func validateDefaultFlag(kind string, isDefault bool) error {

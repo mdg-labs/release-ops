@@ -55,6 +55,7 @@ type MonitoredRepo struct {
 	UpdatedAt              string         `json:"updated_at"`
 	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
 	IncludePrereleases     int64          `json:"include_prereleases"`
+	PendingTicketTag       sql.NullString `json:"pending_ticket_tag"`
 }
 
 type MonitoredRepoNotification struct {

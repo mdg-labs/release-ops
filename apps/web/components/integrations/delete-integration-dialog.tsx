@@ -18,6 +18,7 @@ type DeleteIntegrationDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
+  error: string | null;
   isDeleting: boolean;
 };
 
@@ -26,6 +27,7 @@ export function DeleteIntegrationDialog({
   open,
   onOpenChange,
   onConfirm,
+  error,
   isDeleting,
 }: DeleteIntegrationDialogProps): React.ReactElement {
   const t = useTranslations("integrations");
@@ -39,6 +41,11 @@ export function DeleteIntegrationDialog({
           <AlertDialogDescription>
             {t("deleteDescription", { name: integration?.name ?? "" })}
           </AlertDialogDescription>
+          {error ? (
+            <p className="text-destructive-foreground text-sm" role="alert">
+              {error}
+            </p>
+          ) : null}
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="ghost" />}>

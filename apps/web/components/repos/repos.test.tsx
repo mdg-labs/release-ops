@@ -705,4 +705,79 @@ describe("ReposView", () => {
       expect(screen.queryByText("org/app")).not.toBeInTheDocument();
     });
   });
+
+  it("keeps the delete dialog open when deleting a repo fails", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    mockListEndpoints(pool);
+    pool
+      .intercept({ path: "/api/go/api/v1/repos/repo-1", method: "DELETE" })
+      .reply(500, {
+        error: { code: "INTERNAL", message: "database is locked" },
+      });
+    pool
+      .intercept({ path: "/api/go/api/v1/repos/repo-1", method: "DELETE" })
+      .replyWithError(new Error("socket hang up"));
+
+    renderReposPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Delete org/app" }),
+    );
+    const alertDialog = await screen.findByRole("alertdialog");
+    fireEvent.click(
+      within(alertDialog).getByRole("button", { name: "Delete" }),
+    );
+
+    expect(
+      await within(alertDialog).findByText("database is locked"),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        within(alertDialog).getByRole("button", { name: "Delete" }),
+      ).toBeEnabled();
+    });
+
+    fireEvent.click(
+      within(alertDialog).getByRole("button", { name: "Delete" }),
+    );
+
+    expect(
+      await within(alertDialog).findByText(messages.repos.deleteFailed),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
+
+  it("drops a delete failure that settles after its dialog was closed", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    mockListEndpoints(pool);
+    pool
+      .intercept({ path: "/api/go/api/v1/repos/repo-1", method: "DELETE" })
+      .reply(500, {
+        error: { code: "INTERNAL", message: "database is locked" },
+      })
+      .delay(200);
+
+    renderReposPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Delete org/app" }),
+    );
+    const first = await screen.findByRole("alertdialog");
+    fireEvent.click(within(first).getByRole("button", { name: "Delete" }));
+    fireEvent.click(within(first).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete org/app" }));
+    const second = await screen.findByRole("alertdialog");
+    await waitFor(() => {
+      expect(
+        within(second).getByRole("button", { name: "Delete" }),
+      ).toBeEnabled();
+    });
+
+    expect(within(second).queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
 });

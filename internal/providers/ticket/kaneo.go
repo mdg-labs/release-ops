@@ -82,12 +82,13 @@ type kaneoCommentRequest struct {
 // CreateTicket implements TicketProvider.
 func (p *KaneoProvider) CreateTicket(ctx context.Context, input TicketInput) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return "", err
+		// Nothing was sent yet.
+		return "", notSent(err)
 	}
 
 	projectID := strings.TrimSpace(input.Project.ExternalProjectID)
 	if projectID == "" {
-		return "", errors.New("kaneo: external_project_id is required")
+		return "", notSent(errors.New("kaneo: external_project_id is required"))
 	}
 
 	status, priority := kaneoCreateDefaults(input.Project.CreateConfig)
@@ -257,7 +258,7 @@ func (p *KaneoProvider) doJSON(ctx context.Context, method, path string, reqBody
 	if reqBody != nil {
 		encoded, err := json.Marshal(reqBody)
 		if err != nil {
-			return fmt.Errorf("encode request: %w", err)
+			return notSent(fmt.Errorf("encode request: %w", err))
 		}
 		bodyReader = bytes.NewReader(encoded)
 	}
@@ -265,7 +266,7 @@ func (p *KaneoProvider) doJSON(ctx context.Context, method, path string, reqBody
 	endpoint := p.baseURL + path
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, bodyReader)
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
+		return notSent(fmt.Errorf("build request: %w", err))
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
@@ -282,7 +283,7 @@ func (p *KaneoProvider) doJSON(ctx context.Context, method, path string, reqBody
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		payload, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(payload)))
+		return newHTTPStatusError(resp.StatusCode, string(payload))
 	}
 
 	if respBody == nil {

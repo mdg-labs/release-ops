@@ -57,9 +57,15 @@ type integrationRepo struct {
 }
 
 func (r integrationRepo) Create(ctx context.Context, input CreateIntegrationInput) (*Integration, error) {
-	encrypted, err := r.store.cipher.Encrypt(input.Secret)
-	if err != nil {
-		return nil, err
+	// An empty secret is stored as an empty payload (no credential), not as an encrypted
+	// empty value, so the integration reports no secret.
+	var encrypted string
+	if len(input.Secret) > 0 {
+		var err error
+		encrypted, err = r.store.cipher.Encrypt(input.Secret)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	tx, err := r.store.db.BeginTx(ctx, nil)
@@ -192,6 +198,9 @@ func (r integrationRepo) DecryptPayload(ctx context.Context, id string) ([]byte,
 	row, err := r.store.q.GetIntegration(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	if row.EncryptedPayload == "" {
+		return []byte{}, nil
 	}
 	return r.store.cipher.Decrypt(row.EncryptedPayload)
 }

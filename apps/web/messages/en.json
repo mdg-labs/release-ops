@@ -60,6 +60,8 @@
     "lastRunTicketsCreated": "Tickets created",
     "lastRunTicketsSuperseded": "Tickets superseded",
     "pollingInProgress": "Poll in progress…",
+    "pollAlreadyRunning": "A poll is already running.",
+    "triggerFailed": "Couldn't start a poll.",
     "lastRunErrorsTitle": "Errors in last poll run",
     "reposSectionTitle": "Monitored repos",
     "reposEmptyTitle": "No monitored repos",
@@ -92,7 +94,8 @@
       "success": "Success",
       "failed": "Failed",
       "partial": "Partial",
-      "running": "Running"
+      "running": "Running",
+      "unknown": "Unknown"
     },
     "runTrigger": {
       "manual": "Manual",
@@ -176,6 +179,7 @@
     "deleteTitle": "Delete monitored repo?",
     "deleteDescription": "Delete “{path}”? This cannot be undone.",
     "deleteAria": "Delete {path}",
+    "deleteFailed": "Failed to delete repo.",
     "editAria": "Edit {path}",
     "columns": {
       "projectPath": "Project path",
@@ -237,6 +241,8 @@
     "deleteTitle": "Delete integration?",
     "deleteDescription": "Delete “{name}”? This cannot be undone.",
     "deleteAria": "Delete {name}",
+    "deleteFailed": "Failed to delete integration.",
+    "deleteInUse": "This integration is still used by repos or ticket projects. Remove it from those repos and ticket projects first, then delete it.",
     "editAria": "Edit {name}",
     "columns": {
       "name": "Name",
@@ -249,6 +255,7 @@
       "nameRequired": "Name is required.",
       "baseUrlRequired": "Base URL is required for this kind.",
       "emailRequired": "Email is required for Jira.",
+      "emailRequiredForNewToken": "Enter the Jira email when you replace the API token.",
       "secretRequired": "Token or API key is required.",
       "secretRequiredForBaseUrlChange": "Re-enter the token or API key when you change the base URL."
     },
@@ -296,12 +303,16 @@
     "statusCancelled": "Cancelled statuses",
     "statusSuperseded": "Superseded status",
     "statusListPlaceholder": "ready, in-progress, in-review",
-    "statusListHint": "Comma-separated status values.",
+    "statusOpenHint": "Select every status that counts as open.",
+    "statusDoneHint": "Select every status that counts as done.",
+    "statusCancelledHint": "Select every status that counts as cancelled.",
     "statusSupersededPlaceholder": "cancelled",
     "statusSupersededHint": "Single status used when superseding an open ticket.",
     "deleteTitle": "Delete ticket project?",
     "deleteDescription": "Delete “{name}”? This cannot be undone.",
     "deleteAria": "Delete {name}",
+    "deleteFailed": "Failed to delete ticket project.",
+    "deleteInUse": "This ticket project is still used by monitored repos. Remove it from those repos first, then delete it.",
     "editAria": "Edit {name}",
     "columns": {
       "integration": "Integration",

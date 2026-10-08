@@ -18,6 +18,7 @@ type DeleteTicketProjectDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
+  error: string | null;
   isDeleting: boolean;
 };
 
@@ -26,6 +27,7 @@ export function DeleteTicketProjectDialog({
   open,
   onOpenChange,
   onConfirm,
+  error,
   isDeleting,
 }: DeleteTicketProjectDialogProps): React.ReactElement {
   const t = useTranslations("ticket-projects");
@@ -39,6 +41,11 @@ export function DeleteTicketProjectDialog({
           <AlertDialogDescription>
             {t("deleteDescription", { name: project?.name ?? "" })}
           </AlertDialogDescription>
+          {error ? (
+            <p className="text-destructive-foreground text-sm" role="alert">
+              {error}
+            </p>
+          ) : null}
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="ghost" />}>

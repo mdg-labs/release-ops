@@ -69,10 +69,12 @@ function runStatusLabel(
       return t("runStatus.success");
     case "failed":
       return t("runStatus.failed");
+    case "partial":
+      return t("runStatus.partial");
     case "running":
       return t("runStatus.running");
     default:
-      return status;
+      return t("runStatus.unknown");
   }
 }
 

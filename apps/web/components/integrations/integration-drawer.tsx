@@ -30,6 +30,7 @@ import {
   INTEGRATION_KINDS,
   kindIsJira,
   kindRequiresBaseUrl,
+  kindTokenOptional,
   kindUsesApiKeyLabel,
   type IntegrationKind,
 } from "@/lib/integrations/kinds";
@@ -105,6 +106,10 @@ export function IntegrationDrawer({
   const requiresBaseUrl = kindRequiresBaseUrl(activeKind);
   const showEmail = kindIsJira(activeKind);
   const isSourceKind = (SOURCE_KINDS as readonly string[]).includes(activeKind);
+  const secretRequired =
+    !kindTokenOptional(activeKind) &&
+    (mode === "create" || !integration?.hasSecret);
+  const emailRequired = mode === "create" || secret.trim() !== "";
   const secretLabel = kindUsesApiKeyLabel(activeKind)
     ? t("apiKey")
     : kindIsJira(activeKind)
@@ -152,13 +157,16 @@ export function IntegrationDrawer({
     }
 
     const trimmedEmail = email.trim();
+    const trimmedSecret = secret.trim();
     if (showEmail && mode === "create" && !trimmedEmail) {
       setFormError(t("validation.emailRequired"));
       return;
     }
+    if (showEmail && mode === "edit" && trimmedSecret && !trimmedEmail) {
+      setFormError(t("validation.emailRequiredForNewToken"));
+      return;
+    }
 
-    const trimmedSecret = secret.trim();
-    const secretRequired = mode === "create" || !integration?.hasSecret;
     if (secretRequired && !trimmedSecret) {
       setFormError(t("validation.secretRequired"));
       return;
@@ -180,11 +188,9 @@ export function IntegrationDrawer({
           kind: activeKind,
           name: trimmedName,
           baseUrl: requiresBaseUrl ? trimmedBaseUrl : null,
-          secret: buildIntegrationSecret(
-            activeKind,
-            trimmedSecret,
-            trimmedEmail,
-          ),
+          secret: trimmedSecret
+            ? buildIntegrationSecret(activeKind, trimmedSecret, trimmedEmail)
+            : "",
           ...(isSourceKind ? { isDefault } : {}),
         });
       } else if (integration) {
@@ -328,7 +334,8 @@ export function IntegrationDrawer({
             {showEmail ? (
               <Field name="email">
                 <FieldLabel htmlFor={emailId}>
-                  {t("jiraEmail")} <span aria-hidden="true">*</span>
+                  {t("jiraEmail")}{" "}
+                  {emailRequired ? <span aria-hidden="true">*</span> : null}
                 </FieldLabel>
                 <Input
                   autoComplete="email"
@@ -348,9 +355,7 @@ export function IntegrationDrawer({
             <Field name="secret">
               <FieldLabel htmlFor={secretId}>
                 {secretLabel}{" "}
-                {mode === "create" || !integration?.hasSecret ? (
-                  <span aria-hidden="true">*</span>
-                ) : null}
+                {secretRequired ? <span aria-hidden="true">*</span> : null}
               </FieldLabel>
               {mode === "edit" && integration?.hasSecret ? (
                 <div className="flex items-center gap-2">
@@ -367,7 +372,7 @@ export function IntegrationDrawer({
                     ? t("secretPlaceholderEdit")
                     : t("secretPlaceholder")
                 }
-                required={mode === "create" || !integration?.hasSecret}
+                required={secretRequired}
                 type="password"
                 value={secret}
               />

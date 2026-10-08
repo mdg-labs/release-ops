@@ -189,6 +189,9 @@ func basePollUpdate(repo store.MonitoredRepo) store.PollStateUpdate {
 		LastReleasePublishedAt: repo.LastReleasePublishedAt,
 		LastPolledAt:           repo.LastPolledAt,
 		LastError:              repo.LastError,
+		// A poll-state write replaces every column, so each step keeps the marker unless
+		// it is the one that clears it.
+		PendingTicketTag: repo.PendingTicketTag,
 	}
 }
 
@@ -210,7 +213,7 @@ func (e *Engine) applyBaseline(ctx context.Context, repo store.MonitoredRepo, re
 		update.LastReleasePublishedAt = releasePublishedAtPtr(release)
 	}
 
-	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+	updated, err := e.savePollState(ctx, repo, update)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +229,7 @@ func (e *Engine) applySkip(ctx context.Context, repo store.MonitoredRepo) (*Repo
 	update := basePollUpdate(repo)
 	update.LastPolledAt = &now
 	update.LastError = nil
-	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+	updated, err := e.savePollState(ctx, repo, update)
 	if err != nil {
 		return nil, err
 	}
@@ -317,18 +320,25 @@ func (e *Engine) applyCreate(
 	provider ticket.TicketProvider,
 	repoWebURL string,
 ) (*RepoEvaluation, error) {
+	if eval, err := e.refuseRepeatedCreate(ctx, repo, release.Tag); eval != nil || err != nil {
+		return eval, err
+	}
 	input, err := e.ticketInput(ctx, repo, release, project, repoWebURL, nil)
 	if err != nil {
 		return e.recordError(ctx, repo, err)
 	}
 
+	tag := release.Tag
+	marked, err := e.markTicketPending(ctx, repo, tag)
+	if err != nil {
+		return nil, err
+	}
 	externalID, err := provider.CreateTicket(ctx, input)
 	if err != nil {
-		return e.recordError(ctx, repo, fmt.Errorf("create ticket: %w", err))
+		return e.recordCreateFailure(ctx, marked, fmt.Errorf("create ticket: %w", err))
 	}
 
 	now := pollNowUTC()
-	tag := release.Tag
 	update := basePollUpdate(repo)
 	update.OpenTicketExternalID = &externalID
 	update.OpenTicketTag = &tag
@@ -336,7 +346,8 @@ func (e *Engine) applyCreate(
 	update.LastReleasePublishedAt = releasePublishedAtPtr(release)
 	update.LastPolledAt = &now
 	update.LastError = nil
-	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+	update.PendingTicketTag = nil
+	updated, err := e.saveCreatedTicket(ctx, repo, update, externalID)
 	if err != nil {
 		return nil, err
 	}
@@ -362,6 +373,9 @@ func (e *Engine) applySupersede(
 		return e.recordError(ctx, repo, fmt.Errorf("status_mapping.superseded is required for supersede policy"))
 	}
 
+	if eval, err := e.refuseRepeatedCreate(ctx, repo, release.Tag); eval != nil || err != nil {
+		return eval, err
+	}
 	supersedeCtx := &tickettemplate.SupersedeContext{
 		OldTag: oldTag,
 		NewTag: release.Tag,
@@ -371,15 +385,19 @@ func (e *Engine) applySupersede(
 		return e.recordError(ctx, repo, err)
 	}
 
+	tag := release.Tag
+	marked, err := e.markTicketPending(ctx, repo, tag)
+	if err != nil {
+		return nil, err
+	}
 	externalID, err := provider.CreateTicket(ctx, input)
 	if err != nil {
-		return e.recordError(ctx, repo, fmt.Errorf("create ticket after supersede: %w", err))
+		return e.recordCreateFailure(ctx, marked, fmt.Errorf("create ticket after supersede: %w", err))
 	}
 
 	// Persist the new ticket before touching the old one so a later failure cannot
 	// orphan it and the next poll does not create a duplicate for the same tag.
 	now := pollNowUTC()
-	tag := release.Tag
 	update := basePollUpdate(repo)
 	update.OpenTicketExternalID = &externalID
 	update.OpenTicketTag = &tag
@@ -387,7 +405,8 @@ func (e *Engine) applySupersede(
 	update.LastReleasePublishedAt = releasePublishedAtPtr(release)
 	update.LastPolledAt = &now
 	update.LastError = nil
-	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+	update.PendingTicketTag = nil
+	updated, err := e.saveCreatedTicket(ctx, repo, update, externalID)
 	if err != nil {
 		return nil, err
 	}
@@ -399,7 +418,7 @@ func (e *Engine) applySupersede(
 	if supersedeErr := e.supersedeOldTicket(ctx, repo, release, project, provider, repoWebURL, supersedeCtx, oldID, externalID); supersedeErr != nil {
 		msg := fmt.Sprintf("supersede ticket %s: %v", oldID, supersedeErr)
 		update.LastError = &msg
-		updated, err = e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+		updated, err = e.savePollState(ctx, repo, update)
 		if err != nil {
 			return nil, err
 		}
@@ -419,6 +438,84 @@ func (e *Engine) applySupersede(
 			ActionCreate:    newRef,
 		},
 	}, nil
+}
+
+// pendingTicketMessage is the last_error of a repo whose ticket creation for a tag
+// started but never stored its link.
+const pendingTicketMessage = "a ticket for release %s may already exist in the ticket system; Release Ops could not save its link, so it does not create a second one. Check the ticket system"
+
+// Bounds for storing a created ticket's link: the ticket exists in the tracker already,
+// so the write is retried a few times before the marker is left to guard the tag.
+const createdTicketWriteAttempts = 3
+
+var createdTicketWriteBackoff = 100 * time.Millisecond
+
+// refuseRepeatedCreate stops a create for a tag whose earlier create may have succeeded
+// without its link being stored. It returns a nil evaluation and error when
+// the create may go ahead.
+func (e *Engine) refuseRepeatedCreate(ctx context.Context, repo store.MonitoredRepo, tag string) (*RepoEvaluation, error) {
+	if repo.PendingTicketTag == nil || *repo.PendingTicketTag != tag {
+		return nil, nil
+	}
+	return e.recordError(ctx, repo, fmt.Errorf(pendingTicketMessage, tag))
+}
+
+// markTicketPending stores the tag about to be created before the tracker is called, so
+// a create whose link is never stored cannot be repeated on a later poll. A failed write
+// means the tracker must not be called. It returns repo carrying the marker.
+func (e *Engine) markTicketPending(ctx context.Context, repo store.MonitoredRepo, tag string) (store.MonitoredRepo, error) {
+	update := basePollUpdate(repo)
+	update.PendingTicketTag = &tag
+	if _, err := e.savePollState(ctx, repo, update); err != nil {
+		return repo, fmt.Errorf("record pending ticket for release %s: %w", tag, err)
+	}
+	repo.PendingTicketTag = &tag
+	return repo, nil
+}
+
+// recordCreateFailure records a failed create. The marker is cleared, with the same write,
+// only when ticket.CreateDefinitelyNotStored proves the tracker stored no ticket (it
+// answered 4xx, or the request never left), so the next poll may try again. After any
+// other failure (a 5xx, a timeout, a cancellation, an unreadable answer) a ticket may
+// exist: the marker stays and the next poll reports that instead of creating a second
+// one. If the clearing write fails the marker stays as well. The write ignores ctx
+// cancellation, because a poll cut short while the tracker call failed would otherwise
+// lose the error record.
+func (e *Engine) recordCreateFailure(ctx context.Context, repo store.MonitoredRepo, err error) (*RepoEvaluation, error) {
+	if ticket.CreateDefinitelyNotStored(err) {
+		repo.PendingTicketTag = nil
+	}
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return e.recordError(writeCtx, repo, err)
+}
+
+// saveCreatedTicket stores the link of a ticket that was just created, retrying a failed
+// write a bounded number of times and stopping when ctx is done. A write that still fails
+// is returned: the marker set before the create keeps the next poll from creating again.
+func (e *Engine) saveCreatedTicket(
+	ctx context.Context,
+	repo store.MonitoredRepo,
+	update store.PollStateUpdate,
+	externalID string,
+) (*store.MonitoredRepo, error) {
+	var lastErr error
+	for attempt := 1; attempt <= createdTicketWriteAttempts; attempt++ {
+		updated, err := e.savePollState(ctx, repo, update)
+		if err == nil {
+			return updated, nil
+		}
+		lastErr = err
+		if attempt == createdTicketWriteAttempts {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("ticket %s was created but its link was not saved: %w", externalID, errors.Join(lastErr, ctx.Err()))
+		case <-time.After(time.Duration(attempt) * createdTicketWriteBackoff):
+		}
+	}
+	return nil, fmt.Errorf("ticket %s was created but its link was not saved: %w", externalID, lastErr)
 }
 
 // supersedeOldTicket moves the old ticket to the superseded status and adds the
@@ -488,7 +585,7 @@ func (e *Engine) applyMerge(
 	update.LastReleasePublishedAt = releasePublishedAtPtr(release)
 	update.LastPolledAt = &now
 	update.LastError = nil
-	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+	updated, err := e.savePollState(ctx, repo, update)
 	if err != nil {
 		return nil, err
 	}
@@ -511,7 +608,7 @@ func (e *Engine) applySkipIfOpen(
 	update.LastReleasePublishedAt = releasePublishedAtPtr(release)
 	update.LastPolledAt = &now
 	update.LastError = nil
-	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+	updated, err := e.savePollState(ctx, repo, update)
 	if err != nil {
 		return nil, err
 	}
@@ -522,13 +619,31 @@ func (e *Engine) applySkipIfOpen(
 	}, nil
 }
 
+// savePollState stores update for repo. When the state was stored but the repo's
+// notification targets could not be read afterwards, the step still counts as saved:
+// the repo keeps the target selection it was loaded with, so the step's notification
+// goes to the same targets as before, and the failed read is logged.
+func (e *Engine) savePollState(ctx context.Context, repo store.MonitoredRepo, update store.PollStateUpdate) (*store.MonitoredRepo, error) {
+	updated, err := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+	if err != nil {
+		if updated != nil && errors.Is(err, store.ErrNotificationTargetsUnread) {
+			slog.Warn("poll state stored but notification targets could not be re-read; using the targets loaded for this poll",
+				"repoId", repo.ID, "error", err)
+			updated.NotificationTargetIDs = repo.NotificationTargetIDs
+			return updated, nil
+		}
+		return nil, err
+	}
+	return updated, nil
+}
+
 func (e *Engine) recordError(ctx context.Context, repo store.MonitoredRepo, err error) (*RepoEvaluation, error) {
 	msg := err.Error()
 	now := pollNowUTC()
 	update := basePollUpdate(repo)
 	update.LastPolledAt = &now
 	update.LastError = &msg
-	updated, updateErr := e.pollRepo.UpdatePollState(ctx, repo.ID, update)
+	updated, updateErr := e.savePollState(ctx, repo, update)
 	if updateErr != nil {
 		return nil, updateErr
 	}

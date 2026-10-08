@@ -22,9 +22,12 @@ type MonitoredRepo struct {
 	LastReleasePublishedAt *string
 	LastPolledAt           *string
 	LastError              *string
-	NotificationTargetIDs  []string
-	CreatedAt              string
-	UpdatedAt              string
+	// PendingTicketTag is the release tag whose ticket creation started but whose
+	// ticket link was never stored: a ticket for that tag may exist in the tracker.
+	PendingTicketTag      *string
+	NotificationTargetIDs []string
+	CreatedAt             string
+	UpdatedAt             string
 }
 
 // CreateMonitoredRepoInput holds fields for a new monitored repo.
@@ -185,6 +188,8 @@ func (r monitoredRepoRepo) Update(ctx context.Context, id string, input UpdateMo
 // target. A new ticket project clears the open ticket (it lives in the old project).
 // A new source (kind, path or integration) also clears the last known tag so the next
 // poll records a fresh baseline instead of ticketing the new repo's existing release.
+// Either change also clears the pending ticket tag: a ticket that may have been created
+// for the old target says nothing about the new one.
 func resetPollStateOnTargetChange(ctx context.Context, q *db.Queries, before, after monitoredRepoRow) (monitoredRepoRow, error) {
 	sourceChanged := before.SourceKind != after.SourceKind ||
 		before.ProjectPath != after.ProjectPath ||
@@ -198,6 +203,7 @@ func resetPollStateOnTargetChange(ctx context.Context, q *db.Queries, before, af
 		LastKnownTag:           after.LastKnownTag,
 		LastReleasePublishedAt: after.LastReleasePublishedAt,
 		LastPolledAt:           after.LastPolledAt,
+		PendingTicketTag:       sql.NullString{},
 		UpdatedAt:              after.UpdatedAt,
 		ID:                     after.ID,
 	}
@@ -285,6 +291,7 @@ func monitoredRepoFromRow(row monitoredRepoRow) *MonitoredRepo {
 		LastReleasePublishedAt: nullStringPtr(row.LastReleasePublishedAt),
 		LastPolledAt:           nullStringPtr(row.LastPolledAt),
 		LastError:              nullStringPtr(row.LastError),
+		PendingTicketTag:       nullStringPtr(row.PendingTicketTag),
 		CreatedAt:              row.CreatedAt,
 		UpdatedAt:              row.UpdatedAt,
 	}
@@ -305,6 +312,7 @@ func monitoredRepoFromListEnabledRow(row db.ListEnabledRow) MonitoredRepo {
 		LastReleasePublishedAt: nullStringPtr(row.LastReleasePublishedAt),
 		LastPolledAt:           nullStringPtr(row.LastPolledAt),
 		LastError:              nullStringPtr(row.LastError),
+		PendingTicketTag:       nullStringPtr(row.PendingTicketTag),
 		CreatedAt:              row.CreatedAt,
 		UpdatedAt:              row.UpdatedAt,
 	}

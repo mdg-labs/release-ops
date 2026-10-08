@@ -24,13 +24,17 @@ func Open() (*sql.DB, error) {
 	return OpenPath(DBPath())
 }
 
-// OpenPath opens the SQLite database at path with foreign keys enabled.
+// busyTimeoutMillis is how long a statement waits for a lock held by another connection
+// (a backup, the sqlite3 CLI) before it fails with SQLITE_BUSY.
+const busyTimeoutMillis = 5000
+
+// OpenPath opens the SQLite database at path with foreign keys enabled and a busy timeout.
 func OpenPath(path string) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("create db parent dir: %w", err)
 	}
 
-	dsn := fmt.Sprintf("file:%s?cache=shared&_foreign_keys=on", path)
+	dsn := fmt.Sprintf("file:%s?cache=shared&_foreign_keys=on&_pragma=busy_timeout(%d)", path, busyTimeoutMillis)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)

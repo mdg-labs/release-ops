@@ -2,6 +2,7 @@ package poll
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,6 +18,13 @@ import (
 
 // MinPollIntervalMinutes is the minimum allowed cron interval (specs §4.1).
 const MinPollIntervalMinutes int64 = 5
+
+// finishRunTimeout bounds the write that records a run's final state.
+const finishRunTimeout = 5 * time.Second
+
+// ShutdownWaitTimeout bounds how long shutdown waits for an in-flight run to write its
+// finish: the finish-write bound plus time for the run to notice the cancellation.
+const ShutdownWaitTimeout = finishRunTimeout + 3*time.Second
 
 // ErrAlreadyRunning is returned when a poll is requested while another run is active.
 var ErrAlreadyRunning = errors.New("poll already running")
@@ -60,6 +68,8 @@ type Scheduler struct {
 	runMu        sync.Mutex
 	running      bool
 	currentRunID string
+	// activeRuns counts runs between tryStart and finish, scheduled and manual alike.
+	activeRuns sync.WaitGroup
 }
 
 // NewScheduler returns a scheduler from cfg. Engine and Poll repositories are required.
@@ -111,6 +121,29 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	return nil
 }
 
+// Shutdown stops the cron and waits for every in-flight run, scheduled or manual, to
+// finish. It returns ctx's error if ctx ends first. Call it after cancelling the context
+// given to Start and after nothing can call Trigger any more.
+func (s *Scheduler) Shutdown(ctx context.Context) error {
+	select {
+	case <-s.cron.Stop().Done():
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	done := make(chan struct{})
+	go func() {
+		s.activeRuns.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // Trigger starts an asynchronous poll run and returns the new poll_runs id (specs §7.1).
 func (s *Scheduler) Trigger(ctx context.Context) (string, error) {
 	if !s.tryStart() {
@@ -145,7 +178,12 @@ func (s *Scheduler) IsPolling() bool {
 func (s *Scheduler) RunAll(ctx context.Context, runID string) error {
 	repos, err := s.repos.ListEnabled(ctx)
 	if err != nil {
-		return fmt.Errorf("list enabled repos: %w", err)
+		listErr := fmt.Errorf("list enabled repos: %w", err)
+		slog.Error("poll run failed before polling", "runId", runID, "error", listErr)
+		if finishErr := s.finishRun(ctx, runID, RunStatusFailed, 0, 0, 0, []RunErrorEntry{{Message: "enabled repos could not be listed"}}); finishErr != nil {
+			return errors.Join(listErr, finishErr)
+		}
+		return listErr
 	}
 
 	var (
@@ -153,11 +191,16 @@ func (s *Scheduler) RunAll(ctx context.Context, runID string) error {
 		ticketsCreated    int64
 		ticketsSuperseded int64
 		runErrors         []RunErrorEntry
+		interrupted       bool
 	)
 
 	integrations := newIntegrationCache(s.integrations)
 
 	for i := range repos {
+		if ctx.Err() != nil {
+			interrupted = true
+			break
+		}
 		repo := repos[i]
 		reposChecked++
 
@@ -167,6 +210,13 @@ func (s *Scheduler) RunAll(ctx context.Context, runID string) error {
 				RepoID:  repo.ID,
 				Message: pollErr.Error(),
 			})
+			// A failure before the engine evaluated the repo is recorded like an
+			// engine-reported error: error event, last_error, notification. Errors
+			// returned by the engine itself are not: it owns the repo's poll state.
+			var preErr *preEngineError
+			if errors.As(pollErr, &preErr) {
+				eval = s.recordPollFailure(ctx, repo, pollErr)
+			}
 		} else if eval.hasError() {
 			// The engine reports fetch/ticket failures as an error action with a nil error.
 			runErrors = append(runErrors, RunErrorEntry{
@@ -179,16 +229,52 @@ func (s *Scheduler) RunAll(ctx context.Context, runID string) error {
 		}
 	}
 
+	status := RunFinishStatus(reposChecked, int64(len(runErrors)))
+	if interrupted {
+		// Repos were left unpolled, so the run is never a success.
+		runErrors = append(runErrors, RunErrorEntry{Message: interruptedRunMessage})
+		if status == RunStatusSuccess {
+			status = RunStatusPartial
+		}
+	}
+	return s.finishRun(ctx, runID, status, reposChecked, ticketsCreated, ticketsSuperseded, runErrors)
+}
+
+// finishRun stores the run's final state. The write ignores ctx cancellation: a run cut
+// short by shutdown would otherwise stay "running" with its errors lost.
+func (s *Scheduler) finishRun(
+	ctx context.Context,
+	runID, status string,
+	reposChecked, ticketsCreated, ticketsSuperseded int64,
+	runErrors []RunErrorEntry,
+) error {
 	errorsJSON, err := EncodeRunErrors(runErrors)
 	if err != nil {
 		return fmt.Errorf("encode run errors: %w", err)
 	}
 
-	status := RunFinishStatus(reposChecked, int64(len(runErrors)))
-	if _, err := s.poll.FinishRun(ctx, runID, status, reposChecked, ticketsCreated, ticketsSuperseded, errorsJSON); err != nil {
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finishRunTimeout)
+	defer cancel()
+	if _, err := s.poll.FinishRun(writeCtx, runID, status, reposChecked, ticketsCreated, ticketsSuperseded, errorsJSON); err != nil {
 		return fmt.Errorf("finish poll run: %w", err)
 	}
 	return nil
+}
+
+// recordPollFailure persists pollErr as the repo's last_error and returns the error
+// evaluation to record. The evaluation is returned even when last_error cannot be
+// stored, so the event and the notification are not lost with it.
+func (s *Scheduler) recordPollFailure(ctx context.Context, repo store.MonitoredRepo, pollErr error) *RepoEvaluation {
+	eval, err := s.engine.recordError(ctx, repo, pollErr)
+	if err != nil {
+		slog.Error("record poll failure", "repoId", repo.ID, "error", err)
+		return &RepoEvaluation{
+			Actions: []string{ActionError},
+			Repo:    &repo,
+			Detail:  pollErr.Error(),
+		}
+	}
+	return eval
 }
 
 func (s *Scheduler) pollOneRepo(
@@ -203,7 +289,34 @@ func (s *Scheduler) pollOneRepo(
 	return s.defaultPollRepo(ctx, repo, integrations)
 }
 
+// preEngineError marks a failure that happened before the engine evaluated the repo,
+// so the engine has not touched the repo's poll state. Errors returned by
+// EvaluateRepo are never wrapped: the engine may already have stored new state.
+type preEngineError struct{ err error }
+
+func (e *preEngineError) Error() string { return e.err.Error() }
+func (e *preEngineError) Unwrap() error { return e.err }
+
+// pollInputs is everything the engine needs to evaluate one repo.
+type pollInputs struct {
+	sourceProvider source.SourceProvider
+	ticketProject  ticket.TicketProject
+	ticketProvider ticket.TicketProvider
+	repoWebURL     string
+}
+
 func (s *Scheduler) defaultPollRepo(ctx context.Context, repo store.MonitoredRepo, integrations *integrationCache) (*RepoEvaluation, error) {
+	in, err := s.prepareRepoPoll(ctx, repo, integrations)
+	if err != nil {
+		return nil, &preEngineError{err: err}
+	}
+	release, fetchErr := in.sourceProvider.GetLatestRelease(ctx, repo.ProjectPath, source.ReleaseOptions{
+		IncludePrereleases: repo.IncludePrereleases,
+	})
+	return s.engine.EvaluateRepo(ctx, repo, release, fetchErr, in.ticketProject, in.ticketProvider, in.repoWebURL)
+}
+
+func (s *Scheduler) prepareRepoPoll(ctx context.Context, repo store.MonitoredRepo, integrations *integrationCache) (*pollInputs, error) {
 	if s.ticketProjects == nil || s.integrations == nil {
 		return nil, errors.New("ticket projects and integrations repositories are required")
 	}
@@ -230,7 +343,7 @@ func (s *Scheduler) defaultPollRepo(ctx context.Context, repo store.MonitoredRep
 		s.httpClient,
 	)
 	if err != nil {
-		return nil, err
+		return nil, redactSecretParseError(err)
 	}
 
 	var sourceIntegration *resolvedIntegration
@@ -258,10 +371,12 @@ func (s *Scheduler) defaultPollRepo(ctx context.Context, repo store.MonitoredRep
 		return nil, err
 	}
 
-	release, fetchErr := sourceProvider.GetLatestRelease(ctx, repo.ProjectPath, source.ReleaseOptions{
-		IncludePrereleases: repo.IncludePrereleases,
-	})
-	return s.engine.EvaluateRepo(ctx, repo, release, fetchErr, ticketProject, ticketProvider, repoWebURL)
+	return &pollInputs{
+		sourceProvider: sourceProvider,
+		ticketProject:  ticketProject,
+		ticketProvider: ticketProvider,
+		repoWebURL:     repoWebURL,
+	}, nil
 }
 
 func (s *Scheduler) recordEvaluation(
@@ -366,6 +481,7 @@ func (s *Scheduler) tryStart() bool {
 		return false
 	}
 	s.running = true
+	s.activeRuns.Add(1)
 	return true
 }
 
@@ -374,6 +490,7 @@ func (s *Scheduler) finish() {
 	defer s.runMu.Unlock()
 	s.running = false
 	s.currentRunID = ""
+	s.activeRuns.Done()
 }
 
 func (s *Scheduler) setCurrentRunID(runID string) {
@@ -416,11 +533,24 @@ func (c *integrationCache) get(ctx context.Context, id string) (*resolvedIntegra
 	}
 	secret, err := c.repo.DecryptPayload(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("decrypt integration: %w", err)
+		slog.Error("decrypt integration payload", "integrationId", id, "error", err)
+		return nil, errors.New("decrypt integration: secret could not be decrypted")
 	}
 	entry := &resolvedIntegration{integration: integration, secret: secret}
 	c.entries[id] = entry
 	return entry, nil
+}
+
+// redactSecretParseError replaces a JSON decoding error raised while reading an
+// integration secret: its text can quote a fragment of the decrypted payload, and
+// the message is stored on the repo, in a poll event and sent to notification targets.
+func redactSecretParseError(err error) error {
+	var syntaxErr *json.SyntaxError
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &syntaxErr) || errors.As(err, &typeErr) {
+		return errors.New("integration secret is malformed")
+	}
+	return err
 }
 
 func (s *Scheduler) newSourceProvider(repo store.MonitoredRepo, integration *resolvedIntegration) (source.SourceProvider, error) {
@@ -429,7 +559,7 @@ func (s *Scheduler) newSourceProvider(repo store.MonitoredRepo, integration *res
 	if integration != nil {
 		parsed, err := source.ParseTokenSecret(integration.secret)
 		if err != nil {
-			return nil, fmt.Errorf("parse source integration payload: %w", err)
+			return nil, fmt.Errorf("parse source integration payload: %w", redactSecretParseError(err))
 		}
 		token = parsed
 		baseURL = integration.integration.BaseURL
