@@ -46,8 +46,8 @@ Release Ops writes down which release it is about to ticket before it asks your 
 
 What happens to the note when the ticket system reports a failure while creating a ticket depends on whether the ticket may exist:
 
-- The ticket system refused the request with a 4xx answer, for example because the credentials or the project are wrong, or because it asked Release Ops to try later (408, 429). Or the request never reached it, for example the host name does not resolve or the connection is refused. No ticket exists. Release Ops clears the note and tries again on the next poll.
-- Any other failure leaves it unclear whether the ticket exists: a server error (5xx), a timeout, an answer Release Ops cannot read or that has no ticket ID, or a Release Ops shutdown while the request was in flight. Release Ops keeps the note. The next poll creates no ticket and reports that a ticket may already exist, so you can check the ticket system.
+- The ticket system refused the request with a 4xx answer, for example because the credentials or the project are wrong, or because it asked Release Ops to try later (408, 429). Or the request never reached it: the host name does not resolve, the connection fails straight away (it is refused, or the network or host is unreachable), or the failure happened before Release Ops sent the request. No ticket exists. Release Ops clears the note and tries again on the next poll.
+- Any other failure leaves it unclear whether the ticket exists: a server error (5xx), a timeout, including one while Release Ops is still connecting, an answer Release Ops cannot read or that has no ticket ID, a connection that breaks after it was opened, or a Release Ops shutdown while the request was in flight. A TLS or certificate failure, or a failure to connect through a proxy, also counts here, although the request most likely never reached the ticket system. Release Ops keeps the note. The next poll creates no ticket and reports that a ticket may already exist, so you can check the ticket system.
 
 ## When polls run
 

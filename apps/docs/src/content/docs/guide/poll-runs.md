@@ -84,12 +84,12 @@ With the supersede policy, Release Ops creates the new ticket first and then upd
 
 ### An Error says a ticket may already exist
 
-The error reads "a ticket for release … may already exist in the ticket system". It means Release Ops started to create a ticket for that release and does not know whether the ticket system stored it. It never learned the ticket's ID, or its ticket system gave an answer that does not say whether the ticket exists. Typical causes are a failure while saving the ticket's ID, a ticket system that answered with a server error or timed out, and a Release Ops restart during the create. An earlier run may list the matching error, for example "ticket … was created but its link was not saved" or a failed **Create ticket** attempt. To avoid a duplicate, Release Ops creates no second ticket for that release.
+The error reads "a ticket for release … may already exist in the ticket system". It means Release Ops started to create a ticket for that release and does not know whether the ticket system stored it. It never learned the ticket's ID, or its ticket system gave an answer that does not say whether the ticket exists. Typical causes are a failure while saving the ticket's ID, a ticket system that answered with a server error or timed out, and a Release Ops restart during the create. An earlier run may list the matching error, for example "ticket … was created but its link was not saved" or a failed attempt to create the ticket, which is recorded as an **Error** event whose **Detail** starts with "create ticket". To avoid a duplicate, Release Ops creates no second ticket for that release.
 
 1. Open your ticket system and look for a ticket for that release.
 2. If the ticket exists, no further action is needed. If it does not, create it by hand.
 
-The error is repeated on every poll until the repo has a newer release. Release Ops then creates a ticket for the newer release as usual and the error clears. Changing the repo's **Ticket project**, **Source**, **Project path** or **Source integration** also clears it.
+Checking or creating the ticket by hand does not clear the error. Release Ops records the same **Error** event on every poll, and sends the error notification again if your notification targets include errors, until the repo has a newer release. Release Ops then creates a ticket for the newer release as usual and the error clears. Changing the repo's **Ticket project**, **Source**, **Project path** or **Source integration** also clears it. Until then, the repeated error is expected.
 
 ## Related pages
 
