@@ -132,12 +132,13 @@ type linearMutationSuccessData struct {
 // CreateTicket implements TicketProvider.
 func (l *LinearProvider) CreateTicket(ctx context.Context, input TicketInput) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return "", err
+		// Nothing was sent yet.
+		return "", notSent(err)
 	}
 
 	teamID := strings.TrimSpace(input.Project.ExternalProjectID)
 	if teamID == "" {
-		return "", errors.New("linear: external_project_id (teamId) is required")
+		return "", notSent(errors.New("linear: external_project_id (teamId) is required"))
 	}
 
 	priority, stateID := linearCreateDefaults(input.Project.CreateConfig)
@@ -415,12 +416,12 @@ func (l *LinearProvider) doGraphQL(ctx context.Context, query string, variables 
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("encode request: %w", err)
+		return notSent(fmt.Errorf("encode request: %w", err))
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, l.endpoint, bytes.NewReader(encoded))
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
+		return notSent(fmt.Errorf("build request: %w", err))
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
@@ -439,7 +440,7 @@ func (l *LinearProvider) doGraphQL(ctx context.Context, query string, variables 
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return newHTTPStatusError(resp.StatusCode, string(body))
 	}
 
 	var gqlResp graphQLResponse

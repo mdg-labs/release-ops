@@ -17,6 +17,9 @@ type PollStateUpdate struct {
 	LastReleasePublishedAt *string
 	LastPolledAt           *string
 	LastError              *string
+	// PendingTicketTag is stored as given: nil clears the marker, so a caller that
+	// leaves it unchanged passes the repo's current value.
+	PendingTicketTag *string
 }
 
 // Poll trigger provenance values (poll_runs.trigger_source).
@@ -97,6 +100,7 @@ func (r pollRepo) UpdatePollState(ctx context.Context, repoID string, update Pol
 		LastReleasePublishedAt: stringPtrToNull(update.LastReleasePublishedAt),
 		LastPolledAt:           stringPtrToNull(update.LastPolledAt),
 		LastError:              stringPtrToNull(update.LastError),
+		PendingTicketTag:       stringPtrToNull(update.PendingTicketTag),
 		UpdatedAt:              nowUTC(),
 		ID:                     repoID,
 	})

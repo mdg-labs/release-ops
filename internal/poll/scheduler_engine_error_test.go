@@ -62,6 +62,16 @@ type stateWriteFixture struct {
 	repo    *store.MonitoredRepo
 	creates *atomic.Int32
 	sends   *sendRecorder
+
+	// tracker serves the ticket integration; closing it makes a create fail to connect.
+	tracker *httptest.Server
+	// createStatus, when not 0, makes the tracker answer a create with that status: 200
+	// answers without a ticket id, any other value is an error answer.
+	createStatus *atomic.Int32
+	// onCreate runs inside the tracker's create handler, before it answers.
+	onCreate *atomic.Pointer[func()]
+	// oldTouches counts status and comment writes to the open ticket old-1.
+	oldTouches *atomic.Int32
 }
 
 const (
@@ -73,19 +83,46 @@ func newStateWriteFixture(t *testing.T) *stateWriteFixture {
 	t.Helper()
 	ctx := context.Background()
 
-	var creates atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var (
+		creates      atomic.Int32
+		createStatus atomic.Int32
+		onCreate     atomic.Pointer[func()]
+		oldTouches   atomic.Int32
+	)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/task/old-1":
+			_, _ = w.Write([]byte(`{"id":"old-1","status":"ready"}`))
+		case r.Method == http.MethodPut && r.URL.Path == "/api/task/status/old-1",
+			r.Method == http.MethodPost && r.URL.Path == "/api/comment/old-1":
+			oldTouches.Add(1)
+			_, _ = w.Write([]byte(`{}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/org/app/releases/latest":
 			_, _ = w.Write([]byte(`{"tag_name":"v1.1.0","name":"v1.1.0","html_url":"https://example.invalid/r","published_at":"2026-01-02T03:04:05Z"}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/task/proj-1":
+			if hook := onCreate.Load(); hook != nil {
+				(*hook)()
+			}
+			switch status := int(createStatus.Load()); status {
+			case 0:
+			case http.StatusOK:
+				_, _ = w.Write([]byte(`{}`))
+				return
+			default:
+				http.Error(w, "tracker answered "+http.StatusText(status), status)
+				return
+			}
 			creates.Add(1)
 			_, _ = w.Write([]byte(`{"id":"task-1"}`))
 		default:
 			http.NotFound(w, r)
 		}
-	}))
+	})
+	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
+	// The tracker is its own server so a test can close it and leave the source reachable.
+	tracker := httptest.NewServer(handler)
+	t.Cleanup(tracker.Close)
 
 	sqlDB := openIntegrationDB(t, filepath.Join(t.TempDir(), "app.db"))
 	t.Cleanup(func() { _ = sqlDB.Close() })
@@ -99,7 +136,7 @@ func newStateWriteFixture(t *testing.T) *stateWriteFixture {
 	ticketIntegration, err := s.Integrations().Create(ctx, store.CreateIntegrationInput{
 		Kind:    "kaneo",
 		Name:    "Tickets",
-		BaseURL: integrationStrPtr(server.URL),
+		BaseURL: integrationStrPtr(tracker.URL),
 		Secret:  []byte(`{"api_key":"k"}`),
 	})
 	if err != nil {
@@ -151,7 +188,22 @@ func newStateWriteFixture(t *testing.T) *stateWriteFixture {
 	if _, err := s.Poll().UpdatePollState(ctx, repo.ID, store.PollStateUpdate{LastKnownTag: &oldTag}); err != nil {
 		t.Fatalf("seed last_known_tag: %v", err)
 	}
-	return &stateWriteFixture{sqlDB: sqlDB, store: s, repo: repo, creates: &creates, sends: &sendRecorder{}}
+	return &stateWriteFixture{
+		sqlDB: sqlDB, store: s, repo: repo, creates: &creates, sends: &sendRecorder{},
+		tracker: tracker, createStatus: &createStatus, onCreate: &onCreate, oldTouches: &oldTouches,
+	}
+}
+
+// seedOpenTicket gives the repo an open ticket (old-1) for v1.0.0, so the next release
+// takes the supersede path.
+func (f *stateWriteFixture) seedOpenTicket(t *testing.T) {
+	t.Helper()
+	oldID, oldTag := "old-1", "v1.0.0"
+	if _, err := f.store.Poll().UpdatePollState(context.Background(), f.repo.ID, store.PollStateUpdate{
+		OpenTicketExternalID: &oldID, OpenTicketTag: &oldTag, LastKnownTag: &oldTag,
+	}); err != nil {
+		t.Fatalf("seed open ticket: %v", err)
+	}
 }
 
 // runAll polls once through the scheduler with pollRepo wrapped around the real store's

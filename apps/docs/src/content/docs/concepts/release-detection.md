@@ -40,6 +40,15 @@ Before it acts on a new tag, Release Ops asks your ticket system for the current
 - The ticket is in the **Superseded status**: it counts as cancelled, so Release Ops creates a new ticket.
 - The status is in none of the lists and is not the **Superseded status**, or the ticket system cannot be reached: Release Ops reports an error for the repo and creates no ticket.
 
+## One ticket per release
+
+Release Ops writes down which release it is about to ticket before it asks your ticket system to create the ticket. After the ticket exists, it saves the ticket's ID and clears that note. If saving the ID fails, the note stays. On the next poll Release Ops sees it, creates no second ticket and reports an error that a ticket for that release may already exist. See [Poll runs](../../guide/poll-runs/) for what to do.
+
+What happens to the note when the ticket system reports a failure while creating a ticket depends on whether the ticket may exist:
+
+- The ticket system refused the request with a 4xx answer, for example because the credentials or the project are wrong, or because it asked Release Ops to try later (408, 429). Or the request never reached it, for example the host name does not resolve or the connection is refused. No ticket exists. Release Ops clears the note and tries again on the next poll.
+- Any other failure leaves it unclear whether the ticket exists: a server error (5xx), a timeout, an answer Release Ops cannot read or that has no ticket ID, or a Release Ops shutdown while the request was in flight. Release Ops keeps the note. The next poll creates no ticket and reports that a ticket may already exist, so you can check the ticket system.
+
 ## When polls run
 
 Release Ops polls on the interval you set under [Settings](../../guide/settings/), and whenever you click **Run poll now**. Only one poll runs at a time. Release Ops does not poll when it starts, so the first scheduled poll comes one full interval later.

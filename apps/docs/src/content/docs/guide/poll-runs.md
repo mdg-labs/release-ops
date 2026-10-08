@@ -82,6 +82,15 @@ Open the run and read the **Errors** list and the **Detail** of each **Error** e
 
 With the supersede policy, Release Ops creates the new ticket first and then updates the old one. If the old ticket cannot be updated, for example its status or comment, the run lists a **Create ticket** event and then an **Error** event for the repo, with no **Supersede** event, and **Tickets superseded** does not count it. The new ticket exists. Check the old ticket in your ticket system and the **Superseded status** in the ticket project.
 
+### An Error says a ticket may already exist
+
+The error reads "a ticket for release … may already exist in the ticket system". It means Release Ops started to create a ticket for that release and does not know whether the ticket system stored it. It never learned the ticket's ID, or its ticket system gave an answer that does not say whether the ticket exists. Typical causes are a failure while saving the ticket's ID, a ticket system that answered with a server error or timed out, and a Release Ops restart during the create. An earlier run may list the matching error, for example "ticket … was created but its link was not saved" or a failed **Create ticket** attempt. To avoid a duplicate, Release Ops creates no second ticket for that release.
+
+1. Open your ticket system and look for a ticket for that release.
+2. If the ticket exists, no further action is needed. If it does not, create it by hand.
+
+The error is repeated on every poll until the repo has a newer release. Release Ops then creates a ticket for the newer release as usual and the error clears. Changing the repo's **Ticket project**, **Source**, **Project path** or **Source integration** also clears it.
+
 ## Related pages
 
 - [Dashboard](../dashboard/)

@@ -346,6 +346,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <tr><td><code>open_ticket_external_id</code></td><td>TEXT NULL</td><td>ID of the currently open ticket in the target system</td></tr>
     <tr><td><code>open_ticket_tag</code></td><td>TEXT NULL</td><td>Release tag of the open ticket</td></tr>
     <tr><td><code>last_known_tag</code></td><td>TEXT NULL</td><td>Last polled release tag</td></tr>
+    <tr><td><code>pending_ticket_tag</code></td><td>TEXT NULL</td><td>Release tag whose ticket is being created: set before the ticket is created, cleared by the write that stores its link. While it equals the tag about to be ticketed, the poll creates nothing and reports that a ticket may already exist. A failed create clears it only when the tracker cannot have stored a ticket: it answered with a 4xx status (408 and 429 included), or the request never left (DNS failure, connection refused, or any failure before the request was sent). After any other failure (a 5xx, a timeout, a 2xx answer with an unreadable body or no ID, a shutdown or cancellation while the request was in flight) it stays set. Also cleared when a newer tag gets its ticket and when a source or ticket project change resets the poll state</td></tr>
     <tr><td><code>last_polled_at</code>, <code>last_error</code></td><td>TEXT NULL</td><td>UTC / error text</td></tr>
     <tr><td><code>created_at</code>, <code>updated_at</code></td><td>TEXT</td><td>UTC</td></tr>
   </table>

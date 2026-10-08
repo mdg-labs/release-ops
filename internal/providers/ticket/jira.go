@@ -146,12 +146,13 @@ type jiraADFNode struct {
 // CreateTicket implements TicketProvider.
 func (j *JiraProvider) CreateTicket(ctx context.Context, input TicketInput) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return "", err
+		// Nothing was sent yet.
+		return "", notSent(err)
 	}
 
 	projectKey := strings.TrimSpace(input.Project.ExternalProjectID)
 	if projectKey == "" {
-		return "", errors.New("jira: external_project_id (project key) is required")
+		return "", notSent(errors.New("jira: external_project_id (project key) is required"))
 	}
 
 	cfg := jiraCreateDefaults(input.Project.CreateConfig)
@@ -438,7 +439,7 @@ func (j *JiraProvider) doJSON(ctx context.Context, method, path string, reqBody 
 	if reqBody != nil {
 		encoded, err := json.Marshal(reqBody)
 		if err != nil {
-			return fmt.Errorf("encode request: %w", err)
+			return notSent(fmt.Errorf("encode request: %w", err))
 		}
 		bodyReader = bytes.NewReader(encoded)
 	}
@@ -446,7 +447,7 @@ func (j *JiraProvider) doJSON(ctx context.Context, method, path string, reqBody 
 	endpoint := j.baseURL + path
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, bodyReader)
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
+		return notSent(fmt.Errorf("build request: %w", err))
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
@@ -461,7 +462,7 @@ func (j *JiraProvider) doJSON(ctx context.Context, method, path string, reqBody 
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		payload, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(payload)))
+		return newHTTPStatusError(resp.StatusCode, string(payload))
 	}
 
 	if respBody == nil {

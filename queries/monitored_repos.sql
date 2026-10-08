@@ -46,6 +46,7 @@ RETURNING
   last_release_published_at,
   last_polled_at,
   last_error,
+  pending_ticket_tag,
   created_at,
   updated_at;
 
@@ -64,6 +65,7 @@ SELECT
   last_release_published_at,
   last_polled_at,
   last_error,
+  pending_ticket_tag,
   created_at,
   updated_at
 FROM monitored_repos
@@ -85,6 +87,7 @@ SELECT
   last_release_published_at,
   last_polled_at,
   last_error,
+  pending_ticket_tag,
   created_at,
   updated_at
 FROM monitored_repos
@@ -105,6 +108,7 @@ SELECT
   mr.last_release_published_at,
   mr.last_polled_at,
   mr.last_error,
+  mr.pending_ticket_tag,
   mr.created_at,
   mr.updated_at,
   COALESCE(GROUP_CONCAT(mrn.notification_target_id), '') AS notification_target_ids
@@ -139,6 +143,7 @@ RETURNING
   last_release_published_at,
   last_polled_at,
   last_error,
+  pending_ticket_tag,
   created_at,
   updated_at;
 
@@ -162,6 +167,7 @@ RETURNING
   last_release_published_at,
   last_polled_at,
   last_error,
+  pending_ticket_tag,
   created_at,
   updated_at;
 
@@ -174,6 +180,7 @@ SET
   last_release_published_at = ?,
   last_polled_at = ?,
   last_error = ?,
+  pending_ticket_tag = ?,
   updated_at = ?
 WHERE id = ?
 RETURNING
@@ -190,6 +197,7 @@ RETURNING
   last_release_published_at,
   last_polled_at,
   last_error,
+  pending_ticket_tag,
   created_at,
   updated_at;
 
