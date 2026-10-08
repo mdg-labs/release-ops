@@ -22,6 +22,10 @@ const MinPollIntervalMinutes int64 = 5
 // finishRunTimeout bounds the write that records a run's final state.
 const finishRunTimeout = 5 * time.Second
 
+// ShutdownWaitTimeout bounds how long shutdown waits for an in-flight run to write its
+// finish: the finish-write bound plus time for the run to notice the cancellation.
+const ShutdownWaitTimeout = finishRunTimeout + 3*time.Second
+
 // ErrAlreadyRunning is returned when a poll is requested while another run is active.
 var ErrAlreadyRunning = errors.New("poll already running")
 
@@ -64,6 +68,8 @@ type Scheduler struct {
 	runMu        sync.Mutex
 	running      bool
 	currentRunID string
+	// activeRuns counts runs between tryStart and finish, scheduled and manual alike.
+	activeRuns sync.WaitGroup
 }
 
 // NewScheduler returns a scheduler from cfg. Engine and Poll repositories are required.
@@ -113,6 +119,29 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	go s.watchSettings(ctx)
 
 	return nil
+}
+
+// Shutdown stops the cron and waits for every in-flight run, scheduled or manual, to
+// finish. It returns ctx's error if ctx ends first. Call it after cancelling the context
+// given to Start and after nothing can call Trigger any more.
+func (s *Scheduler) Shutdown(ctx context.Context) error {
+	select {
+	case <-s.cron.Stop().Done():
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	done := make(chan struct{})
+	go func() {
+		s.activeRuns.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Trigger starts an asynchronous poll run and returns the new poll_runs id (specs §7.1).
@@ -452,6 +481,7 @@ func (s *Scheduler) tryStart() bool {
 		return false
 	}
 	s.running = true
+	s.activeRuns.Add(1)
 	return true
 }
 
@@ -460,6 +490,7 @@ func (s *Scheduler) finish() {
 	defer s.runMu.Unlock()
 	s.running = false
 	s.currentRunID = ""
+	s.activeRuns.Done()
 }
 
 func (s *Scheduler) setCurrentRunID(runID string) {

@@ -106,8 +106,25 @@ func run(cfg *config.Config) {
 	addr := cfg.GoListenAddr()
 	log.Printf("release-ops server listening on %s", addr)
 
-	if err := api.Serve(ctx, addr, handler); err != nil {
-		log.Fatalf("server: %v", err)
+	serveErr := api.Serve(ctx, addr, handler)
+
+	// Cancel first so a failed Serve also stops the scheduler, then let an in-flight
+	// poll run write its finish before the deferred db.Close.
+	stop()
+	shutdownScheduler(scheduler)
+
+	if serveErr != nil {
+		log.Fatalf("server: %v", serveErr)
+	}
+}
+
+// shutdownScheduler waits for in-flight poll runs to write their finish. A run that
+// does not finish in time is left for reconcilePollRuns at the next start.
+func shutdownScheduler(scheduler *poll.Scheduler) {
+	waitCtx, cancel := context.WithTimeout(context.Background(), poll.ShutdownWaitTimeout)
+	defer cancel()
+	if err := scheduler.Shutdown(waitCtx); err != nil {
+		log.Printf("poll scheduler shutdown: in-flight run did not finish within %s: %v", poll.ShutdownWaitTimeout, err)
 	}
 }
 

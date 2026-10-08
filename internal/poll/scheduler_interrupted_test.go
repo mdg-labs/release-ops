@@ -213,3 +213,88 @@ func TestSchedulerShutdownFinishesRunningPoll(t *testing.T) {
 		t.Fatalf("finish calls = %+v, want run %s failed", calls, runID)
 	}
 }
+
+func TestSchedulerShutdownWaitsForManualRun(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	started := make(chan struct{})
+	pollRepo := newRecordingFinishRepo()
+	scheduler, err := poll.NewScheduler(poll.SchedulerConfig{
+		Engine:   poll.NewEngine(pollRepo),
+		Settings: &schedulerMockSettingsRepo{pollIntervalMinutes: 360},
+		Repos:    &schedulerMockReposRepo{repos: []store.MonitoredRepo{{ID: "repo-1"}}},
+		Poll:     pollRepo,
+		PollRepo: func(ctx context.Context, _ string, _ store.MonitoredRepo) (*poll.RepoEvaluation, error) {
+			close(started)
+			<-ctx.Done()
+			time.Sleep(200 * time.Millisecond)
+			return nil, ctx.Err()
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewScheduler: %v", err)
+	}
+	if err := scheduler.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	runID, err := scheduler.Trigger(ctx)
+	if err != nil {
+		t.Fatalf("Trigger: %v", err)
+	}
+	<-started
+	cancel()
+
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer waitCancel()
+	if err := scheduler.Shutdown(waitCtx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+
+	calls := pollRepo.finished()
+	if len(calls) != 1 || calls[0].runID != runID {
+		t.Fatalf("finish calls after Shutdown = %+v, want run %s finished", calls, runID)
+	}
+}
+
+func TestSchedulerShutdownGivesUpAtDeadline(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	pollRepo := newRecordingFinishRepo()
+	scheduler, err := poll.NewScheduler(poll.SchedulerConfig{
+		Engine:   poll.NewEngine(pollRepo),
+		Settings: &schedulerMockSettingsRepo{pollIntervalMinutes: 360},
+		Repos:    &schedulerMockReposRepo{repos: []store.MonitoredRepo{{ID: "repo-1"}}},
+		Poll:     pollRepo,
+		PollRepo: func(context.Context, string, store.MonitoredRepo) (*poll.RepoEvaluation, error) {
+			close(started)
+			<-release
+			return nil, errors.New("late")
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewScheduler: %v", err)
+	}
+	if err := scheduler.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if _, err := scheduler.Trigger(ctx); err != nil {
+		t.Fatalf("Trigger: %v", err)
+	}
+	<-started
+	cancel()
+
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer waitCancel()
+	if err := scheduler.Shutdown(waitCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Shutdown = %v, want deadline exceeded", err)
+	}
+	close(release)
+}
