@@ -2,7 +2,7 @@
 
 import { PencilIcon, PlugZapIcon, Trash2Icon } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { PageHeader } from "@/components/common/page-header";
 import { DeleteIntegrationDialog } from "@/components/integrations/delete-integration-dialog";
 import { IntegrationDrawer } from "@/components/integrations/integration-drawer";
@@ -51,6 +51,9 @@ export function IntegrationsView(): React.ReactElement {
   const [drawer, setDrawer] = useState<DrawerState>({ mode: "closed" });
   const [deleteTarget, setDeleteTarget] = useState<Integration | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Bumped when the delete dialog closes, so a delete that settles after
+  // its dialog was dismissed cannot touch the dialog opened next.
+  const deleteAttempt = useRef(0);
 
   const drawerOpen = drawer.mode !== "closed";
   const isEmpty = !isLoading && integrations?.length === 0;
@@ -244,11 +247,17 @@ export function IntegrationsView(): React.ReactElement {
           if (!deleteTarget) {
             return;
           }
+          const attempt = ++deleteAttempt.current;
           setDeleteError(null);
           try {
             await deleteIntegration.mutateAsync(deleteTarget.id);
-            setDeleteTarget(null);
+            if (attempt === deleteAttempt.current) {
+              setDeleteTarget(null);
+            }
           } catch (error) {
+            if (attempt !== deleteAttempt.current) {
+              return;
+            }
             setDeleteError(
               error instanceof ApiError && error.status === 409
                 ? t("deleteInUse")
@@ -260,6 +269,7 @@ export function IntegrationsView(): React.ReactElement {
         }}
         onOpenChange={(open) => {
           if (!open) {
+            deleteAttempt.current += 1;
             setDeleteTarget(null);
             setDeleteError(null);
           }

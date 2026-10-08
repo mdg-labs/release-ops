@@ -2,7 +2,7 @@
 
 import { LayoutListIcon, PencilIcon, Trash2Icon } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/components/common/page-header";
 import { DeleteTicketProjectDialog } from "@/components/ticket-projects/delete-ticket-project-dialog";
 import { ProjectDrawer } from "@/components/ticket-projects/project-drawer";
@@ -52,6 +52,9 @@ export function TicketProjectsView(): React.ReactElement {
   const [drawer, setDrawer] = useState<DrawerState>({ mode: "closed" });
   const [deleteTarget, setDeleteTarget] = useState<TicketProject | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Bumped when the delete dialog closes, so a delete that settles after
+  // its dialog was dismissed cannot touch the dialog opened next.
+  const deleteAttempt = useRef(0);
 
   const integrationNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -244,11 +247,17 @@ export function TicketProjectsView(): React.ReactElement {
           if (!deleteTarget) {
             return;
           }
+          const attempt = ++deleteAttempt.current;
           setDeleteError(null);
           try {
             await deleteTicketProject.mutateAsync(deleteTarget.id);
-            setDeleteTarget(null);
+            if (attempt === deleteAttempt.current) {
+              setDeleteTarget(null);
+            }
           } catch (error) {
+            if (attempt !== deleteAttempt.current) {
+              return;
+            }
             setDeleteError(
               error instanceof ApiError && error.status === 409
                 ? t("deleteInUse")
@@ -260,6 +269,7 @@ export function TicketProjectsView(): React.ReactElement {
         }}
         onOpenChange={(open) => {
           if (!open) {
+            deleteAttempt.current += 1;
             setDeleteTarget(null);
             setDeleteError(null);
           }

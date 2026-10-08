@@ -2,7 +2,7 @@
 
 import { FolderGit2Icon, PencilIcon, Trash2Icon } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/components/common/page-header";
 import { DeleteRepoDialog } from "@/components/repos/delete-repo-dialog";
 import { RepoDialog } from "@/components/repos/repo-dialog";
@@ -57,6 +57,9 @@ export function ReposView(): React.ReactElement {
   const [dialog, setDialog] = useState<DialogState>({ mode: "closed" });
   const [deleteTarget, setDeleteTarget] = useState<Repo | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Bumped when the delete dialog closes, so a delete that settles after
+  // its dialog was dismissed cannot touch the dialog opened next.
+  const deleteAttempt = useRef(0);
 
   const ticketProjectNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -277,11 +280,17 @@ export function ReposView(): React.ReactElement {
           if (!deleteTarget) {
             return;
           }
+          const attempt = ++deleteAttempt.current;
           setDeleteError(null);
           try {
             await deleteRepo.mutateAsync(deleteTarget.id);
-            setDeleteTarget(null);
+            if (attempt === deleteAttempt.current) {
+              setDeleteTarget(null);
+            }
           } catch (error) {
+            if (attempt !== deleteAttempt.current) {
+              return;
+            }
             setDeleteError(
               error instanceof ApiError && error.message
                 ? error.message
@@ -291,6 +300,7 @@ export function ReposView(): React.ReactElement {
         }}
         onOpenChange={(open) => {
           if (!open) {
+            deleteAttempt.current += 1;
             setDeleteTarget(null);
             setDeleteError(null);
           }
