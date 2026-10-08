@@ -10,7 +10,7 @@ This guide takes you from your first sign-in to your first automatically created
 - A Release Ops account: the admin account created during setup, or an invitation link from another user.
 - The repository you want to watch on GitHub, GitLab, Gitea, Forgejo or Codeberg.
 - An API token for your ticket system (Kaneo, Jira or Linear). Jira also needs the email address of the token's owner.
-- An API token for the release source. GitLab, Gitea and Forgejo need one. GitHub and Codeberg work without it, but a token avoids rate limits and gives access to private repos.
+- An API token for the release source, if it needs one. GitLab requires a token. GitHub, Gitea, Forgejo and Codeberg read public repos without one; a token avoids rate limits and is required for private repos.
 
 ## Quick start
 
