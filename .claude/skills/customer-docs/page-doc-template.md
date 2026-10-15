@@ -1,53 +1,57 @@
 ---
-title: "<Page title from apps/web/messages/en.json, e.g. Ticket projects>"
-description: "<One sentence: what you can do on this page.>"
+# Framework-specific frontmatter — adapt per docs-config.md § Frontmatter
+# Common fields (rename/remove per framework):
+title: "{PAGE_TITLE}"
+description: "{ONE_LINE_PURPOSE}"
+sidebar_position: {N}
+# slug: {kebab-case-slug}   # Mintlify, Docusaurus, etc.
 ---
 
-<!-- Starlight renders `title` as the H1: do not add a `# Heading` here. -->
-<!-- Save as apps/docs/src/content/docs/guide/<page>.md (see docs-config.md § Route → doc map). -->
+# {PAGE_TITLE}
 
-<One-sentence purpose: what you accomplish on this page, e.g. "Connect Release Ops to the services it reads releases from and creates tickets in.">
+{ONE_SENTENCE_PURPOSE — what the user can accomplish on this page.}
 
 ## Prerequisites
 
-- You are signed in to Release Ops.
-- <Other prerequisite, e.g. "You have added a ticket integration (Kaneo, Jira or Linear) on the [Integrations](../integrations/) page." — or "None.">
+- {PREREQUISITE_1 — e.g. "You are signed in."}
+- {PREREQUISITE_2 — or "None."}
 
-<!-- SCREENSHOT: <page> overview -->
+<!-- Optional when screenshot policy = PLACEHOLDERS -->
+<!-- {SCREENSHOT: {PAGE_NAME} overview} -->
 
-## <Key action 1 — imperative, e.g. Add a ticket project>
+## {KEY_ACTION_1 — imperative verb phrase}
 
-1. Click **<button label from en.json>**.
-2. <Step — second person, present tense.>
-3. Click **<Save / Create label>**.
+1. {Step — second person, present tense.}
+2. {Step.}
+3. {Step.}
 
-**Result:** <What you see, e.g. "The ticket project appears in the list.">
+**Result:** {What the user sees or achieves.}
 
-## <Key action 2 — e.g. Edit the status mapping>
+## {KEY_ACTION_2}
 
-1. <Step.>
-2. <Step.>
+1. {Step.}
+2. {Step.}
 
-<!-- Repeat one ## section per primary action on the page (add, edit, test connection, delete, …). -->
+<!-- Repeat ## sections for each primary action visible on the page -->
 
-## Field reference
+## Field and option reference
 
-| Field | Description | Required |
-| ----- | ----------- | -------- |
-| <Label from en.json> | <What it does, per docs/specs.html.> | Yes |
-| <Label> | <What it does.> | No |
+| Field / option | Description | Required |
+| -------------- | ----------- | -------- |
+| {Customer-facing label} | {What it does.} | {Yes \| No} |
+| {Customer-facing label} | {What it does.} | {Yes \| No} |
 
 ## Troubleshooting
 
-### <Problem in plain language, e.g. "Test connection fails">
+### {Problem in plain language}
 
-<Cause and fix as steps.>
+{Cause and fix — task-oriented steps.}
 
-### <Another problem>
+### {Another problem}
 
-<Cause and fix.>
+{Cause and fix.}
 
 ## Related pages
 
-- [<Related page>](../<page>/)
-- [<Concept page>](../../concepts/<concept>/)
+- [{Related page title}]({relative-path})
+- [{Related page title}]({relative-path})

@@ -33,7 +33,7 @@ Kaneo task payloads have so far carried no GitHub link. Resolve the number by **
 
 1. The user or the dispatch prompt gives `#N` → use it.
 2. Optional: if the Kaneo task payload has `externalLinks`, use `externalLinks[].externalId` (issue link) → `#N`. Not observed on current payloads (`get_task` / `get_task_by_ticket_id` for RO-108 return none), so expect to fall through to step 3.
-3. Otherwise search by the exact Kaneo task title — GitHub MCP `search_issues` (owner `mdg-labs`, repo `release-ops`) or `gh issue list --repo mdg-labs/release-ops --state all --search "<title> in:title" --json number,title` — and take the exact-title match.
+3. Otherwise search by the exact Kaneo task title — GitHub MCP `search_issues` (owner `mdg-labs`, repo `release-ops`) or `.claude/scripts/gh-rest.sh issue-search "<title>" --state all` — and take the exact-title match.
 4. No match → use the roadmap key if the task has one; otherwise ask the user. Never create an issue to obtain a number.
 
 ### Examples
@@ -80,7 +80,7 @@ No agent, skill or sub-agent ever:
 
 The `fixes #N` commit trailer is not an issue write: GitHub acts on it when the commit reaches `main`. It is the only closing mechanism.
 
-Allowed: `mcp__github__issue_read`, `mcp__github__search_issues`, `mcp__github__list_issues`, `gh issue view`, `gh issue list` (read-only).
+Allowed: `mcp__github__issue_read`, `mcp__github__search_issues`, `mcp__github__list_issues`, `.claude/scripts/gh-rest.sh issue-view` / `issue-search` (read-only).
 
 ## Private security advisories
 

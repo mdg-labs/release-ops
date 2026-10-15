@@ -16,13 +16,20 @@
       "Bash(git push origin dev)",
       "Bash(.claude/skills/dev-diff/dev-diff.sh)",
       "Bash(.claude/skills/dev-diff/dev-diff.sh --list)",
-      "Bash(scripts/security-history.sh:*)"
+      "Bash(.claude/scripts/gh-rest.sh:*)",
+      "Bash(.claude/scripts/issue-status.sh:*)",
+      "Bash(.claude/scripts/epic-status.sh:*)",
+      "Bash(.claude/scripts/issue-readiness.sh:*)",
+      "Bash(.claude/scripts/security-history.sh:*)",
+      "Bash(.claude/skills/dev-diff/dev-diff.sh:*)"
     ],
     "deny": [
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
       "Bash(git add -A:*)",
-      "Bash(git add --all:*)"
+      "Bash(git add --all:*)",
+      "Bash(git push --force-with-lease:*)",
+      "Bash(git add .)"
     ],
     "additionalDirectories": [
       "../release-ops-cloud"

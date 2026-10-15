@@ -1,48 +1,39 @@
 ## Execution report — {{UNIT_ID}}
 
 **Workspace:** `{{WORKSPACE_PATH}}`
-**Tasks in this dispatch:** {{RO-<n> (#<N>), … in the order you worked them}}
-**Dependencies installed:** {{"npm ci ok" | the error}}
+**Isolated environment:** {{"destroyed, confirmed gone" | "not used" | "not available in this repo"}}
+**Items in this dispatch:** {{<ITEM_REF>, … in the order you worked them}}
 
-{{FOR EACH TASK — one block per task in this dispatch, including any you had
-to report blocked or already-resolved:}}
+{{FOR EACH ITEM — one block per item in this dispatch, including any you had
+to report blocked:}}
 
-### RO-{{RO_NUMBER}} (#{{ISSUE_NUMBER}}) — {{TASK_TITLE}}
+### {{ITEM_REF}} — {{ITEM_TITLE}}
 
-**Status:** {{done|blocked|already-resolved}}
-**Kaneo:** {{in-progress ✓ / in-review ✓ — or which call failed}}
-**Commit:** `{{SHA}}` — `{{subject line}}` {{or "none — blocked" / "none — already-resolved"}}
-**Trailer:** {{`fixes #<N>` | `Refs: GHSA-…`}}
+**Status:** {{done | blocked | already-resolved}}
+**Commit:** `{{SHA}}` — {{the commit subject}} {{or "none — blocked" / "none — already resolved by <sha>"}}
+**Trailer:** `{{the trailer line the commit carries}}`
+**Tracker:** {{claim ✓/✗ · hand-off ✓/✗ — and the error if a call failed}}
 
 **Files touched:**
 - {{path}}
 
 **Summary:** {{2-5 sentences: what was implemented and how}}
 
-**Checks run:** {{every check actually run inside WORKSPACE for this task, with
-its result — and every applicable check that could NOT run on this machine,
-with why (not installed)}}
+**Checks run:** {{every check actually run inside WORKSPACE for this item, with its result — and every applicable check that could NOT run on this machine, with why}}
 
-**Generated output changed:** {{migrations/, internal/store/db/, package-lock.json changes and why — or "none"}}
+**Dependencies:** {{packages added or changed, with the resolved versions — or "none"}}
 
-**Security-relevant code touched:** {{each auth, token, credential, outbound-URL
-or schema-data path changed, and the test covering it — or "none"}}
+**Generated output changed:** {{goldens / generated code and why — or "none"}}
 
-**Spec references:** {{spec sections implemented — or "none"}}
+**Destructive or security-relevant code paths touched:** {{each one, and the test covering it — or "none"}}
 
-**Deviations from the task text:** {{where and why, including any behaviour the
-spec does not define — or "none"}}
+**Design references and defaults:** {{doc sections implemented; any decision or default this relies on; any default you believe is wrong, and why — or "none"}}
 
-**Left undone / blocked:** {{what and why; for already-resolved, the evidence
-that each criterion already holds — or "none"}}
+**Deviations from the item text:** {{where and why — or "none"}}
+
+**Left undone / blocked:** {{what and why; for already-resolved, the evidence — or "none"}}
 
 {{END FOR}}
 
-### Findings outside these tasks
-{{only real problems none of the tasks above cover and you did not fix: a
-pre-existing defect with a concrete scenario, a spec statement that is untrue,
-or work a planned feature cannot do without. One line each — what, where
-(`file:line` or the command that shows it), the scenario, and why it isn't
-yours. Not findings: style, hardening you would like, ideas, and tooling missing
-on this machine (the orchestrator already knows). The orchestrator files or
-routes each one; you never create a task. "none" is the normal answer.}}
+### Findings outside these items
+{{only real problems none of the items above cover and you did not fix: a pre-existing defect with a concrete scenario, a doc statement that is untrue, or work a planned feature cannot do without. One line each — what, where (`file:line` or the command that shows it), the scenario, and why it isn't yours. Not findings: style, hardening you would like, ideas, and tooling missing on this machine. The orchestrator files or routes each one; you never open an item. "none" is the normal answer.}}

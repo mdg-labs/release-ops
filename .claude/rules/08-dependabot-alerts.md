@@ -13,7 +13,7 @@ The correct resolution is to **upgrade the vulnerable dependency** and land the 
 ## Correct workflow
 
 1. Read the alert (read-only): package, ecosystem (`npm` or Go modules), vulnerable range, patched version.
-2. Track it: `/dependabot-triage` searches the Kaneo Release Ops board for an open duplicate and, if none exists, creates a **Kaneo task** in `ready`. It does not create or touch GitHub issues.
+2. Track it: `/triage <alert>` searches the Kaneo Release Ops board for an open duplicate and, if none exists, creates a **Kaneo task** in `ready`. It does not create or touch GitHub issues.
 3. Upgrade in the relevant manifest — `package.json` (root, `apps/web`, `apps/docs`) + `package-lock.json`, or `go.mod` + `go.sum`.
 4. Run the scoped gate (`06-local-ci-before-commit.md`); Go bumps also run `go test ./... && golangci-lint run`.
 5. Commit: `fix(deps)[#N]: bump <pkg> to <version> (CVE-XXXX-XXXX)` — `#N` resolved read-only per `07-commit-linking.md`; the body ends with the mandatory `fixes #N` trailer (roadmap-only / no issue: no trailer).

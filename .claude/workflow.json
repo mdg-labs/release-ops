@@ -1,0 +1,42 @@
+{
+  "$schema": "./workflow.schema.json",
+  "repo": "mdg-labs/release-ops",
+  "maintainer": "mdguggenbichler",
+  "githubRunner": "ubuntu-latest",
+  "tracker": {
+    "type": "kaneo",
+    "workspaceId": "ffM0nW62CAq0BeWqTEQuoqsDySEVyxxj",
+    "projectId": "z4janvyjsbbb0esishvd9gb8",
+    "ticketKey": "RO"
+  },
+  "branches": { "integration": "dev", "production": "main" },
+  "landing": "dev-cherry-pick",
+  "promotionBudget": 100,
+  "gate": "npm test && npm run lint && npm run typecheck && npm run db:check && go test ./... && golangci-lint run",
+  "threatModel": "docs/threat-model.md",
+  "labels": {
+    "areas": [
+      { "name": "backend", "description": "Go API, polling, providers" },
+      { "name": "web", "description": "Next.js UI, COSS, Go API proxy" },
+      { "name": "db", "description": "SQLite schema, migrations, queries" },
+      { "name": "config", "description": "App settings, env bootstrap" },
+      { "name": "ci", "description": "GitHub Actions, Docker, GHCR" },
+      { "name": "docs", "description": "Spec docs and customer docs site" }
+    ],
+    "risk": { "name": "risk", "description": "Can lose data or break upgrades: schema, migrations, credential crypto" }
+  },
+  "checks": [
+    { "paths": ["apps/web/**", "package.json", "package-lock.json"], "run": "npm test && npm run lint && npm run typecheck", "requires": ["npm"] },
+    { "paths": ["db/schema.sql", "migrations/**"], "run": "npm run db:check", "requires": ["go"] },
+    { "paths": ["cmd/**", "internal/**", "queries/**", "tools/**", "sqlc.yaml", "go.mod", "go.sum"], "run": "gofmt -l . && go vet ./... && go test ./... && golangci-lint run", "requires": ["go", "golangci-lint"] },
+    { "paths": ["apps/docs/**"], "run": "npm run docs:build", "requires": ["npm"] }
+  ],
+  "bootstrap": "npm ci",
+  "riskPaths": ["db/schema.sql", "migrations/**", "internal/crypto/**", "internal/store/**"],
+  "signoff": { "mode": "none" },
+  "docs": {
+    "paths": ["apps/docs/"],
+    "guide": ".claude/skills/customer-docs/SKILL.md",
+    "build": "npm run docs:build"
+  }
+}

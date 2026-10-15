@@ -36,8 +36,8 @@ Deprecated (do not use): old learning-path HTML under <code>docs/</code> — rem
 
 ## Agent config
 
-- Orchestration: `.claude/skills/orchestrate/SKILL.md` + `templates/` (project-owned; edit in place); agents in `.claude/agents/` (`task-executor`, `task-verifier`, `task-refiner`, `security-reviewer`, `security-verifier`, `ci-investigator`)
+- Orchestration: `.claude/skills/orchestrate/SKILL.md` + `templates/` (vendored by `/mdg-setup:setup`); agents in `.claude/agents/` (`task-executor`, `task-verifier`, `issue-refiner`, `security-reviewer`, `security-verifier`, `ci-investigator`)
 - Promotion: `/dev-diff`, `/open-pr`, `/cr-review`; security: `/security-audit` against `docs/threat-model.md`
-- Project constants (Kaneo IDs, lookup rules, area → paths): `.agents/project/orchestrator/project.config.md`
+- Project constants: `.claude/workflow.json` (tracker ids, branches, gate, checks) and CLAUDE.md `## Agent workflow` (area → paths, hazards, security units)
 - Board: Kaneo (MCP `Kaneo`, or the claude.ai connector `claude_ai_Kaneo`); GitHub issues are read-only for agents (`07-commit-linking.md`)
 - Threat model: `docs/threat-model.md` — the yardstick for security review and severity
