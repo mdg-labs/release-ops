@@ -1,10 +1,10 @@
-# MVP acceptance checklist
+# MVP acceptance checklist (v1 history)
 
-Sign-off checklist for Release Ops MVP. Each item maps to [specs.html §12 MVP Acceptance Criteria](specs.html#mvp). Use this document for release validation and operator handoff.
+> **v1 history.** This checklist signs off the v1 release monitor (release polling, Shoutrrr notifications, local accounts, five source kinds). It describes nothing in v2 and is kept for reference only. The v2 acceptance criteria are in [specs.html §12](specs.html#mvp).
 
-**Spec references:** [§12 MVP](specs.html#mvp) · [§9 Environment](specs.html#env) · [§10 Deployment](specs.html#deployment) · [§11 CI/CD](specs.html#ci)
+Sign-off checklist for the Release Ops v1 MVP. Each item maps to the v1 MVP acceptance criteria, which [specs.html §12](specs.html#mvp) no longer carries. Section links below point at the current spec, whose text has since been rewritten for v2.
 
-**Operator guide:** [getting-started.md](getting-started.md)
+**Spec references (v2 text):** [§12 MVP](specs.html#mvp) · [§9 Environment](specs.html#env) · [§10 Deployment](specs.html#deployment) · [§11 CI/CD](specs.html#ci)
 
 ---
 
@@ -213,4 +213,4 @@ CI/CD layout per [specs.html §11](specs.html#ci). All entrypoints call reusable
 | Operator / QA | | | |
 | Engineering | | | |
 
-When all boxes are checked, MVP is ready for production self-hosting.
+When all boxes are checked, the v1 MVP was ready for production self-hosting.
