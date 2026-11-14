@@ -55,6 +55,10 @@ type tokenKey struct {
 	// repositories is the sorted, lower-cased list of repository names the token is
 	// scoped to, joined by commas; empty for an unscoped token.
 	repositories string
+	// target is the lower-cased target repository name of a scoped token. A token minted
+	// after a fallback covers the target alone, so two targets never share an entry even
+	// when their requested sets are equal.
+	target string
 }
 
 type tokenEntry struct {
@@ -149,7 +153,7 @@ func (c *AppClient) repositoryToken(ctx context.Context, installationID int64, t
 		lowered[i] = strings.ToLower(n)
 	}
 	slices.Sort(lowered)
-	key := tokenKey{installationID: installationID, repositories: strings.Join(lowered, ",")}
+	key := tokenKey{installationID: installationID, repositories: strings.Join(lowered, ","), target: strings.ToLower(name)}
 
 	return c.cached(key, minLife, func() (InstallationToken, error) {
 		tok, err := c.mint(ctx, installationID, names)

@@ -279,6 +279,37 @@ func TestRepositoryTokenFallsBackToTheTargetWhenAPresetIsNotInstalled(t *testing
 	}
 }
 
+func TestAFallbackTokenIsNotServedToAnotherTargetOfTheSamePresets(t *testing.T) {
+	t.Parallel()
+
+	r := newRig(t)
+	r.fake.RejectRepository("missing")
+	ctx := context.Background()
+	presets := []string{"acme/api", "acme/web", "acme/missing"}
+
+	if _, err := r.client.RepositoryToken(ctx, 1000, "acme/api", presets); err != nil {
+		t.Fatalf("target api: %v", err)
+	}
+	if _, err := r.client.RepositoryToken(ctx, 1000, "acme/web", presets); err != nil {
+		t.Fatalf("target web: %v", err)
+	}
+	got := r.fake.TokenRequests()
+	if len(got) != 4 {
+		t.Fatalf("token requests = %v, want the full set refused and the fallback minted once per target", got)
+	}
+	if !slices.Equal(got[2], []string{"web", "api", "missing"}) || !slices.Equal(got[3], []string{"web"}) {
+		t.Errorf("web requests = %v, want the full set refused and then [web]: the api fallback token does not cover web", got[2:])
+	}
+
+	// The same target and set still share one entry.
+	if _, err := r.client.RepositoryToken(ctx, 1000, "acme/web", presets); err != nil {
+		t.Fatalf("target web again: %v", err)
+	}
+	if n := len(r.fake.TokenRequests()); n != 4 {
+		t.Errorf("token requests = %d after a repeat of the same target, want it served from the cache", n)
+	}
+}
+
 func TestTokenFailuresAreCleanErrorsAndNothingIsCached(t *testing.T) {
 	t.Parallel()
 
