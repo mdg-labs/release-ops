@@ -63,7 +63,7 @@ Each attacker has a capability, what it is trusted with, and what it must never 
 - **Must never reach:** the App private key, client secret, webhook secret or an integration credential in plaintext, or a reusable setup or link token (they are stored as SHA-256 of random values). Note: rows in `sessions` are live session tokens until expiry (at most 8 hours) and `session_repositories` lists a viewer's repositories; the raw global config text is stored in plaintext (§5.14); whether those are accepted is open question 12 (proposed, confirm).
 
 ### 2.6 Network observer between browser, GitHub and container
-- **Capability:** sees traffic when the operator exposes port 3000 or `WEBHOOK_URL` without TLS: session cookies, the setup token as typed, the OAuth callback's `code` and `state`, webhook payloads. Does not see the app-to-GitHub or app-to-ticket-system calls (TLS to fixed hosts).
+- **Capability:** sees traffic when the operator exposes port 3000 or `WEBHOOK_URL` without TLS: session cookies, the setup token as typed, the OAuth callback's `code` and `state`, webhook payloads. Does not see the app-to-GitHub or app-to-ticket-system calls while they use HTTPS: `github.com`, `api.github.com` and `linear.app` always do. A Jira or Kaneo base URL and `GITHUB_BASE_URL` (GitHub Enterprise Server) are chosen by the admin or operator, and an `http` value exposes the credentials sent there (Basic or Bearer, the App JWT, installation tokens) to this attacker (§5.18).
 - **Must never reach:** session cookies, the setup token, or an OAuth code when the operator configured HTTPS (`APP_URL=https://…`). A webhook body read in transit is not a forged one: the HMAC still authenticates.
 
 ### 2.7 Co-tenant in the container's network namespace or on the Docker host
@@ -183,7 +183,7 @@ Not findings. Every v2 residual below is "(proposed, confirm)": the plan or the 
 15. **Authority lags by design:** a removed org member keeps a session for up to 15 minutes, and a viewer's repository list is fixed for up to 8 hours (proposed, confirm; spec §3.8, §3.9).
 16. **`/metrics` has no authentication.** Protection is the bind address (loopback by default) and not publishing the port; an operator who binds it wider exposes repository names and counts (proposed, confirm; spec §7.8).
 17. **The rate limiter is in memory and per container**, so it resets on restart (proposed, confirm).
-18. **TLS is the operator's job.** The container serves plain HTTP; cookies are `Secure` only when `APP_URL` is HTTPS; `WEBHOOK_URL` may be plain HTTP (the HMAC still authenticates); the internal listener speaks plain HTTP on the private Compose network, which only the app and the worker may share (proposed, confirm; open question 8).
+18. **TLS is the operator's job.** The container serves plain HTTP; cookies are `Secure` only when `APP_URL` is HTTPS; `WEBHOOK_URL` may be plain HTTP (the HMAC still authenticates); a Jira or Kaneo base URL and `GITHUB_BASE_URL` may be `http`, in which case the credentials sent to that host travel in the clear; the internal listener speaks plain HTTP on the private Compose network, which only the app and the worker may share (proposed, confirm; open question 8).
 19. **Holder of `app.db` plus the container env has everything.** `APP_ENCRYPTION_KEY` protects the DB only when stored apart from it, and snapshots under `/data/snapshots` are as sensitive as `app.db` (proposed, confirm).
 
 ---
