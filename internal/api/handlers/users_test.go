@@ -385,8 +385,8 @@ func seedUsersAppSettings(t *testing.T, db *sql.DB) {
 	t.Helper()
 
 	_, err := db.Exec(
-		`INSERT INTO app_settings (id, poll_interval_minutes, invite_token_expiry_hours, password_reset_token_expiry_minutes, updated_at)
-		 VALUES (1, 360, 168, 60, ?)
+		`INSERT INTO app_settings (id, invite_token_expiry_hours, password_reset_token_expiry_minutes, updated_at)
+		 VALUES (1, 168, 60, ?)
 		 ON CONFLICT(id) DO NOTHING`,
 		"2026-08-07T12:00:00.000Z",
 	)

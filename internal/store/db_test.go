@@ -77,7 +77,7 @@ func TestReadCompletesWhileWriteTransactionIsOpen(t *testing.T) {
 		t.Fatalf("BeginTx: %v", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO app_settings (id, poll_interval_minutes, updated_at) VALUES (1, 360, 't')`); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO app_settings (id, updated_at) VALUES (1, 't')`); err != nil {
 		t.Fatalf("insert in tx: %v", err)
 	}
 
@@ -144,7 +144,7 @@ func TestWriteIsVisibleToReadPoolAfterCommit(t *testing.T) {
 		t.Fatalf("rows before write = %d, want 0", got)
 	}
 
-	if _, err := db.Writer.ExecContext(ctx, `INSERT INTO app_settings (id, poll_interval_minutes, updated_at) VALUES (1, 360, 't')`); err != nil {
+	if _, err := db.Writer.ExecContext(ctx, `INSERT INTO app_settings (id, updated_at) VALUES (1, 't')`); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	if got := count(); got != 1 {
@@ -158,7 +158,7 @@ func TestReadPoolRejectsWrites(t *testing.T) {
 	db, _ := openTestDB(t)
 	ctx := context.Background()
 
-	_, err := db.Reader.ExecContext(ctx, `INSERT INTO app_settings (id, poll_interval_minutes, updated_at) VALUES (1, 360, 't')`)
+	_, err := db.Reader.ExecContext(ctx, `INSERT INTO app_settings (id, updated_at) VALUES (1, 't')`)
 	if err == nil {
 		t.Fatal("write on the read pool succeeded, want an error")
 	}
@@ -185,7 +185,7 @@ func TestOpenPathConvertsRollbackJournalDatabaseToWAL(t *testing.T) {
 	if got := pragmaString(t, old, "journal_mode"); got == "wal" {
 		t.Fatalf("migrated database already in %q mode, want a rollback journal", got)
 	}
-	if _, err := old.Exec(`INSERT INTO app_settings (id, poll_interval_minutes, updated_at) VALUES (1, 90, 't')`); err != nil {
+	if _, err := old.Exec(`INSERT INTO app_settings (id, invite_token_expiry_hours, updated_at) VALUES (1, 90, 't')`); err != nil {
 		t.Fatalf("seed old db: %v", err)
 	}
 	if err := old.Close(); err != nil {
@@ -201,12 +201,12 @@ func TestOpenPathConvertsRollbackJournalDatabaseToWAL(t *testing.T) {
 	if got := pragmaString(t, db.Writer, "journal_mode"); got != "wal" {
 		t.Fatalf("journal_mode after open = %q, want wal", got)
 	}
-	var interval int
-	if err := db.Reader.QueryRow(`SELECT poll_interval_minutes FROM app_settings WHERE id = 1`).Scan(&interval); err != nil {
+	var hours int
+	if err := db.Reader.QueryRow(`SELECT invite_token_expiry_hours FROM app_settings WHERE id = 1`).Scan(&hours); err != nil {
 		t.Fatalf("read existing row: %v", err)
 	}
-	if interval != 90 {
-		t.Fatalf("poll_interval_minutes = %d, want 90", interval)
+	if hours != 90 {
+		t.Fatalf("invite_token_expiry_hours = %d, want 90", hours)
 	}
 }
 
@@ -248,7 +248,7 @@ func TestStoreWriteIsVisibleToStoreReads(t *testing.T) {
 	s, _ := testStore(t)
 	ctx := context.Background()
 
-	created, err := s.Integrations().Create(ctx, store.CreateIntegrationInput{Kind: "github", Name: "gh"})
+	created, err := s.Integrations().Create(ctx, store.CreateIntegrationInput{Kind: "linear", Name: "gh"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}

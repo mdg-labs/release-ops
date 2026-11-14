@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os/signal"
 	"syscall"
@@ -26,13 +27,15 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	run(ctx, cfg)
+	if err := run(ctx, cfg); err != nil {
+		log.Fatal(err)
+	}
 }
 
-func run(ctx context.Context, cfg *config.Config) {
+func run(ctx context.Context, cfg *config.Config) error {
 	applied, err := store.Migrate(ctx, cfg.AppDBPath)
 	if err != nil {
-		log.Fatalf("migrations: %v", err)
+		return fmt.Errorf("migrations: %w", err)
 	}
 	for _, m := range applied {
 		log.Printf("migrations: applied %s_%s", m.Version, m.Slug)
@@ -40,7 +43,7 @@ func run(ctx context.Context, cfg *config.Config) {
 
 	db, err := store.OpenPath(cfg.AppDBPath)
 	if err != nil {
-		log.Fatalf("database: %v", err)
+		return fmt.Errorf("database: %w", err)
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
@@ -50,23 +53,23 @@ func run(ctx context.Context, cfg *config.Config) {
 
 	queries := storedb.New(db.Writer)
 	if err := auth.BootstrapFromEnv(context.Background(), queries, cfg.BootstrapAdminEmail, cfg.BootstrapAdminPassword); err != nil {
-		log.Fatalf("bootstrap admin: %v", err)
+		return fmt.Errorf("bootstrap admin: %w", err)
 	}
 
 	cipher, err := crypto.NewCipherFromHex(cfg.AppEncryptionKey)
 	if err != nil {
-		log.Fatalf("encryption: %v", err)
+		return fmt.Errorf("encryption: %w", err)
 	}
 
 	appStore := store.New(db, cipher)
 
 	if err := appStore.Settings().EnsureDefault(context.Background()); err != nil {
-		log.Fatalf("app settings: %v", err)
+		return fmt.Errorf("app settings: %w", err)
 	}
 
 	mailer, err := mail.NewFromEnv()
 	if err != nil {
-		log.Fatalf("mail: %v", err)
+		return fmt.Errorf("mail: %w", err)
 	}
 
 	sessionManager := auth.NewSessionManager(db.Writer, cfg.SessionSecret, cfg.SecureCookies())
@@ -82,6 +85,7 @@ func run(ctx context.Context, cfg *config.Config) {
 	log.Printf("release-ops server listening on %s", addr)
 
 	if err := api.Serve(ctx, addr, handler); err != nil {
-		log.Fatalf("server: %v", err)
+		return fmt.Errorf("server: %w", err)
 	}
+	return nil
 }

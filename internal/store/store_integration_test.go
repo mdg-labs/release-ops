@@ -12,7 +12,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/store/db"
 )
 
-func TestGetAppSettingsPollInterval(t *testing.T) {
+func TestGetAppSettingsTokenWindowDefaults(t *testing.T) {
 	t.Parallel()
 
 	s, _ := testStore(t)
@@ -25,11 +25,8 @@ func TestGetAppSettingsPollInterval(t *testing.T) {
 	if got.ID != 1 {
 		t.Fatalf("ID = %d, want 1", got.ID)
 	}
-	if got.PollIntervalMinutes < 5 {
-		t.Fatalf("poll_interval_minutes = %d, want >= 5", got.PollIntervalMinutes)
-	}
-	if got.PollIntervalMinutes != 360 {
-		t.Fatalf("poll_interval_minutes = %d, want default 360", got.PollIntervalMinutes)
+	if got.InviteTokenExpiryHours != 168 || got.PasswordResetTokenExpiryMinutes != 60 {
+		t.Fatalf("settings = %+v, want default 168 hours and 60 minutes", got)
 	}
 }
 
@@ -156,35 +153,38 @@ func TestIntegrationWithoutSecretReportsNoSecret(t *testing.T) {
 	}
 }
 
-// v1RowsReferencing seeds the rows the removed monitoring feature left behind: a
-// monitored repo that references the ticket project and, as its source credential, a
-// github integration. Nothing in the code reads these tables any more; their foreign
-// keys still apply until the tables are dropped.
-func v1RowsReferencing(t *testing.T, s *store.Store, ticketProjectID string) (sourceIntegrationID string) {
+// updateTicketReferencing seeds the rows an update ticket needs (installation, repository,
+// update PR) and the ticket itself, created in the given ticket project.
+func updateTicketReferencing(t *testing.T, s *store.Store, ticketProjectID string) {
 	t.Helper()
 	ctx := context.Background()
 
-	sourceIntegrationID = "int-v1-source"
-	if _, err := s.DB().Writer.ExecContext(ctx,
-		`INSERT INTO integrations (id, kind, name, base_url, encrypted_payload, created_at, updated_at)
-		 VALUES (?, 'github', 'GitHub v1', NULL, '', 't', 't')`, sourceIntegrationID); err != nil {
-		t.Fatalf("seed v1 source integration: %v", err)
+	for _, stmt := range []string{
+		`INSERT INTO installations (id, github_installation_id, account_id, account_login, account_type, status, repository_selection, created_at, updated_at)
+		 VALUES ('inst-1', 1, 1, 'acme', 'Organization', 'active', 'all', 't', 't')`,
+		`INSERT INTO repositories (id, installation_id, github_repository_id, full_name, default_branch, created_at, updated_at)
+		 VALUES ('repo-1', 'inst-1', 1, 'acme/api', 'main', 't', 't')`,
+		`INSERT INTO update_prs (id, repository_id, number, node_id, url, title, head_ref, state, last_seen_at, created_at, updated_at)
+		 VALUES ('pr-1', 'repo-1', 1, 'node', 'https://example.test/pr/1', 'Update dep', 'renovate/dep', 'open', 't', 't', 't')`,
+	} {
+		if _, err := s.DB().Writer.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("seed %q: %v", stmt, err)
+		}
 	}
 	if _, err := s.DB().Writer.ExecContext(ctx,
-		`INSERT INTO monitored_repos (id, source_kind, project_path, source_integration_id, ticket_project_id, created_at, updated_at)
-		 VALUES ('repo-v1', 'github', 'org/repo', ?, ?, 't', 't')`, sourceIntegrationID, ticketProjectID); err != nil {
-		t.Fatalf("seed v1 monitored repo: %v", err)
+		`INSERT INTO update_tickets (id, update_pr_id, ticket_project_id, state, created_at, updated_at)
+		 VALUES ('ut-1', 'pr-1', ?, 'pending', 't', 't')`, ticketProjectID); err != nil {
+		t.Fatalf("seed update ticket: %v", err)
 	}
-	return sourceIntegrationID
 }
 
-func TestDeleteTicketProjectReferencedByV1RowReturnsErrInUse(t *testing.T) {
+func TestDeleteTicketProjectReferencedByUpdateTicketReturnsErrInUse(t *testing.T) {
 	t.Parallel()
 
 	s, _ := testStore(t)
 	ctx := context.Background()
 	fixture := seedTicketFixture(t, s, ctx)
-	v1RowsReferencing(t, s, fixture.ticketProjectID)
+	updateTicketReferencing(t, s, fixture.ticketProjectID)
 
 	err := s.TicketProjects().Delete(ctx, fixture.ticketProjectID)
 	if !errors.Is(err, store.ErrInUse) {
@@ -192,23 +192,6 @@ func TestDeleteTicketProjectReferencedByV1RowReturnsErrInUse(t *testing.T) {
 	}
 	if _, err := s.TicketProjects().Get(ctx, fixture.ticketProjectID); err != nil {
 		t.Fatalf("ticket project gone after refused delete: %v", err)
-	}
-}
-
-func TestDeleteIntegrationReferencedByV1RowReturnsErrInUse(t *testing.T) {
-	t.Parallel()
-
-	s, _ := testStore(t)
-	ctx := context.Background()
-	fixture := seedTicketFixture(t, s, ctx)
-	sourceID := v1RowsReferencing(t, s, fixture.ticketProjectID)
-
-	err := s.Integrations().Delete(ctx, sourceID)
-	if !errors.Is(err, store.ErrInUse) {
-		t.Fatalf("Delete = %v, want store.ErrInUse", err)
-	}
-	if _, err := s.Integrations().Get(ctx, sourceID); err != nil {
-		t.Fatalf("integration gone after refused delete: %v", err)
 	}
 }
 

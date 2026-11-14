@@ -175,9 +175,10 @@ func TestRemovedV1RoutesAreNotRegistered(t *testing.T) {
 	}
 }
 
-// A v1 monitored repo still references a ticket project and a source integration until
-// the v1 tables are dropped; deleting either through the API must answer 409, never 500.
-func TestDeleteReferencedByLeftoverV1RowReturnsConflict(t *testing.T) {
+// An update ticket references the ticket project it was created in, and the ticket
+// project references its integration; deleting either through the API must answer 409,
+// never 500.
+func TestDeleteReferencedRowReturnsConflict(t *testing.T) {
 	t.Parallel()
 
 	deps := newRoutesTestDeps(t)
@@ -205,13 +206,17 @@ func TestDeleteReferencedByLeftoverV1RowReturnsConflict(t *testing.T) {
 		t.Fatalf("Create ticket project: %v", err)
 	}
 	for _, stmt := range []string{
-		`INSERT INTO integrations (id, kind, name, base_url, encrypted_payload, created_at, updated_at)
-		 VALUES ('int-v1', 'github', 'GitHub v1', NULL, '', 't', 't')`,
-		`INSERT INTO monitored_repos (id, source_kind, project_path, source_integration_id, ticket_project_id, created_at, updated_at)
-		 VALUES ('repo-v1', 'github', 'org/repo', 'int-v1', '` + project.ID + `', 't', 't')`,
+		`INSERT INTO installations (id, github_installation_id, account_id, account_login, account_type, status, repository_selection, created_at, updated_at)
+		 VALUES ('inst-1', 1, 1, 'acme', 'Organization', 'active', 'all', 't', 't')`,
+		`INSERT INTO repositories (id, installation_id, github_repository_id, full_name, default_branch, created_at, updated_at)
+		 VALUES ('repo-1', 'inst-1', 1, 'acme/api', 'main', 't', 't')`,
+		`INSERT INTO update_prs (id, repository_id, number, node_id, url, title, head_ref, state, last_seen_at, created_at, updated_at)
+		 VALUES ('pr-1', 'repo-1', 1, 'node', 'https://example.test/pr/1', 'Update dep', 'renovate/dep', 'open', 't', 't', 't')`,
+		`INSERT INTO update_tickets (id, update_pr_id, ticket_project_id, state, created_at, updated_at)
+		 VALUES ('ut-1', 'pr-1', '` + project.ID + `', 'pending', 't', 't')`,
 	} {
 		if _, err := deps.DB.Exec(stmt); err != nil {
-			t.Fatalf("seed v1 rows: %v", err)
+			t.Fatalf("seed update ticket rows: %v", err)
 		}
 	}
 
@@ -252,10 +257,10 @@ func TestDeleteReferencedByLeftoverV1RowReturnsConflict(t *testing.T) {
 	if _, err := deps.Store.TicketProjects().Get(ctx, project.ID); err != nil {
 		t.Fatalf("ticket project missing after refused delete: %v", err)
 	}
-	if got := del("/api/v1/integrations/int-v1"); got != http.StatusConflict {
-		t.Fatalf("delete referenced source integration status = %d, want %d", got, http.StatusConflict)
+	if got := del("/api/v1/integrations/" + integration.ID); got != http.StatusConflict {
+		t.Fatalf("delete referenced integration status = %d, want %d", got, http.StatusConflict)
 	}
-	if _, err := deps.Store.Integrations().Get(ctx, "int-v1"); err != nil {
+	if _, err := deps.Store.Integrations().Get(ctx, integration.ID); err != nil {
 		t.Fatalf("integration missing after refused delete: %v", err)
 	}
 }
@@ -512,7 +517,7 @@ func seedAppSettingsRow(t *testing.T, db *sql.DB) {
 	t.Helper()
 
 	_, err := db.Exec(
-		`INSERT INTO app_settings (id, poll_interval_minutes, updated_at) VALUES (1, 360, ?)`,
+		`INSERT INTO app_settings (id, updated_at) VALUES (1, ?)`,
 		"2026-08-06T12:00:00.000Z",
 	)
 	if err != nil {

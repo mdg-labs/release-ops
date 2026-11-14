@@ -129,8 +129,7 @@ func (r ticketProjectRepo) Update(ctx context.Context, id string, input UpdateTi
 	return ticketProjectFromRow(row), nil
 }
 
-// Delete removes a ticket project. It returns ErrInUse when a row of a table still being
-// retired references it.
+// Delete removes a ticket project. It returns ErrInUse when an update ticket still references it.
 func (r ticketProjectRepo) Delete(ctx context.Context, id string) error {
 	return mapForeignKeyError(r.store.writes.DeleteTicketProject(ctx, id))
 }

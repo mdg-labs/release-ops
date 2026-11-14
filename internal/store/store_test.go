@@ -51,7 +51,7 @@ func seedAppSettings(t *testing.T, sqlDB *store.DB) {
 	t.Helper()
 
 	_, err := sqlDB.Writer.Exec(
-		`INSERT INTO app_settings (id, poll_interval_minutes, updated_at) VALUES (1, 360, ?)`,
+		`INSERT INTO app_settings (id, updated_at) VALUES (1, ?)`,
 		"2026-08-06T12:00:00.000Z",
 	)
 	if err != nil {
@@ -85,8 +85,8 @@ func TestEnsureDefaultAppSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if got.ID != 1 || got.PollIntervalMinutes != 360 {
-		t.Fatalf("settings = %+v, want id=1 poll_interval_minutes=360", got)
+	if got.ID != 1 || got.InviteTokenExpiryHours != 168 || got.PasswordResetTokenExpiryMinutes != 60 {
+		t.Fatalf("settings = %+v, want id=1 with the default token windows 168h and 60m", got)
 	}
 
 	if err := s.Settings().EnsureDefault(ctx); err != nil {
@@ -106,9 +106,6 @@ func TestSettingsGetReturnsIDOne(t *testing.T) {
 	}
 	if got.ID != 1 {
 		t.Fatalf("ID = %d, want 1", got.ID)
-	}
-	if got.PollIntervalMinutes < 5 {
-		t.Fatalf("PollIntervalMinutes = %d, want >= 5", got.PollIntervalMinutes)
 	}
 }
 

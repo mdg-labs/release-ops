@@ -41,7 +41,7 @@ INSERT INTO integrations (
   ?,
   ?
 )
-RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at, is_default
+RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at
 `
 
 type CreateIntegrationParams struct {
@@ -73,7 +73,6 @@ func (q *Queries) CreateIntegration(ctx context.Context, arg CreateIntegrationPa
 		&i.EncryptedPayload,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.IsDefault,
 	)
 	return i, err
 }
@@ -96,8 +95,7 @@ SELECT
   base_url,
   encrypted_payload,
   created_at,
-  updated_at,
-  is_default
+  updated_at
 FROM integrations
 WHERE id = ?
 LIMIT 1
@@ -114,7 +112,6 @@ func (q *Queries) GetIntegration(ctx context.Context, id string) (Integration, e
 		&i.EncryptedPayload,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.IsDefault,
 	)
 	return i, err
 }
@@ -127,8 +124,7 @@ SELECT
   base_url,
   encrypted_payload,
   created_at,
-  updated_at,
-  is_default
+  updated_at
 FROM integrations
 ORDER BY name
 `
@@ -150,7 +146,6 @@ func (q *Queries) ListIntegrations(ctx context.Context) ([]Integration, error) {
 			&i.EncryptedPayload,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.IsDefault,
 		); err != nil {
 			return nil, err
 		}
@@ -173,7 +168,7 @@ SET
   encrypted_payload = ?,
   updated_at = ?
 WHERE id = ?
-RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at, is_default
+RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at
 `
 
 type UpdateIntegrationParams struct {
@@ -201,7 +196,6 @@ func (q *Queries) UpdateIntegration(ctx context.Context, arg UpdateIntegrationPa
 		&i.EncryptedPayload,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.IsDefault,
 	)
 	return i, err
 }
@@ -212,7 +206,7 @@ SET
   name = ?,
   updated_at = ?
 WHERE id = ?
-RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at, is_default
+RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at
 `
 
 type UpdateIntegrationNameParams struct {
@@ -232,7 +226,6 @@ func (q *Queries) UpdateIntegrationName(ctx context.Context, arg UpdateIntegrati
 		&i.EncryptedPayload,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.IsDefault,
 	)
 	return i, err
 }

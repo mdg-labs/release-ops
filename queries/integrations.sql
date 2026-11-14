@@ -16,7 +16,7 @@ INSERT INTO integrations (
   ?,
   ?
 )
-RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at, is_default;
+RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at;
 
 -- name: GetIntegration :one
 SELECT
@@ -26,8 +26,7 @@ SELECT
   base_url,
   encrypted_payload,
   created_at,
-  updated_at,
-  is_default
+  updated_at
 FROM integrations
 WHERE id = ?
 LIMIT 1;
@@ -40,8 +39,7 @@ SELECT
   base_url,
   encrypted_payload,
   created_at,
-  updated_at,
-  is_default
+  updated_at
 FROM integrations
 ORDER BY name;
 
@@ -53,7 +51,7 @@ SET
   encrypted_payload = ?,
   updated_at = ?
 WHERE id = ?
-RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at, is_default;
+RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at;
 
 -- name: UpdateIntegrationName :one
 UPDATE integrations
@@ -61,7 +59,7 @@ SET
   name = ?,
   updated_at = ?
 WHERE id = ?
-RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at, is_default;
+RETURNING id, kind, name, base_url, encrypted_payload, created_at, updated_at;
 
 -- name: DeleteIntegration :exec
 DELETE FROM integrations

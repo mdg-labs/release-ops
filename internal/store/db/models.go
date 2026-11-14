@@ -10,10 +10,18 @@ import (
 
 type AppSetting struct {
 	ID                              int64  `json:"id"`
-	PollIntervalMinutes             int64  `json:"poll_interval_minutes"`
 	InviteTokenExpiryHours          int64  `json:"invite_token_expiry_hours"`
 	PasswordResetTokenExpiryMinutes int64  `json:"password_reset_token_expiry_minutes"`
 	UpdatedAt                       string `json:"updated_at"`
+}
+
+type AuthIdentity struct {
+	ID        string `json:"id"`
+	UserID    string `json:"user_id"`
+	Provider  string `json:"provider"`
+	Subject   string `json:"subject"`
+	Login     string `json:"login"`
+	CreatedAt string `json:"created_at"`
 }
 
 type AuthToken struct {
@@ -28,6 +36,56 @@ type AuthToken struct {
 	CreatedAt       string         `json:"created_at"`
 }
 
+type GithubApp struct {
+	ID                     int64         `json:"id"`
+	AppID                  int64         `json:"app_id"`
+	Slug                   string        `json:"slug"`
+	ClientID               string        `json:"client_id"`
+	HtmlUrl                string        `json:"html_url"`
+	OwnerLogin             string        `json:"owner_login"`
+	OwnerType              string        `json:"owner_type"`
+	BotUserID              sql.NullInt64 `json:"bot_user_id"`
+	WebhookActive          int64         `json:"webhook_active"`
+	EncryptedPrivateKey    string        `json:"encrypted_private_key"`
+	EncryptedClientSecret  string        `json:"encrypted_client_secret"`
+	EncryptedWebhookSecret string        `json:"encrypted_webhook_secret"`
+	KeyID                  string        `json:"key_id"`
+	CreatedAt              string        `json:"created_at"`
+	UpdatedAt              string        `json:"updated_at"`
+}
+
+type Installation struct {
+	ID                   string         `json:"id"`
+	GithubInstallationID int64          `json:"github_installation_id"`
+	AccountID            int64          `json:"account_id"`
+	AccountLogin         string         `json:"account_login"`
+	AccountType          string         `json:"account_type"`
+	Status               string         `json:"status"`
+	RepositorySelection  string         `json:"repository_selection"`
+	Permissions          string         `json:"permissions"`
+	RateLimitRemaining   sql.NullInt64  `json:"rate_limit_remaining"`
+	RateLimitLimit       sql.NullInt64  `json:"rate_limit_limit"`
+	RateLimitResetAt     sql.NullString `json:"rate_limit_reset_at"`
+	CreatedAt            string         `json:"created_at"`
+	UpdatedAt            string         `json:"updated_at"`
+}
+
+type InstallationSetting struct {
+	InstallationID         string         `json:"installation_id"`
+	DefaultTicketProjectID sql.NullString `json:"default_ticket_project_id"`
+	GlobalConfigContent    sql.NullString `json:"global_config_content"`
+	GlobalConfigSource     sql.NullString `json:"global_config_source"`
+	GlobalConfigCapturedAt sql.NullString `json:"global_config_captured_at"`
+	UpdatedAt              string         `json:"updated_at"`
+}
+
+type InstanceSetting struct {
+	ID                   int64          `json:"id"`
+	ConcurrencyCap       int64          `json:"concurrency_cap"`
+	BootstrapAdminUserID sql.NullString `json:"bootstrap_admin_user_id"`
+	UpdatedAt            string         `json:"updated_at"`
+}
+
 type Integration struct {
 	ID               string         `json:"id"`
 	Kind             string         `json:"kind"`
@@ -36,65 +94,65 @@ type Integration struct {
 	EncryptedPayload string         `json:"encrypted_payload"`
 	CreatedAt        string         `json:"created_at"`
 	UpdatedAt        string         `json:"updated_at"`
-	IsDefault        int64          `json:"is_default"`
 }
 
-type MonitoredRepo struct {
-	ID                     string         `json:"id"`
-	SourceKind             string         `json:"source_kind"`
-	ProjectPath            string         `json:"project_path"`
-	Enabled                int64          `json:"enabled"`
-	SourceIntegrationID    sql.NullString `json:"source_integration_id"`
-	TicketProjectID        string         `json:"ticket_project_id"`
-	OpenTicketExternalID   sql.NullString `json:"open_ticket_external_id"`
-	OpenTicketTag          sql.NullString `json:"open_ticket_tag"`
-	LastKnownTag           sql.NullString `json:"last_known_tag"`
-	LastPolledAt           sql.NullString `json:"last_polled_at"`
-	LastError              sql.NullString `json:"last_error"`
-	CreatedAt              string         `json:"created_at"`
-	UpdatedAt              string         `json:"updated_at"`
-	LastReleasePublishedAt sql.NullString `json:"last_release_published_at"`
-	IncludePrereleases     int64          `json:"include_prereleases"`
-	PendingTicketTag       sql.NullString `json:"pending_ticket_tag"`
-}
-
-type MonitoredRepoNotification struct {
-	MonitoredRepoID      string `json:"monitored_repo_id"`
-	NotificationTargetID string `json:"notification_target_id"`
-}
-
-type NotificationTarget struct {
-	ID                   string `json:"id"`
-	Name                 string `json:"name"`
-	ShoutrrrUrlEncrypted string `json:"shoutrrr_url_encrypted"`
-	EventsJson           string `json:"events_json"`
-	Enabled              int64  `json:"enabled"`
-	CreatedAt            string `json:"created_at"`
-	UpdatedAt            string `json:"updated_at"`
-}
-
-type PollRun struct {
+type Job struct {
 	ID                string         `json:"id"`
-	StartedAt         string         `json:"started_at"`
+	Kind              string         `json:"kind"`
+	RepositoryID      string         `json:"repository_id"`
+	Priority          string         `json:"priority"`
+	State             string         `json:"state"`
+	RunAfter          string         `json:"run_after"`
+	Attempts          int64          `json:"attempts"`
+	LeaseOwner        sql.NullString `json:"lease_owner"`
+	LeaseExpiresAt    sql.NullString `json:"lease_expires_at"`
+	LastHeartbeatAt   sql.NullString `json:"last_heartbeat_at"`
+	RerunRequested    int64          `json:"rerun_requested"`
+	Trigger           string         `json:"trigger"`
+	MatchedMarkers    sql.NullString `json:"matched_markers"`
+	WebhookReceivedAt sql.NullString `json:"webhook_received_at"`
+	StartedAt         sql.NullString `json:"started_at"`
+	CreatedAt         string         `json:"created_at"`
 	FinishedAt        sql.NullString `json:"finished_at"`
-	Status            string         `json:"status"`
-	ReposChecked      int64          `json:"repos_checked"`
-	TicketsCreated    int64          `json:"tickets_created"`
-	TicketsSuperseded int64          `json:"tickets_superseded"`
-	ErrorsJson        string         `json:"errors_json"`
-	TriggerSource     string         `json:"trigger_source"`
 }
 
-type PollRunEvent struct {
-	ID               string         `json:"id"`
-	PollRunID        string         `json:"poll_run_id"`
-	MonitoredRepoID  sql.NullString `json:"monitored_repo_id"`
-	Action           string         `json:"action"`
-	Detail           sql.NullString `json:"detail"`
-	CreatedAt        string         `json:"created_at"`
-	TicketExternalID sql.NullString `json:"ticket_external_id"`
-	TicketUrl        sql.NullString `json:"ticket_url"`
-	ReleaseTag       sql.NullString `json:"release_tag"`
+type JobEvent struct {
+	ID       string         `json:"id"`
+	JobID    string         `json:"job_id"`
+	JobRunID sql.NullString `json:"job_run_id"`
+	At       string         `json:"at"`
+	Kind     string         `json:"kind"`
+	Message  sql.NullString `json:"message"`
+}
+
+type JobRun struct {
+	ID           string         `json:"id"`
+	JobID        string         `json:"job_id"`
+	Attempt      int64          `json:"attempt"`
+	StartedAt    string         `json:"started_at"`
+	FinishedAt   sql.NullString `json:"finished_at"`
+	Outcome      string         `json:"outcome"`
+	ExitCode     sql.NullInt64  `json:"exit_code"`
+	ErrorCode    sql.NullString `json:"error_code"`
+	ErrorMessage sql.NullString `json:"error_message"`
+	RetryAfter   sql.NullString `json:"retry_after"`
+	ReportStatus sql.NullString `json:"report_status"`
+	LogExcerpt   sql.NullString `json:"log_excerpt"`
+}
+
+type Repository struct {
+	ID                   string         `json:"id"`
+	InstallationID       string         `json:"installation_id"`
+	GithubRepositoryID   int64          `json:"github_repository_id"`
+	FullName             string         `json:"full_name"`
+	DefaultBranch        string         `json:"default_branch"`
+	Enabled              int64          `json:"enabled"`
+	TicketProjectID      sql.NullString `json:"ticket_project_id"`
+	ConfigState          string         `json:"config_state"`
+	DashboardIssueNumber sql.NullInt64  `json:"dashboard_issue_number"`
+	RemovedAt            sql.NullString `json:"removed_at"`
+	CreatedAt            string         `json:"created_at"`
+	UpdatedAt            string         `json:"updated_at"`
 }
 
 type Session struct {
@@ -115,6 +173,61 @@ type TicketProject struct {
 	OnOpenTicketPolicy string `json:"on_open_ticket_policy"`
 	CreatedAt          string `json:"created_at"`
 	UpdatedAt          string `json:"updated_at"`
+	Filter             string `json:"filter"`
+}
+
+type UpdatePr struct {
+	ID             string         `json:"id"`
+	RepositoryID   string         `json:"repository_id"`
+	Number         int64          `json:"number"`
+	NodeID         string         `json:"node_id"`
+	Url            string         `json:"url"`
+	Title          string         `json:"title"`
+	HeadRef        string         `json:"head_ref"`
+	HeadSha        sql.NullString `json:"head_sha"`
+	State          string         `json:"state"`
+	SupersededByID sql.NullString `json:"superseded_by_id"`
+	Labels         string         `json:"labels"`
+	Automerge      sql.NullInt64  `json:"automerge"`
+	ReleaseNotes   sql.NullString `json:"release_notes"`
+	ReportSha      sql.NullString `json:"report_sha"`
+	OpenedAt       sql.NullString `json:"opened_at"`
+	MergedAt       sql.NullString `json:"merged_at"`
+	ClosedAt       sql.NullString `json:"closed_at"`
+	LastSeenAt     string         `json:"last_seen_at"`
+	CreatedAt      string         `json:"created_at"`
+	UpdatedAt      string         `json:"updated_at"`
+}
+
+type UpdatePrDependency struct {
+	ID          string         `json:"id"`
+	UpdatePrID  string         `json:"update_pr_id"`
+	Name        string         `json:"name"`
+	Manager     sql.NullString `json:"manager"`
+	Datasource  sql.NullString `json:"datasource"`
+	FromVersion sql.NullString `json:"from_version"`
+	ToVersion   sql.NullString `json:"to_version"`
+	UpdateType  sql.NullString `json:"update_type"`
+	Source      string         `json:"source"`
+}
+
+type UpdateTicket struct {
+	ID              string         `json:"id"`
+	UpdatePrID      string         `json:"update_pr_id"`
+	TicketProjectID string         `json:"ticket_project_id"`
+	ExternalID      sql.NullString `json:"external_id"`
+	ExternalUrl     sql.NullString `json:"external_url"`
+	State           string         `json:"state"`
+	PendingSince    sql.NullString `json:"pending_since"`
+	SyncedHash      sql.NullString `json:"synced_hash"`
+	PrCommentID     sql.NullInt64  `json:"pr_comment_id"`
+	PrCommentHash   sql.NullString `json:"pr_comment_hash"`
+	Attempts        int64          `json:"attempts"`
+	NextAttemptAt   sql.NullString `json:"next_attempt_at"`
+	LastError       sql.NullString `json:"last_error"`
+	LastErrorAt     sql.NullString `json:"last_error_at"`
+	CreatedAt       string         `json:"created_at"`
+	UpdatedAt       string         `json:"updated_at"`
 }
 
 type User struct {

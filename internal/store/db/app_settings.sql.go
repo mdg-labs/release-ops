@@ -12,12 +12,11 @@ import (
 const ensureAppSettings = `-- name: EnsureAppSettings :exec
 INSERT OR IGNORE INTO app_settings (
   id,
-  poll_interval_minutes,
   invite_token_expiry_hours,
   password_reset_token_expiry_minutes,
   updated_at
 )
-VALUES (1, 360, 168, 60, ?)
+VALUES (1, 168, 60, ?)
 `
 
 func (q *Queries) EnsureAppSettings(ctx context.Context, updatedAt string) error {
@@ -28,7 +27,6 @@ func (q *Queries) EnsureAppSettings(ctx context.Context, updatedAt string) error
 const getAppSettings = `-- name: GetAppSettings :one
 SELECT
   id,
-  poll_interval_minutes,
   invite_token_expiry_hours,
   password_reset_token_expiry_minutes,
   updated_at
@@ -41,39 +39,6 @@ func (q *Queries) GetAppSettings(ctx context.Context) (AppSetting, error) {
 	var i AppSetting
 	err := row.Scan(
 		&i.ID,
-		&i.PollIntervalMinutes,
-		&i.InviteTokenExpiryHours,
-		&i.PasswordResetTokenExpiryMinutes,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const updatePollInterval = `-- name: UpdatePollInterval :one
-UPDATE app_settings
-SET
-  poll_interval_minutes = ?,
-  updated_at = ?
-WHERE id = 1
-RETURNING
-  id,
-  poll_interval_minutes,
-  invite_token_expiry_hours,
-  password_reset_token_expiry_minutes,
-  updated_at
-`
-
-type UpdatePollIntervalParams struct {
-	PollIntervalMinutes int64  `json:"poll_interval_minutes"`
-	UpdatedAt           string `json:"updated_at"`
-}
-
-func (q *Queries) UpdatePollInterval(ctx context.Context, arg UpdatePollIntervalParams) (AppSetting, error) {
-	row := q.db.QueryRowContext(ctx, updatePollInterval, arg.PollIntervalMinutes, arg.UpdatedAt)
-	var i AppSetting
-	err := row.Scan(
-		&i.ID,
-		&i.PollIntervalMinutes,
 		&i.InviteTokenExpiryHours,
 		&i.PasswordResetTokenExpiryMinutes,
 		&i.UpdatedAt,
@@ -90,7 +55,6 @@ SET
 WHERE id = 1
 RETURNING
   id,
-  poll_interval_minutes,
   invite_token_expiry_hours,
   password_reset_token_expiry_minutes,
   updated_at
@@ -107,7 +71,6 @@ func (q *Queries) UpdateTokenExpirySettings(ctx context.Context, arg UpdateToken
 	var i AppSetting
 	err := row.Scan(
 		&i.ID,
-		&i.PollIntervalMinutes,
 		&i.InviteTokenExpiryHours,
 		&i.PasswordResetTokenExpiryMinutes,
 		&i.UpdatedAt,

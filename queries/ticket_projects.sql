@@ -32,7 +32,8 @@ RETURNING
   content_templates,
   on_open_ticket_policy,
   created_at,
-  updated_at;
+  updated_at,
+  filter;
 
 -- name: UpsertTicketProject :one
 INSERT INTO ticket_projects (
@@ -75,7 +76,8 @@ RETURNING
   content_templates,
   on_open_ticket_policy,
   created_at,
-  updated_at;
+  updated_at,
+  filter;
 
 -- name: GetTicketProject :one
 SELECT
@@ -88,7 +90,8 @@ SELECT
   content_templates,
   on_open_ticket_policy,
   created_at,
-  updated_at
+  updated_at,
+  filter
 FROM ticket_projects
 WHERE id = ?
 LIMIT 1;
@@ -104,7 +107,8 @@ SELECT
   content_templates,
   on_open_ticket_policy,
   created_at,
-  updated_at
+  updated_at,
+  filter
 FROM ticket_projects
 ORDER BY name;
 
@@ -119,7 +123,8 @@ SELECT
   content_templates,
   on_open_ticket_policy,
   created_at,
-  updated_at
+  updated_at,
+  filter
 FROM ticket_projects
 WHERE integration_id = ?
 ORDER BY name;
@@ -144,7 +149,8 @@ RETURNING
   content_templates,
   on_open_ticket_policy,
   created_at,
-  updated_at;
+  updated_at,
+  filter;
 
 -- name: DeleteTicketProject :exec
 DELETE FROM ticket_projects

@@ -3,22 +3,27 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/mdg-labs/release-ops/internal/config"
-	"github.com/mdg-labs/release-ops/internal/store/storetest"
+	"github.com/mdg-labs/release-ops/internal/store"
+	"github.com/mdg-labs/release-ops/migrations"
+	sqlitemigrate "github.com/mdg-labs/sqlite-migrate"
 	_ "modernc.org/sqlite"
 )
 
@@ -69,34 +74,11 @@ func (c *apiClient) do(method, path string, body any) (int, []byte) {
 	return resp.StatusCode, out
 }
 
-// TestServerStartsOnV1DatabaseWithoutReadingV1Tables starts the real server entry point
-// against a database migrated to the current schema, where the removed feature's tables
-// still exist, and exercises the endpoints that stay.
-func TestServerStartsOnV1DatabaseWithoutReadingV1Tables(t *testing.T) {
+// TestServerStartsOnFreshDatabase starts the real server entry point against an empty data
+// directory: startup applies every migration to it and the server serves the endpoints
+// that exist in v2.
+func TestServerStartsOnFreshDatabase(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "app.db")
-	storetest.Migrate(t, dbPath)
-
-	// A v1 install leaves a monitored repo behind; the server must start with it present.
-	seed, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		t.Fatalf("open seed db: %v", err)
-	}
-	for _, stmt := range []string{
-		`INSERT INTO integrations (id, kind, name, base_url, encrypted_payload, created_at, updated_at)
-		 VALUES ('int-v1', 'github', 'GitHub v1', NULL, '', 't', 't')`,
-		`INSERT INTO ticket_projects (id, integration_id, external_project_id, name, create_config, status_mapping, created_at, updated_at)
-		 VALUES ('tp-v1', 'int-v1', 'X', 'v1 project', '{}', '{}', 't', 't')`,
-		`INSERT INTO monitored_repos (id, source_kind, project_path, ticket_project_id, created_at, updated_at)
-		 VALUES ('repo-v1', 'github', 'org/repo', 'tp-v1', 't', 't')`,
-		`INSERT INTO poll_runs (id, started_at, status) VALUES ('run-v1', 't', 'running')`,
-	} {
-		if _, err := seed.Exec(stmt); err != nil {
-			t.Fatalf("seed v1 rows: %v", err)
-		}
-	}
-	if err := seed.Close(); err != nil {
-		t.Fatalf("close seed db: %v", err)
-	}
 
 	port := freePort(t)
 	cfg := &config.Config{
@@ -112,7 +94,9 @@ func TestServerStartsOnV1DatabaseWithoutReadingV1Tables(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		run(ctx, cfg)
+		if err := run(ctx, cfg); err != nil {
+			t.Errorf("run: %v", err)
+		}
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -149,6 +133,19 @@ func TestServerStartsOnV1DatabaseWithoutReadingV1Tables(t *testing.T) {
 		"email": "admin@example.com", "password": "correct-horse-battery",
 	}); code != http.StatusOK {
 		t.Fatalf("login = %d %s", code, body)
+	}
+
+	// The migrations ran: the v2 tables exist and the v1 tables do not.
+	verify, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = verify.Close() })
+	for table, want := range map[string]int{"github_app": 1, "installations": 1, "jobs": 1, "update_prs": 1, "monitored_repos": 0, "poll_runs": 0} {
+		var n int
+		if err := verify.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&n); err != nil || n != want {
+			t.Fatalf("table %q present = %d, %v; want %d", table, n, err, want)
+		}
 	}
 
 	// The status endpoint reports the version and nothing from the removed tables.
@@ -244,13 +241,32 @@ func TestServerStartsOnV1DatabaseWithoutReadingV1Tables(t *testing.T) {
 		t.Fatalf("list ticket projects = %d %s", code, body)
 	}
 
-	// An integration with a ticket project is in use; the leftover v1 rows keep their own
-	// references answering 409 as well.
+	// An integration with a ticket project is in use, and so is a ticket project that an
+	// update ticket was created in.
 	if code, body := c.do(http.MethodDelete, "/api/v1/integrations/"+integration.ID, nil); code != http.StatusConflict {
 		t.Fatalf("delete integration with ticket project = %d %s, want 409", code, body)
 	}
-	if code, body := c.do(http.MethodDelete, "/api/v1/ticket-projects/tp-v1", nil); code != http.StatusConflict {
-		t.Fatalf("delete ticket project referenced by a v1 repo = %d %s, want 409", code, body)
+	for _, stmt := range []string{
+		`INSERT INTO installations (id, github_installation_id, account_id, account_login, account_type, status, repository_selection, created_at, updated_at)
+		 VALUES ('inst-1', 1, 1, 'acme', 'Organization', 'active', 'all', 't', 't')`,
+		`INSERT INTO repositories (id, installation_id, github_repository_id, full_name, default_branch, created_at, updated_at)
+		 VALUES ('repo-1', 'inst-1', 1, 'acme/api', 'main', 't', 't')`,
+		`INSERT INTO update_prs (id, repository_id, number, node_id, url, title, head_ref, state, last_seen_at, created_at, updated_at)
+		 VALUES ('pr-1', 'repo-1', 1, 'node', 'https://example.test/pr/1', 'Update dep', 'renovate/dep', 'open', 't', 't', 't')`,
+	} {
+		if _, err := verify.Exec(stmt); err != nil {
+			t.Fatalf("seed %q: %v", stmt, err)
+		}
+	}
+	if _, err := verify.Exec(`INSERT INTO update_tickets (id, update_pr_id, ticket_project_id, state, created_at, updated_at)
+		VALUES ('ut-1', 'pr-1', ?, 'pending', 't', 't')`, project.ID); err != nil {
+		t.Fatalf("seed update ticket: %v", err)
+	}
+	if code, body := c.do(http.MethodDelete, "/api/v1/ticket-projects/"+project.ID, nil); code != http.StatusConflict {
+		t.Fatalf("delete ticket project used by an update ticket = %d %s, want 409", code, body)
+	}
+	if _, err := verify.Exec(`DELETE FROM update_tickets WHERE id = 'ut-1'`); err != nil {
+		t.Fatalf("delete update ticket: %v", err)
 	}
 	if code, body := c.do(http.MethodDelete, "/api/v1/ticket-projects/"+project.ID, nil); code != http.StatusNoContent {
 		t.Fatalf("delete ticket project = %d %s, want 204", code, body)
@@ -258,4 +274,86 @@ func TestServerStartsOnV1DatabaseWithoutReadingV1Tables(t *testing.T) {
 	if code, body := c.do(http.MethodDelete, "/api/v1/integrations/"+integration.ID, nil); code != http.StatusNoContent {
 		t.Fatalf("delete integration = %d %s, want 204", code, body)
 	}
+}
+
+// TestServerRefusesV1Database starts the server entry point against a database a v1 install
+// left behind. Startup fails with the fresh-volume message and leaves the data directory
+// exactly as it was: no migration applied, no snapshot written.
+func TestServerRefusesV1Database(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "app.db")
+
+	all, err := sqlitemigrate.LoadDir(ctx, migrations.FS, ".")
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	var v1 []sqlitemigrate.Migration
+	for _, m := range all {
+		if m.Version <= "20261008041322" {
+			v1 = append(v1, m)
+		}
+	}
+	runner := &sqlitemigrate.Runner{DBPath: dbPath}
+	if _, err := runner.Apply(ctx, v1); err != nil {
+		t.Fatalf("apply v1 migrations: %v", err)
+	}
+	seed, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open v1 db: %v", err)
+	}
+	for _, stmt := range []string{
+		`INSERT INTO integrations (id, kind, name, base_url, encrypted_payload, created_at, updated_at)
+		 VALUES ('int-v1', 'github', 'GitHub v1', NULL, '', 't', 't')`,
+		`INSERT INTO ticket_projects (id, integration_id, external_project_id, name, create_config, status_mapping, created_at, updated_at)
+		 VALUES ('tp-v1', 'int-v1', 'X', 'v1 project', '{}', '{}', 't', 't')`,
+		`INSERT INTO monitored_repos (id, source_kind, project_path, ticket_project_id, created_at, updated_at)
+		 VALUES ('repo-v1', 'github', 'org/repo', 'tp-v1', 't', 't')`,
+	} {
+		if _, err := seed.Exec(stmt); err != nil {
+			t.Fatalf("seed v1 rows: %v", err)
+		}
+	}
+	if err := seed.Close(); err != nil {
+		t.Fatalf("close v1 db: %v", err)
+	}
+
+	before := snapshotDir(t, filepath.Dir(dbPath))
+	cfg := &config.Config{
+		SessionSecret:          strings.Repeat("s", 32),
+		AppEncryptionKey:       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+		AppDBPath:              dbPath,
+		GoInternalPort:         freePort(t),
+		BootstrapAdminEmail:    "admin@example.com",
+		BootstrapAdminPassword: "correct-horse-battery",
+	}
+
+	err = run(ctx, cfg)
+	if !errors.Is(err, store.ErrV1Database) || !strings.Contains(err.Error(), "fresh data volume") {
+		t.Fatalf("run = %v, want the v1 refusal telling the operator to use a fresh data volume", err)
+	}
+	if after := snapshotDir(t, filepath.Dir(dbPath)); after != before {
+		t.Fatalf("data directory changed by the refused start:\nbefore %s\nafter  %s", before, after)
+	}
+}
+
+// snapshotDir fingerprints every file under dir: its path, size and content hash.
+func snapshotDir(t *testing.T, dir string) string {
+	t.Helper()
+
+	var out []string
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		out = append(out, fmt.Sprintf("%s:%d:%x", path, len(raw), sha256.Sum256(raw)))
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", dir, err)
+	}
+	return strings.Join(out, "\n")
 }

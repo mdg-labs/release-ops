@@ -43,7 +43,8 @@ RETURNING
   content_templates,
   on_open_ticket_policy,
   created_at,
-  updated_at
+  updated_at,
+  filter
 `
 
 type CreateTicketProjectParams struct {
@@ -84,6 +85,7 @@ func (q *Queries) CreateTicketProject(ctx context.Context, arg CreateTicketProje
 		&i.OnOpenTicketPolicy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Filter,
 	)
 	return i, err
 }
@@ -109,7 +111,8 @@ SELECT
   content_templates,
   on_open_ticket_policy,
   created_at,
-  updated_at
+  updated_at,
+  filter
 FROM ticket_projects
 WHERE id = ?
 LIMIT 1
@@ -129,6 +132,7 @@ func (q *Queries) GetTicketProject(ctx context.Context, id string) (TicketProjec
 		&i.OnOpenTicketPolicy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Filter,
 	)
 	return i, err
 }
@@ -144,7 +148,8 @@ SELECT
   content_templates,
   on_open_ticket_policy,
   created_at,
-  updated_at
+  updated_at,
+  filter
 FROM ticket_projects
 ORDER BY name
 `
@@ -169,6 +174,7 @@ func (q *Queries) ListTicketProjects(ctx context.Context) ([]TicketProject, erro
 			&i.OnOpenTicketPolicy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Filter,
 		); err != nil {
 			return nil, err
 		}
@@ -194,7 +200,8 @@ SELECT
   content_templates,
   on_open_ticket_policy,
   created_at,
-  updated_at
+  updated_at,
+  filter
 FROM ticket_projects
 WHERE integration_id = ?
 ORDER BY name
@@ -220,6 +227,7 @@ func (q *Queries) ListTicketProjectsByIntegration(ctx context.Context, integrati
 			&i.OnOpenTicketPolicy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Filter,
 		); err != nil {
 			return nil, err
 		}
@@ -254,7 +262,8 @@ RETURNING
   content_templates,
   on_open_ticket_policy,
   created_at,
-  updated_at
+  updated_at,
+  filter
 `
 
 type UpdateTicketProjectParams struct {
@@ -289,6 +298,7 @@ func (q *Queries) UpdateTicketProject(ctx context.Context, arg UpdateTicketProje
 		&i.OnOpenTicketPolicy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Filter,
 	)
 	return i, err
 }
@@ -334,7 +344,8 @@ RETURNING
   content_templates,
   on_open_ticket_policy,
   created_at,
-  updated_at
+  updated_at,
+  filter
 `
 
 type UpsertTicketProjectParams struct {
@@ -375,6 +386,7 @@ func (q *Queries) UpsertTicketProject(ctx context.Context, arg UpsertTicketProje
 		&i.OnOpenTicketPolicy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Filter,
 	)
 	return i, err
 }

@@ -130,8 +130,7 @@ func (r integrationRepo) Update(ctx context.Context, id string, input UpdateInte
 	return integrationFromRow(row), nil
 }
 
-// Delete removes an integration. It returns ErrInUse when a row of a table still being
-// retired references it.
+// Delete removes an integration. It returns ErrInUse when a ticket project still references it.
 func (r integrationRepo) Delete(ctx context.Context, id string) error {
 	return mapForeignKeyError(r.store.writes.DeleteIntegration(ctx, id))
 }
