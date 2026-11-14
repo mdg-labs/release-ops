@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1
 
+# The official Renovate OSS image (never a Mend Renovate CE or EE image) the worker image is
+# built on; one version per release. Building the worker with another tag is at your own risk.
+ARG WORKER_RENOVATE_TAG=44.239.1
+
 FROM node:22-bookworm-slim AS web-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -28,7 +32,34 @@ RUN VERSION="${APP_VERSION:-dev}" && \
     go build -trimpath -ldflags="-s -w -X github.com/mdg-labs/release-ops/internal/buildinfo.Version=${VERSION}" -o /out/server ./cmd/server && \
     go build -trimpath -ldflags="-s -w" -o /out/seed-admin ./cmd/seed-admin
 
+# The worker image: the pinned Renovate image plus the release-ops binary. It has no data
+# volume and no Docker socket. Two Unix users: "worker" runs `release-ops worker` and holds the
+# worker secret; "renovate" is the user the worker starts Renovate as and cannot read that
+# secret. Both run on /cache, which belongs to renovate and root's group (the group
+# containerbase gives its tool directories), and the worker is a member of that group so it can
+# create the per-slot cache directories inside it.
+FROM ghcr.io/renovatebot/renovate:${WORKER_RENOVATE_TAG} AS worker
+ARG WORKER_RENOVATE_TAG
+USER root
+# The binary carries the setuid and setgid file capabilities so the unprivileged worker can
+# start Renovate as the renovate user under cap_drop ALL; it is not executable by renovate.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libcap2-bin && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --gid 12032 worker && \
+    useradd --uid 12032 --gid worker --groups 0 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin worker && \
+    useradd --uid 12031 --gid 0 --create-home --home-dir /home/renovate --shell /bin/bash renovate && \
+    install -d -o renovate -g 0 -m 2775 /cache
+COPY --from=go-build --chown=worker:worker --chmod=0750 /out/server /usr/local/bin/release-ops
+RUN setcap cap_setuid,cap_setgid+ep /usr/local/bin/release-ops
+COPY --chmod=0644 NOTICE /NOTICE
+RUN sed -i "s|@RENOVATE_VERSION@|${WORKER_RENOVATE_TAG}|g" /NOTICE
+USER worker
+ENTRYPOINT ["/usr/local/bin/release-ops", "worker"]
+CMD []
+
 FROM node:22-bookworm-slim AS runtime
+ARG WORKER_RENOVATE_TAG
 RUN apt-get update && \
     apt-get install -y --no-install-recommends bash ca-certificates curl wget && \
     rm -rf /var/lib/apt/lists/*
@@ -43,6 +74,10 @@ RUN chmod +x /app/entrypoint.sh /app/server /app/seed-admin
 COPY --from=web-build /app/apps/web/.next/standalone ./
 COPY --from=web-build /app/apps/web/.next/static ./apps/web/.next/static
 COPY apps/web/preload/client-ip.cjs apps/web/preload/preload.cjs /app/preload/
+
+COPY NOTICE /NOTICE
+RUN sed -i "s|@RENOVATE_VERSION@|${WORKER_RENOVATE_TAG}|g" /NOTICE && \
+    chmod 0644 /NOTICE
 
 RUN mkdir -p /data && chown -R node:node /app /data
 
