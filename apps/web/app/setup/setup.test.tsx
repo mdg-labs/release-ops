@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -338,6 +339,36 @@ describe("SetupForm", () => {
     expect(
       screen.getByRole("button", { name: /setup\.createApp/ }),
     ).toBeDisabled();
+  });
+
+  it("re-enables the form when the page is restored from the back-forward cache", async () => {
+    openSession();
+    pool()
+      .intercept({ path: MANIFEST_PATH, method: "POST" })
+      .reply(200, {
+        url: "https://github.com/settings/apps/new?state=s1",
+        manifest: { name: "Release Ops", public: false },
+      });
+
+    renderSetupForm();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "setup.createApp" }),
+    );
+    await waitFor(() => expect(submitManifestForm).toHaveBeenCalled());
+    const button = screen.getByRole("button", { name: /setup\.createApp/ });
+    expect(button).toBeDisabled();
+
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent("pageshow"));
+    });
+    expect(button).toBeDisabled();
+
+    act(() => {
+      window.dispatchEvent(
+        new PageTransitionEvent("pageshow", { persisted: true }),
+      );
+    });
+    await waitFor(() => expect(button).toBeEnabled());
   });
 
   it("asks for the organization name and sends it with the App name", async () => {

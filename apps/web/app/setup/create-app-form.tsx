@@ -88,6 +88,18 @@ export function CreateAppForm({
     }
   }, [error]);
 
+  // Back from GitHub can restore this page from the back-forward cache with its
+  // state intact, so the hand-off flag is cleared to make the form usable again.
+  useEffect(() => {
+    function handlePageShow(event: PageTransitionEvent) {
+      if (event.persisted) {
+        setHandedOff(false);
+      }
+    }
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, []);
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
