@@ -9,6 +9,7 @@ tone_instructions: 'Be direct and specific. Focus on correctness, security, and 
   '
 reviews:
   auto_review:
+    enabled: false
     base_branches: []
   path_filters:
   - '!**/.claude/**'
