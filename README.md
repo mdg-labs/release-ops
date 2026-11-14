@@ -239,4 +239,4 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for branches,
 
 ## License
 
-Copyright (C) 2026 Michael David Guggenbichler (MDG Labs). Licensed under AGPL-3.0-only — see [LICENSE](LICENSE).
+Copyright (c) 2026 Michael David Guggenbichler (MDG Labs). Licensed under AGPL-3.0-only — see [LICENSE](LICENSE).
