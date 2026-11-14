@@ -148,6 +148,7 @@ describe("auth middleware", () => {
         "/forgot-password",
         "/reset-password?token=abc",
         "/confirm-email-change?token=abc",
+        "/setup",
       ];
 
       for (const path of paths) {

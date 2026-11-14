@@ -1,5 +1,6 @@
 "use client";
 
+import { InfoIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -9,12 +10,14 @@ import {
   AuthErrorAlert,
   AuthLayout,
 } from "@/components/auth/auth-layout";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/client";
 import { safeRedirectPath } from "@/lib/auth/safe-redirect";
 import { useLogin } from "@/lib/hooks/use-login";
+import { useSetupStatus } from "@/lib/hooks/use-setup";
 
 function resolveLoginError(
   error: unknown,
@@ -36,6 +39,7 @@ export function LoginForm(): React.ReactElement {
   const router = useRouter();
   const searchParams = useSearchParams();
   const login = useLogin();
+  const setupStatus = useSetupStatus();
   const alertRef = useRef<HTMLDivElement>(null);
   const emailId = useId();
   const passwordId = useId();
@@ -62,6 +66,19 @@ export function LoginForm(): React.ReactElement {
     } catch (error) {
       setSubmitError(resolveLoginError(error, t));
     }
+  }
+
+  if (setupStatus.data?.setupRequired) {
+    return (
+      <AuthLayout title={t("login")}>
+        <Alert variant="info">
+          <InfoIcon />
+          <AlertTitle>{t("setupRequiredTitle")}</AlertTitle>
+          <AlertDescription>{t("setupRequired")}</AlertDescription>
+        </Alert>
+        <Button render={<Link href="/setup" />}>{t("goToSetup")}</Button>
+      </AuthLayout>
+    );
   }
 
   return (

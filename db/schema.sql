@@ -58,11 +58,12 @@ CREATE TABLE auth_identities (
 
 CREATE INDEX idx_auth_identities_user_id ON auth_identities (user_id);
 
--- One-time tokens for invitations, password reset, and email change (raw token never stored)
+-- One-time tokens for invitations, password reset, email change and the first-start setup
+-- token (raw token never stored)
 CREATE TABLE auth_tokens (
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL CHECK (
-    kind IN ('invitation', 'password_reset', 'email_change')
+    kind IN ('invitation', 'password_reset', 'email_change', 'setup')
   ),
   email TEXT NOT NULL,
   token_hash TEXT NOT NULL,

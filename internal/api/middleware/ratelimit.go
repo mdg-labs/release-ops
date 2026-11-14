@@ -26,6 +26,10 @@ const (
 	ResetPasswordWindow      = time.Hour
 	ConfirmEmailChangeLimit  = 10
 	ConfirmEmailChangeWindow = time.Hour
+	SetupSessionLimit        = 10
+	SetupSessionWindow       = time.Minute
+	SetupStatusLimit         = 10
+	SetupStatusWindow        = time.Minute
 )
 
 type clock interface {
@@ -91,6 +95,17 @@ func (rl *RateLimiter) ResetPassword(next http.Handler) http.Handler {
 // ConfirmEmailChange limits POST /api/v1/auth/confirm-email-change to 10 requests per hour per IP.
 func (rl *RateLimiter) ConfirmEmailChange(next http.Handler) http.Handler {
 	return rl.limit("confirm-email-change", ConfirmEmailChangeLimit, ConfirmEmailChangeWindow, next)
+}
+
+// SetupSession limits POST /api/v1/setup/session to 10 requests per minute per IP: it takes a
+// guessable secret on a public listener.
+func (rl *RateLimiter) SetupSession(next http.Handler) http.Handler {
+	return rl.limit("setup-session", SetupSessionLimit, SetupSessionWindow, next)
+}
+
+// SetupStatus limits GET /api/v1/setup/status to 10 requests per minute per IP.
+func (rl *RateLimiter) SetupStatus(next http.Handler) http.Handler {
+	return rl.limit("setup-status", SetupStatusLimit, SetupStatusWindow, next)
 }
 
 func (rl *RateLimiter) limit(endpoint string, max int, window time.Duration, next http.Handler) http.Handler {

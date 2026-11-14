@@ -41,7 +41,28 @@
     "passwordMismatch": "Passwords do not match.",
     "rateLimited": "Too many requests. Try again later.",
     "requestFailed": "Something went wrong. Please try again.",
-    "requestFailedTitle": "Request failed"
+    "requestFailedTitle": "Request failed",
+    "setupRequiredTitle": "Setup required",
+    "setupRequired": "This instance has not been set up yet. Open the setup page and enter the setup token to continue.",
+    "goToSetup": "Go to setup"
+  },
+  "setup": {
+    "title": "Set up Release Ops",
+    "description": "Enter the one-time setup token printed in the server log, or set in SETUP_TOKEN, to begin.",
+    "tokenLabel": "Setup token",
+    "submit": "Continue",
+    "tokenRefusedTitle": "Setup token refused",
+    "invalidToken": "This setup token is wrong or has already been used. A used token cannot be used again: restart the server to get a new one.",
+    "rateLimited": "Too many attempts. Try again later.",
+    "requestFailed": "Something went wrong. Please try again.",
+    "requestFailedTitle": "Request failed",
+    "statusFailedTitle": "Setup status unavailable",
+    "statusFailed": "Could not check whether setup is required. Reload the page to try again.",
+    "alreadyTitle": "Already set up",
+    "alreadyDescription": "This instance is already set up. Sign in instead.",
+    "goToLogin": "Go to sign in",
+    "sessionOpenTitle": "Setup session open",
+    "sessionOpenDescription": "The setup token was accepted. This setup session ends at {time}. Creating the GitHub App is the next step."
   },
   "dashboard": {
     "title": "Dashboard",

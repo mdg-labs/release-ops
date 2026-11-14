@@ -13,6 +13,7 @@ export const PUBLIC_AUTH_PATHS = [
   "/forgot-password",
   "/reset-password",
   "/confirm-email-change",
+  "/setup",
 ] as const;
 
 function getSessionCheckUrl(): string {

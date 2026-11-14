@@ -16,6 +16,18 @@ export type LoginResponse = {
   user: User;
 };
 
+export type SetupStatusResponse = {
+  setupRequired: boolean;
+};
+
+export type SetupSessionResponse = {
+  expiresAt: string;
+};
+
+export type SetupTokenInput = {
+  token: string;
+};
+
 export type StatusResponse = {
   version: string;
 };

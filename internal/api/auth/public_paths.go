@@ -8,4 +8,6 @@ var PublicAuthPaths = []string{
 	"/api/v1/auth/forgot-password",
 	"/api/v1/auth/reset-password",
 	"/api/v1/auth/confirm-email-change",
+	"/api/v1/setup/status",
+	"/api/v1/setup/session",
 }

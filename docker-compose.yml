@@ -11,7 +11,10 @@ services:
     environment:
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env — see .env.example}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY in .env — see .env.example}
-      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-}
+      APP_URL: ${APP_URL:?set APP_URL in .env — see .env.example}
+      WEBHOOK_URL: ${WEBHOOK_URL:-}
+      GITHUB_BASE_URL: ${GITHUB_BASE_URL:-}
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}

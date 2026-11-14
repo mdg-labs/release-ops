@@ -13,7 +13,10 @@ func validEnv(t *testing.T) {
 	t.Setenv("GO_INTERNAL_PORT", "")
 	t.Setenv("PORT", "")
 	t.Setenv("GO_API_URL", "")
-	t.Setenv("APP_PUBLIC_URL", "")
+	t.Setenv("APP_URL", "")
+	t.Setenv("WEBHOOK_URL", "")
+	t.Setenv("GITHUB_BASE_URL", "")
+	t.Setenv("SETUP_TOKEN", "")
 	t.Setenv("BOOTSTRAP_ADMIN_EMAIL", "")
 	t.Setenv("BOOTSTRAP_ADMIN_PASSWORD", "")
 	t.Setenv("INTERNAL_ADDR", "")
@@ -71,27 +74,99 @@ func TestLoadMissingAppEncryptionKey(t *testing.T) {
 	}
 }
 
-func TestLoadAppPublicURLOptional(t *testing.T) {
+func TestLoadServerRequiresAppURL(t *testing.T) {
+	validEnv(t)
+
+	_, err := LoadServer()
+	if err == nil || !strings.Contains(err.Error(), "APP_URL") {
+		t.Fatalf("LoadServer() without APP_URL error = %v, want APP_URL mention", err)
+	}
+
+	t.Setenv("APP_URL", "https://release-ops.example.com/")
+	cfg, err := LoadServer()
+	if err != nil {
+		t.Fatalf("LoadServer() with APP_URL error = %v", err)
+	}
+	if cfg.AppURL != "https://release-ops.example.com" {
+		t.Errorf("AppURL = %q, want the value without its trailing slash", cfg.AppURL)
+	}
+	if !cfg.SecureCookies() {
+		t.Error("SecureCookies() = false for https APP_URL")
+	}
+
+	t.Setenv("APP_URL", "http://localhost:3000")
+	cfg, err = LoadServer()
+	if err != nil {
+		t.Fatalf("LoadServer() with http APP_URL error = %v", err)
+	}
+	if cfg.SecureCookies() {
+		t.Error("SecureCookies() = true for http APP_URL")
+	}
+}
+
+func TestLoadRejectsMalformedURLs(t *testing.T) {
+	for _, name := range []string{"APP_URL", "WEBHOOK_URL", "GITHUB_BASE_URL"} {
+		for _, value := range []string{"release-ops.example.com", "ftp://example.com", "https://"} {
+			validEnv(t)
+			t.Setenv(name, value)
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), name) {
+				t.Errorf("Load() with %s=%q error = %v, want %s mention", name, value, err, name)
+			}
+		}
+	}
+}
+
+func TestLoadWebhookAndGitHubURLs(t *testing.T) {
 	validEnv(t)
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.SecureCookies() {
-		t.Error("SecureCookies() = true with empty APP_PUBLIC_URL")
+	if cfg.WebhookURL != "" {
+		t.Errorf("WebhookURL = %q, want empty when unset", cfg.WebhookURL)
+	}
+	if cfg.GitHubBaseURL != "https://github.com" {
+		t.Errorf("GitHubBaseURL = %q, want the github.com default", cfg.GitHubBaseURL)
 	}
 
-	t.Setenv("APP_PUBLIC_URL", "https://release-ops.example.com")
+	t.Setenv("WEBHOOK_URL", "https://hooks.example.com/hooks/github")
+	t.Setenv("GITHUB_BASE_URL", "https://github.example.com/")
 	cfg, err = Load()
 	if err != nil {
-		t.Fatalf("Load() with APP_PUBLIC_URL error = %v", err)
+		t.Fatalf("Load() with URLs error = %v", err)
 	}
-	if cfg.AppPublicURL != "https://release-ops.example.com" {
-		t.Errorf("AppPublicURL = %q", cfg.AppPublicURL)
+	if cfg.WebhookURL != "https://hooks.example.com/hooks/github" {
+		t.Errorf("WebhookURL = %q", cfg.WebhookURL)
 	}
-	if !cfg.SecureCookies() {
-		t.Error("SecureCookies() = false for https APP_PUBLIC_URL")
+	if cfg.GitHubBaseURL != "https://github.example.com" {
+		t.Errorf("GitHubBaseURL = %q, want the value without its trailing slash", cfg.GitHubBaseURL)
+	}
+}
+
+func TestLoadSetupTokenMinimumStrength(t *testing.T) {
+	validEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.SetupToken != "" {
+		t.Errorf("SetupToken = %q, want empty when unset", cfg.SetupToken)
+	}
+
+	t.Setenv("SETUP_TOKEN", strings.Repeat("a", minSetupTokenLen-1))
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "SETUP_TOKEN") {
+		t.Fatalf("Load() with a short SETUP_TOKEN error = %v, want SETUP_TOKEN mention", err)
+	}
+
+	t.Setenv("SETUP_TOKEN", strings.Repeat("a", minSetupTokenLen))
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() with a long enough SETUP_TOKEN error = %v", err)
+	}
+	if cfg.SetupToken != strings.Repeat("a", minSetupTokenLen) {
+		t.Error("SetupToken not read from the environment")
 	}
 }
 

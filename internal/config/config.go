@@ -16,17 +16,29 @@ const (
 	minSessionSecretLen   = 32
 	encryptionKeyHexLen   = 64
 	minWorkerSecretLen    = 32
+	// minSetupTokenLen is the length of the token the server generates (32 random bytes as
+	// hex), so an operator-supplied SETUP_TOKEN is never easier to guess than a generated one.
+	minSetupTokenLen = 64
+	defaultGitHubURL = "https://github.com"
 )
 
 // Config holds environment-backed server configuration.
 type Config struct {
-	SessionSecret          string
-	AppEncryptionKey       string
-	AppDBPath              string
-	GoInternalPort         int
-	Port                   int
-	GoAPIURL               string
-	AppPublicURL           string
+	SessionSecret    string
+	AppEncryptionKey string
+	AppDBPath        string
+	GoInternalPort   int
+	Port             int
+	GoAPIURL         string
+	// AppURL is the browser-facing URL of the instance without a trailing slash (APP_URL).
+	AppURL string
+	// WebhookURL is the public URL GitHub delivers webhooks to (WEBHOOK_URL); empty when unset.
+	WebhookURL string
+	// GitHubBaseURL is the GitHub web URL without a trailing slash (GITHUB_BASE_URL).
+	GitHubBaseURL string
+	// SetupToken is the operator-supplied first-start setup token (SETUP_TOKEN); empty means
+	// the server generates one.
+	SetupToken             string
 	BootstrapAdminEmail    string
 	BootstrapAdminPassword string
 	// InternalAddr is where the internal listener for the worker binds (INTERNAL_ADDR); empty
@@ -43,7 +55,10 @@ func Load() (*Config, error) {
 		AppEncryptionKey:       strings.TrimSpace(os.Getenv("APP_ENCRYPTION_KEY")),
 		AppDBPath:              envOrDefault("APP_DB_PATH", defaultAppDBPath),
 		GoAPIURL:               envOrDefault("GO_API_URL", defaultGoAPIURL),
-		AppPublicURL:           strings.TrimSpace(os.Getenv("APP_PUBLIC_URL")),
+		AppURL:                 strings.TrimRight(strings.TrimSpace(os.Getenv("APP_URL")), "/"),
+		WebhookURL:             strings.TrimSpace(os.Getenv("WEBHOOK_URL")),
+		GitHubBaseURL:          strings.TrimRight(envOrDefault("GITHUB_BASE_URL", defaultGitHubURL), "/"),
+		SetupToken:             strings.TrimSpace(os.Getenv("SETUP_TOKEN")),
 		BootstrapAdminEmail:    strings.TrimSpace(os.Getenv("BOOTSTRAP_ADMIN_EMAIL")),
 		BootstrapAdminPassword: os.Getenv("BOOTSTRAP_ADMIN_PASSWORD"),
 		InternalAddr:           strings.TrimSpace(os.Getenv("INTERNAL_ADDR")),
@@ -65,6 +80,19 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// LoadServer is Load for the server process: it also refuses to start without APP_URL,
+// which fixes the setup and sign-in redirect targets and the Secure cookie flag.
+func LoadServer() (*Config, error) {
+	cfg, err := Load()
+	if err != nil {
+		return nil, err
+	}
+	if cfg.AppURL == "" {
+		return nil, fmt.Errorf("APP_URL is required: the browser-facing URL of the instance, e.g. https://release-ops.example.com")
+	}
+	return cfg, nil
+}
+
 // GoListenAddr returns the loopback address for the Go HTTP server.
 func (c *Config) GoListenAddr() string {
 	return fmt.Sprintf("127.0.0.1:%d", c.GoInternalPort)
@@ -72,10 +100,7 @@ func (c *Config) GoListenAddr() string {
 
 // SecureCookies reports whether session cookies should use the Secure flag.
 func (c *Config) SecureCookies() bool {
-	if c.AppPublicURL == "" {
-		return false
-	}
-	u, err := url.Parse(c.AppPublicURL)
+	u, err := url.Parse(c.AppURL)
 	if err != nil {
 		return false
 	}
@@ -113,6 +138,18 @@ func (c *Config) validate() error {
 	if strings.EqualFold(c.AppEncryptionKey, exampleAppEncryptionKey) {
 		return fmt.Errorf("APP_ENCRYPTION_KEY is the .env.example placeholder; generate one with: openssl rand -hex 32")
 	}
+	if err := validateURL("APP_URL", c.AppURL, false); err != nil {
+		return err
+	}
+	if err := validateURL("WEBHOOK_URL", c.WebhookURL, false); err != nil {
+		return err
+	}
+	if err := validateURL("GITHUB_BASE_URL", c.GitHubBaseURL, true); err != nil {
+		return err
+	}
+	if c.SetupToken != "" && len(c.SetupToken) < minSetupTokenLen {
+		return fmt.Errorf("SETUP_TOKEN must be at least %d characters; generate one with: openssl rand -hex 32", minSetupTokenLen)
+	}
 	if c.BootstrapAdminEmail != "" && c.BootstrapAdminPassword == "" {
 		return fmt.Errorf("BOOTSTRAP_ADMIN_PASSWORD is required when BOOTSTRAP_ADMIN_EMAIL is set")
 	}
@@ -136,6 +173,22 @@ func (c *Config) validateInternalListener() error {
 		return fmt.Errorf("WORKER_SECRET is required when INTERNAL_ADDR is set")
 	}
 	return validateWorkerSecret(c.WorkerSecret)
+}
+
+// validateURL accepts an empty value unless required, and otherwise an http or https URL
+// with a host.
+func validateURL(name, raw string, required bool) error {
+	if raw == "" {
+		if required {
+			return fmt.Errorf("%s is required", name)
+		}
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("%s must be an http or https URL with a host", name)
+	}
+	return nil
 }
 
 func validateWorkerSecret(secret string) error {

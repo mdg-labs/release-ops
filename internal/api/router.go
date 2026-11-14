@@ -29,6 +29,9 @@ type ServerDeps struct {
 	Store             *store.Store
 	IntegrationTester handlers.IntegrationTester
 	Mailer            mail.Mailer
+	// AppURL is the browser-facing URL of the instance (APP_URL), used in the links of
+	// outgoing mail.
+	AppURL string
 }
 
 // NewRouter builds the root HTTP handler with health and API routes.

@@ -13,6 +13,7 @@ import (
 
 	"github.com/mdg-labs/release-ops/internal/api"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
+	"github.com/mdg-labs/release-ops/internal/api/setup"
 	"github.com/mdg-labs/release-ops/internal/config"
 	"github.com/mdg-labs/release-ops/internal/crypto"
 	"github.com/mdg-labs/release-ops/internal/mail"
@@ -37,7 +38,7 @@ func main() {
 		return
 	}
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadServer()
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
@@ -74,6 +75,10 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("bootstrap admin: %w", err)
 	}
 
+	if err := setup.EnsureToken(ctx, db.Writer, cfg.SetupToken, cfg.AppURL, log.Printf); err != nil {
+		return fmt.Errorf("setup token: %w", err)
+	}
+
 	cipher, err := crypto.NewCipherFromHex(cfg.AppEncryptionKey)
 	if err != nil {
 		return fmt.Errorf("encryption: %w", err)
@@ -98,6 +103,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		Store:             appStore,
 		IntegrationTester: integrationtester.New(nil),
 		Mailer:            mailer,
+		AppURL:            cfg.AppURL,
 	})
 
 	appCtx, cancel := context.WithCancel(ctx)

@@ -1,6 +1,8 @@
 export const queryKeys = {
   session: () => ["session"] as const,
   status: () => ["status"] as const,
+  setupStatus: () => ["setup-status"] as const,
+  setupSession: () => ["setup-session"] as const,
   integrations: () => ["integrations"] as const,
   ticketProjects: (integrationId?: string) =>
     ["ticket-projects", integrationId ?? null] as const,

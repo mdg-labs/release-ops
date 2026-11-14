@@ -1,13 +1,11 @@
 package api
 
 import (
-	"os"
-	"strings"
-
 	"github.com/go-chi/chi/v5"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/api/handlers"
 	apimw "github.com/mdg-labs/release-ops/internal/api/middleware"
+	"github.com/mdg-labs/release-ops/internal/api/setup"
 )
 
 // RegisterAll wires §7 REST endpoints on the /api/v1 subrouter.
@@ -15,7 +13,9 @@ import (
 // Route order:
 //  1. Session LoadAndSave middleware (all /api/v1/*)
 //  2. Public auth: POST /auth/login, GET /auth/session
-//  3. Protected group (RequireSession): logout, status, settings, integrations,
+//  3. Setup: GET /setup/status and POST /setup/session are public; GET /setup/session
+//     requires a setup session, which opens only the setup routes
+//  4. Protected group (RequireSession): logout, status, settings, integrations,
 //     ticket-projects, users
 func RegisterAll(api chi.Router, deps *ServerDeps) {
 	if deps == nil || deps.Session == nil {
@@ -32,7 +32,7 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 
 	rateLimiter := apimw.NewRateLimiter()
 
-	appPublicURL := strings.TrimSpace(os.Getenv("APP_PUBLIC_URL"))
+	appURL := deps.AppURL
 
 	api.With(rateLimiter.Login).Post("/auth/login", authHandlers.Login)
 	api.Get("/auth/session", authHandlers.Session)
@@ -44,10 +44,15 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 		Queries:        deps.Queries,
 		TokenService:   auth.NewTokenService(deps.Queries),
 		Mailer:         deps.Mailer,
-		AppPublicURL:   appPublicURL,
+		AppPublicURL:   appURL,
 	}
 	api.With(rateLimiter.ForgotPassword).Post("/auth/forgot-password", passwordResetHandlers.ForgotPassword)
 	api.With(rateLimiter.ResetPassword).Post("/auth/reset-password", passwordResetHandlers.ResetPassword)
+
+	setupHandlers := &setup.Handlers{Sessions: deps.Session, Queries: deps.Queries}
+	api.With(rateLimiter.SetupStatus).Get("/setup/status", setupHandlers.Status)
+	api.With(rateLimiter.SetupSession).Post("/setup/session", setupHandlers.CreateSession)
+	api.With(setupHandlers.RequireSession).Get("/setup/session", setupHandlers.GetSession)
 
 	api.Group(func(protected chi.Router) {
 		protected.Use(apimw.RequireSession(deps.Session))
@@ -57,11 +62,11 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 			return
 		}
 
-		registerProtectedAPIRoutes(protected, deps, appPublicURL, rateLimiter)
+		registerProtectedAPIRoutes(protected, deps, appURL, rateLimiter)
 	})
 }
 
-func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appPublicURL string, rateLimiter *apimw.RateLimiter) {
+func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appURL string, rateLimiter *apimw.RateLimiter) {
 	st := deps.Store
 
 	settingsHandlers := &handlers.SettingsHandlers{Settings: st.Settings()}
@@ -82,13 +87,13 @@ func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appPubli
 		SessionManager: deps.Session,
 		TokenService:   tokenService,
 		Mailer:         deps.Mailer,
-		AppPublicURL:   appPublicURL,
+		AppPublicURL:   appURL,
 	}
 	invitationHandlers := &handlers.InvitationHandlers{
 		Queries:      deps.Queries,
 		TokenService: tokenService,
 		Mailer:       deps.Mailer,
-		AppPublicURL: appPublicURL,
+		AppPublicURL: appURL,
 	}
 
 	protected.Get("/status", statusHandlers.Get)

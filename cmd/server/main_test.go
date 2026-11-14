@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -17,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -356,4 +358,138 @@ func snapshotDir(t *testing.T, dir string) string {
 		t.Fatalf("walk %s: %v", dir, err)
 	}
 	return strings.Join(out, "\n")
+}
+
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// startServer runs the server entry point against a fresh database and returns an API client
+// once it answers /healthz. The server stops with the test.
+func startServer(t *testing.T, cfg *config.Config) *apiClient {
+	t.Helper()
+
+	cfg.SessionSecret = strings.Repeat("s", 32)
+	cfg.AppEncryptionKey = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+	cfg.AppDBPath = filepath.Join(t.TempDir(), "app.db")
+	cfg.GoInternalPort = freePort(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if err := run(ctx, cfg); err != nil {
+			t.Errorf("run: %v", err)
+		}
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(20 * time.Second):
+			t.Error("server did not shut down")
+		}
+	})
+
+	base := fmt.Sprintf("http://127.0.0.1:%d", cfg.GoInternalPort)
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		resp, err := http.Get(base + "/healthz")
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("server did not become healthy: %v", err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar: %v", err)
+	}
+	return &apiClient{t: t, base: base, http: &http.Client{Jar: jar}}
+}
+
+// TestServerStartupCreatesTheSetupToken starts the real server with no GitHub App: the
+// generated setup token is printed once, opens a setup session through POST
+// /api/v1/setup/session, cannot be redeemed twice, and the session opens no other API.
+func TestServerStartupCreatesTheSetupToken(t *testing.T) {
+	logs := &lockedBuffer{}
+	log.SetOutput(logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	c := startServer(t, &config.Config{AppURL: "https://release-ops.example.com"})
+
+	const marker = "enter this one-time setup token: "
+	out := logs.String()
+	i := strings.Index(out, marker)
+	if i < 0 {
+		t.Fatalf("startup log does not print the setup token:\n%s", out)
+	}
+	token := strings.Fields(out[i+len(marker):])[0]
+	if len(token) != 64 || strings.Count(out, token) != 1 {
+		t.Fatalf("printed token %q (%d chars) printed %d times, want 64 characters, once", token, len(token), strings.Count(out, token))
+	}
+	if !strings.Contains(out, "https://release-ops.example.com/setup") {
+		t.Errorf("startup log does not point at APP_URL/setup:\n%s", out)
+	}
+
+	if code, body := c.do(http.MethodGet, "/api/v1/setup/status", nil); code != http.StatusOK || !strings.Contains(string(body), `"setupRequired":true`) {
+		t.Fatalf("setup status = %d %s, want setupRequired true", code, body)
+	}
+	if code, _ := c.do(http.MethodGet, "/api/v1/setup/session", nil); code != http.StatusUnauthorized {
+		t.Fatalf("setup session before redeeming = %d, want 401", code)
+	}
+	if code, body := c.do(http.MethodPost, "/api/v1/setup/session", map[string]string{"token": "wrong"}); code != http.StatusUnauthorized {
+		t.Fatalf("wrong token = %d %s, want 401", code, body)
+	}
+	if code, body := c.do(http.MethodPost, "/api/v1/setup/session", map[string]string{"token": token}); code != http.StatusNoContent {
+		t.Fatalf("redeem = %d %s, want 204", code, body)
+	}
+	if code, body := c.do(http.MethodGet, "/api/v1/setup/session", nil); code != http.StatusOK {
+		t.Fatalf("setup session after redeeming = %d %s, want 200", code, body)
+	}
+	if code, body := c.do(http.MethodGet, "/api/v1/status", nil); code != http.StatusUnauthorized {
+		t.Fatalf("protected API with a setup session = %d %s, want 401", code, body)
+	}
+
+	other := &apiClient{t: t, base: c.base, http: &http.Client{}}
+	if code, body := other.do(http.MethodPost, "/api/v1/setup/session", map[string]string{"token": token}); code != http.StatusUnauthorized {
+		t.Fatalf("second redeem = %d %s, want 401", code, body)
+	}
+}
+
+// TestServerStartupUsesTheConfiguredSetupToken: SETUP_TOKEN replaces the generated token and
+// is never printed.
+func TestServerStartupUsesTheConfiguredSetupToken(t *testing.T) {
+	logs := &lockedBuffer{}
+	log.SetOutput(logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	token := strings.Repeat("ab", 32)
+	c := startServer(t, &config.Config{AppURL: "https://release-ops.example.com", SetupToken: token})
+
+	if strings.Contains(logs.String(), token) {
+		t.Fatalf("startup log contains SETUP_TOKEN:\n%s", logs.String())
+	}
+	if code, body := c.do(http.MethodPost, "/api/v1/setup/session", map[string]string{"token": token}); code != http.StatusNoContent {
+		t.Fatalf("redeem the configured token = %d %s, want 204", code, body)
+	}
 }
