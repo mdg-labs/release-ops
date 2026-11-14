@@ -1,39 +1,63 @@
-// Package main is the Release Ops HTTP API and poll scheduler entrypoint.
+// Package main is the Release Ops HTTP API entrypoint.
 package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
+	"os"
 	"os/signal"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/mdg-labs/release-ops/internal/api"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
+	"github.com/mdg-labs/release-ops/internal/api/setup"
 	"github.com/mdg-labs/release-ops/internal/config"
 	"github.com/mdg-labs/release-ops/internal/crypto"
+	"github.com/mdg-labs/release-ops/internal/github"
 	"github.com/mdg-labs/release-ops/internal/mail"
-	"github.com/mdg-labs/release-ops/internal/poll"
+	"github.com/mdg-labs/release-ops/internal/metrics"
 	"github.com/mdg-labs/release-ops/internal/providers/integrationtester"
+	"github.com/mdg-labs/release-ops/internal/queue"
+	"github.com/mdg-labs/release-ops/internal/queue/internalapi"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
 
+// reapInterval is how often the app requeues jobs whose lease has expired.
+const reapInterval = 15 * time.Second
+
 func main() {
-	cfg, err := config.Load()
+	if len(os.Args) > 1 {
+		if os.Args[1] != "worker" {
+			log.Fatalf("unknown command %q: the only command is worker", os.Args[1])
+		}
+		if err := runWorkerCommand(); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
+	cfg, err := config.LoadServer()
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
 
-	run(cfg)
-}
-
-func run(cfg *config.Config) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	if err := run(ctx, cfg); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run(ctx context.Context, cfg *config.Config) error {
 	applied, err := store.Migrate(ctx, cfg.AppDBPath)
 	if err != nil {
-		log.Fatalf("migrations: %v", err)
+		return fmt.Errorf("migrations: %w", err)
 	}
 	for _, m := range applied {
 		log.Printf("migrations: applied %s_%s", m.Version, m.Slug)
@@ -41,7 +65,7 @@ func run(cfg *config.Config) {
 
 	db, err := store.OpenPath(cfg.AppDBPath)
 	if err != nil {
-		log.Fatalf("database: %v", err)
+		return fmt.Errorf("database: %w", err)
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
@@ -49,94 +73,109 @@ func run(cfg *config.Config) {
 		}
 	}()
 
-	queries := storedb.New(db)
+	queries := storedb.New(db.Writer)
 	if err := auth.BootstrapFromEnv(context.Background(), queries, cfg.BootstrapAdminEmail, cfg.BootstrapAdminPassword); err != nil {
-		log.Fatalf("bootstrap admin: %v", err)
+		return fmt.Errorf("bootstrap admin: %w", err)
+	}
+
+	if err := setup.EnsureToken(ctx, db.Writer, cfg.SetupToken, cfg.AppURL, log.Printf); err != nil {
+		return fmt.Errorf("setup token: %w", err)
 	}
 
 	cipher, err := crypto.NewCipherFromHex(cfg.AppEncryptionKey)
 	if err != nil {
-		log.Fatalf("encryption: %v", err)
+		return fmt.Errorf("encryption: %w", err)
 	}
 
 	appStore := store.New(db, cipher)
 
 	if err := appStore.Settings().EnsureDefault(context.Background()); err != nil {
-		log.Fatalf("app settings: %v", err)
-	}
-
-	if err := reconcilePollRuns(ctx, appStore.Poll()); err != nil {
-		log.Fatalf("poll runs: %v", err)
-	}
-
-	notifier := poll.NewNotifier(appStore.Notifications(), nil)
-	engine := poll.NewEngine(appStore.Poll())
-	scheduler, err := poll.NewScheduler(poll.SchedulerConfig{
-		Engine:         engine,
-		Settings:       appStore.Settings(),
-		Repos:          appStore.Repos(),
-		TicketProjects: appStore.TicketProjects(),
-		Integrations:   appStore.Integrations(),
-		Poll:           appStore.Poll(),
-		Notifier:       notifier,
-	})
-	if err != nil {
-		log.Fatalf("poll scheduler: %v", err)
-	}
-	if err := scheduler.Start(ctx); err != nil {
-		log.Fatalf("poll scheduler start: %v", err)
+		return fmt.Errorf("app settings: %w", err)
 	}
 
 	mailer, err := mail.NewFromEnv()
 	if err != nil {
-		log.Fatalf("mail: %v", err)
+		return fmt.Errorf("mail: %w", err)
 	}
 
-	sessionManager := auth.NewSessionManager(db, cfg.SessionSecret, cfg.SecureCookies())
-	handler := api.NewServerRouter(&api.ServerDeps{
-		DB:                 db,
-		Session:            sessionManager,
-		Queries:            queries,
-		Store:              appStore,
-		PollRunner:         scheduler,
-		IntegrationTester:  integrationtester.New(nil),
-		NotificationTester: notifier,
-		Mailer:             mailer,
+	githubClient := github.NewClient(github.APIBaseURL(cfg.GitHubBaseURL), 0)
+
+	registry := metrics.NewRegistry()
+	jobMetrics, err := metrics.NewJobs(registry)
+	if err != nil {
+		return fmt.Errorf("metrics: %w", err)
+	}
+	// The webhook receiver observes the lag histogram; it is registered here so the name is served.
+	if _, err := metrics.NewWebhookLag(registry); err != nil {
+		return fmt.Errorf("metrics: %w", err)
+	}
+	jobs := store.NewJobQueue(db, store.JobQueueOptions{
+		OnLeaseExpired: func(repository string) { jobMetrics.Ended(repository, metrics.OutcomeLeaseExpired) },
 	})
+	if err := metrics.RegisterQueue(registry, jobs); err != nil {
+		return fmt.Errorf("metrics: %w", err)
+	}
+
+	sessionManager := auth.NewSessionManager(db.Writer, cfg.SessionSecret, cfg.SecureCookies())
+	handler := api.NewServerRouter(&api.ServerDeps{
+		DB:                db.Writer,
+		Session:           sessionManager,
+		Queries:           queries,
+		Store:             appStore,
+		IntegrationTester: integrationtester.New(nil),
+		Mailer:            mailer,
+		AppURL:            cfg.AppURL,
+		WebhookURL:        cfg.WebhookURL,
+		GitHubBaseURL:     cfg.GitHubBaseURL,
+		GitHub:            githubClient,
+		Queue:             jobs,
+	})
+
+	appCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var background sync.WaitGroup
+	background.Go(func() {
+		queue.RunReaper(appCtx, jobs, reapInterval, func(err error) { log.Printf("job reaper: %v", err) })
+	})
+	var internalErr, metricsErr error
+	if cfg.MetricsAddr != "" {
+		background.Go(func() {
+			log.Printf("release-ops metrics listener on %s", cfg.MetricsAddr)
+			if err := metrics.Serve(appCtx, cfg.MetricsAddr, registry); err != nil {
+				metricsErr = fmt.Errorf("metrics listener: %w", err)
+				cancel()
+			}
+		})
+	}
+	if cfg.InternalAddr != "" {
+		background.Go(func() {
+			log.Printf("release-ops internal listener on %s", cfg.InternalAddr)
+			if err := serveInternal(appCtx, cfg, jobs, github.NewAppClient(githubClient, appStore.GitHubApp(), github.AppClientOptions{})); err != nil {
+				internalErr = fmt.Errorf("internal listener: %w", err)
+				cancel()
+			}
+		})
+	}
+
 	addr := cfg.GoListenAddr()
 	log.Printf("release-ops server listening on %s", addr)
 
-	serveErr := api.Serve(ctx, addr, handler)
-
-	// Cancel first so a failed Serve also stops the scheduler, then let an in-flight
-	// poll run write its finish before the deferred db.Close.
-	stop()
-	shutdownScheduler(scheduler)
-
+	serveErr := api.Serve(appCtx, addr, handler)
+	cancel()
+	background.Wait()
 	if serveErr != nil {
-		log.Fatalf("server: %v", serveErr)
+		return fmt.Errorf("server: %w", serveErr)
 	}
+	return errors.Join(internalErr, metricsErr)
 }
 
-// shutdownScheduler waits for in-flight poll runs to write their finish. A run that
-// does not finish in time is left for reconcilePollRuns at the next start.
-func shutdownScheduler(scheduler *poll.Scheduler) {
-	waitCtx, cancel := context.WithTimeout(context.Background(), poll.ShutdownWaitTimeout)
-	defer cancel()
-	if err := scheduler.Shutdown(waitCtx); err != nil {
-		log.Printf("poll scheduler shutdown: in-flight run did not finish within %s: %v", poll.ShutdownWaitTimeout, err)
-	}
-}
-
-// reconcilePollRuns finishes the runs a previous process left running. It must run
-// before the scheduler starts, so it can never touch a run of this process.
-func reconcilePollRuns(ctx context.Context, polls store.PollRepository) error {
-	n, err := poll.ReconcileInterruptedRuns(ctx, polls)
-	if err != nil {
-		return err
-	}
-	if n > 0 {
-		log.Printf("poll runs: marked %d interrupted run(s) as failed", n)
-	}
-	return nil
+// serveInternal serves the worker routes on INTERNAL_ADDR until ctx ends.
+// Its token route mints job tokens with the App's key, which stays in this process.
+func serveInternal(ctx context.Context, cfg *config.Config, q queue.Queue, tokens internalapi.TokenIssuer) error {
+	h := internalapi.NewHandler(q, internalapi.Options{
+		Secret:            cfg.WorkerSecret,
+		Tokens:            tokens,
+		TokenRepositories: cfg.JobTokenRepositories(),
+	})
+	return internalapi.Serve(ctx, cfg.InternalAddr, h, internalapi.WriteTimeout)
 }

@@ -10,6 +10,17 @@ import (
 	"database/sql"
 )
 
+const countGitHubApp = `-- name: CountGitHubApp :one
+SELECT COUNT(*) FROM github_app
+`
+
+func (q *Queries) CountGitHubApp(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countGitHubApp)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAuthToken = `-- name: CreateAuthToken :one
 INSERT INTO auth_tokens (
   id,
@@ -92,6 +103,16 @@ func (q *Queries) DeletePendingInvitation(ctx context.Context, id string) (int64
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const deleteSetupTokens = `-- name: DeleteSetupTokens :exec
+DELETE FROM auth_tokens
+WHERE kind = 'setup'
+`
+
+func (q *Queries) DeleteSetupTokens(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteSetupTokens)
+	return err
 }
 
 const getAuthTokenByHash = `-- name: GetAuthTokenByHash :one
@@ -186,6 +207,41 @@ type GetPendingInvitationByEmailParams struct {
 
 func (q *Queries) GetPendingInvitationByEmail(ctx context.Context, arg GetPendingInvitationByEmailParams) (AuthToken, error) {
 	row := q.db.QueryRowContext(ctx, getPendingInvitationByEmail, arg.Email, arg.ExpiresAt)
+	var i AuthToken
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.Email,
+		&i.TokenHash,
+		&i.NewEmail,
+		&i.InvitedByUserID,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getUnusedSetupToken = `-- name: GetUnusedSetupToken :one
+SELECT
+  id,
+  kind,
+  email,
+  token_hash,
+  new_email,
+  invited_by_user_id,
+  expires_at,
+  used_at,
+  created_at
+FROM auth_tokens
+WHERE kind = 'setup'
+  AND used_at IS NULL
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetUnusedSetupToken(ctx context.Context) (AuthToken, error) {
+	row := q.db.QueryRowContext(ctx, getUnusedSetupToken)
 	var i AuthToken
 	err := row.Scan(
 		&i.ID,

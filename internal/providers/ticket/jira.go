@@ -187,8 +187,8 @@ func (j *JiraProvider) CreateTicket(ctx context.Context, input TicketInput) (str
 
 	// create_config.initialStatus (specs §5.3): move the new issue out of the workflow's
 	// default status. Best-effort — the issue already exists: a failed transition must not
-	// fail the create, otherwise the poll engine would not record the ticket and would create
-	// a duplicate next cycle.
+	// fail the create, otherwise the caller would not record the ticket and a retry would create
+	// a duplicate.
 	if cfg.initialStatus != "" {
 		if err := j.applyInitialStatus(ctx, created.Key, cfg.initialStatus); err != nil {
 			slog.WarnContext(ctx, "jira: initial status not applied",

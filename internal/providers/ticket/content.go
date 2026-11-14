@@ -4,9 +4,14 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/mdg-labs/release-ops/internal/providers/source"
 )
+
+// Release holds the release fields the default ticket body reads.
+type Release struct {
+	Name        string
+	URL         string
+	PublishedAt time.Time
+}
 
 // BuildTitle returns the default ticket title (specs §5.4 legacy default).
 func BuildTitle(sourceKind, projectPath, tag string) string {
@@ -14,7 +19,7 @@ func BuildTitle(sourceKind, projectPath, tag string) string {
 }
 
 // BuildDescription returns markdown ticket body per specs §5.4 legacy default.
-func BuildDescription(release source.Release) string {
+func BuildDescription(release Release) string {
 	var b strings.Builder
 
 	if name := strings.TrimSpace(release.Name); name != "" {

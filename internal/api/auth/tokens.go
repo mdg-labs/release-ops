@@ -19,6 +19,7 @@ const (
 	TokenKindInvitation    = "invitation"
 	TokenKindPasswordReset = "password_reset"
 	TokenKindEmailChange   = "email_change"
+	TokenKindSetup         = "setup"
 )
 
 const tokenByteLength = 32

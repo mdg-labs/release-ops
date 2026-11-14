@@ -10,7 +10,6 @@ import (
 )
 
 const (
-	minPollIntervalMinutes             int64 = 5
 	minInviteTokenExpiryHours          int64 = 1
 	maxInviteTokenExpiryHours          int64 = 720
 	minPasswordResetTokenExpiryMinutes int64 = 5
@@ -23,14 +22,12 @@ type SettingsHandlers struct {
 }
 
 type settingsResponse struct {
-	PollIntervalMinutes             int64 `json:"pollIntervalMinutes"`
 	InviteTokenExpiryHours          int64 `json:"inviteTokenExpiryHours"`
 	PasswordResetTokenExpiryMinutes int64 `json:"passwordResetTokenExpiryMinutes"`
 	SmtpConfigured                  bool  `json:"smtpConfigured"`
 }
 
 type patchSettingsRequest struct {
-	PollIntervalMinutes             *int64 `json:"pollIntervalMinutes"`
 	InviteTokenExpiryHours          *int64 `json:"inviteTokenExpiryHours"`
 	PasswordResetTokenExpiryMinutes *int64 `json:"passwordResetTokenExpiryMinutes"`
 }
@@ -57,18 +54,6 @@ func (h *SettingsHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		auth.WriteError(w, "INTERNAL_ERROR", "failed to load settings", http.StatusInternalServerError)
 		return
-	}
-
-	if req.PollIntervalMinutes != nil {
-		if *req.PollIntervalMinutes < minPollIntervalMinutes {
-			auth.WriteError(w, "VALIDATION_ERROR", "pollIntervalMinutes must be at least 5", http.StatusBadRequest)
-			return
-		}
-		settings, err = h.Settings.UpdatePollInterval(r.Context(), *req.PollIntervalMinutes)
-		if err != nil {
-			auth.WriteError(w, "INTERNAL_ERROR", "failed to update settings", http.StatusInternalServerError)
-			return
-		}
 	}
 
 	if req.InviteTokenExpiryHours != nil || req.PasswordResetTokenExpiryMinutes != nil {
@@ -104,7 +89,6 @@ func writeSettingsJSON(w http.ResponseWriter, status int, settings *store.AppSet
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(settingsResponse{
-		PollIntervalMinutes:             settings.PollIntervalMinutes,
 		InviteTokenExpiryHours:          settings.InviteTokenExpiryHours,
 		PasswordResetTokenExpiryMinutes: settings.PasswordResetTokenExpiryMinutes,
 		SmtpConfigured:                  mail.MailConfigured(),

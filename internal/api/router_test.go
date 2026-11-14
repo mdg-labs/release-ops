@@ -198,3 +198,72 @@ func TestServeGracefulShutdownCompletesInFlightRequests(t *testing.T) {
 		t.Fatalf("Serve error = %v", err)
 	}
 }
+
+func TestServerTimeoutsAreSet(t *testing.T) {
+	srv := newHTTPServer("127.0.0.1:0", http.NotFoundHandler())
+
+	if srv.ReadHeaderTimeout <= 0 || srv.ReadTimeout <= 0 || srv.WriteTimeout <= 0 || srv.IdleTimeout <= 0 {
+		t.Fatalf("timeouts = header %v read %v write %v idle %v, want all set",
+			srv.ReadHeaderTimeout, srv.ReadTimeout, srv.WriteTimeout, srv.IdleTimeout)
+	}
+	// The connection-test endpoint makes an outbound call of up to 30 seconds
+	// (integrationtester.New) and must be able to answer it.
+	if srv.WriteTimeout <= 30*time.Second {
+		t.Errorf("WriteTimeout = %v, want more than the 30s outbound call", srv.WriteTimeout)
+	}
+	if srv.ReadHeaderTimeout >= srv.ReadTimeout {
+		t.Errorf("ReadHeaderTimeout %v should be shorter than ReadTimeout %v", srv.ReadHeaderTimeout, srv.ReadTimeout)
+	}
+}
+
+// A client that trickles its request headers is cut off by Serve's ReadHeaderTimeout. The
+// timeout is shortened for the test; the server is built by Serve itself.
+func TestServeCutsOffASlowHeaderClient(t *testing.T) {
+	saved := serverTimeouts
+	serverTimeouts.readHeader = 300 * time.Millisecond
+	t.Cleanup(func() { serverTimeouts = saved })
+
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := probe.Addr().String()
+	_ = probe.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	served := make(chan error, 1)
+	go func() { served <- Serve(ctx, addr, NewRouter()) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-served; err != nil {
+			t.Errorf("serve = %v, want a clean shutdown", err)
+		}
+	})
+
+	var conn net.Conn
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		if conn, err = net.Dial("tcp", addr); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("server did not start: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	defer func() { _ = conn.Close() }()
+
+	// A request line and a header, then silence: the headers are never finished.
+	if _, err := conn.Write([]byte("GET /healthz HTTP/1.1\r\nHost: x\r\nX-Slow: ")); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	start := time.Now()
+	_, err = io.ReadAll(conn)
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("the connection stayed open for %v, want it closed near the 300ms header timeout", elapsed)
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		t.Fatalf("the server did not close the slow connection: %v", err)
+	}
+}

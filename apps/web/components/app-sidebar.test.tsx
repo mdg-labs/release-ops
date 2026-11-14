@@ -14,18 +14,15 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 const ORIGIN = "http://localhost:3000";
 const NAV_ROUTES = [
   "/",
-  "/poll-runs",
-  "/repos",
   "/integrations",
   "/ticket-projects",
-  "/notifications",
   "/settings",
 ] as const;
 
 const pushMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/repos",
+  usePathname: () => "/",
   useRouter: () => ({ push: pushMock }),
 }));
 
@@ -142,6 +139,15 @@ describe("AppSidebar", () => {
       ).toHaveAttribute("href", href);
     }
   });
+
+  it.each(["/poll-runs", "/repos", "/notifications"])(
+    "has no sidebar link to the removed %s page",
+    (href) => {
+      renderSidebar();
+
+      expect(document.querySelector(`a[href="${href}"]`)).toBeNull();
+    },
+  );
 
   it("renders profile link with session email", () => {
     renderSidebar();
@@ -264,10 +270,6 @@ function hrefToKey(href: (typeof NAV_ROUTES)[number]): string {
 
   if (href === "/ticket-projects") {
     return "ticketProjects";
-  }
-
-  if (href === "/poll-runs") {
-    return "pollRuns";
   }
 
   return href.slice(1);

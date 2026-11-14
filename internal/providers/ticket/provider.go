@@ -43,7 +43,7 @@ type StatusMapping struct {
 	Superseded string   `json:"superseded"`
 }
 
-// TicketProject is the ticket target configuration for a monitored repo (specs §6).
+// TicketProject is the ticket target configuration: the integration, external project and ticket settings (specs §6).
 type TicketProject struct {
 	ID                 string
 	IntegrationID      string

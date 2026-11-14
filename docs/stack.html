@@ -50,45 +50,66 @@ pre code { background: none; border: none; padding: 0; color: var(--text); }
   <span class="current">stack</span>
   <span class="sep">·</span>
   <a href="schema.html">schema</a>
+  <span class="sep">·</span>
+  <a href="threat-model.md">threat model</a>
 </nav>
 <div class="wrap">
-  <p class="eyebrow">Reference</p>
+  <p class="eyebrow">Reference · v2</p>
   <h1>Tech stack</h1>
-  <p class="lede">One container for self-hosting: Next.js (COSS UI) and Go (auth, API, polling) in the same image. Single SQLite file <code>app.db</code> on volume <code>/data</code>.</p>
+  <p class="lede">Two containers for self-hosting: the <strong>app</strong> (Next.js with the COSS UI, and Go for auth, the REST API, the job queue and the ticket engine) and the <strong>worker</strong> (the pinned, unmodified Renovate with a thin Go worker around it). The app owns one SQLite file <code>app.db</code> in WAL mode on volume <code>/data</code>; the worker has no database access.</p>
+  <p>This page lists tooling. Behaviour is specified in <a href="specs.html">the spec</a> (<a href="specs.html#architecture">§2 Architecture</a>, <a href="specs.html#deployment">§10 Deployment</a>); on conflict the spec wins.</p>
+
+  <h2>Architecture at a glance</h2>
+  <table>
+    <tr><th>Part</th><th>Choice</th></tr>
+    <tr><td>Update engine</td><td><strong>Renovate OSS</strong> — pinned to one version per release, <strong>unmodified</strong>, licensed <strong>AGPL-3.0-only</strong>, run as a <strong>separate child process</strong> of the worker, one per claimed job (<a href="specs.html#worker-process">§2.3</a>). Release Ops is AGPL-3.0 as well. The Mend Renovate CE/EE images are not used. The licence notice and a source pointer for the pinned version ship in the worker image and on the About page (<a href="specs.html#ui">§8.3</a>).</td></tr>
+    <tr><td>GitHub</td><td><strong>One private GitHub App per instance</strong>, created through GitHub's manifest flow on <code>/setup</code> (<a href="specs.html#github-app">§3.3</a>). It is the bot identity, the webhook sender and the login provider. Exactly <strong>one installation</strong> (<a href="specs.html#app-storage">§3.4</a>). GitHub (github.com) is the only platform in v2.0.</td></tr>
+    <tr><td>App ↔ worker</td><td>The worker claims jobs, heartbeats and posts results over HTTP through the app's <strong>internal listener</strong> (<code>INTERNAL_ADDR</code>, Compose network only, authenticated with <code>WORKER_SECRET</code>) — long-poll, no database access (<a href="specs.html#internal-listener">§2.1</a>).</td></tr>
+    <tr><td>Queue</td><td>A <strong>persistent <code>jobs</code> table</strong> in SQLite behind a Go interface: one job per repository, a concurrency cap, a reserved high-priority slot, leases and a reaper (<a href="specs.html#job-queue">§2.8</a>). Postgres can replace it <strong>later, for a hosted deployment only</strong>; v2.0 ships SQLite only.</td></tr>
+    <tr><td>Triggers</td><td>GitHub webhooks (<code>/hooks/github</code>) start a run within seconds of a ticked checkbox; without <code>WEBHOOK_URL</code> the app falls back to polling (degraded) (<a href="specs.html#triggers">§2.9</a>, <a href="specs.html#webhook-recovery">§2.11</a>).</td></tr>
+    <tr><td>Tickets</td><td>Kaneo, Jira and Linear, one ticket per update PR (<a href="specs.html#domain">§5</a>, <a href="specs.html#providers">§6</a>).</td></tr>
+  </table>
 
   <h2>Repository layout (target)</h2>
   <pre><code>release-ops/
-  apps/web/          # Next.js App Router, COSS — UI + Go API proxy
-  cmd/server/        # Go: HTTP API + poll scheduler + auth
-  internal/          # Go packages (api, poll, providers, store, crypto)
-  docker/            # entrypoint.sh
-  Dockerfile         # Single image: Next standalone + Go binary
-  migrations/        # sqlite-migrate-generated SQL only (embedded; Go server applies on startup)
+  apps/web/          # Next.js App Router, COSS — UI + Go API proxy + /hooks/github forward
+  apps/docs/         # Starlight customer docs
+  cmd/server/        # Go: the release-ops binary — app server, `worker` and `admin` subcommands
+  internal/          # Go packages (api, store, crypto, queue, worker, ticket providers)
+  docker/            # entrypoint.sh (app image)
+  Dockerfile         # App image: Next standalone + Go binary; worker image: pinned Renovate base + Go binary
+  migrations/        # sqlite-migrate-generated SQL only (embedded; the app applies them on startup)
   db/schema.sql      # Canonical DDL — edit then make db-migration
   scripts/ci/        # create-draft-release.mjs
   .github/workflows/ # pr, dev, main, release + reusable workflows
   VERSION            # Semver — release tag v{VERSION} on main bump
-  docs/              # This specification
-  docker-compose.yml # Single service: release-ops</code></pre>
+  docs/              # Specification, stack, threat model
+  docker-compose.yml # Two services: app and worker</code></pre>
 
-  <h2>Backend — Go</h2>
+  <h2>Update engine — worker</h2>
   <table>
     <tr><th>Tool</th><th>Why</th></tr>
-    <tr><td><code>Go 1.26+</code></td><td>API + background polling in one process; small binary in the container image.</td></tr>
-    <tr><td><code>chi</code></td><td>HTTP router for the REST API (locked for MVP).</td></tr>
-    <tr><td><code>modernc.org/sqlite</code></td><td>SQLite driver without CGO — easier cross-builds in Docker (locked for MVP).</td></tr>
+    <tr><td>Renovate OSS (pinned)</td><td>The update engine: managers, datasources, grouping, presets, lockfile updates. Unmodified, AGPL-3.0-only, run as a child process under a second Unix user that cannot read the worker secret; the Renovate base tag can be overridden at build time at your own risk (<a href="specs.html#env">§9</a>).</td></tr>
+    <tr><td><code>release-ops worker</code> (Go)</td><td>Claims a job, asks the app for a one-hour installation token scoped to the target repository and the preset repositories, starts Renovate, posts the redacted result (<a href="specs.html#job-contract">§2.2</a>).</td></tr>
+    <tr><td>Global Renovate config</td><td>A file in git, fetched at job start from <code>GLOBAL_CONFIG_REPO</code> / <code>GLOBAL_CONFIG_REF</code> or mounted into the worker; shown read-only in the UI, never parsed (<a href="specs.html#renovate-config">§2.4</a>).</td></tr>
+    <tr><td><code>binarySource=install</code></td><td>Language tools are installed at run time; no Docker socket is mounted anywhere (<a href="specs.html#worker-defaults">§2.5</a>, <a href="specs.html#worker-egress">§2.6</a>).</td></tr>
+  </table>
+
+  <h2>Backend — Go (app)</h2>
+  <table>
+    <tr><th>Tool</th><th>Why</th></tr>
+    <tr><td><code>Go 1.26+</code></td><td>REST API, webhook handler, queue, PR-state sync, ticket engine, auth and the worker in one binary; small binary in the container images.</td></tr>
+    <tr><td><code>chi</code></td><td>HTTP router for the REST API and the internal listener.</td></tr>
+    <tr><td><code>modernc.org/sqlite</code></td><td>SQLite driver without CGO — easier cross-builds in Docker. WAL mode, one writer connection and a separate read pool (<a href="specs.html#sqlite-settings">§4.9</a>).</td></tr>
     <tr><td><code>sqlc</code></td><td>Typed queries from SQL — schema path <code>db/schema.sql</code>.</td></tr>
-    <tr><td><code>sqlite-migrate</code></td><td>Generates <code>migrations/*.sql</code> from <code>db/schema.sql</code> (<code>go tool sqlite-migrate</code>, pinned in <code>go.mod</code>) and applies them in the Go server on startup (SQLite, free).</td></tr>
-    <tr><td><code>robfig/cron</code></td><td>Poll scheduler — interval from <code>poll_interval_minutes</code> (locked for MVP).</td></tr>
-    <tr><td><code>golang.org/x/crypto/bcrypt</code></td><td>Password hashing for admin login.</td></tr>
-    <tr><td><code>github.com/alexedwards/scs/v2</code></td><td>Session cookies + SQLite session store.</td></tr>
-    <tr><td><code>github.com/containrrr/shoutrrr</code></td><td>Notifications to Slack, ntfy, Discord, … via URL schemes.</td></tr>
+    <tr><td><code>sqlite-migrate</code></td><td>Generates <code>migrations/*.sql</code> from <code>db/schema.sql</code> (<code>go tool sqlite-migrate</code>, pinned in <code>go.mod</code>) and applies them in the app on startup, after a <code>VACUUM INTO</code> snapshot.</td></tr>
+    <tr><td><code>github.com/alexedwards/scs/v2</code></td><td>Server-side sessions (cookie plus SQLite store) for GitHub sign-in (<a href="specs.html#session-model">§3.1</a>).</td></tr>
   </table>
 
   <h2>Frontend — Next.js + COSS</h2>
   <table>
     <tr><th>Tool</th><th>Why</th></tr>
-    <tr><td><code>Next.js 15</code> (App Router)</td><td>COSS UI; <code>/api/go/*</code> proxy to Go (forwards session cookies).</td></tr>
+    <tr><td><code>Next.js 15</code> (App Router)</td><td>COSS UI; <code>/api/go/*</code> proxy to Go (forwards session cookies); forwards <code>/hooks/github</code> to Go unchanged.</td></tr>
     <tr><td><code>React 19</code></td><td>COSS standard.</td></tr>
     <tr><td><code>Tailwind CSS v4</code></td><td>Required for COSS.</td></tr>
     <tr><td><code>@base-ui/react</code> + COSS registry</td><td>UI components per <code>.claude/skills/coss</code>.</td></tr>
@@ -100,22 +121,27 @@ pre code { background: none; border: none; padding: 0; color: var(--text); }
   <h2>Data</h2>
   <table>
     <tr><th>File</th><th>Contents</th></tr>
-    <tr><td><code>/data/app.db</code></td><td>Users, sessions, repos, integrations, ticket projects, notifications, poll runs — <a href="schema.html">schema</a></td></tr>
+    <tr><td><code>/data/app.db</code> (app volume)</td><td>GitHub users and sessions; instance and installation settings; the GitHub App (secrets encrypted), its installation and the synced repositories; ticket-system integrations and ticket projects; update PRs with their dependencies and tickets; the job queue, job history and webhook deliveries — <a href="specs.html#schema">spec §4</a>, <a href="schema.html">schema view</a>, canonical DDL in <code>db/schema.sql</code></td></tr>
+    <tr><td><code>/data/snapshots/</code> (app volume)</td><td><code>VACUUM INTO</code> snapshots the app writes before it applies pending migrations</td></tr>
+    <tr><td>Worker cache volume</td><td>Disposable per-slot Renovate caches. The worker has <strong>no <code>/data</code> volume and no database</strong>.</td></tr>
   </table>
-  <p>Single SQLite file on the volume; Go is the only writer (Next never opens the DB).</p>
+  <p>One SQLite file in WAL mode (with <code>app.db-wal</code> and <code>app.db-shm</code> beside it); the Go app is the only writer and Next never opens the DB. Backup and restore: <a href="specs.html#deployment">spec §10</a>.</p>
 
   <h2>Secrets</h2>
   <table>
     <tr><th>Tool</th><th>Why</th></tr>
-    <tr><td><code>AES-256-GCM</code> (Go <code>crypto/aes</code>)</td><td>Encrypt integration credentials and Shoutrrr URLs in <code>app.db</code>.</td></tr>
+    <tr><td><code>AES-256-GCM</code> (Go <code>crypto/aes</code>)</td><td>Encrypts, in <code>app.db</code>: the GitHub App's <strong>private key, client secret and webhook secret</strong>, and the <strong>integration credentials</strong> of the ticket systems (<a href="specs.html#schema">§4.8</a>). Decrypted only in the app's Go process; never returned by the API, never logged.</td></tr>
+    <tr><td><code>APP_ENCRYPTION_KEY</code></td><td>32-byte key (hex) for that encryption. Keep it with every backup.</td></tr>
     <tr><td><code>SESSION_SECRET</code></td><td>Session cookie signing (Go auth).</td></tr>
-    <tr><td><code>APP_ENCRYPTION_KEY</code></td><td>32-byte key (hex) for credential encryption.</td></tr>
+    <tr><td><code>WORKER_SECRET</code></td><td>Shared secret that authenticates the worker to the internal listener. Held by the worker process only; Renovate cannot read it. The worker never holds the encryption key or the App's private key.</td></tr>
+    <tr><td><code>SETUP_TOKEN</code></td><td>First-start setup token; only its SHA-256 hash is stored, single use (<a href="specs.html#setup-token">§3.2</a>).</td></tr>
+    <tr><td>Installation tokens</td><td>Minted in the app from an App JWT, valid about one hour, held in memory only, handed to the worker for the job it claimed.</td></tr>
   </table>
 
   <h2>Quality</h2>
   <table>
     <tr><th>Area</th><th>Tool</th></tr>
-    <tr><td>Go tests</td><td><code>go test</code>, <code>httptest</code>, provider mocks</td></tr>
+    <tr><td>Go tests</td><td><code>go test</code>, <code>httptest</code>, fakes (a fake GitHub for the update flow, fake ticket providers)</td></tr>
     <tr><td>Go lint</td><td><code>golangci-lint</code></td></tr>
     <tr><td>Web tests</td><td><code>vitest</code> + React Testing Library</td></tr>
     <tr><td>Web lint</td><td><code>eslint</code> + <code>prettier</code></td></tr>
@@ -125,31 +151,38 @@ pre code { background: none; border: none; padding: 0; color: var(--text); }
   <table>
     <tr><th>Tool</th><th>Why</th></tr>
     <tr><td>GitHub Actions</td><td>Branch entrypoints + reusable <code>workflow_call</code> (slugbase/pipewatch pattern).</td></tr>
-    <tr><td>GHCR</td><td>Single image <code>release-ops</code>: <code>dev</code> → <code>nightly</code> + SHA · release → <code>latest</code> + <code>v{VERSION}</code>.</td></tr>
+    <tr><td>GHCR</td><td>Two images, <code>release-ops</code> (app) and <code>release-ops-worker</code>, built and tagged together: <code>dev</code> → <code>nightly</code> + SHA · release → <code>latest</code> + <code>v{VERSION}</code> (<a href="specs.html#ci">§11.6</a>).</td></tr>
     <tr><td>Root <code>VERSION</code></td><td>Semver for the release tag on <code>main</code> (only on bump).</td></tr>
-    <tr><td><code>docker/build-push-action</code></td><td>Single-image build and push.</td></tr>
+    <tr><td><code>docker/build-push-action</code></td><td>Image build and push, once per image.</td></tr>
   </table>
 
   <h2>Deployment</h2>
   <table>
     <tr><th>Tool</th><th>Why</th></tr>
-    <tr><td><code>Docker</code> multi-stage</td><td><strong>One</strong> image <code>ghcr.io/{owner}/release-ops</code> — Coolify-compatible.</td></tr>
-    <tr><td><code>docker-compose</code></td><td>Single service <code>release-ops</code>, port 3000, volume <code>/data</code>.</td></tr>
+    <tr><td><code>Docker</code> multi-stage</td><td>Two images: the <strong>app</strong> <code>ghcr.io/{owner}/release-ops</code> (Next.js + Go) and the <strong>worker</strong> <code>ghcr.io/{owner}/release-ops-worker</code> (the pinned Renovate image plus the <code>release-ops</code> binary). Released with the same tag and upgraded together.</td></tr>
+    <tr><td><code>docker-compose</code></td><td>Two services: <code>app</code> (port 3000, volume <code>/data</code>, the internal listener on the Compose network only) and <code>worker</code> (outbound only, a cache volume, no <code>/data</code>). <strong>No Docker socket.</strong> Reference file: <a href="specs.html#deployment">spec §10</a>.</td></tr>
+    <tr><td>Public URL</td><td><code>APP_URL</code> (required, browser-facing) and <code>WEBHOOK_URL</code> (optional, reachable by GitHub). Recommended for seconds-level latency; without it the instance polls (degraded).</td></tr>
     <tr><td>GitHub Actions</td><td>CI — see <a href="specs.html#ci">Spec §11</a>.</td></tr>
   </table>
 
-  <h2>Intentionally not used (MVP)</h2>
+  <h2>Intentionally not used (v2)</h2>
   <ul>
-    <li><strong>No multi-container deploy</strong> — no separate <code>web</code> + <code>worker</code> Compose.</li>
-    <li><strong>No YAML config</strong> — everything via UI + <code>app.db</code>.</li>
-    <li><strong>No Node worker</strong> — polling only in Go.</li>
+    <li><strong>No Docker socket and no Docker-in-Docker</strong> — Renovate runs as a child process of the worker with <code>binarySource=install</code>.</li>
+    <li><strong>No database access from the worker</strong> — it has no data volume and reaches the app only through the internal listener.</li>
+    <li><strong>No modified Renovate and no Mend Renovate CE/EE images</strong> — stock open-source Renovate, pinned, as a separate process.</li>
+    <li><strong>No Shoutrrr and no notifications of its own</strong> — the ticket systems and GitHub already notify; failures show on the dashboard and in the metrics and health endpoints.</li>
+    <li><strong>No mail</strong> — no SMTP, no email addresses.</li>
+    <li><strong>No local accounts</strong> — no passwords, no <code>bcrypt</code>, no invitations or password reset, no <code>seed-admin</code>. GitHub is the only identity provider; roles (admin, viewer) are derived from GitHub, with no role editing in the UI.</li>
+    <li><strong>No poll scheduler</strong> — no <code>robfig/cron</code>, no poll interval. Webhooks drive runs; the fixed timers (hourly safety net, reconcile, reaper) are described in <a href="specs.html#domain">§5.7</a>; polling exists only as the degraded fallback without <code>WEBHOOK_URL</code>.</li>
+    <li><strong>No release monitoring and no source providers</strong> — GitLab, Gitea, Forgejo and Codeberg releases are not watched; tickets follow update PRs, not releases.</li>
+    <li><strong>No second platform in v2.0</strong> — GitHub only; GitLab, GitHub Enterprise Server and private-registry <code>hostRules</code> come later (<a href="specs.html#purpose">§1</a>).</li>
+    <li><strong>No Redis, and no Postgres in v2.0</strong> — SQLite in WAL mode is enough for one self-hosted instance; the queue interface leaves room for Postgres in a later hosted deployment.</li>
+    <li><strong>No YAML config for the app</strong> — everything via UI + <code>app.db</code>; Renovate's own global config is a file in git, shown read-only.</li>
     <li><strong>No Drizzle</strong> — Go stack uses sqlc + sqlite-migrate-generated migrations.</li>
-    <li><strong>No OAuth/social login</strong> in MVP — email/password via Go session auth.</li>
-    <li><strong>No Bitbucket / Azure DevOps</strong> — MVP: five source kinds; Kaneo + Jira + Linear tickets.</li>
-    <li><strong>No Redis/Postgres</strong> — SQLite is enough for single-instance self-host.</li>
+    <li><strong>No Bitbucket / Azure DevOps</strong> — tickets in Kaneo, Jira and Linear only.</li>
   </ul>
 
-  <p class="docnav"><a href="index.html">Docs</a> · <a href="specs.html">Spec</a> · <a href="stack.html">Stack</a> · <a href="schema.html">Schema</a></p>
+  <p class="docnav"><a href="index.html">Docs</a> · <a href="specs.html">Spec</a> · <a href="stack.html">Stack</a> · <a href="schema.html">Schema</a> · <a href="threat-model.md">Threat model</a></p>
 </div>
 </body>
 </html>

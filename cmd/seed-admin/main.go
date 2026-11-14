@@ -90,7 +90,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		}
 	}()
 
-	queries := storedb.New(db)
+	queries := storedb.New(db.Writer)
 	if err := auth.SeedAdminUser(ctx, queries, email, password); err != nil {
 		if errors.Is(err, auth.ErrUsersExist) {
 			return errors.New("seed-admin: users already exist")

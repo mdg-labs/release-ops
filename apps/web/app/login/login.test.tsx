@@ -86,6 +86,39 @@ describe("LoginForm", () => {
     ).toHaveAttribute("href", "/forgot-password");
   });
 
+  it("shows setup required with a link to /setup while no App is configured", async () => {
+    mockAgent
+      .get(ORIGIN)
+      .intercept({ path: "/api/go/api/v1/setup/status", method: "GET" })
+      .reply(200, { setupRequired: true });
+
+    renderLoginForm();
+
+    expect(await screen.findByText("auth.setupRequired")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "auth.goToSetup" }),
+    ).toHaveAttribute("href", "/setup");
+    expect(screen.queryByLabelText(/auth\.email/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "auth.signIn" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the sign-in form once setup is done", async () => {
+    mockAgent
+      .get(ORIGIN)
+      .intercept({ path: "/api/go/api/v1/setup/status", method: "GET" })
+      .reply(200, { setupRequired: false });
+
+    renderLoginForm();
+
+    await waitFor(() =>
+      expect(mockAgent.pendingInterceptors()).toHaveLength(0),
+    );
+    expect(screen.getByLabelText(/auth\.email/)).toBeInTheDocument();
+    expect(screen.queryByText("auth.setupRequired")).not.toBeInTheDocument();
+  });
+
   it("calls login mutation and redirects to / on success", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool

@@ -1,0 +1,27 @@
+Release Ops
+===========
+
+Release Ops is free software, licensed under the GNU Affero General Public
+License, version 3 (AGPL-3.0). The full licence text is in the LICENSE file of
+the source repository.
+
+Source code of Release Ops:
+  https://github.com/mdg-labs/release-ops
+
+Renovate
+--------
+
+Release Ops is powered by Renovate, which is licensed under the GNU Affero
+General Public License, version 3 (AGPL-3.0). The Release Ops worker image is
+built on the official Renovate image, pinned to version @RENOVATE_VERSION@, and
+runs Renovate unmodified as a separate process. The Renovate image carries
+Renovate's own licence information.
+
+Source code of Renovate @RENOVATE_VERSION@:
+  https://github.com/renovatebot/renovate/tree/@RENOVATE_VERSION@
+
+Licence text:
+  https://www.gnu.org/licenses/agpl-3.0.html
+
+Renovate is a project of its authors and contributors. Release Ops is not
+affiliated with or endorsed by them or by Mend.

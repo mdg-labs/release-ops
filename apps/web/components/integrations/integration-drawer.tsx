@@ -23,19 +23,16 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { toastManager } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api/client";
 import {
   INTEGRATION_KINDS,
   kindIsJira,
   kindRequiresBaseUrl,
-  kindTokenOptional,
   kindUsesApiKeyLabel,
   type IntegrationKind,
 } from "@/lib/integrations/kinds";
 import { buildIntegrationSecret } from "@/lib/integrations/secret";
-import { SOURCE_KINDS } from "@/lib/repos/source-kinds";
 import type { Integration } from "@/lib/query/types";
 
 type IntegrationDrawerMode = "create" | "edit";
@@ -50,7 +47,6 @@ type IntegrationDrawerProps = {
     name: string;
     baseUrl?: string | null;
     secret: string;
-    isDefault?: boolean;
   }) => Promise<Integration>;
   onUpdate: (
     id: string,
@@ -58,7 +54,6 @@ type IntegrationDrawerProps = {
       name: string;
       baseUrl?: string | null;
       secret?: string | null;
-      isDefault?: boolean;
     },
   ) => Promise<Integration>;
   onTest: (id: string) => Promise<{ success: boolean; message?: string }>;
@@ -87,14 +82,12 @@ export function IntegrationDrawer({
   const baseUrlId = useId();
   const emailId = useId();
   const secretId = useId();
-  const isDefaultId = useId();
 
-  const [kind, setKind] = useState<IntegrationKind>("github");
+  const [kind, setKind] = useState<IntegrationKind>(INTEGRATION_KINDS[0]);
   const [name, setName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [email, setEmail] = useState("");
   const [secret, setSecret] = useState("");
-  const [isDefault, setIsDefault] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const kindItems: KindOption[] = INTEGRATION_KINDS.map((value) => ({
@@ -105,10 +98,7 @@ export function IntegrationDrawer({
   const activeKind = mode === "edit" ? (integration?.kind ?? kind) : kind;
   const requiresBaseUrl = kindRequiresBaseUrl(activeKind);
   const showEmail = kindIsJira(activeKind);
-  const isSourceKind = (SOURCE_KINDS as readonly string[]).includes(activeKind);
-  const secretRequired =
-    !kindTokenOptional(activeKind) &&
-    (mode === "create" || !integration?.hasSecret);
+  const secretRequired = mode === "create" || !integration?.hasSecret;
   const emailRequired = mode === "create" || secret.trim() !== "";
   const secretLabel = kindUsesApiKeyLabel(activeKind)
     ? t("apiKey")
@@ -128,16 +118,14 @@ export function IntegrationDrawer({
       setBaseUrl(integration.baseUrl ?? "");
       setEmail("");
       setSecret("");
-      setIsDefault(integration.isDefault);
       return;
     }
 
-    setKind("github");
+    setKind(INTEGRATION_KINDS[0]);
     setName("");
     setBaseUrl("");
     setEmail("");
     setSecret("");
-    setIsDefault(false);
   }, [open, mode, integration]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -191,7 +179,6 @@ export function IntegrationDrawer({
           secret: trimmedSecret
             ? buildIntegrationSecret(activeKind, trimmedSecret, trimmedEmail)
             : "",
-          ...(isSourceKind ? { isDefault } : {}),
         });
       } else if (integration) {
         await onUpdate(integration.id, {
@@ -200,7 +187,6 @@ export function IntegrationDrawer({
           secret: trimmedSecret
             ? buildIntegrationSecret(activeKind, trimmedSecret, trimmedEmail)
             : null,
-          ...(isSourceKind ? { isDefault } : {}),
         });
       }
       onOpenChange(false);
@@ -380,24 +366,6 @@ export function IntegrationDrawer({
                 <FieldDescription>{t("secretEditHint")}</FieldDescription>
               ) : null}
             </Field>
-
-            {isSourceKind ? (
-              <Field name="isDefault">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex flex-col gap-1">
-                    <FieldLabel htmlFor={isDefaultId}>
-                      {t("isDefault")}
-                    </FieldLabel>
-                    <FieldDescription>{t("isDefaultHint")}</FieldDescription>
-                  </div>
-                  <Switch
-                    checked={isDefault}
-                    id={isDefaultId}
-                    onCheckedChange={setIsDefault}
-                  />
-                </div>
-              </Field>
-            ) : null}
           </SheetPanel>
           <SheetFooter variant="bare">
             {mode === "edit" && integration ? (

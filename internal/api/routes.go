@@ -1,15 +1,12 @@
 package api
 
 import (
-	"context"
-	"errors"
-	"os"
-	"strings"
-
 	"github.com/go-chi/chi/v5"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/api/handlers"
 	apimw "github.com/mdg-labs/release-ops/internal/api/middleware"
+	"github.com/mdg-labs/release-ops/internal/api/setup"
+	"github.com/mdg-labs/release-ops/internal/github"
 )
 
 // RegisterAll wires §7 REST endpoints on the /api/v1 subrouter.
@@ -17,8 +14,11 @@ import (
 // Route order:
 //  1. Session LoadAndSave middleware (all /api/v1/*)
 //  2. Public auth: POST /auth/login, GET /auth/session
-//  3. Protected group (RequireSession): logout, status, poll, settings,
-//     integrations, ticket-projects, repos, notification-targets
+//  3. Setup: GET /setup/status and POST /setup/session are public; GET /setup/session,
+//     POST /setup/manifest and GET /setup/callback require a setup session, which opens
+//     only the setup routes; GET /setup/installed is public
+//  4. Protected group (RequireSession): logout, status, settings, integrations,
+//     ticket-projects, users
 func RegisterAll(api chi.Router, deps *ServerDeps) {
 	if deps == nil || deps.Session == nil {
 		return
@@ -34,7 +34,7 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 
 	rateLimiter := apimw.NewRateLimiter()
 
-	appPublicURL := strings.TrimSpace(os.Getenv("APP_PUBLIC_URL"))
+	appURL := deps.AppURL
 
 	api.With(rateLimiter.Login).Post("/auth/login", authHandlers.Login)
 	api.Get("/auth/session", authHandlers.Session)
@@ -46,10 +46,31 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 		Queries:        deps.Queries,
 		TokenService:   auth.NewTokenService(deps.Queries),
 		Mailer:         deps.Mailer,
-		AppPublicURL:   appPublicURL,
+		AppPublicURL:   appURL,
 	}
 	api.With(rateLimiter.ForgotPassword).Post("/auth/forgot-password", passwordResetHandlers.ForgotPassword)
 	api.With(rateLimiter.ResetPassword).Post("/auth/reset-password", passwordResetHandlers.ResetPassword)
+
+	setupHandlers := &setup.Handlers{
+		Sessions:      deps.Session,
+		Queries:       deps.Queries,
+		AppURL:        appURL,
+		WebhookURL:    deps.WebhookURL,
+		GitHubBaseURL: deps.GitHubBaseURL,
+	}
+	api.With(rateLimiter.SetupStatus).Get("/setup/status", setupHandlers.Status)
+	api.With(rateLimiter.SetupSession).Post("/setup/session", setupHandlers.CreateSession)
+	api.With(setupHandlers.RequireSession).Get("/setup/session", setupHandlers.GetSession)
+	if deps.Store != nil && deps.GitHub != nil {
+		setupHandlers.Apps = deps.Store.GitHubApp()
+		setupHandlers.Converter = deps.GitHub
+		// Each manifest-flow route is limited on its own, 10 a minute per client address.
+		api.With(apimw.NewRateLimiter().SetupSession, setupHandlers.RequireSession).Post("/setup/manifest", setupHandlers.Manifest)
+		api.With(apimw.NewRateLimiter().SetupSession, setupHandlers.RequireCallbackSession).Get("/setup/callback", setupHandlers.Callback)
+		setupHandlers.Installations = deps.Store.Installations()
+		setupHandlers.Installer = github.NewAppClient(deps.GitHub, deps.Store.GitHubApp(), github.AppClientOptions{})
+		api.With(apimw.NewRateLimiter().SetupSession).Get("/setup/installed", setupHandlers.Installed)
+	}
 
 	api.Group(func(protected chi.Router) {
 		protected.Use(apimw.RequireSession(deps.Session))
@@ -59,30 +80,15 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 			return
 		}
 
-		registerProtectedAPIRoutes(protected, deps, appPublicURL, rateLimiter)
+		registerProtectedAPIRoutes(protected, deps, appURL, rateLimiter)
 	})
 }
 
-func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appPublicURL string, rateLimiter *apimw.RateLimiter) {
+func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appURL string, rateLimiter *apimw.RateLimiter) {
 	st := deps.Store
-	pollRunner := deps.PollRunner
-	if pollRunner == nil {
-		pollRunner = noopPollRunner{}
-	}
 
 	settingsHandlers := &handlers.SettingsHandlers{Settings: st.Settings()}
-	statusHandlers := &handlers.StatusHandlers{
-		Settings:       st.Settings(),
-		Repos:          st.Repos(),
-		TicketProjects: st.TicketProjects(),
-		Integrations:   st.Integrations(),
-		Poll:           st.Poll(),
-		Runner:         pollRunner,
-	}
-	pollHandlers := &handlers.PollHandlers{
-		Poll:   st.Poll(),
-		Runner: pollRunner,
-	}
+	statusHandlers := &handlers.StatusHandlers{}
 	integrationHandlers := &handlers.IntegrationHandlers{
 		Integrations: st.Integrations(),
 		Tester:       deps.IntegrationTester,
@@ -93,31 +99,22 @@ func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appPubli
 	ticketProjectHandlers := &handlers.TicketProjectHandlers{
 		TicketProjects: st.TicketProjects(),
 	}
-	repoHandlers := &handlers.RepoHandlers{Repos: st.Repos()}
-	notificationHandlers := &handlers.NotificationHandlers{
-		Notifications: st.Notifications(),
-		Tester:        deps.NotificationTester,
-	}
 	tokenService := auth.NewTokenService(deps.Queries)
 	userHandlers := &handlers.UsersHandlers{
 		Queries:        deps.Queries,
 		SessionManager: deps.Session,
 		TokenService:   tokenService,
 		Mailer:         deps.Mailer,
-		AppPublicURL:   appPublicURL,
+		AppPublicURL:   appURL,
 	}
 	invitationHandlers := &handlers.InvitationHandlers{
 		Queries:      deps.Queries,
 		TokenService: tokenService,
 		Mailer:       deps.Mailer,
-		AppPublicURL: appPublicURL,
+		AppPublicURL: appURL,
 	}
 
 	protected.Get("/status", statusHandlers.Get)
-
-	protected.Post("/poll/trigger", pollHandlers.Trigger)
-	protected.Get("/poll/runs", pollHandlers.ListRuns)
-	protected.Get("/poll/runs/{id}", pollHandlers.GetRun)
 
 	protected.Get("/settings", settingsHandlers.Get)
 	protected.Patch("/settings", settingsHandlers.Patch)
@@ -138,17 +135,6 @@ func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appPubli
 	protected.Patch("/ticket-projects/{id}", ticketProjectHandlers.Patch)
 	protected.Delete("/ticket-projects/{id}", ticketProjectHandlers.Delete)
 
-	protected.Get("/repos", repoHandlers.List)
-	protected.Post("/repos", repoHandlers.Create)
-	protected.Patch("/repos/{id}", repoHandlers.Patch)
-	protected.Delete("/repos/{id}", repoHandlers.Delete)
-
-	protected.Get("/notification-targets", notificationHandlers.List)
-	protected.Post("/notification-targets", notificationHandlers.Create)
-	protected.Patch("/notification-targets/{id}", notificationHandlers.Patch)
-	protected.Delete("/notification-targets/{id}", notificationHandlers.Delete)
-	protected.Post("/notification-targets/{id}/test", notificationHandlers.Test)
-
 	protected.Get("/users", userHandlers.List)
 	protected.Delete("/users/{id}", userHandlers.Delete)
 	protected.Post("/users/me/email-change-request", userHandlers.EmailChangeRequest)
@@ -157,14 +143,4 @@ func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appPubli
 	protected.Post("/users/invitations", invitationHandlers.Create)
 	protected.Delete("/users/invitations/{id}", invitationHandlers.Delete)
 	protected.Post("/users/invitations/{id}/send-email", invitationHandlers.SendEmail)
-}
-
-type noopPollRunner struct{}
-
-func (noopPollRunner) Trigger(_ context.Context) (string, error) {
-	return "", errors.New("poll runner not configured")
-}
-
-func (noopPollRunner) IsPolling() bool {
-	return false
 }

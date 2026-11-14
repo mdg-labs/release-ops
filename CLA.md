@@ -2,7 +2,7 @@
 
 > **Note:** This is a template adapted from the Apache Software Foundation Individual Contributor License Agreement (v2.2). It is not legal advice; the project owner should have it reviewed by a lawyer before enforcing it.
 
-Thank you for your interest in Release Ops (the "Project"), maintained by Michael Guggenbichler (MDG Labs) (the "Maintainer"). This Contributor License Agreement ("Agreement") clarifies the intellectual property license granted with Contributions from any person to the Maintainer. It protects you as a Contributor as well as the Maintainer and the Project's users, and it lets the Maintainer offer the Project under licenses other than the one it is published under today (for example, a hosted or commercial edition). It does not change your rights to use your own Contributions for any other purpose.
+Thank you for your interest in Release Ops (the "Project"), maintained by Michael David Guggenbichler (MDG Labs) (the "Maintainer"). This Contributor License Agreement ("Agreement") clarifies the intellectual property license granted with Contributions from any person to the Maintainer. It protects you as a Contributor as well as the Maintainer and the Project's users, and it lets the Maintainer offer the Project under licenses other than the one it is published under today (for example, a hosted or commercial edition). It does not change your rights to use your own Contributions for any other purpose.
 
 You accept and agree to the following terms and conditions for Your present and future Contributions submitted to the Maintainer. Except for the licenses granted herein to the Maintainer and recipients of software distributed by the Maintainer, You reserve all right, title, and interest in and to Your Contributions.
 

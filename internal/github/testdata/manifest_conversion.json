@@ -1,0 +1,28 @@
+{
+  "id": 1234567,
+  "slug": "release-ops-acme",
+  "node_id": "A_fixtureNodeId",
+  "owner": {
+    "login": "acme",
+    "id": 4242,
+    "node_id": "O_fixtureNodeId",
+    "type": "Organization",
+    "site_admin": false
+  },
+  "name": "Release Ops",
+  "description": "",
+  "external_url": "https://release-ops.example.com",
+  "html_url": "https://github.com/apps/release-ops-acme",
+  "created_at": "2026-11-14T12:00:00Z",
+  "updated_at": "2026-11-14T12:00:00Z",
+  "permissions": {
+    "contents": "write",
+    "metadata": "read",
+    "merge_queues": "write"
+  },
+  "events": ["push", "pull_request", "issues"],
+  "client_id": "fixture-client-id",
+  "client_secret": "fixture-client-secret-value",
+  "webhook_secret": "fixture-webhook-secret-value",
+  "pem": "-----BEGIN RSA PRIVATE KEY-----\nfixture-private-key-body\n-----END RSA PRIVATE KEY-----\n"
+}

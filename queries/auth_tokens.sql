@@ -125,3 +125,27 @@ SET used_at = ?
 WHERE kind = 'email_change'
   AND email = ?
   AND used_at IS NULL;
+
+-- name: DeleteSetupTokens :exec
+DELETE FROM auth_tokens
+WHERE kind = 'setup';
+
+-- name: GetUnusedSetupToken :one
+SELECT
+  id,
+  kind,
+  email,
+  token_hash,
+  new_email,
+  invited_by_user_id,
+  expires_at,
+  used_at,
+  created_at
+FROM auth_tokens
+WHERE kind = 'setup'
+  AND used_at IS NULL
+ORDER BY created_at DESC
+LIMIT 1;
+
+-- name: CountGitHubApp :one
+SELECT COUNT(*) FROM github_app;

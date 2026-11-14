@@ -1,10 +1,10 @@
-name: Build and push image
+name: Build and push images
 
 on:
   workflow_call:
     inputs:
       tags:
-        description: Newline-separated image tags (without registry prefix)
+        description: Newline-separated image tags (without registry prefix), applied to the app and the worker image
         required: true
         type: string
       ref:
@@ -13,16 +13,25 @@ on:
         type: string
         default: ""
       version:
-        description: Version stamped into the image (release tag or nightly-<short sha>); empty builds as dev
+        description: Version stamped into both images (release tag or nightly-<short sha>); empty builds as dev
         required: false
         type: string
         default: ""
 
 jobs:
   build:
+    name: Build ${{ matrix.image }}
     runs-on: ubuntu-latest
     permissions:
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: release-ops
+            target: runtime
+          - image: release-ops-worker
+            target: worker
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,7 +51,7 @@ jobs:
         env:
           INPUT_TAGS: ${{ inputs.tags }}
         run: |
-          image="ghcr.io/${{ github.repository_owner }}/release-ops"
+          image="ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}"
           tags=""
           while IFS= read -r tag; do
             tag="${tag//[[:space:]]/}"
@@ -62,9 +71,10 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          target: ${{ matrix.target }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           build-args: |
             APP_VERSION=${{ inputs.version }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/release-ops:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/release-ops:buildcache,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:buildcache,mode=max

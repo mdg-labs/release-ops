@@ -13,9 +13,17 @@ func validEnv(t *testing.T) {
 	t.Setenv("GO_INTERNAL_PORT", "")
 	t.Setenv("PORT", "")
 	t.Setenv("GO_API_URL", "")
-	t.Setenv("APP_PUBLIC_URL", "")
+	t.Setenv("APP_URL", "")
+	t.Setenv("WEBHOOK_URL", "")
+	t.Setenv("GITHUB_BASE_URL", "")
+	t.Setenv("SETUP_TOKEN", "")
 	t.Setenv("BOOTSTRAP_ADMIN_EMAIL", "")
 	t.Setenv("BOOTSTRAP_ADMIN_PASSWORD", "")
+	t.Setenv("INTERNAL_ADDR", "")
+	t.Setenv("WORKER_SECRET", "")
+	t.Setenv("PRESET_REPOSITORIES", "")
+	t.Setenv("GLOBAL_CONFIG_REPO", "")
+	t.Setenv("METRICS_ADDR", "")
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -69,27 +77,99 @@ func TestLoadMissingAppEncryptionKey(t *testing.T) {
 	}
 }
 
-func TestLoadAppPublicURLOptional(t *testing.T) {
+func TestLoadServerRequiresAppURL(t *testing.T) {
+	validEnv(t)
+
+	_, err := LoadServer()
+	if err == nil || !strings.Contains(err.Error(), "APP_URL") {
+		t.Fatalf("LoadServer() without APP_URL error = %v, want APP_URL mention", err)
+	}
+
+	t.Setenv("APP_URL", "https://release-ops.example.com/")
+	cfg, err := LoadServer()
+	if err != nil {
+		t.Fatalf("LoadServer() with APP_URL error = %v", err)
+	}
+	if cfg.AppURL != "https://release-ops.example.com" {
+		t.Errorf("AppURL = %q, want the value without its trailing slash", cfg.AppURL)
+	}
+	if !cfg.SecureCookies() {
+		t.Error("SecureCookies() = false for https APP_URL")
+	}
+
+	t.Setenv("APP_URL", "http://localhost:3000")
+	cfg, err = LoadServer()
+	if err != nil {
+		t.Fatalf("LoadServer() with http APP_URL error = %v", err)
+	}
+	if cfg.SecureCookies() {
+		t.Error("SecureCookies() = true for http APP_URL")
+	}
+}
+
+func TestLoadRejectsMalformedURLs(t *testing.T) {
+	for _, name := range []string{"APP_URL", "WEBHOOK_URL", "GITHUB_BASE_URL"} {
+		for _, value := range []string{"release-ops.example.com", "ftp://example.com", "https://"} {
+			validEnv(t)
+			t.Setenv(name, value)
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), name) {
+				t.Errorf("Load() with %s=%q error = %v, want %s mention", name, value, err, name)
+			}
+		}
+	}
+}
+
+func TestLoadWebhookAndGitHubURLs(t *testing.T) {
 	validEnv(t)
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.SecureCookies() {
-		t.Error("SecureCookies() = true with empty APP_PUBLIC_URL")
+	if cfg.WebhookURL != "" {
+		t.Errorf("WebhookURL = %q, want empty when unset", cfg.WebhookURL)
+	}
+	if cfg.GitHubBaseURL != "https://github.com" {
+		t.Errorf("GitHubBaseURL = %q, want the github.com default", cfg.GitHubBaseURL)
 	}
 
-	t.Setenv("APP_PUBLIC_URL", "https://release-ops.example.com")
+	t.Setenv("WEBHOOK_URL", "https://hooks.example.com/hooks/github")
+	t.Setenv("GITHUB_BASE_URL", "https://github.example.com/")
 	cfg, err = Load()
 	if err != nil {
-		t.Fatalf("Load() with APP_PUBLIC_URL error = %v", err)
+		t.Fatalf("Load() with URLs error = %v", err)
 	}
-	if cfg.AppPublicURL != "https://release-ops.example.com" {
-		t.Errorf("AppPublicURL = %q", cfg.AppPublicURL)
+	if cfg.WebhookURL != "https://hooks.example.com/hooks/github" {
+		t.Errorf("WebhookURL = %q", cfg.WebhookURL)
 	}
-	if !cfg.SecureCookies() {
-		t.Error("SecureCookies() = false for https APP_PUBLIC_URL")
+	if cfg.GitHubBaseURL != "https://github.example.com" {
+		t.Errorf("GitHubBaseURL = %q, want the value without its trailing slash", cfg.GitHubBaseURL)
+	}
+}
+
+func TestLoadSetupTokenMinimumStrength(t *testing.T) {
+	validEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.SetupToken != "" {
+		t.Errorf("SetupToken = %q, want empty when unset", cfg.SetupToken)
+	}
+
+	t.Setenv("SETUP_TOKEN", strings.Repeat("a", minSetupTokenLen-1))
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "SETUP_TOKEN") {
+		t.Fatalf("Load() with a short SETUP_TOKEN error = %v, want SETUP_TOKEN mention", err)
+	}
+
+	t.Setenv("SETUP_TOKEN", strings.Repeat("a", minSetupTokenLen))
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() with a long enough SETUP_TOKEN error = %v", err)
+	}
+	if cfg.SetupToken != strings.Repeat("a", minSetupTokenLen) {
+		t.Error("SetupToken not read from the environment")
 	}
 }
 
@@ -158,5 +238,84 @@ func TestLoadRejectsEnvExamplePlaceholders(t *testing.T) {
 	t.Setenv("SESSION_SECRET", exampleSessionSecret)
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "SESSION_SECRET") {
 		t.Fatalf("Load() error = %v, want placeholder SESSION_SECRET rejected", err)
+	}
+}
+
+func TestLoadPresetRepositories(t *testing.T) {
+	validEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(cfg.PresetRepositories) != 0 || len(cfg.JobTokenRepositories()) != 0 {
+		t.Errorf("unset presets = %v, want none", cfg.PresetRepositories)
+	}
+
+	t.Setenv("PRESET_REPOSITORIES", " acme/renovate-presets, ,Acme/RENOVATE-PRESETS,acme/other.repo_1 ")
+	t.Setenv("GLOBAL_CONFIG_REPO", "acme/renovate-global")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := strings.Join(cfg.PresetRepositories, ","); got != "acme/renovate-presets,acme/other.repo_1" {
+		t.Errorf("PresetRepositories = %q, want the trimmed list without blanks and repeats", got)
+	}
+	if got := strings.Join(cfg.JobTokenRepositories(), ","); got != "acme/renovate-presets,acme/other.repo_1,acme/renovate-global" {
+		t.Errorf("JobTokenRepositories() = %q, want the presets and then the global config repository", got)
+	}
+
+	t.Setenv("GLOBAL_CONFIG_REPO", "ACME/renovate-presets")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := strings.Join(cfg.JobTokenRepositories(), ","); got != "acme/renovate-presets,acme/other.repo_1" {
+		t.Errorf("JobTokenRepositories() = %q, want the global config repository listed once", got)
+	}
+}
+
+func TestLoadRejectsMalformedRepositoryLists(t *testing.T) {
+	for _, bad := range []string{"acme", "acme/", "/repo", "acme/repo/extra", "acme/re po", "https://github.com/acme/repo", "-acme/repo", "acme/.."} {
+		validEnv(t)
+		t.Setenv("PRESET_REPOSITORIES", "acme/ok,"+bad)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "PRESET_REPOSITORIES") {
+			t.Errorf("PRESET_REPOSITORIES with %q: error = %v, want a PRESET_REPOSITORIES error", bad, err)
+		}
+
+		validEnv(t)
+		t.Setenv("GLOBAL_CONFIG_REPO", bad)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "GLOBAL_CONFIG_REPO") {
+			t.Errorf("GLOBAL_CONFIG_REPO %q: error = %v, want a GLOBAL_CONFIG_REPO error", bad, err)
+		}
+	}
+}
+
+func TestLoadMetricsAddr(t *testing.T) {
+	for _, tc := range []struct {
+		name, env, want, wantErr string
+	}{
+		{"default is loopback", "", "127.0.0.1:9100", ""},
+		{"all interfaces on the compose network", ":9100", ":9100", ""},
+		{"explicit host", "10.0.0.5:9200", "10.0.0.5:9200", ""},
+		{"no port", "127.0.0.1", "", "METRICS_ADDR"},
+		{"non-numeric port", "127.0.0.1:metrics", "", "METRICS_ADDR"},
+		{"port out of range", ":70000", "", "METRICS_ADDR"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			validEnv(t)
+			t.Setenv("METRICS_ADDR", tc.env)
+
+			cfg, err := Load()
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("Load() = %v, want %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil || cfg.MetricsAddr != tc.want {
+				t.Fatalf("Load() = %+v, %v; want MetricsAddr %q", cfg, err, tc.want)
+			}
+		})
 	}
 }

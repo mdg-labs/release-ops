@@ -37,6 +37,7 @@ p.lede { color: var(--text-dim); font-size: 17px; max-width: 640px; }
 code { font-family: var(--mono); font-size: 0.88em; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; color: var(--teal); }
 ul { padding-left: 22px; }
 li { margin-bottom: 6px; }
+.tag.hist { color: var(--amber); border-color: var(--amber-dim); margin: 0 0 0 6px; vertical-align: middle; }
 .tag { display: inline-block; font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-dim); margin: 0 6px 6px 0; }
 </style>
 </head>
@@ -53,76 +54,88 @@ li { margin-bottom: 6px; }
   <a href="schema.html">schema</a>
 </nav>
 <div class="wrap">
-  <p class="eyebrow">Specification</p>
+  <p class="eyebrow">Specification · v2</p>
   <h1>Release Ops</h1>
   <p class="lede">
-    Self-hosted release monitor with a web UI: poll releases on GitHub, GitLab, Gitea, Forgejo, and Codeberg;
-    create tickets in Kaneo, Jira, or Linear when a real new release ships.
-    One Docker container for self-hosting — no multi-service Compose.
+    Self-hosted dependency updates as pull requests and tickets, powered by <a href="https://docs.renovatebot.com/">Renovate</a>.
+    One GitHub App runs Renovate for every repository it is installed on and opens the update PRs as its own bot user;
+    every update PR becomes a tracked ticket in Kaneo, Jira, or Linear; a dashboard lists open and merged update PRs.
+    Users sign in with GitHub and get an admin or viewer role. Two services in one Docker Compose project: the app and the Renovate worker.
   </p>
 
   <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">Documents</h2>
   <div class="linkgrid">
-    <a class="linkcard" href="getting-started.md">
-      <div class="t">🚀 Getting started</div>
-      <div class="d">Docker Compose setup, env vars, admin bootstrap, troubleshooting.</div>
-    </a>
     <a class="linkcard" href="specs.html">
-      <div class="t">📋 Product specification</div>
-      <div class="d">Architecture, schema, APIs, providers, UI, MVP acceptance criteria.</div>
+      <div class="t">📋 Product specification (v2)</div>
+      <div class="d">Update engine, setup and login, roles, data model, update PRs and tickets, APIs, UI, deployment, acceptance criteria.</div>
     </a>
     <a class="linkcard" href="stack.html">
       <div class="t">🧰 Tech stack</div>
-      <div class="d">Go, Next.js, COSS, session auth, SQLite, Docker.</div>
+      <div class="d">Pinned Renovate worker, Go, Next.js, COSS, SQLite in WAL mode with a persistent queue, two-service Compose.</div>
+    </a>
+    <a class="linkcard" href="threat-model.md">
+      <div class="t">🛡️ Threat model</div>
+      <div class="d">Attackers, trust boundaries and invariants — the yardstick for security review.</div>
     </a>
     <a class="linkcard" href="schema.html">
       <div class="t">🗄️ Database schema</div>
-      <div class="d">SQLite <code>app.db</code> — HTML view; canonical source: <code>db/schema.sql</code>.</div>
+      <div class="d">SQLite <code>app.db</code> — HTML view; canonical source: <code>db/schema.sql</code>. Data model: <a href="specs.html#schema">spec §4</a>.</div>
     </a>
-    <a class="linkcard" href="mvp-checklist.md">
-      <div class="t">✅ MVP checklist</div>
-      <div class="d">Sign-off against all 15 acceptance criteria.</div>
-    </a>
-    <a class="linkcard" href="roadmap.html">
-      <div class="t">🗺️ Implementation roadmap</div>
-      <div class="d">11 epics · 51 leaf tasks — full descriptions, spec backlinks, audit in <code>roadmap.json</code>.</div>
+    <a class="linkcard" href="getting-started.md">
+      <div class="t">🚀 Getting started</div>
+      <div class="d">Operator helper doc, being rewritten for v2 (two services, <code>/setup</code>). Until then the setup and deployment sections of the spec (<a href="specs.html#auth">§3</a>, <a href="specs.html#deployment">§10</a>) are authoritative.</div>
     </a>
   </div>
 
   <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">Spec precedence</h2>
   <ol>
-    <li><a href="specs.html">specs.html</a> — MVP contract</li>
+    <li><a href="specs.html">specs.html</a> — v2 contract (<a href="specs.html#architecture">update engine</a>, <a href="specs.html#auth">setup, login and roles</a>, <a href="specs.html#domain">update PRs and tickets</a>, <a href="specs.html#api">API</a>, <a href="specs.html#ui">UI</a>)</li>
     <li><a href="schema.html">schema.html</a> (browser view) · <a href="../db/schema.sql"><code>db/schema.sql</code></a> — database</li>
     <li><a href="stack.html">stack.html</a> — tooling</li>
+    <li><a href="index.html">index.html</a> — this hub</li>
   </ol>
+  <p><a href="threat-model.md">threat-model.md</a> is not part of the precedence: it is the security yardstick against which the code is reviewed.</p>
 
-  <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">MVP at a glance</h2>
+  <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">v2 at a glance</h2>
   <p>
+    <span class="tag">Renovate (pinned)</span>
+    <span class="tag">GitHub App</span>
     <span class="tag">Go</span>
-    <span class="tag">SQLite</span>
+    <span class="tag">SQLite (WAL)</span>
     <span class="tag">Next.js</span>
     <span class="tag">COSS</span>
-    <span class="tag">Go auth</span>
-    <span class="tag">GitHub</span>
-    <span class="tag">GitLab</span>
-    <span class="tag">Gitea</span>
-    <span class="tag">Forgejo</span>
-    <span class="tag">Codeberg</span>
     <span class="tag">Kaneo</span>
     <span class="tag">Jira</span>
     <span class="tag">Linear</span>
-    <span class="tag">Shoutrrr</span>
   </p>
   <ul>
-    <li>Sources: GitHub, GitLab, Gitea, Forgejo, Codeberg · Tickets: Kaneo, Jira, Linear (all from day 1)</li>
-    <li>Ticket integrations with <strong>multiple project/team targets</strong> — each with its own open/done/cancelled/superseded mapping</li>
-    <li>Open-ticket idempotency: default <code>supersede</code>; alternatives <code>merge</code> or <code>skip_if_open</code></li>
-    <li>Notifications via Shoutrrr (Slack, ntfy, …) — no custom chat integrations</li>
-    <li>Admin UI for repos, integrations, ticket projects, notifications, poll interval</li>
-    <li>CI: entrypoint workflows + reusable CI/release/image build (dev → nightly, main → VERSION draft, release → GHCR)</li>
-    <li>Baseline / skip / create — no ticket on first sight of a repo</li>
+    <li><strong>Update PRs</strong> from Renovate — stock open-source Renovate (AGPL-3.0, unmodified, pinned) as a separate process in the worker image; the bot user of the GitHub App authors the PRs (<a href="specs.html#architecture">§2</a>)</li>
+    <li><strong>One GitHub App per instance</strong>, created through the manifest flow on <code>/setup</code> with a first-start setup token; bot identity, webhook sender, and login provider (<a href="specs.html#auth">§3</a>)</li>
+    <li><strong>Runs within seconds</strong> — ticking a Renovate checkbox in a PR or in the Dependency Dashboard starts a job via the webhook; without <code>WEBHOOK_URL</code> the instance polls (degraded) (<a href="specs.html#triggers">§2.9</a>, <a href="specs.html#webhook-recovery">§2.11</a>)</li>
+    <li><strong>Tickets per update PR</strong> in Kaneo, Jira, or Linear — one ticket per PR, lifecycle follows the PR (updated, superseded, done on merge), with <strong>multiple project/team targets</strong> per integration, each with its own status mapping (<a href="specs.html#domain">§5</a>)</li>
+    <li><strong>Dashboard</strong> of open and recently merged update PRs, jobs with log excerpts and a Problems view (<a href="specs.html#ui">§8</a>)</li>
+    <li><strong>GitHub login</strong> with <strong>admin</strong> and <strong>viewer</strong> roles derived from organization and team membership (<a href="specs.html#roles">§3.7</a>)</li>
+    <li><strong>Two services</strong> — the worker has no database access, no data volume, and no Docker socket; only the app publishes a port (<a href="specs.html#deployment">§10</a>)</li>
+    <li>CI: entrypoint workflows + reusable CI/release/image build for both images (dev → nightly, main → VERSION draft, release → GHCR) (<a href="specs.html#ci">§11</a>)</li>
   </ul>
-  <p class="docnav"><a href="getting-started.md">Getting started</a> · <a href="index.html">Docs</a> · <a href="specs.html">Spec</a> · <a href="stack.html">Stack</a> · <a href="schema.html">Schema</a></p>
+
+  <h2 style="font-size:22px;margin:32px 0 14px;border-bottom:1px solid var(--border);padding-bottom:10px">v1 history</h2>
+  <p>These documents describe the v1 release monitor (watching upstream releases, Shoutrrr notifications, local accounts). They are kept for reference only and describe nothing in v2.</p>
+  <div class="linkgrid">
+    <a class="linkcard" href="roadmap.html">
+      <div class="t">🗺️ Implementation roadmap <span class="tag hist">v1 history</span></div>
+      <div class="d">The v1 plan: 11 epics · 51 leaf tasks. Not the v2 plan — GitHub issues are the live plan.</div>
+    </a>
+    <a class="linkcard" href="mvp-checklist.md">
+      <div class="t">✅ MVP checklist <span class="tag hist">v1 history</span></div>
+      <div class="d">Sign-off against the 15 acceptance criteria of the v1 release monitor. The v2 criteria are in <a href="specs.html#mvp">spec §12</a>.</div>
+    </a>
+    <a class="linkcard" href="README.md">
+      <div class="t">📁 Documentation sources <span class="tag hist">v1 history</span></div>
+      <div class="d">Notes on how the v1 docs were laid out and published; superseded by this hub.</div>
+    </a>
+  </div>
+  <p class="docnav"><a href="getting-started.md">Getting started</a> · <a href="index.html">Docs</a> · <a href="specs.html">Spec</a> · <a href="stack.html">Stack</a> · <a href="schema.html">Schema</a> · <a href="threat-model.md">Threat model</a></p>
 </div>
 </body>
 </html>

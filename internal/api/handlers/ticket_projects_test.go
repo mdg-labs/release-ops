@@ -28,7 +28,6 @@ const (
 
 type mockTicketProjectRepo struct {
 	items       map[string]*store.TicketProject
-	references  map[string]int64
 	createInput *store.CreateTicketProjectInput
 	updateInput *store.UpdateTicketProjectInput
 	createErr   error
@@ -37,7 +36,6 @@ type mockTicketProjectRepo struct {
 	getErr      error
 	updateErr   error
 	deleteErr   error
-	countErr    error
 }
 
 func (m *mockTicketProjectRepo) Create(_ context.Context, input store.CreateTicketProjectInput) (*store.TicketProject, error) {
@@ -140,13 +138,6 @@ func (m *mockTicketProjectRepo) Delete(_ context.Context, id string) error {
 	}
 	delete(m.items, id)
 	return nil
-}
-
-func (m *mockTicketProjectRepo) CountMonitoredRepos(_ context.Context, id string) (int64, error) {
-	if m.countErr != nil {
-		return 0, m.countErr
-	}
-	return m.references[id], nil
 }
 
 func newTicketProjectsTestRouter(t *testing.T, repo store.TicketProjectRepository) (http.Handler, *scs.SessionManager) {
@@ -612,7 +603,7 @@ func TestPatchTicketProjectNotFound(t *testing.T) {
 	}
 }
 
-func TestDeleteTicketProjectConflictWhenReferenced(t *testing.T) {
+func TestDeleteTicketProjectConflictWhenStoreReportsInUse(t *testing.T) {
 	t.Parallel()
 
 	repo := &mockTicketProjectRepo{
@@ -630,9 +621,7 @@ func TestDeleteTicketProjectConflictWhenReferenced(t *testing.T) {
 				UpdatedAt:          "2026-08-07T10:00:00.000Z",
 			},
 		},
-		references: map[string]int64{
-			"tp-1": 1,
-		},
+		deleteErr: store.ErrInUse,
 	}
 	router, sm := newTicketProjectsTestRouter(t, repo)
 	cookie := seedSession(t, sm)
@@ -670,9 +659,6 @@ func TestDeleteTicketProjectSucceedsWhenUnreferenced(t *testing.T) {
 				CreatedAt:          "2026-08-07T10:00:00.000Z",
 				UpdatedAt:          "2026-08-07T10:00:00.000Z",
 			},
-		},
-		references: map[string]int64{
-			"tp-1": 0,
 		},
 	}
 	router, sm := newTicketProjectsTestRouter(t, repo)

@@ -14,7 +14,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/mdg-labs/release-ops/internal/api/handlers"
+	"github.com/mdg-labs/release-ops/internal/github"
 	"github.com/mdg-labs/release-ops/internal/mail"
+	"github.com/mdg-labs/release-ops/internal/queue"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
@@ -23,14 +25,23 @@ const apiV1Prefix = "/api/v1"
 
 // ServerDeps holds dependencies for the production HTTP router.
 type ServerDeps struct {
-	DB                 *sql.DB
-	Session            *scs.SessionManager
-	Queries            *storedb.Queries
-	Store              *store.Store
-	PollRunner         handlers.PollRunner
-	IntegrationTester  handlers.IntegrationTester
-	NotificationTester handlers.NotificationTester
-	Mailer             mail.Mailer
+	DB                *sql.DB
+	Session           *scs.SessionManager
+	Queries           *storedb.Queries
+	Store             *store.Store
+	IntegrationTester handlers.IntegrationTester
+	Mailer            mail.Mailer
+	// AppURL is the browser-facing URL of the instance (APP_URL), used in the links of
+	// outgoing mail.
+	AppURL string
+	// WebhookURL is the configured WEBHOOK_URL, empty when unset, and GitHubBaseURL the
+	// configured GITHUB_BASE_URL; with GitHub they serve the manifest flow on /setup.
+	WebhookURL    string
+	GitHubBaseURL string
+	GitHub        *github.Client
+	// Queue is read by /readyz for the last worker contact. Without it the server is never
+	// ready.
+	Queue queue.Queue
 }
 
 // NewRouter builds the root HTTP handler with health and API routes.
@@ -53,6 +64,11 @@ func newBaseRouter(deps *ServerDeps) http.Handler {
 
 	api := MountAPI(r)
 	if deps != nil {
+		var db pinger
+		if deps.DB != nil {
+			db = deps.DB
+		}
+		r.Get("/readyz", Ready(db, deps.Queue, time.Now))
 		RegisterAll(api, deps)
 	}
 
@@ -69,16 +85,33 @@ func MountAPI(r chi.Router) chi.Router {
 	return api
 }
 
+// serverTimeouts bound how long a client may hold a connection. WriteTimeout is longer than
+// the 30-second outbound call of the connection-test endpoint, so that endpoint can answer.
+var serverTimeouts = struct{ readHeader, read, write, idle time.Duration }{
+	readHeader: 10 * time.Second,
+	read:       30 * time.Second,
+	write:      60 * time.Second,
+	idle:       2 * time.Minute,
+}
+
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: serverTimeouts.readHeader,
+		ReadTimeout:       serverTimeouts.read,
+		WriteTimeout:      serverTimeouts.write,
+		IdleTimeout:       serverTimeouts.idle,
+	}
+}
+
 // Serve listens on addr until ctx is cancelled, then shuts down gracefully.
 func Serve(ctx context.Context, addr string, handler http.Handler) error {
 	if host, _, err := net.SplitHostPort(addr); err == nil && host != "127.0.0.1" {
 		return errors.New("server must bind to 127.0.0.1 only")
 	}
 
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: handler,
-	}
+	srv := newHTTPServer(addr, handler)
 
 	errCh := make(chan error, 1)
 	go func() {

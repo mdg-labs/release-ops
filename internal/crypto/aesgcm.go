@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -15,6 +16,7 @@ const (
 	keyByteLen = 32
 	keyHexLen  = 64
 	nonceSize  = 12
+	keyIDBytes = 8
 )
 
 // ErrInvalidKey is returned when an encryption key is not 64 hex characters.
@@ -25,7 +27,8 @@ var ErrInvalidWireFormat = errors.New("invalid encrypted payload wire format")
 
 // Cipher encrypts and decrypts credential payloads for encrypted_payload columns.
 type Cipher struct {
-	aead cipher.AEAD
+	aead  cipher.AEAD
+	keyID string
 }
 
 // ParseKey decodes APP_ENCRYPTION_KEY: exactly 64 hexadecimal characters (32 bytes).
@@ -56,7 +59,20 @@ func NewCipher(key []byte) (*Cipher, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Cipher{aead: aead}, nil
+	return &Cipher{aead: aead, keyID: keyFingerprint(key)}, nil
+}
+
+// keyFingerprint is a short label for a key that reveals nothing usable about it: the first
+// eight bytes of SHA-256 over a domain-separated copy of the key, as hex.
+func keyFingerprint(key []byte) string {
+	sum := sha256.Sum256(append([]byte("release-ops/encryption-key-id/v1:"), key...))
+	return hex.EncodeToString(sum[:keyIDBytes])
+}
+
+// KeyID identifies the key this Cipher encrypts with. Stored next to a payload it shows which
+// key sealed it, so a key mismatch is detectable before decryption is attempted.
+func (c *Cipher) KeyID() string {
+	return c.keyID
 }
 
 // NewCipherFromHex creates a Cipher from a 64-character hex-encoded key.

@@ -3,12 +3,14 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -34,9 +36,6 @@ var expectedAPIRoutes = []string{
 	"POST /api/v1/auth/confirm-email-change",
 	"POST /api/v1/auth/logout",
 	"GET /api/v1/status",
-	"POST /api/v1/poll/trigger",
-	"GET /api/v1/poll/runs",
-	"GET /api/v1/poll/runs/{id}",
 	"GET /api/v1/settings",
 	"PATCH /api/v1/settings",
 	"GET /api/v1/integrations",
@@ -53,15 +52,6 @@ var expectedAPIRoutes = []string{
 	"POST /api/v1/ticket-projects",
 	"PATCH /api/v1/ticket-projects/{id}",
 	"DELETE /api/v1/ticket-projects/{id}",
-	"GET /api/v1/repos",
-	"POST /api/v1/repos",
-	"PATCH /api/v1/repos/{id}",
-	"DELETE /api/v1/repos/{id}",
-	"GET /api/v1/notification-targets",
-	"POST /api/v1/notification-targets",
-	"PATCH /api/v1/notification-targets/{id}",
-	"DELETE /api/v1/notification-targets/{id}",
-	"POST /api/v1/notification-targets/{id}/test",
 	"GET /api/v1/users",
 	"DELETE /api/v1/users/{id}",
 	"POST /api/v1/users/me/email-change-request",
@@ -112,6 +102,166 @@ func TestRegisterAllListsExpectedPaths(t *testing.T) {
 		if strings.Contains(path, "/auth/register") {
 			t.Fatalf("unexpected register route: %s", path)
 		}
+	}
+}
+
+func TestRemovedV1RoutesAreNotRegistered(t *testing.T) {
+	t.Parallel()
+
+	deps := newRoutesTestDeps(t)
+	seedRoutesTestUser(t, deps.Queries, "admin@example.com", "secret-pass")
+	seedAppSettingsRow(t, deps.DB)
+	srv := httptest.NewServer(NewServerRouter(deps))
+	t.Cleanup(srv.Close)
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar: %v", err)
+	}
+	client := &http.Client{Jar: jar}
+	loginResp, err := client.Post(
+		srv.URL+"/api/v1/auth/login",
+		"application/json",
+		strings.NewReader(`{"email":"admin@example.com","password":"secret-pass"}`),
+	)
+	if err != nil {
+		t.Fatalf("POST login: %v", err)
+	}
+	_ = loginResp.Body.Close()
+	if loginResp.StatusCode != http.StatusOK {
+		t.Fatalf("login status = %d, want %d", loginResp.StatusCode, http.StatusOK)
+	}
+
+	for _, route := range []string{
+		"POST /api/v1/poll/trigger",
+		"GET /api/v1/poll/runs",
+		"GET /api/v1/poll/runs/run-1",
+		"GET /api/v1/repos",
+		"POST /api/v1/repos",
+		"PATCH /api/v1/repos/repo-1",
+		"DELETE /api/v1/repos/repo-1",
+		"GET /api/v1/notification-targets",
+		"POST /api/v1/notification-targets",
+		"PATCH /api/v1/notification-targets/nt-1",
+		"DELETE /api/v1/notification-targets/nt-1",
+		"POST /api/v1/notification-targets/nt-1/test",
+	} {
+		parts := strings.SplitN(route, " ", 2)
+		req, err := http.NewRequest(parts[0], srv.URL+parts[1], nil)
+		if err != nil {
+			t.Fatalf("new request %s: %v", route, err)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("%s: %v", route, err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Fatalf("%s status = %d, want 404 or 405", route, resp.StatusCode)
+		}
+	}
+
+	statusResp, err := client.Get(srv.URL + "/api/v1/status")
+	if err != nil {
+		t.Fatalf("GET status: %v", err)
+	}
+	defer func() { _ = statusResp.Body.Close() }()
+	var status map[string]any
+	if err := json.NewDecoder(statusResp.Body).Decode(&status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if statusResp.StatusCode != http.StatusOK || len(status) != 1 || status["version"] == nil {
+		t.Fatalf("status = %d %v, want 200 with only version", statusResp.StatusCode, status)
+	}
+}
+
+// An update ticket references the ticket project it was created in, and the ticket
+// project references its integration; deleting either through the API must answer 409,
+// never 500.
+func TestDeleteReferencedRowReturnsConflict(t *testing.T) {
+	t.Parallel()
+
+	deps := newRoutesTestDeps(t)
+	ctx := context.Background()
+	seedRoutesTestUser(t, deps.Queries, "admin@example.com", "secret-pass")
+	seedAppSettingsRow(t, deps.DB)
+
+	integration, err := deps.Store.Integrations().Create(ctx, store.CreateIntegrationInput{
+		Kind:    "jira",
+		Name:    "Jira",
+		BaseURL: new("https://jira.example"),
+		Secret:  []byte(`{"email":"a@b.example","api_token":"tok"}`),
+	})
+	if err != nil {
+		t.Fatalf("Create integration: %v", err)
+	}
+	project, err := deps.Store.TicketProjects().Create(ctx, store.CreateTicketProjectInput{
+		IntegrationID:     integration.ID,
+		ExternalProjectID: "DEV",
+		Name:              "Jira DEV",
+		CreateConfig:      `{}`,
+		StatusMapping:     `{}`,
+	})
+	if err != nil {
+		t.Fatalf("Create ticket project: %v", err)
+	}
+	for _, stmt := range []string{
+		`INSERT INTO installations (id, github_installation_id, account_id, account_login, account_type, status, repository_selection, created_at, updated_at)
+		 VALUES ('inst-1', 1, 1, 'acme', 'Organization', 'active', 'all', 't', 't')`,
+		`INSERT INTO repositories (id, installation_id, github_repository_id, full_name, default_branch, created_at, updated_at)
+		 VALUES ('repo-1', 'inst-1', 1, 'acme/api', 'main', 't', 't')`,
+		`INSERT INTO update_prs (id, repository_id, number, node_id, url, title, head_ref, state, last_seen_at, created_at, updated_at)
+		 VALUES ('pr-1', 'repo-1', 1, 'node', 'https://example.test/pr/1', 'Update dep', 'renovate/dep', 'open', 't', 't', 't')`,
+		`INSERT INTO update_tickets (id, update_pr_id, ticket_project_id, state, created_at, updated_at)
+		 VALUES ('ut-1', 'pr-1', '` + project.ID + `', 'pending', 't', 't')`,
+	} {
+		if _, err := deps.DB.Exec(stmt); err != nil {
+			t.Fatalf("seed update ticket rows: %v", err)
+		}
+	}
+
+	srv := httptest.NewServer(NewServerRouter(deps))
+	t.Cleanup(srv.Close)
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar: %v", err)
+	}
+	client := &http.Client{Jar: jar}
+	loginResp, err := client.Post(
+		srv.URL+"/api/v1/auth/login",
+		"application/json",
+		strings.NewReader(`{"email":"admin@example.com","password":"secret-pass"}`),
+	)
+	if err != nil {
+		t.Fatalf("POST login: %v", err)
+	}
+	_ = loginResp.Body.Close()
+
+	del := func(path string) int {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodDelete, srv.URL+path, nil)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("DELETE %s: %v", path, err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	if got := del("/api/v1/ticket-projects/" + project.ID); got != http.StatusConflict {
+		t.Fatalf("delete referenced ticket project status = %d, want %d", got, http.StatusConflict)
+	}
+	if _, err := deps.Store.TicketProjects().Get(ctx, project.ID); err != nil {
+		t.Fatalf("ticket project missing after refused delete: %v", err)
+	}
+	if got := del("/api/v1/integrations/" + integration.ID); got != http.StatusConflict {
+		t.Fatalf("delete referenced integration status = %d, want %d", got, http.StatusConflict)
+	}
+	if _, err := deps.Store.Integrations().Get(ctx, integration.ID); err != nil {
+		t.Fatalf("integration missing after refused delete: %v", err)
 	}
 }
 
@@ -179,15 +329,48 @@ func TestPublicAuthRoutesAccessibleWithoutSession(t *testing.T) {
 	}
 }
 
+func TestLoginRateLimitIgnoresClientSuppliedForwardedForHops(t *testing.T) {
+	t.Parallel()
+
+	handler := NewServerRouter(newRoutesTestDeps(t))
+
+	// The proxy's own hop is 203.0.113.9; the hop in front of it is whatever the client
+	// sent, and rotating it must not open a fresh bucket.
+	var last int
+	for i := 0; i < 11; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"email":"wrong@example.com","password":"bad"}`))
+		req.RemoteAddr = "127.0.0.1:40000"
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", "198.51.100."+strconv.Itoa(i)+", 203.0.113.9")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		last = rec.Code
+	}
+	if last != http.StatusTooManyRequests {
+		t.Fatalf("11th login status = %d, want %d", last, http.StatusTooManyRequests)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"email":"wrong@example.com","password":"bad"}`))
+	req.RemoteAddr = "127.0.0.1:40000"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code == http.StatusTooManyRequests {
+		t.Fatalf("a different proxy-supplied address shares the exhausted bucket")
+	}
+}
+
 func TestIntegrationTestConnectionWithRealTester(t *testing.T) {
 	t.Parallel()
 
+	wantAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin@example.com:jira_route_test"))
 	mockProvider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v4/user" {
-			t.Fatalf("path = %q, want /api/v4/user", r.URL.Path)
+		if r.URL.Path != "/rest/api/3/myself" {
+			t.Fatalf("path = %q, want /rest/api/3/myself", r.URL.Path)
 		}
-		if r.Header.Get("PRIVATE-TOKEN") != "glpat_route_test" {
-			t.Fatalf("PRIVATE-TOKEN = %q", r.Header.Get("PRIVATE-TOKEN"))
+		if r.Header.Get("Authorization") != wantAuth {
+			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -197,10 +380,10 @@ func TestIntegrationTestConnectionWithRealTester(t *testing.T) {
 	deps.IntegrationTester = integrationtester.New(mockProvider.Client())
 
 	created, err := deps.Store.Integrations().Create(context.Background(), store.CreateIntegrationInput{
-		Kind:    "gitlab",
-		Name:    "GitLab Route Test",
+		Kind:    "jira",
+		Name:    "Jira Route Test",
 		BaseURL: &mockProvider.URL,
-		Secret:  []byte(`{"token":"glpat_route_test"}`),
+		Secret:  []byte(`{"email":"admin@example.com","api_token":"jira_route_test"}`),
 	})
 	if err != nil {
 		t.Fatalf("Create integration: %v", err)
@@ -301,11 +484,11 @@ func newRoutesTestDeps(t *testing.T) *ServerDeps {
 		t.Fatalf("NewCipherFromHex: %v", err)
 	}
 
-	sm := auth.NewSessionManager(db, strings.Repeat("s", 32), false)
+	sm := auth.NewSessionManager(db.Writer, strings.Repeat("s", 32), false)
 	return &ServerDeps{
-		DB:      db,
+		DB:      db.Writer,
 		Session: sm,
-		Queries: storedb.New(db),
+		Queries: storedb.New(db.Writer),
 		Store:   store.New(db, cipher),
 		Mailer:  mail.NoopMailer{},
 	}
@@ -334,7 +517,7 @@ func seedAppSettingsRow(t *testing.T, db *sql.DB) {
 	t.Helper()
 
 	_, err := db.Exec(
-		`INSERT INTO app_settings (id, poll_interval_minutes, updated_at) VALUES (1, 360, ?)`,
+		`INSERT INTO app_settings (id, updated_at) VALUES (1, ?)`,
 		"2026-08-06T12:00:00.000Z",
 	)
 	if err != nil {
@@ -342,7 +525,7 @@ func seedAppSettingsRow(t *testing.T, db *sql.DB) {
 	}
 }
 
-func openRoutesTestDB(t *testing.T) *sql.DB {
+func openRoutesTestDB(t *testing.T) *store.DB {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -350,18 +533,14 @@ func openRoutesTestDB(t *testing.T) *sql.DB {
 	return openRoutesTestDBAt(t, dbPath)
 }
 
-func openRoutesTestDBAt(t *testing.T, dbPath string) *sql.DB {
+func openRoutesTestDBAt(t *testing.T, dbPath string) *store.DB {
 	t.Helper()
 
 	storetest.Migrate(t, dbPath)
 
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?_foreign_keys=on")
+	db, err := store.OpenPath(dbPath)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	if err := db.Ping(); err != nil {
-		_ = db.Close()
-		t.Fatalf("ping sqlite: %v", err)
+		t.Fatalf("OpenPath: %v", err)
 	}
 	return db
 }

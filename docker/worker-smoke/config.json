@@ -1,0 +1,5 @@
+{
+  "allowedCommands": ["^/opt/renovate-tools/hello\\.sh$"],
+  "onboarding": false,
+  "requireConfig": "required"
+}

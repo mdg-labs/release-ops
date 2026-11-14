@@ -5,15 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 
-	"github.com/mdg-labs/release-ops/internal/providers/source"
 	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 	"github.com/mdg-labs/release-ops/internal/store"
+	"github.com/mdg-labs/release-ops/internal/store/db"
 )
 
-func TestGetAppSettingsPollInterval(t *testing.T) {
+func TestGetAppSettingsTokenWindowDefaults(t *testing.T) {
 	t.Parallel()
 
 	s, _ := testStore(t)
@@ -26,11 +25,8 @@ func TestGetAppSettingsPollInterval(t *testing.T) {
 	if got.ID != 1 {
 		t.Fatalf("ID = %d, want 1", got.ID)
 	}
-	if got.PollIntervalMinutes < 5 {
-		t.Fatalf("poll_interval_minutes = %d, want >= 5", got.PollIntervalMinutes)
-	}
-	if got.PollIntervalMinutes != 360 {
-		t.Fatalf("poll_interval_minutes = %d, want default 360", got.PollIntervalMinutes)
+	if got.InviteTokenExpiryHours != 168 || got.PasswordResetTokenExpiryMinutes != 60 {
+		t.Fatalf("settings = %+v, want default 168 hours and 60 minutes", got)
 	}
 }
 
@@ -41,9 +37,9 @@ func TestIntegrationCRUDRoundtrip(t *testing.T) {
 	ctx := context.Background()
 
 	created, err := s.Integrations().Create(ctx, store.CreateIntegrationInput{
-		Kind:   "github",
-		Name:   "GitHub CI",
-		Secret: []byte(`{"token":"ghp_roundtrip"}`),
+		Kind:   "linear",
+		Name:   "Linear CI",
+		Secret: []byte(`{"api_key":"lin_roundtrip"}`),
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -53,8 +49,8 @@ func TestIntegrationCRUDRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if got.Name != "GitHub CI" || got.Kind != "github" {
-		t.Fatalf("Get = %+v, want GitHub CI github", got)
+	if got.Name != "Linear CI" || got.Kind != "linear" {
+		t.Fatalf("Get = %+v, want Linear CI linear", got)
 	}
 
 	all, err := s.Integrations().List(ctx)
@@ -66,14 +62,14 @@ func TestIntegrationCRUDRoundtrip(t *testing.T) {
 	}
 
 	updated, err := s.Integrations().Update(ctx, created.ID, store.UpdateIntegrationInput{
-		Name:   "GitHub Production",
-		Secret: []byte(`{"token":"ghp_updated"}`),
+		Name:   "Linear Production",
+		Secret: []byte(`{"api_key":"lin_updated"}`),
 	})
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	if updated.Name != "GitHub Production" {
-		t.Fatalf("updated Name = %q, want GitHub Production", updated.Name)
+	if updated.Name != "Linear Production" {
+		t.Fatalf("updated Name = %q, want Linear Production", updated.Name)
 	}
 
 	if err := s.Integrations().Delete(ctx, created.ID); err != nil {
@@ -93,14 +89,14 @@ func TestIntegrationWithoutSecretReportsNoSecret(t *testing.T) {
 	ctx := context.Background()
 
 	created, err := s.Integrations().Create(ctx, store.CreateIntegrationInput{
-		Kind: "github",
-		Name: "Public GitHub",
+		Kind: "linear",
+		Name: "Linear",
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if created.HasSecret {
-		t.Fatal("created.HasSecret = true, want false for an integration without a token")
+		t.Fatal("created.HasSecret = true, want false for an integration without a secret")
 	}
 
 	listed, err := s.Integrations().List(ctx)
@@ -115,12 +111,8 @@ func TestIntegrationWithoutSecretReportsNoSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecryptPayload: %v", err)
 	}
-	token, err := source.ParseTokenSecret(payload)
-	if err != nil {
-		t.Fatalf("ParseTokenSecret: %v", err)
-	}
-	if token != "" {
-		t.Fatalf("token = %q, want empty (unauthenticated)", token)
+	if len(payload) != 0 {
+		t.Fatalf("payload = %q, want empty", payload)
 	}
 
 	// A payload-less integration is never a usable ticket integration.
@@ -129,6 +121,9 @@ func TestIntegrationWithoutSecretReportsNoSecret(t *testing.T) {
 	}
 	if _, err := ticket.ParseKaneoSecret(payload); err == nil {
 		t.Fatal("ParseKaneoSecret accepted an empty payload")
+	}
+	if _, err := ticket.ParseLinearSecret(payload); err == nil {
+		t.Fatal("ParseLinearSecret accepted an empty payload")
 	}
 
 	renamed, err := s.Integrations().Update(ctx, created.ID, store.UpdateIntegrationInput{Name: "Renamed"})
@@ -139,22 +134,83 @@ func TestIntegrationWithoutSecretReportsNoSecret(t *testing.T) {
 		t.Fatal("HasSecret = true after an update without a secret, want false")
 	}
 
-	withToken, err := s.Integrations().Update(ctx, created.ID, store.UpdateIntegrationInput{
+	withKey, err := s.Integrations().Update(ctx, created.ID, store.UpdateIntegrationInput{
 		Name:   "Renamed",
-		Secret: []byte(`{"token":"ghp_added"}`),
+		Secret: []byte(`{"api_key":"lin_added"}`),
 	})
 	if err != nil {
 		t.Fatalf("Update with secret: %v", err)
 	}
-	if !withToken.HasSecret {
-		t.Fatal("HasSecret = false after adding a token, want true")
+	if !withKey.HasSecret {
+		t.Fatal("HasSecret = false after adding a key, want true")
 	}
 	payload, err = s.Integrations().DecryptPayload(ctx, created.ID)
 	if err != nil {
 		t.Fatalf("DecryptPayload after update: %v", err)
 	}
-	if token, _ := source.ParseTokenSecret(payload); token != "ghp_added" {
-		t.Fatalf("token = %q, want ghp_added", token)
+	if key, _ := ticket.ParseLinearSecret(payload); key != "lin_added" {
+		t.Fatalf("key = %q, want lin_added", key)
+	}
+}
+
+// updateTicketReferencing seeds the rows an update ticket needs (installation, repository,
+// update PR) and the ticket itself, created in the given ticket project.
+func updateTicketReferencing(t *testing.T, s *store.Store, ticketProjectID string) {
+	t.Helper()
+	ctx := context.Background()
+
+	for _, stmt := range []string{
+		`INSERT INTO installations (id, github_installation_id, account_id, account_login, account_type, status, repository_selection, created_at, updated_at)
+		 VALUES ('inst-1', 1, 1, 'acme', 'Organization', 'active', 'all', 't', 't')`,
+		`INSERT INTO repositories (id, installation_id, github_repository_id, full_name, default_branch, created_at, updated_at)
+		 VALUES ('repo-1', 'inst-1', 1, 'acme/api', 'main', 't', 't')`,
+		`INSERT INTO update_prs (id, repository_id, number, node_id, url, title, head_ref, state, last_seen_at, created_at, updated_at)
+		 VALUES ('pr-1', 'repo-1', 1, 'node', 'https://example.test/pr/1', 'Update dep', 'renovate/dep', 'open', 't', 't', 't')`,
+	} {
+		if _, err := s.DB().Writer.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("seed %q: %v", stmt, err)
+		}
+	}
+	if _, err := s.DB().Writer.ExecContext(ctx,
+		`INSERT INTO update_tickets (id, update_pr_id, ticket_project_id, state, created_at, updated_at)
+		 VALUES ('ut-1', 'pr-1', ?, 'pending', 't', 't')`, ticketProjectID); err != nil {
+		t.Fatalf("seed update ticket: %v", err)
+	}
+}
+
+func TestDeleteTicketProjectReferencedByUpdateTicketReturnsErrInUse(t *testing.T) {
+	t.Parallel()
+
+	s, _ := testStore(t)
+	ctx := context.Background()
+	fixture := seedTicketFixture(t, s, ctx)
+	updateTicketReferencing(t, s, fixture.ticketProjectID)
+
+	err := s.TicketProjects().Delete(ctx, fixture.ticketProjectID)
+	if !errors.Is(err, store.ErrInUse) {
+		t.Fatalf("Delete = %v, want store.ErrInUse", err)
+	}
+	if _, err := s.TicketProjects().Get(ctx, fixture.ticketProjectID); err != nil {
+		t.Fatalf("ticket project gone after refused delete: %v", err)
+	}
+}
+
+func TestDeleteIntegrationReferencedByTicketProjectIsCounted(t *testing.T) {
+	t.Parallel()
+
+	s, _ := testStore(t)
+	ctx := context.Background()
+	fixture := seedTicketFixture(t, s, ctx)
+
+	refs, err := s.Integrations().CountReferences(ctx, fixture.integrationID)
+	if err != nil {
+		t.Fatalf("CountReferences: %v", err)
+	}
+	if refs != 1 {
+		t.Fatalf("CountReferences = %d, want 1 ticket project", refs)
+	}
+	if err := s.Integrations().Delete(ctx, fixture.integrationID); !errors.Is(err, store.ErrInUse) {
+		t.Fatalf("Delete = %v, want store.ErrInUse", err)
 	}
 }
 
@@ -199,7 +255,7 @@ func TestTicketProjectCreateWithValidJSONConfigs(t *testing.T) {
 		t.Fatalf("ContentTemplates = %q, want %q", project.ContentTemplates, contentTemplates)
 	}
 
-	row, err := s.Queries().GetTicketProject(ctx, project.ID)
+	row, err := db.New(s.DB().Reader).GetTicketProject(ctx, project.ID)
 	if err != nil {
 		t.Fatalf("GetTicketProject raw: %v", err)
 	}
@@ -240,183 +296,5 @@ func TestTicketProjectCreateWithValidJSONConfigs(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("Create with invalid create_config: want error, got nil")
-	}
-}
-
-func TestMonitoredRepoUniqueSourceKindProjectPath(t *testing.T) {
-	t.Parallel()
-
-	s, _ := testStore(t)
-	ctx := context.Background()
-
-	fixture := seedRepoFixture(t, s, ctx)
-
-	_, err := s.Repos().Create(ctx, store.CreateMonitoredRepoInput{
-		SourceKind:      "github",
-		ProjectPath:     "org/repo",
-		Enabled:         true,
-		TicketProjectID: fixture.ticketProjectID,
-	})
-	if err == nil {
-		t.Fatal("duplicate Create: want UNIQUE error, got nil")
-	}
-	if !strings.Contains(err.Error(), "UNIQUE") {
-		t.Fatalf("duplicate Create error = %v, want UNIQUE constraint failure", err)
-	}
-
-	_, err = s.Repos().Create(ctx, store.CreateMonitoredRepoInput{
-		SourceKind:      "gitlab",
-		ProjectPath:     "org/repo",
-		Enabled:         true,
-		TicketProjectID: fixture.ticketProjectID,
-	})
-	if err != nil {
-		t.Fatalf("Create with different source_kind: %v", err)
-	}
-}
-
-func TestIntegrationDefaultMovesWithinKind(t *testing.T) {
-	t.Parallel()
-
-	s, _ := testStore(t)
-	ctx := context.Background()
-	repo := s.Integrations()
-
-	create := func(kind, name string, baseURL *string, isDefault bool) *store.Integration {
-		t.Helper()
-		got, err := repo.Create(ctx, store.CreateIntegrationInput{
-			Kind: kind, Name: name, BaseURL: baseURL, Secret: []byte(`{"token":"x"}`), IsDefault: isDefault,
-		})
-		if err != nil {
-			t.Fatalf("Create %s: %v", name, err)
-		}
-		return got
-	}
-	defaults := func() map[string]bool {
-		t.Helper()
-		all, err := repo.List(ctx)
-		if err != nil {
-			t.Fatalf("List: %v", err)
-		}
-		out := make(map[string]bool, len(all))
-		for _, it := range all {
-			out[it.Name] = it.IsDefault
-		}
-		return out
-	}
-
-	plain := create("github", "plain", nil, false)
-	if plain.IsDefault {
-		t.Fatal("new integration must not be default unless requested")
-	}
-	first := create("github", "first", nil, true)
-	if !first.IsDefault {
-		t.Fatal("Create with IsDefault did not set the flag")
-	}
-	glURL := "https://gitlab.example"
-	gitlab := create("gitlab", "gl", &glURL, true)
-
-	// Creating a second default moves the flag; other kinds are untouched.
-	second := create("github", "second", nil, true)
-	if got := defaults(); got["first"] || !got["second"] || got["plain"] || !got["gl"] {
-		t.Fatalf("after create-as-default: %v", got)
-	}
-
-	// Updating with true moves it back.
-	yes, no := true, false
-	if _, err := repo.Update(ctx, first.ID, store.UpdateIntegrationInput{Name: "first", IsDefault: &yes}); err != nil {
-		t.Fatalf("Update true: %v", err)
-	}
-	if got := defaults(); !got["first"] || got["second"] || !got["gl"] {
-		t.Fatalf("after update-as-default: %v", got)
-	}
-
-	// nil leaves the flag alone, including on a secret rotation.
-	if _, err := repo.Update(ctx, first.ID, store.UpdateIntegrationInput{Name: "first renamed", Secret: []byte(`{"token":"y"}`)}); err != nil {
-		t.Fatalf("Update nil: %v", err)
-	}
-	if got := defaults(); !got["first renamed"] {
-		t.Fatalf("flag lost on unrelated update: %v", got)
-	}
-
-	// false clears it and leaves the kind without a default.
-	if _, err := repo.Update(ctx, first.ID, store.UpdateIntegrationInput{Name: "first", IsDefault: &no}); err != nil {
-		t.Fatalf("Update false: %v", err)
-	}
-	if got := defaults(); got["first"] || got["second"] || got["plain"] || !got["gl"] {
-		t.Fatalf("after clear: %v", got)
-	}
-
-	// Deleting the default leaves the kind without one; nothing is promoted.
-	if err := repo.Delete(ctx, gitlab.ID); err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
-	if err := repo.Delete(ctx, second.ID); err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
-	for name, isDefault := range defaults() {
-		if isDefault {
-			t.Fatalf("%s is default after deleting defaults", name)
-		}
-	}
-}
-
-func TestIntegrationDefaultEnforcedByDatabase(t *testing.T) {
-	t.Parallel()
-
-	s, _ := testStore(t)
-	ctx := context.Background()
-	repo := s.Integrations()
-
-	a, err := repo.Create(ctx, store.CreateIntegrationInput{Kind: "github", Name: "a", Secret: []byte("x"), IsDefault: true})
-	if err != nil {
-		t.Fatalf("Create a: %v", err)
-	}
-	b, err := repo.Create(ctx, store.CreateIntegrationInput{Kind: "github", Name: "b", Secret: []byte("x")})
-	if err != nil {
-		t.Fatalf("Create b: %v", err)
-	}
-	linear, err := repo.Create(ctx, store.CreateIntegrationInput{Kind: "linear", Name: "lin", Secret: []byte("x")})
-	if err != nil {
-		t.Fatalf("Create linear: %v", err)
-	}
-
-	// Bypass the repository: the schema alone must refuse a second default of a kind...
-	if _, err := s.DB().ExecContext(ctx, `UPDATE integrations SET is_default = 1 WHERE id = ?`, b.ID); err == nil {
-		t.Fatal("second default for the same kind was accepted")
-	}
-	// ...a default on a ticket kind...
-	if _, err := s.DB().ExecContext(ctx, `UPDATE integrations SET is_default = 1 WHERE id = ?`, linear.ID); err == nil {
-		t.Fatal("default on a ticket kind was accepted")
-	}
-	// ...and a value other than 0/1.
-	if _, err := s.DB().ExecContext(ctx, `UPDATE integrations SET is_default = 2 WHERE id = ?`, a.ID); err == nil {
-		t.Fatal("is_default = 2 was accepted")
-	}
-}
-
-func TestIntegrationCreateDefaultRollsBackOnFailure(t *testing.T) {
-	t.Parallel()
-
-	s, _ := testStore(t)
-	ctx := context.Background()
-	repo := s.Integrations()
-
-	old, err := repo.Create(ctx, store.CreateIntegrationInput{Kind: "github", Name: "old", Secret: []byte("x"), IsDefault: true})
-	if err != nil {
-		t.Fatalf("Create old: %v", err)
-	}
-	// A github integration with a base URL violates the table CHECK, so the insert fails
-	// after the previous default was cleared.
-	bad := "https://example.test"
-	if _, err := repo.Create(ctx, store.CreateIntegrationInput{Kind: "github", Name: "bad", BaseURL: &bad, Secret: []byte("x"), IsDefault: true}); err == nil {
-		t.Fatal("Create with invalid base URL succeeded")
-	}
-	got, err := repo.Get(ctx, old.ID)
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if !got.IsDefault {
-		t.Fatal("previous default was cleared although the new default was not created")
 	}
 }

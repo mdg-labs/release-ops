@@ -16,6 +16,7 @@ existing line by adding its PR number.
 - **scope** — a documented behaviour implemented only for the common case (GitLab base URL path prefix dropped, so instances under a subpath 404 into "no release"; Jira `initialStatus` not applied after create) — PR 112
 - **scope** — a filter that matches more or less than its documented rule (`git log --grep` over the whole message where only the subject and a trailer were meant to count; a SemVer tag pattern that rejects a prerelease and build suffix together) — PR 133, PR 153
 - **scope** — a provider payload field sent unconditionally or empty where the remote API rejects it (Jira priority when unset, empty ADF text) — PR 112
+- **scope** — an eligibility rule the spec states (a paused or removed repository gets no job, no token, and its running job is told to abort) enforced at none of the gates that hand out work (claim, token lookup, heartbeat) — PR 246
 
 ## Partial failure and atomicity
 - **partial-failure** — the new external object (ticket) is not persisted right after it is created, so a later failing step orphans it and the next poll creates a duplicate — PR 112
@@ -29,6 +30,7 @@ existing line by adding its PR number.
 - **fail-open** — a failed fetch or ticket call recorded as a successful run (engine error actions not counted), so the run status hides the failure — PR 112
 - **fail-open** — a security option silently downgraded when the peer doesn't support it (SMTP STARTTLS not offered → mail sent in plaintext) instead of failing the send — PR 112
 - **fail-open** — a public placeholder secret from `.env.example` accepted at startup — PR 112
+- **fail-open** — a stand-in handler registered in production that reports success for work it never did (a no-op `renovate_run` handler); leave the kind unregistered so the attempt fails visibly — PR 246
 
 ## Security
 - **auth** — session token not renewed on login, invitation accept, password reset or email change (session fixation); a password reset that leaves other sessions alive — PR 112
@@ -37,15 +39,23 @@ existing line by adding its PR number.
 - **credential** — changing an integration's base URL without a new secret, so the stored credential is sent to a new host — PR 112
 - **rate-limit** — `X-Forwarded-For` trusted from any peer, or not forwarded by the Next.js proxy, so every user shares one bucket or an attacker picks their own — PR 112, PR 133
 - **input** — email addresses compared case-sensitively, or display-name forms (`Name <a@b>`) accepted where a bare address is expected — PR 112
+- **credential** — a token cache keyed on less than what decides the token's scope, so a narrower fallback token minted for one request is served to another it does not cover — PR 246
 
 ## Docs
-- **docs** — a worked example or table row that contradicts the rule it illustrates, or states an invariant without the gap the same doc records elsewhere (or the partial-failure path the code takes) — PR 133, PR 140, PR 153, PR 167
+- **docs** — a worked example or table row that contradicts the rule it illustrates, or states an invariant without the gap the same doc records elsewhere (or the partial-failure path the code takes) — PR 133, PR 140, PR 153, PR 167, PR 246
 - **docs** — a page that declares itself a mirror of a canonical file (`db/schema.sql`, `docs/specs.html`) left stale when that file changes, because only the canonical file was edited — PR 140
+- **docs** — a name or command in prose that differs from the canonical file it describes (Compose service names vs `docker-compose.yml`), or two policy documents that state contradicting rules (SECURITY.md vs threat-model §7) — PR 246
+- **docs** — an operational procedure that discards data it should keep (a restore step that deletes a volume snapshot's WAL) — PR 246
+- **docs** — a README or overview that presents planned features as available — PR 246
 
 ## UI states
 - **ui** — rate-limited (429) and server (5xx) responses shown as "invalid credentials" — PR 112
 - **ui** — a "hidden while loading or failed" state gated on `data` alone; TanStack Query keeps the last data after a failed refetch, so check `isError` too — PR 153
 - **ui** — an async action's result applied to whatever dialog is open when it settles, so a dismissed dialog's late failure (or success) lands on the next one; guard each attempt and invalidate it on close — PR 167
+- **ui** — state set just before navigating away (a hand-off flag) never cleared when the page comes back from the back-forward cache, leaving the form disabled; also an error message whose recovery step cannot work (re-enter a single-use token) — PR 246
+
+## Tests
+- **test** — a rejection test whose input fails an earlier validation, so it passes with the guard it claims to cover removed; a test that uses a listener started in a goroutine before waiting for it to answer — PR 246
 
 ## Release and CI
 - **ci** — a release workflow that builds from the branch head at publish time instead of the release tag, so the tagged image and the tag differ — PR 112

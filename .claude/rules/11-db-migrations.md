@@ -23,7 +23,10 @@ Schema changes flow:
    `db/schema.sql` against the existing migrations and writes `migrations/<timestamp>_<name>.sql`.
    It refuses a change that drops a table or column; pass `-allow-destructive` only for a drop the task
    asks for, and say so in the commit. Renames prompt; use `-assume-renames` or `-assume-no-renames`
-   when there is no terminal.
+   when there is no terminal. The target passes `flags=` straight to `sqlite-migrate generate`:
+   `make db-migration name=<change> flags=-allow-destructive` for a drop,
+   `make db-migration name=<change> flags=-assume-no-renames` for a rename decision, or both in one
+   quoted value, `flags="-allow-destructive -assume-no-renames"`.
 3. Review the generated file; commit it unedited together with `db/schema.sql`.
 4. Run `make sqlc-generate` if the schema or `queries/` changed (sqlc reads `db/schema.sql`).
 

@@ -18,13 +18,10 @@ type BreadcrumbSegment = {
   labelKey: string;
 };
 
-const ROUTE_BREADCRUMBS: Record<string, BreadcrumbSegment[]> = {
+export const ROUTE_BREADCRUMBS: Record<string, BreadcrumbSegment[]> = {
   "/": [],
-  "/poll-runs": [{ labelKey: "pollRuns" }],
-  "/repos": [{ labelKey: "repos" }],
   "/integrations": [{ labelKey: "integrations" }],
   "/ticket-projects": [{ labelKey: "ticketProjects" }],
-  "/notifications": [{ labelKey: "notifications" }],
   "/settings": [{ labelKey: "settings" }],
   "/settings/users": [
     { href: "/settings", labelKey: "settings" },

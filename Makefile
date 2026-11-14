@@ -8,7 +8,11 @@ SQLITE_MIGRATE ?= go tool sqlite-migrate
 
 help:
 	@echo "Database targets:"
-	@echo "  make db-migration name=<snake_case>  Generate a migration from db/schema.sql changes (sqlite-migrate generate)"
+	@echo "  make db-migration name=<snake_case> [flags=\"<generate flags>\"]"
+	@echo "                                        Generate a migration from db/schema.sql changes (sqlite-migrate generate)"
+	@echo "                                        Drop a table or column:   flags=-allow-destructive"
+	@echo "                                        Rename without a terminal: flags=-assume-renames or flags=-assume-no-renames"
+	@echo "                                        Several flags:            flags=\"-allow-destructive -assume-no-renames\""
 	@echo "  make db-check                         Verify migrations/ checksums and that they reproduce db/schema.sql"
 	@echo "  make sqlc-generate                    Regenerate internal/store/db from db/schema.sql and queries/"
 	@echo ""
@@ -18,7 +22,7 @@ db-migration:
 ifndef name
 	$(error Usage: make db-migration name=<snake_case_description>)
 endif
-	$(SQLITE_MIGRATE) generate -schema db/schema.sql -dir migrations -m $(name)
+	$(SQLITE_MIGRATE) generate -schema db/schema.sql -dir migrations -m $(name) $(flags)
 
 db-check:
 	$(SQLITE_MIGRATE) check -schema db/schema.sql -dir migrations

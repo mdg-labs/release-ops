@@ -16,61 +16,33 @@ export type LoginResponse = {
   user: User;
 };
 
-export type PollRunError = {
-  repoId: string;
-  message: string;
+export type SetupStatusResponse = {
+  setupRequired: boolean;
+  /** The App's installation page, while an App exists and has no installation. */
+  installUrl?: string;
 };
 
-export type PollRunEvent = {
-  id: string;
-  pollRunId: string;
-  monitoredRepoId: string | null;
-  action: string;
-  detail: string | null;
-  createdAt: string;
-  sourceKind: string | null;
-  projectPath: string | null;
-  ticketExternalId: string | null;
-  ticketUrl: string | null;
-  releaseTag: string | null;
+export type SetupSessionResponse = {
+  expiresAt: string;
 };
 
-export type PollRun = {
-  id: string;
-  startedAt: string;
-  finishedAt: string | null;
-  status: string;
-  triggerSource: string;
-  reposChecked: number;
-  ticketsCreated: number;
-  ticketsSuperseded: number;
-  errors: PollRunError[];
-  events?: PollRunEvent[];
+export type SetupTokenInput = {
+  token: string;
 };
 
-export type StatusRepo = {
-  id: string;
-  sourceKind: string;
-  projectPath: string;
-  ticketProjectId: string;
-  ticketProjectName: string;
-  enabled: boolean;
-  openTicketExternalId: string | null;
-  openTicketTag: string | null;
-  lastKnownTag: string | null;
-  lastReleasePublishedAt: string | null;
-  lastPolledAt: string | null;
-  lastError: string | null;
-  repoUrl: string | null;
-  releaseUrl: string | null;
-  openTicketUrl: string | null;
+export type SetupOwnerType = "user" | "organization";
+
+export type SetupManifestInput = {
+  owner: { type: SetupOwnerType; login?: string };
+  name?: string;
+};
+
+export type SetupManifestResponse = {
+  url: string;
+  manifest: Record<string, unknown>;
 };
 
 export type StatusResponse = {
-  pollIntervalMinutes: number;
-  lastRun: PollRun | null;
-  repos: StatusRepo[];
-  isPolling: boolean;
   version: string;
 };
 
@@ -142,14 +114,12 @@ export type CreateIntegrationInput = {
   name: string;
   baseUrl?: string | null;
   secret: string;
-  isDefault?: boolean;
 };
 
 export type UpdateIntegrationInput = {
   name: string;
   baseUrl?: string | null;
   secret?: string | null;
-  isDefault?: boolean;
 };
 
 export type TestConnectionResponse = {
@@ -203,75 +173,4 @@ export type UpdateTicketProjectInput = {
   statusMapping: Record<string, unknown>;
   contentTemplates: ContentTemplates;
   onOpenTicketPolicy: string;
-};
-
-export type Repo = {
-  id: string;
-  sourceKind: string;
-  projectPath: string;
-  enabled: boolean;
-  includePrereleases: boolean;
-  sourceIntegrationId: string | null;
-  ticketProjectId: string;
-  notificationTargetIds: string[];
-  openTicketExternalId: string | null;
-  openTicketTag: string | null;
-  lastKnownTag: string | null;
-  lastPolledAt: string | null;
-  lastError: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type CreateRepoInput = {
-  sourceKind: string;
-  projectPath: string;
-  enabled?: boolean;
-  includePrereleases?: boolean;
-  sourceIntegrationId?: string | null;
-  ticketProjectId: string;
-  notificationTargetIds?: string[];
-};
-
-export type UpdateRepoInput = {
-  sourceKind: string;
-  projectPath: string;
-  enabled: boolean;
-  includePrereleases: boolean;
-  sourceIntegrationId?: string | null;
-  ticketProjectId: string;
-  notificationTargetIds?: string[];
-};
-
-export type NotificationTarget = {
-  id: string;
-  name: string;
-  hasSecret: boolean;
-  events: string[];
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type CreateNotificationTargetInput = {
-  name: string;
-  shoutrrrUrl: string;
-  events?: string[];
-  enabled?: boolean;
-};
-
-export type UpdateNotificationTargetInput = {
-  name: string;
-  shoutrrrUrl?: string | null;
-  events: string[];
-  enabled: boolean;
-};
-
-export type TriggerPollResponse = {
-  runId: string;
-};
-
-export type PollRunsParams = {
-  limit?: number;
-  offset?: number;
 };

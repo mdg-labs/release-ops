@@ -1,7 +1,9 @@
 services:
-  release-ops:
-    build: .
-    image: ghcr.io/mdg-labs/release-ops:latest
+  app:
+    build:
+      context: .
+      target: runtime
+    image: ghcr.io/mdg-labs/release-ops:${RELEASE_OPS_TAG:-latest}
     ports:
       - "3000:3000"
     volumes:
@@ -9,9 +11,20 @@ services:
     environment:
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env — see .env.example}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY in .env — see .env.example}
-      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-}
+      APP_URL: ${APP_URL:?set APP_URL in .env — see .env.example}
+      WEBHOOK_URL: ${WEBHOOK_URL:-}
+      GITHUB_BASE_URL: ${GITHUB_BASE_URL:-}
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      PRESET_REPOSITORIES: ${PRESET_REPOSITORIES:-}
+      GLOBAL_CONFIG_REPO: ${GLOBAL_CONFIG_REPO:-}
+      METRICS_ADDR: ${METRICS_ADDR:-127.0.0.1:9100}
+      # The internal listener the worker connects to: reachable on the compose network only,
+      # so it has no ports entry and Next.js never proxies it.
+      INTERNAL_ADDR: ${INTERNAL_ADDR:-:9090}
+      WORKER_SECRET: ${WORKER_SECRET:?set WORKER_SECRET in .env — see .env.example}
     restart: unless-stopped
     healthcheck:
       test:
@@ -26,5 +39,38 @@ services:
       retries: 5
       start_period: 60s
 
+  worker:
+    build:
+      context: .
+      target: worker
+    image: ghcr.io/mdg-labs/release-ops-worker:${RELEASE_OPS_TAG:-latest}
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      INTERNAL_URL: ${INTERNAL_URL:-http://app:9090}
+      METRICS_ADDR: ${METRICS_ADDR:-127.0.0.1:9100}
+      WORKER_SECRET: ${WORKER_SECRET:?set WORKER_SECRET in .env — see .env.example}
+    volumes:
+      # One subdirectory per slot for Renovate's cacheDir, repositoryCache and persistRepoData.
+      - worker-cache:/cache
+      # Optional, read-only: a global Renovate config file and a tools directory, used instead
+      # of fetching them from GLOBAL_CONFIG_REPO. Create the host paths first, then uncomment.
+      # - ./worker/config:/config:ro
+      # - ./worker/tools:/opt/renovate-tools:ro
+    # The worker runs as an unprivileged user and starts Renovate as another one; setuid and
+    # setgid are the only capabilities it keeps for that. There is no Docker socket and no data
+    # volume. Do not add no-new-privileges: it disables the file capabilities that switch users.
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+    # Example limits, sized for the default concurrency cap of 2.
+    cpus: 2
+    mem_limit: 4g
+    restart: unless-stopped
+
 volumes:
   release-ops-data:
+  worker-cache:

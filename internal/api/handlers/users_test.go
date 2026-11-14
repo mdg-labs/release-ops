@@ -350,11 +350,11 @@ func newUsersTestDeps(t *testing.T) *api.ServerDeps {
 		t.Fatalf("NewCipherFromHex: %v", err)
 	}
 
-	sm := auth.NewSessionManager(db, strings.Repeat("s", 32), false)
+	sm := auth.NewSessionManager(db.Writer, strings.Repeat("s", 32), false)
 	return &api.ServerDeps{
-		DB:      db,
+		DB:      db.Writer,
 		Session: sm,
-		Queries: storedb.New(db),
+		Queries: storedb.New(db.Writer),
 		Store:   store.New(db, cipher),
 		Mailer:  mail.NoopMailer{},
 	}
@@ -385,8 +385,8 @@ func seedUsersAppSettings(t *testing.T, db *sql.DB) {
 	t.Helper()
 
 	_, err := db.Exec(
-		`INSERT INTO app_settings (id, poll_interval_minutes, invite_token_expiry_hours, password_reset_token_expiry_minutes, updated_at)
-		 VALUES (1, 360, 168, 60, ?)
+		`INSERT INTO app_settings (id, invite_token_expiry_hours, password_reset_token_expiry_minutes, updated_at)
+		 VALUES (1, 168, 60, ?)
 		 ON CONFLICT(id) DO NOTHING`,
 		"2026-08-07T12:00:00.000Z",
 	)
@@ -415,20 +415,16 @@ func loginUsersTestClient(t *testing.T, baseURL, email, password string) *http.C
 	return client
 }
 
-func openUsersTestDB(t *testing.T) *sql.DB {
+func openUsersTestDB(t *testing.T) *store.DB {
 	t.Helper()
 
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "app.db")
 	storetest.Migrate(t, dbPath)
 
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?_foreign_keys=on")
+	db, err := store.OpenPath(dbPath)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	if err := db.Ping(); err != nil {
-		_ = db.Close()
-		t.Fatalf("ping sqlite: %v", err)
+		t.Fatalf("OpenPath: %v", err)
 	}
 	return db
 }

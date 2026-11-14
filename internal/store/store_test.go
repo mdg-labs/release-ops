@@ -2,9 +2,7 @@ package store_test
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,7 +35,7 @@ func testStore(t *testing.T) (*store.Store, *crypto.Cipher) {
 	return store.New(sqlDB, cipher), cipher
 }
 
-func openMigratedDB(t *testing.T, dbPath string) *sql.DB {
+func openMigratedDB(t *testing.T, dbPath string) *store.DB {
 	t.Helper()
 
 	storetest.Migrate(t, dbPath)
@@ -49,11 +47,11 @@ func openMigratedDB(t *testing.T, dbPath string) *sql.DB {
 	return sqlDB
 }
 
-func seedAppSettings(t *testing.T, sqlDB *sql.DB) {
+func seedAppSettings(t *testing.T, sqlDB *store.DB) {
 	t.Helper()
 
-	_, err := sqlDB.Exec(
-		`INSERT INTO app_settings (id, poll_interval_minutes, updated_at) VALUES (1, 360, ?)`,
+	_, err := sqlDB.Writer.Exec(
+		`INSERT INTO app_settings (id, updated_at) VALUES (1, ?)`,
 		"2026-08-06T12:00:00.000Z",
 	)
 	if err != nil {
@@ -87,8 +85,8 @@ func TestEnsureDefaultAppSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if got.ID != 1 || got.PollIntervalMinutes != 360 {
-		t.Fatalf("settings = %+v, want id=1 poll_interval_minutes=360", got)
+	if got.ID != 1 || got.InviteTokenExpiryHours != 168 || got.PasswordResetTokenExpiryMinutes != 60 {
+		t.Fatalf("settings = %+v, want id=1 with the default token windows 168h and 60m", got)
 	}
 
 	if err := s.Settings().EnsureDefault(ctx); err != nil {
@@ -109,9 +107,6 @@ func TestSettingsGetReturnsIDOne(t *testing.T) {
 	if got.ID != 1 {
 		t.Fatalf("ID = %d, want 1", got.ID)
 	}
-	if got.PollIntervalMinutes < 5 {
-		t.Fatalf("PollIntervalMinutes = %d, want >= 5", got.PollIntervalMinutes)
-	}
 }
 
 func TestIntegrationCreateEncryptsPayload(t *testing.T) {
@@ -120,10 +115,10 @@ func TestIntegrationCreateEncryptsPayload(t *testing.T) {
 	s, cipher := testStore(t)
 	ctx := context.Background()
 
-	secret := []byte(`{"token":"ghp_test_secret"}`)
+	secret := []byte(`{"api_key":"lin_test_secret"}`)
 	created, err := s.Integrations().Create(ctx, store.CreateIntegrationInput{
-		Kind:   "github",
-		Name:   "GitHub PAT",
+		Kind:   "linear",
+		Name:   "Linear",
 		Secret: secret,
 	})
 	if err != nil {
@@ -133,14 +128,14 @@ func TestIntegrationCreateEncryptsPayload(t *testing.T) {
 		t.Fatal("HasSecret = false, want true")
 	}
 
-	row, err := s.Queries().GetIntegration(ctx, created.ID)
+	row, err := db.New(s.DB().Reader).GetIntegration(ctx, created.ID)
 	if err != nil {
 		t.Fatalf("GetIntegration raw: %v", err)
 	}
 	if row.EncryptedPayload == string(secret) {
 		t.Fatal("encrypted_payload stored as plaintext")
 	}
-	if strings.Contains(row.EncryptedPayload, "ghp_test_secret") {
+	if strings.Contains(row.EncryptedPayload, "lin_test_secret") {
 		t.Fatal("encrypted_payload contains plaintext secret")
 	}
 
@@ -159,10 +154,10 @@ func TestIntegrationGetNeverReturnsDecryptedSecret(t *testing.T) {
 	s, _ := testStore(t)
 	ctx := context.Background()
 
-	secret := []byte(`{"token":"super-secret-value"}`)
+	secret := []byte(`{"api_key":"super-secret-value"}`)
 	created, err := s.Integrations().Create(ctx, store.CreateIntegrationInput{
-		Kind:   "github",
-		Name:   "GitHub",
+		Kind:   "linear",
+		Name:   "Linear",
 		Secret: secret,
 	})
 	if err != nil {
@@ -198,191 +193,6 @@ func TestIntegrationGetNeverReturnsDecryptedSecret(t *testing.T) {
 	}
 }
 
-func TestUpdatePollStateOnMonitoredRepo(t *testing.T) {
-	t.Parallel()
-
-	s, _ := testStore(t)
-	ctx := context.Background()
-
-	fixture := seedRepoFixture(t, s, ctx)
-
-	tag := "v1.2.3"
-	polledAt := "2026-08-06T12:00:00.000Z"
-	ticketID := "task-abc"
-	openTag := "v1.2.2"
-
-	updated, err := s.Poll().UpdatePollState(ctx, fixture.repoID, store.PollStateUpdate{
-		LastKnownTag:           &tag,
-		LastReleasePublishedAt: &polledAt,
-		LastPolledAt:           &polledAt,
-		OpenTicketExternalID:   &ticketID,
-		OpenTicketTag:          &openTag,
-		LastError:              nil,
-	})
-	if err != nil {
-		t.Fatalf("UpdatePollState: %v", err)
-	}
-	if updated.LastKnownTag == nil || *updated.LastKnownTag != tag {
-		t.Fatalf("LastKnownTag = %v, want %q", updated.LastKnownTag, tag)
-	}
-	if updated.LastReleasePublishedAt == nil || *updated.LastReleasePublishedAt != polledAt {
-		t.Fatalf("LastReleasePublishedAt = %v, want %q", updated.LastReleasePublishedAt, polledAt)
-	}
-	if updated.OpenTicketExternalID == nil || *updated.OpenTicketExternalID != ticketID {
-		t.Fatalf("OpenTicketExternalID = %v, want %q", updated.OpenTicketExternalID, ticketID)
-	}
-}
-
-func TestUpdatePollStateKeepsStoredStateWhenTargetReadFails(t *testing.T) {
-	t.Parallel()
-
-	s, _ := testStore(t)
-	ctx := context.Background()
-	fixture := seedRepoFixture(t, s, ctx)
-
-	// Dropping the link table fails the follow-up read of the repo's notification
-	// targets while the UPDATE on monitored_repos still succeeds.
-	if _, err := s.DB().ExecContext(ctx, `DROP TABLE monitored_repo_notifications`); err != nil {
-		t.Fatalf("drop monitored_repo_notifications: %v", err)
-	}
-
-	tag := "v1.2.3"
-	updated, err := s.Poll().UpdatePollState(ctx, fixture.repoID, store.PollStateUpdate{LastKnownTag: &tag})
-	if !errors.Is(err, store.ErrNotificationTargetsUnread) {
-		t.Fatalf("UpdatePollState error = %v, want ErrNotificationTargetsUnread", err)
-	}
-	if updated == nil || updated.LastKnownTag == nil || *updated.LastKnownTag != tag {
-		t.Fatalf("updated repo = %+v, want the stored state returned with the error", updated)
-	}
-
-	var stored sql.NullString
-	if err := s.DB().QueryRowContext(ctx, `SELECT last_known_tag FROM monitored_repos WHERE id = ?`, fixture.repoID).Scan(&stored); err != nil {
-		t.Fatalf("read last_known_tag: %v", err)
-	}
-	if stored.String != tag {
-		t.Fatalf("stored last_known_tag = %q, want %q", stored.String, tag)
-	}
-}
-
-func TestUpdatePollStateFailureStoresNothing(t *testing.T) {
-	t.Parallel()
-
-	s, _ := testStore(t)
-	ctx := context.Background()
-
-	tag := "v1.2.3"
-	updated, err := s.Poll().UpdatePollState(ctx, "missing-repo", store.PollStateUpdate{LastKnownTag: &tag})
-	if err == nil || errors.Is(err, store.ErrNotificationTargetsUnread) || updated != nil {
-		t.Fatalf("UpdatePollState = %+v, %v; want nil repo and a plain error", updated, err)
-	}
-}
-
-func TestRepoCreateUpdatePersistsNotificationTargetIDs(t *testing.T) {
-	t.Parallel()
-
-	s, _ := testStore(t)
-	ctx := context.Background()
-
-	fixture := seedRepoFixture(t, s, ctx)
-
-	targetA, err := s.Notifications().Create(ctx, store.CreateNotificationTargetInput{
-		Name:        "Slack",
-		ShoutrrrURL: "slack://token@channel",
-	})
-	if err != nil {
-		t.Fatalf("Create target A: %v", err)
-	}
-	targetB, err := s.Notifications().Create(ctx, store.CreateNotificationTargetInput{
-		Name:        "Ntfy",
-		ShoutrrrURL: "ntfy://topic",
-	})
-	if err != nil {
-		t.Fatalf("Create target B: %v", err)
-	}
-
-	created, err := s.Repos().Create(ctx, store.CreateMonitoredRepoInput{
-		SourceKind:            "github",
-		ProjectPath:           "org/with-notifications",
-		Enabled:               true,
-		TicketProjectID:       fixture.ticketProjectID,
-		NotificationTargetIDs: []string{targetA.ID, targetB.ID},
-	})
-	if err != nil {
-		t.Fatalf("Create repo: %v", err)
-	}
-	if len(created.NotificationTargetIDs) != 2 {
-		t.Fatalf("NotificationTargetIDs = %v, want 2 entries", created.NotificationTargetIDs)
-	}
-
-	got, err := s.Repos().Get(ctx, created.ID)
-	if err != nil {
-		t.Fatalf("Get repo: %v", err)
-	}
-	if len(got.NotificationTargetIDs) != 2 {
-		t.Fatalf("persisted NotificationTargetIDs = %v, want 2", got.NotificationTargetIDs)
-	}
-
-	updated, err := s.Repos().Update(ctx, created.ID, store.UpdateMonitoredRepoInput{
-		SourceKind:            "github",
-		ProjectPath:           "org/with-notifications",
-		Enabled:               true,
-		TicketProjectID:       fixture.ticketProjectID,
-		NotificationTargetIDs: []string{targetB.ID},
-	})
-	if err != nil {
-		t.Fatalf("Update repo: %v", err)
-	}
-	if len(updated.NotificationTargetIDs) != 1 || updated.NotificationTargetIDs[0] != targetB.ID {
-		t.Fatalf("updated NotificationTargetIDs = %v, want [%s]", updated.NotificationTargetIDs, targetB.ID)
-	}
-
-	ids, err := s.Queries().ListNotificationTargetIDsForRepo(ctx, created.ID)
-	if err != nil {
-		t.Fatalf("ListNotificationTargetIDsForRepo: %v", err)
-	}
-	if len(ids) != 1 || ids[0] != targetB.ID {
-		t.Fatalf("join rows = %v, want [%s]", ids, targetB.ID)
-	}
-}
-
-func TestNotificationTargetEventsJSONValid(t *testing.T) {
-	t.Parallel()
-
-	s, _ := testStore(t)
-	ctx := context.Background()
-
-	target, err := s.Notifications().Create(ctx, store.CreateNotificationTargetInput{
-		Name:        "Default events",
-		ShoutrrrURL: "generic://default",
-	})
-	if err != nil {
-		t.Fatalf("Create with default events: %v", err)
-	}
-	if len(target.Events) != 3 {
-		t.Fatalf("default Events = %v, want 3 entries", target.Events)
-	}
-
-	target, err = s.Notifications().Create(ctx, store.CreateNotificationTargetInput{
-		Name:        "Valid events",
-		ShoutrrrURL: "generic://example",
-		Events:      []string{"create", "error"},
-	})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	if len(target.Events) != 2 {
-		t.Fatalf("Events = %v, want 2 entries", target.Events)
-	}
-
-	row, err := s.Queries().GetNotificationTarget(ctx, target.ID)
-	if err != nil {
-		t.Fatalf("GetNotificationTarget: %v", err)
-	}
-	if !json.Valid([]byte(row.EventsJson)) {
-		t.Fatalf("events_json is not valid JSON: %q", row.EventsJson)
-	}
-}
-
 func TestRepositoryInterfacesMockable(t *testing.T) {
 	t.Parallel()
 
@@ -391,18 +201,14 @@ func TestRepositoryInterfacesMockable(t *testing.T) {
 	var _ = s.Settings()
 	var _ = s.Integrations()
 	var _ = s.TicketProjects()
-	var _ = s.Repos()
-	var _ = s.Notifications()
-	var _ = s.Poll()
 }
 
-type repoFixture struct {
+type ticketFixture struct {
 	integrationID   string
 	ticketProjectID string
-	repoID          string
 }
 
-func seedRepoFixture(t *testing.T, s *store.Store, ctx context.Context) repoFixture {
+func seedTicketFixture(t *testing.T, s *store.Store, ctx context.Context) ticketFixture {
 	t.Helper()
 
 	integration, err := s.Integrations().Create(ctx, store.CreateIntegrationInput{
@@ -426,21 +232,7 @@ func seedRepoFixture(t *testing.T, s *store.Store, ctx context.Context) repoFixt
 		t.Fatalf("Create ticket project: %v", err)
 	}
 
-	repo, err := s.Repos().Create(ctx, store.CreateMonitoredRepoInput{
-		SourceKind:      "github",
-		ProjectPath:     "org/repo",
-		Enabled:         true,
-		TicketProjectID: ticketProject.ID,
-	})
-	if err != nil {
-		t.Fatalf("Create repo: %v", err)
-	}
-
-	return repoFixture{
-		integrationID:   integration.ID,
-		ticketProjectID: ticketProject.ID,
-		repoID:          repo.ID,
-	}
+	return ticketFixture{integrationID: integration.ID, ticketProjectID: ticketProject.ID}
 }
 
 func strPtr(s string) *string {
@@ -455,73 +247,4 @@ func TestMain(m *testing.M) {
 		_ = os.Unsetenv("APP_DB_PATH")
 	}
 	os.Exit(m.Run())
-}
-
-func TestRepoUpdateResetsPollStateWhenTargetChanges(t *testing.T) {
-	t.Parallel()
-
-	s, _ := testStore(t)
-	ctx := context.Background()
-	fixture := seedRepoFixture(t, s, ctx)
-
-	setState := func() {
-		t.Helper()
-		tag := "v1.0.0"
-		published := "2026-08-06T12:00:00.000Z"
-		ticketID := "DEV-12"
-		if _, err := s.Poll().UpdatePollState(ctx, fixture.repoID, store.PollStateUpdate{
-			LastKnownTag:           &tag,
-			LastReleasePublishedAt: &published,
-			OpenTicketExternalID:   &ticketID,
-			OpenTicketTag:          &tag,
-		}); err != nil {
-			t.Fatalf("UpdatePollState: %v", err)
-		}
-	}
-	update := func(projectPath, ticketProjectID string) *store.MonitoredRepo {
-		t.Helper()
-		updated, err := s.Repos().Update(ctx, fixture.repoID, store.UpdateMonitoredRepoInput{
-			SourceKind:      "github",
-			ProjectPath:     projectPath,
-			Enabled:         true,
-			TicketProjectID: ticketProjectID,
-		})
-		if err != nil {
-			t.Fatalf("Update repo: %v", err)
-		}
-		return updated
-	}
-
-	// Unchanged target keeps poll state.
-	setState()
-	got := update("org/repo", fixture.ticketProjectID)
-	if got.OpenTicketExternalID == nil || got.LastKnownTag == nil {
-		t.Fatalf("poll state cleared on unchanged target: %+v", got)
-	}
-
-	// New ticket project clears the open ticket but keeps the baseline tag.
-	otherProject, err := s.TicketProjects().Create(ctx, store.CreateTicketProjectInput{
-		IntegrationID:     fixture.integrationID,
-		ExternalProjectID: "proj-2",
-		Name:              "Other",
-		CreateConfig:      `{"status":"ready"}`,
-		StatusMapping:     `{"open":["To Do"],"done":["Done"],"cancelled":["Cancelled"],"superseded":"Cancelled"}`,
-	})
-	if err != nil {
-		t.Fatalf("Create ticket project: %v", err)
-	}
-	got = update("org/repo", otherProject.ID)
-	if got.OpenTicketExternalID != nil || got.OpenTicketTag != nil {
-		t.Fatalf("open ticket kept after ticket project change: %v", got.OpenTicketExternalID)
-	}
-	if got.LastKnownTag == nil || *got.LastKnownTag != "v1.0.0" {
-		t.Fatalf("LastKnownTag = %v, want v1.0.0 kept", got.LastKnownTag)
-	}
-
-	// New source path forces a fresh baseline.
-	setState()
-	got = update("org/other", otherProject.ID)
-	if got.LastKnownTag != nil || got.LastReleasePublishedAt != nil || got.OpenTicketExternalID != nil {
-		t.Fatalf("poll state kept after source change: %+v", got)
-	}
 }
