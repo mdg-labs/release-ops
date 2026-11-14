@@ -85,8 +85,9 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <table style="margin-top:10px">
       <tr><th>Sections</th><th>State</th></tr>
       <tr><td>§1, §3</td><td>Rewritten for v2.</td></tr>
+      <tr><td>§2 (update engine, worker, job queue, triggers, webhook), §4.1 (concurrency cap), §4.6, §4.9, §5.6, §5.7, §7.1, §7.2, the settings page of §8.3, §10, §12 items 14 and 16–18, §13</td><td>Rewritten for v2.</td></tr>
       <tr><td>§4.0.1, §4.0.2, §4.1, §7.0, §7.0.1, §7.2, the auth, setup and settings parts of §8.2 / §8.3 / §8.4, §9, §12 item 1, §13</td><td>Auth, setup and environment parts rewritten for v2.</td></tr>
-      <tr><td>§2, §4.2–§4.6, §5, §6, §7.1, §7.3–§7.6, the rest of §8, §10, §12</td><td>Still v1 text (release monitoring, Shoutrrr notifications, five source forges). Replaced by the update-engine, worker and webhook sections (tracked as #186) and the update-PR, ticket, dashboard, REST and v2 data-model sections (tracked as #187). Where they conflict with §1 or §3, §1 and §3 win.</td></tr>
+      <tr><td>§4.2–§4.5, §5.1–§5.5, §6, §7.3–§7.6, the rest of §8, §12 items 2–13</td><td>Still v1 text (release monitoring, Shoutrrr notifications, five source forges). Replaced by the update-PR, ticket, dashboard, REST and v2 data-model sections (tracked as #187). Where they conflict with §1, §2 or §3, those win.</td></tr>
     </table>
   </div>
 
@@ -94,7 +95,22 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <strong>Contents</strong>
     <ol style="margin-top:8px">
       <li><a href="#purpose">Purpose &amp; Non-goals</a></li>
-      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#architecture">Architecture</a>
+        <ol>
+          <li><a href="#internal-listener">Internal listener &amp; worker protocol</a></li>
+          <li><a href="#job-contract">Per-job contract</a></li>
+          <li><a href="#worker-process">Worker process model</a></li>
+          <li><a href="#renovate-config">Global self-hosted config &amp; tools</a></li>
+          <li><a href="#worker-defaults">Safety defaults &amp; limits</a></li>
+          <li><a href="#worker-egress">Worker egress</a></li>
+          <li><a href="#repo-selection">Repository selection</a></li>
+          <li><a href="#job-queue">Job queue</a></li>
+          <li><a href="#triggers">Triggers &amp; latency</a></li>
+          <li><a href="#webhook">Webhook endpoint</a></li>
+          <li><a href="#webhook-recovery">Recovery &amp; polling fallback</a></li>
+          <li><a href="#engine-open">Open questions</a></li>
+        </ol>
+      </li>
       <li><a href="#auth">Setup, Authentication &amp; Roles</a>
         <ol>
           <li><a href="#session-model">Session model</a></li>
@@ -154,35 +170,203 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   </ul>
 
   <h2 id="architecture">2. Architecture</h2>
-  <p class="note">v1 text. The one-container layout, the poll scheduler, and the source forges and Shoutrrr below are replaced by the update-engine and worker sections (tracked as #186). Setup, login and roles: §3.</p>
-  <p>Self-host target: <strong>one container</strong>, <strong>one public port</strong> (<code>3000</code>). No separate <code>web</code> + <code>worker</code> in Compose/Coolify.</p>
-  <pre><code>┌──────────────────────────────────────────────────────────────┐
-│  Browser  ──►  :3000  release-ops Container                  │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │ Next.js (apps/web) — public HTTP                         │  │
-│  │   ├─ UI (COSS)                                          │  │
-│  │   └─ /api/go/*    Proxy (cookies) ──► Go (127.0.0.1:8080)   │  │
-│  │ Go (cmd/server) — container-only, not exposed           │  │
-│  │   ├─ Auth (session cookie) + REST /api/v1/*           │  │
-│  │   ├─ Poll scheduler                                     │  │
-│  │   └─ app.db (SQLite — users, sessions, app data)        │  │
-│  └────────────────────────────────────────────────────────┘  │
-│  Volume: /data  (app.db)                                     │
-└──────────────────────────────────────────────────────────────┘
-          │
-          ▼
-   GitHub / GitLab / Gitea / Forgejo / Codeberg
-          │
-          ▼
-   Kaneo / Jira / Linear  ·  Shoutrrr (Notifications)</code></pre>
+  <p>Self-host target: <strong>two services</strong> in one Compose project and <strong>one public port</strong> (<code>3000</code>, the app). The <strong>app</strong> holds every secret, owns <code>app.db</code> and is the only process that writes to it. The <strong>worker</strong> runs Renovate and has <strong>no database access, no data volume and no Docker socket</strong>. Setup, login and roles: §3. This section and §2.1–§2.12 specify the update engine; its data parts are §4.6 and §4.9, its job flow is §5.6–§5.7.</p>
+  <pre><code>        GitHub (App: webhooks · installation tokens · OAuth · API · git over HTTPS)
+          │ webhooks (HMAC)                        ▲ branches, PRs, dashboard (written by Renovate)
+          ▼                                        │
+┌────────── app container ───────────────┐        ┌────────── worker container ─────────────┐
+│ Next.js  :3000  (the only public port) │        │ release-ops worker (Go)                 │
+│   UI (COSS)                            │        │   based on the pinned Renovate image    │
+│   /api/go/*  proxy ──► Go API          │        │   claims a job · heartbeats · posts     │
+│   /hooks/github ─────► Go webhook      │        │   the result (long-poll, no DB)         │
+│ Go API  127.0.0.1:8080 (not exposed)   │  HTTP  │ Renovate runs as a second Unix user,    │
+│   REST /api/v1 · auth · queue/enqueue  │◄──────►│   cannot read the worker secret         │
+│   installation-token issuing           │ worker │ volume: per-slot caches only            │
+│   PR-state sync · ticket engine        │ secret │ no DB · no data volume · no Docker      │
+│ Go internal listener  INTERNAL_ADDR    │        │ socket                                  │
+│   worker routes only (compose network) │        └─────────────────────────────────────────┘
+│ app.db (SQLite, WAL) — the only writer │
+│ Volume: /data  (app.db, snapshots/)    │
+└────────────────┬───────────────────────┘
+                 ▼
+        Kaneo / Jira / Linear</code></pre>
 
-  <h3>Runtime in container</h3>
+  <h3>Runtime</h3>
   <table>
-    <tr><th>Component</th><th>Bind</th><th>Responsibility</th></tr>
-    <tr><td>Next.js</td><td><code>0.0.0.0:${PORT}</code> (default 3000)</td><td>COSS UI, HTTP proxy to Go (forwards <code>Cookie</code> / <code>Set-Cookie</code>)</td></tr>
-    <tr><td>Go</td><td><code>127.0.0.1:${GO_INTERNAL_PORT}</code> (default 8080)</td><td>REST API, credential decrypt, polling, migrations</td></tr>
+    <tr><th>Component</th><th>Container</th><th>Bind</th><th>Responsibility</th></tr>
+    <tr><td>Next.js</td><td>app</td><td><code>0.0.0.0:${PORT}</code> (default 3000)</td><td>COSS UI; HTTP proxy to Go (forwards <code>Cookie</code> / <code>Set-Cookie</code>); forwards <code>/hooks/github</code> to Go unchanged (§2.10)</td></tr>
+    <tr><td>Go public API</td><td>app</td><td><code>127.0.0.1:${GO_INTERNAL_PORT}</code> (default 8080)</td><td>REST API, auth, setup, webhook handler, queue and enqueue, scheduler, reaper, installation-token issuing, PR-state sync, ticket engine, credential decrypt, migrations</td></tr>
+    <tr><td>Go internal listener</td><td>app</td><td><code>INTERNAL_ADDR</code> (§2.1)</td><td>Worker routes only</td></tr>
+    <tr><td><code>release-ops worker</code></td><td>worker</td><td>none (outbound only)</td><td>Claims jobs, runs Renovate, posts results (§2.2–§2.6)</td></tr>
   </table>
-  <p>Start via <code>docker/entrypoint.sh</code>: migrations → start Go in background → start Next in foreground. Go does not run as a second container.</p>
+  <p>The app container starts via <code>docker/entrypoint.sh</code>: migrations → Go in the background → Next in the foreground. The worker container runs <code>release-ops worker</code> only. Both Go listeners set read-header, read, write and idle timeouts, so a slow or stalled client cannot hold a connection open indefinitely; the claim long-poll (§2.1) is the one request allowed to outlive the ordinary write timeout, and it does so with its own bounded wait.</p>
+  <p>Sources used by this part of the spec: Renovate's documentation (<a href="https://docs.renovatebot.com/self-hosted-configuration/">self-hosted configuration</a>) and source (<code>lib/modules/platform/pr-body.ts</code>, <code>lib/workers/repository/dependency-dashboard.ts</code>, pinned version), and GitHub's documentation (<a href="https://docs.github.com/en/webhooks/webhook-events-and-payloads">webhook events and payloads</a>, <a href="https://docs.github.com/en/webhooks/using-webhooks/handling-failed-webhook-deliveries">handling failed webhook deliveries</a>, <a href="https://docs.github.com/en/rest/apps/webhooks">REST: app webhooks</a>). The Renovate behaviour is read from the documentation and source at the pinned version, not measured; sizing values are tuned on the first deployment (#231).</p>
+
+  <h3 id="internal-listener">2.1 Internal listener &amp; worker protocol</h3>
+  <ul>
+    <li><strong>Bind:</strong> <code>INTERNAL_ADDR</code> (§9) is the address of a second HTTP listener in the app's Go process, on the Compose network. Its port is <strong>never published</strong> to the host and never proxied by Next. The public Go API stays on <code>127.0.0.1</code> behind Next.</li>
+    <li><strong>Routes:</strong> only the worker routes below are mounted on it; no <code>/api/v1/*</code>, no setup, no webhook. A path outside this table answers 404. The worker routes are not mounted on the public Go API.</li>
+    <li><strong>Authentication:</strong> every request carries the shared worker secret (<code>WORKER_SECRET</code>, §9) as a bearer credential, compared in constant time. A missing or wrong secret answers 401 and nothing else is evaluated. The secret is never logged. The listener speaks plain HTTP on the private Compose network, so that network is shared with the worker and nothing else.</li>
+    <li><strong>The worker never touches the database.</strong> It claims jobs, heartbeats and posts results through these routes; the app is the only DB writer.</li>
+  </ul>
+  <table>
+    <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+    <tr><td>POST</td><td><code>/internal/v1/jobs/claim</code></td><td><strong>Long-poll.</strong> The worker offers a free slot. The app answers as soon as an eligible job exists (an enqueue wakes every waiting claim) with the job and its lease, or answers 204 after a bounded wait with no job, and the worker asks again. The claim is atomic (§2.8).</td></tr>
+    <tr><td>POST</td><td><code>/internal/v1/jobs/{id}/token</code></td><td>Issues the installation token for a job this worker holds under a live lease (§2.3). Any other job, or an expired lease: 409.</td></tr>
+    <tr><td>POST</td><td><code>/internal/v1/jobs/{id}/heartbeat</code></td><td>Reports liveness; the worker's first heartbeat for a claimed job also marks the job started (§2.9 latency). It carries nothing else. The answer can tell the worker to abort (the repository was paused or removed, or the lease was lost).</td></tr>
+    <tr><td>POST</td><td><code>/internal/v1/jobs/{id}/result</code></td><td>Posts the outcome: Renovate's exit status, a bounded and redacted log excerpt, the Renovate report when present (§2.2), and the raw global config as used (§2.4). Idempotent per attempt.</td></tr>
+  </table>
+  <p>Request bodies are size-limited and JSON. Heartbeat and result writes go through the app's single writer connection (§4.9).</p>
+
+  <h3 id="job-contract">2.2 Per-job contract</h3>
+  <ol>
+    <li><strong>Claim.</strong> The worker claims a job (§2.1). The job names one repository (<code>owner/repo</code>), its priority, the slot it runs in, and the lease expiry.</li>
+    <li><strong>Token.</strong> Only now the worker asks for a token. The app mints it <strong>in the app process</strong>: an App JWT (§3.4) exchanged at <code>POST /app/installations/{installation_id}/access_tokens</code> with the repository list restricted to the <strong>target repository plus the preset repositories</strong> listed in instance config (<code>PRESET_REPOSITORIES</code>, §9; for example a shared presets repository) and the global config repository when one is configured (§2.4). The token is valid about <strong>one hour</strong>, is held in memory only, and is returned to the claiming worker over the internal listener (§2.1). The preset repositories must be reachable by the installation (the App is installed on them), as the job needs them to resolve <code>extends</code> presets.</li>
+    <li><strong>Run.</strong> The worker starts Renovate (§2.3) with this environment:
+      <table>
+        <tr><th>Variable</th><th>Value</th></tr>
+        <tr><td><code>RENOVATE_PLATFORM</code></td><td><code>github</code></td></tr>
+        <tr><td><code>RENOVATE_TOKEN</code></td><td>The job's installation token</td></tr>
+        <tr><td><code>RENOVATE_REPOSITORIES</code></td><td>The job's <code>owner/repo</code> — exactly one repository</td></tr>
+        <tr><td><code>RENOVATE_GIT_AUTHOR</code></td><td>The App's bot identity: <code>&lt;slug&gt;[bot] &lt;&lt;id&gt;+&lt;slug&gt;[bot]@users.noreply.github.com&gt;</code>, where <code>id</code> is the numeric id of the App's bot user (§2.9). The app sends the string with the job, because the worker has no GitHub identity of its own</td></tr>
+      </table>
+      plus the config-file location and job-level settings of §2.4–§2.5. Renovate reads the repository, opens or updates branches and PRs as the App's bot user and updates the Dependency Dashboard.</li>
+    <li><strong>Result.</strong> The worker posts the result (§2.1) and frees its slot. The app writes the outcome and hands the repository to the PR-state sync and ticket engine (what they do with it: §5.6 and the update-PR sections, tracked as #187).</li>
+  </ol>
+  <ul>
+    <li><strong>The worker never holds the encryption key (<code>APP_ENCRYPTION_KEY</code>) or the App's private key, and never mints a token.</strong> Its only secrets are the worker secret and the token of the job it is running.</li>
+    <li>Every value the worker posts or logs is redacted for the job's token first; the app never logs a token either. Renovate's own log redaction is not relied on alone.</li>
+    <li><strong>Renovate's output.</strong> The worker runs Renovate with JSON logs and the file report (<code>reportType=file</code>, an option the Renovate documentation marks experimental) and posts a bounded excerpt of the logs and the report. The report schema is not a stable contract, so the app parses it defensively and treats it as enrichment (dependency, from, to): <strong>GitHub is the source of truth for PR state</strong>, and a missing or unreadable report fails nothing. The Renovate version is pinned (§2.3); report-field assertions are tracked as #222.</li>
+    <li>A repository with no Renovate configuration ends the job early as "no config" (<code>requireConfig=required</code>, §2.5); the result says so (§2.7).</li>
+  </ul>
+
+  <h3 id="worker-process">2.3 Worker process model</h3>
+  <ul>
+    <li><strong>Image:</strong> the worker image is built <code>FROM</code> the pinned Renovate image (unmodified, pinned by tag or digest) and adds the <code>release-ops</code> binary. Renovate runs as a <strong>child process</strong> of <code>release-ops worker</code>, one per claimed job, never in the API process and never from a Docker container (no Docker socket).</li>
+    <li><strong>Two Unix users.</strong> The worker process runs as one user; Renovate runs as a <strong>second Unix user</strong> inside the same container and <strong>cannot read the worker secret</strong> (not its environment, not a file, not a mounted secret). Renovate gets a <strong>minimal environment</strong>: <code>PATH</code>, <code>HOME</code> of its own user, the variables of §2.2 and §2.4, and log settings. No app secret and no worker-side setting is passed to it. That Renovate runs as a second user with the tools mount (§2.5) and <code>binarySource=install</code> is covered by a CI smoke test (tracked as #195).</li>
+    <li><strong>Lifetime:</strong> the worker enforces the job timeout (§2.5): it stops Renovate's process group, waits briefly and then kills it, by PID. A worker that dies leaves a lease that the reaper reclaims (§2.8).</li>
+    <li><strong>Pinning:</strong> Release Ops pins one Renovate version per release. The Renovate image tag can be overridden at your own risk (§9): the report and log handling is tested against the pinned version only.</li>
+  </ul>
+
+  <h3 id="renovate-config">2.4 Global self-hosted config &amp; tools</h3>
+  <p>Renovate's self-hosted (global) configuration is a <strong>file in git</strong>, so it can keep its own review and validation. It is not edited in the UI.</p>
+  <ul>
+    <li><strong>Where it comes from.</strong> By default the worker <strong>fetches it at job start</strong> from a configured repository and ref (<code>GLOBAL_CONFIG_REPO</code>, <code>GLOBAL_CONFIG_REF</code>, §9) with the job's installation token (§2.2). The same fetch brings the <strong>tools</strong> directory (§2.5). Alternatively the file and tools are <strong>mounted</strong> into the worker from the host and nothing is fetched. A fetch failure fails the job before Renovate starts.</li>
+    <li><strong>Release Ops owns four keys.</strong> <code>platform</code>, <code>token</code> and <code>repositories</code> are set by Release Ops per job (§2.2), and <code>allowScripts</code> is fixed to <code>false</code> (§2.5). If the file contains any of them they are <strong>ignored</strong> (the worker removes them before handing the file to Renovate and logs a warning that names the key, never a value).</li>
+    <li><strong><code>allowedCommands</code> lives only in this file.</strong> It is never per repository (a repository's own config cannot add to it) and never set through the UI or API.</li>
+    <li><strong>The UI shows the file raw.</strong> Admins can view the file as the worker last used it, as plain text. Release Ops <strong>never parses or evaluates it</strong> (it may be JavaScript) and the page cannot edit it (§3.10). The worker returns the raw text with each job result (§2.1) for that purpose. The file must not contain secrets.</li>
+    <li>Everything else in the file is Renovate's: presets, <code>prConcurrentLimit</code>, schedules, <code>binarySource</code>, and so on.</li>
+  </ul>
+
+  <h3 id="worker-defaults">2.5 Safety defaults &amp; limits</h3>
+  <p>Release Ops applies these as <strong>defaults beneath the global config file</strong> (an admin can change them there, except the four keys of §2.4). They are conservative; the numeric ones are tuned on the first deployment (#231).</p>
+  <table>
+    <tr><th>Setting</th><th>Default</th><th>Why</th></tr>
+    <tr><td><code>allowScripts</code></td><td><code>false</code> — <strong>fixed by Release Ops</strong>; the global config file cannot change it (§2.4)</td><td>Repository code is untrusted; package-manager install scripts never run.</td></tr>
+    <tr><td><code>allowedCommands</code></td><td><code>[]</code> — an admin allowlist in the global config file (§2.4)</td><td>With an empty list no <code>postUpgradeTasks</code> command runs. An admin who needs one lists it as a regular expression in the file.</td></tr>
+    <tr><td>Tools</td><td>A <strong>read-only</strong> tools directory (example <code>/opt/renovate-tools</code>), fetched with the global config or mounted</td><td>Commands an admin allows can live there instead of in the image; Renovate cannot modify them.</td></tr>
+    <tr><td><code>onboarding</code> / <code>requireConfig</code></td><td><code>false</code> / <code>required</code></td><td>Renovate opens no onboarding PR and skips a repository without its own config (§2.7).</td></tr>
+    <tr><td><code>platformCommit</code></td><td><code>enabled</code></td><td>Commits are created through the GitHub API with the installation token, so they are signed as the App.</td></tr>
+    <tr><td><code>binarySource</code></td><td><code>install</code></td><td>Tools are installed at run time for the managed ecosystems (egress: §2.6); no Docker sidecar is possible without a socket.</td></tr>
+    <tr><td><code>cacheDir</code>, <code>repositoryCache</code>, <code>persistRepoData</code></td><td>Per <strong>slot</strong>: each slot has its own cache directory with <code>repositoryCache=enabled</code> and <code>persistRepoData=true</code>, on a worker volume</td><td>Renovate processes the whole repository each time; the caches keep a run to a fetch instead of a full clone and speed up extraction. A slot's directories are used by one job at a time, so jobs never share a working copy.</td></tr>
+    <tr><td>Job timeout</td><td>Below the token lifetime (~1 h)</td><td>A job never outlives its token. The lease (§2.8) is the timeout plus a margin.</td></tr>
+    <tr><td>CPU, RAM</td><td>Limited by the worker container's limits (Compose reference, §10), sized for the concurrency cap</td><td>A runaway repository cannot starve the app.</td></tr>
+    <tr><td>Concurrency</td><td>Cap <strong>2</strong>, an instance setting (§4.1, §7.2); <strong>one slot reserved for high-priority jobs</strong> (§2.8)</td><td>Bounds memory and GitHub load; webhook jobs never wait behind scheduled ones.</td></tr>
+  </table>
+  <p>Slots are numbered by the app: each claim names the slot (<code>0</code> to cap−1) the job runs in, and the worker keeps one cache directory per slot under its cache volume, so no separate slot-count variable exists.</p>
+
+  <h3 id="worker-egress">2.6 Worker egress</h3>
+  <p>The worker needs outbound access to:</p>
+  <ul>
+    <li>the <strong>GitHub API and git over HTTPS</strong> (<code>api.github.com</code>, <code>github.com</code>) for the repositories, presets and the global config repository;</li>
+    <li>the <strong>package registries and datasources</strong> of the ecosystems the repositories manage (npm, PyPI, Maven, Docker registries, GitHub releases of other projects, and so on), whatever Renovate's managers for them contact;</li>
+    <li>the <strong>tool downloads</strong> when <code>binarySource=install</code> (the hosts the tool installer fetches language runtimes and package managers from);</li>
+    <li>the app's internal listener (§2.1) on the Compose network.</li>
+  </ul>
+  <p>The worker needs <strong>no inbound</strong> connection and no access to the database, the Docker socket or any ticket system. An egress allowlist can be applied by the operator; the customer-facing list is documented separately (#223).</p>
+
+  <h3 id="repo-selection">2.7 Repository selection</h3>
+  <ul>
+    <li><strong>No explicit repository list.</strong> A repository takes part when the <strong>App is installed on it</strong> (the installation's repository selection, §3.4) <strong>and a Renovate config file is present</strong> (<code>renovate.json</code>, or any other file name Renovate accepts). Presence is decided by Renovate itself through <code>requireConfig=required</code>: a repository without one ends its job early and is recorded as "no config". The app skips scheduled runs (§2.9) for a repository last recorded as "no config"; a <code>push</code> to its default branch, <code>installation_repositories.added</code> and an admin "run now" still start a job, so adding the file is noticed.</li>
+    <li><strong>Pause and enable.</strong> An admin can <strong>pause</strong> a repository and enable it again (§3.10). A paused repository gets no job from any trigger; events for it are accepted and dropped.</li>
+    <li><strong>"Enable repo".</strong> For a repository without a config file, an admin action opens a PR that adds a <code>renovate.json</code> extending the configured preset (the page and endpoint are specified with the update-PR and dashboard sections, tracked as #187).</li>
+  </ul>
+
+  <h3 id="job-queue">2.8 Job queue</h3>
+  <p>A <strong>persistent <code>jobs</code> table</strong> (§4.6) is the queue. Webhooks only verify, coalesce and return (§2.10); nothing runs in the request path.</p>
+  <ul>
+    <li><strong>One job per repository at a time.</strong> A repository has at most one <code>running</code> job and at most one <code>queued</code> job. The database enforces this, not only the claim query.</li>
+    <li><strong>Priority.</strong> <strong>High</strong> (webhook triggers and admin "run now") is claimed before <strong>normal</strong> (the hourly safety net and the polling fallback); within a priority, oldest first. <code>run_after</code> holds a job back until its time.</li>
+    <li><strong>Global cap.</strong> A claim succeeds only while the number of <code>running</code> jobs is below the <strong>concurrency cap</strong> (default 2, instance setting). With a cap of 2 or more, <strong>one slot is reserved for high-priority jobs</strong>: a normal job is claimed only while running jobs are below cap−1. With a cap of 1 there is no reservation.</li>
+    <li><strong>Coalescing per repository.</strong> A trigger for a repository that already has a <code>queued</code> job adds to that job (the highest priority wins, the matched checkbox markers (§2.9) are added) and creates no second one.</li>
+    <li><strong><code>rerun_requested</code>.</strong> A high-priority trigger that arrives while the repository's job is <code>running</code> must not be lost, because Renovate may already have read the old body. It sets <code>rerun_requested</code> on the running job; several ticks during one run collapse into the one flag. When the run finishes, the app enqueues exactly one follow-up high-priority job for the repository. A normal-priority trigger arriving mid-run is dropped (the run in progress covers it). When the run fails and is retried, the retry is the follow-up.</li>
+    <li><strong>Leases and the reaper.</strong> A claim sets <code>running</code>, the lease owner and <code>lease_expires_at</code>. The lease is the <strong>job timeout plus a margin</strong> (§2.5). Heartbeats show liveness and carry aborts (§2.1). A <strong>reaper</strong> in the app periodically moves every <code>running</code> job whose lease has expired back to <code>queued</code> (the attempt is counted; with no attempts left the job fails), so a dead worker frees its repository.</li>
+    <li><strong>Retries and backoff.</strong> A failed attempt is re-queued with a growing <code>run_after</code> until the attempt limit. When GitHub (or another upstream) answered with <code>Retry-After</code>, or the rate-limit reset time is known, <code>run_after</code> is <strong>at least</strong> that long; the worker reports it with the failed result.</li>
+    <li><strong>Rate limit.</strong> An installation has <strong>one GitHub rate-limit budget</strong>, shared by every token minted for it. Renovate runs, the reconcile and polling (§2.11), failed-delivery redelivery and role checks (§3.8) all draw on it. While the budget is exhausted no job is claimed before it resets, and the app's own calls back off the same way. The shared-budget accounting is tracked as #221.</li>
+    <li><strong>Interface.</strong> The queue sits behind a Go interface (enqueue, claim, heartbeat, complete or fail, reap), so a Postgres implementation can replace SQLite later (hosted). v2.0 ships the SQLite one only.</li>
+  </ul>
+
+  <h3 id="triggers">2.9 Triggers &amp; latency</h3>
+  <p>The primary requirement of v2: ticking a Renovate checkbox in a PR description or in the repository's Dependency Dashboard starts a run for that repository within seconds. Each trigger below enqueues <strong>one coalesced job</strong> for the repository (§2.8).</p>
+  <table>
+    <tr><th>Trigger</th><th>Source</th><th>Condition</th><th>Priority</th></tr>
+    <tr><td>Dashboard checkbox</td><td><code>issues</code> <code>edited</code></td><td>The issue's author is the App's bot user, the edit contains a tick (below), and the sender is not the App's own bot</td><td>high</td></tr>
+    <tr><td>PR checkbox</td><td><code>pull_request</code> <code>edited</code></td><td>The PR's author is the App's bot user, the edit contains a tick, and the sender is not the App's own bot</td><td>high</td></tr>
+    <tr><td>PR closed</td><td><code>pull_request</code> <code>closed</code> (merged or not)</td><td>The PR's author is the App's bot user. A merge or close frees a <code>prConcurrentLimit</code> slot; the PR-state sync and ticket transition are #187</td><td>high</td></tr>
+    <tr><td>Default branch changed</td><td><code>push</code></td><td><code>ref</code> is the repository's default branch (<code>refs/heads/&lt;default_branch&gt;</code>) and the push is not a branch deletion: config or manifests may have changed</td><td>high</td></tr>
+    <tr><td>Repository added</td><td><code>installation_repositories</code> <code>added</code></td><td>One job per added repository</td><td>high</td></tr>
+    <tr><td>Safety net</td><td>Hourly scheduler</td><td>Every enabled, unpaused repository that is not recorded as "no config" (§2.7); a repository with a <code>queued</code> or <code>running</code> job is skipped</td><td>normal</td></tr>
+    <tr><td>Run now</td><td>Admin action (§3.10)</td><td>Any unpaused repository</td><td>high</td></tr>
+  </table>
+  <h4>Detecting a tick (generic)</h4>
+  <ul>
+    <li>Renovate's checkboxes have the form <code> - [ ] &lt;!-- name --&gt;</code>; a ticked one is <code> - [x] &lt;!-- name --&gt;</code> (Renovate's source: <code>lib/modules/platform/pr-body.ts</code>, <code>lib/workers/repository/dependency-dashboard.ts</code>). Examples: <code>rebase-check</code> in a PR body; <code>rebase-branch=&lt;branch&gt;</code>, <code>approve-branch=&lt;branch&gt;</code>, <code>unlimit-branch=&lt;branch&gt;</code>, <code>rebase-all-open-prs</code>, <code>approve-all-pending-prs</code>, <code>create-all-rate-limited-prs</code>, <code>create-config-migration-pr</code> on the dashboard.</li>
+    <li>On <code>issues.edited</code> and <code>pull_request.edited</code> the handler compares <code>changes.body.from</code> (the previous body, as GitHub's webhook payloads carry it) with the new body. It is a tick when <strong>any marker comment that was on an unchecked line (<code>[ ]</code>) in the old body is on a checked line (<code>[x]</code> or <code>[X]</code>) in the new one</strong>. The matching is by marker text, so reordered lines do not matter.</li>
+    <li><strong>No hard-coded marker list</strong>: a new Renovate checkbox works without a Release Ops change. <strong>The matched markers are stored with the job</strong> and shown in the UI as the reason it ran.</li>
+    <li>An edit without <code>changes.body</code> (a title edit), and an edit whose body shows no unchecked-to-checked transition (a text edit, Renovate unticking a box after it acted), are <strong>ignored</strong>.</li>
+  </ul>
+  <h4>Identifying the bot and its objects</h4>
+  <ul>
+    <li>The App's bot user is <code>&lt;slug&gt;[bot]</code>. Its <strong>numeric user id</strong> is read once with <code>GET /users/&lt;slug&gt;[bot]</code> after the App is stored, kept with the App (§3.4; table with the v2 data model, tracked as #187) and used for every comparison and for <code>RENOVATE_GIT_AUTHOR</code> (§2.2); identity is the id, never the login.</li>
+    <li>A bot PR or the Dependency Dashboard is identified by <strong>author = the App's bot user plus Renovate's markers</strong> (the checkbox markers above, or Renovate's PR body markers). <strong>Never</strong> by <code>branchPrefix</code> or by the dashboard's title: those are set in per-repository or preset JavaScript configuration that Release Ops cannot evaluate.</li>
+  </ul>
+  <h4>Loop prevention</h4>
+  <p>Renovate rewrites the dashboard and PR bodies on every run, and each rewrite returns as a webhook. Edits whose <code>sender</code> is the App's own bot are ignored, and so is any edit without a tick. <code>pull_request.closed</code> from the bot itself is not filtered (an automerge frees a slot a follow-up run needs); the one-job-per-repository coalescing (§2.8) bounds the cost.</p>
+  <h4>Latency target</h4>
+  <ul>
+    <li><strong>A job is started at most 10 seconds after its webhook arrives.</strong> The webhook handler only verifies, records and enqueues; an enqueue wakes the waiting claim (§2.1); the claim, token (§2.2) and global config fetch (§2.4) follow. "Started" is the app receiving the worker's first heartbeat for the job, measured on the app's clock from the arrival of the webhook, so it spans the app and worker processes. Both timestamps are stored on the job.</li>
+    <li>The PR or the dashboard is updated when Renovate finishes (minutes, depending on the repository); the target does not cover Renovate's own run time.</li>
+    <li>The target is verified live on the first deployment (#232).</li>
+    <li>Requires a reachable webhook endpoint; without one the degraded fallback of §2.11 applies.</li>
+  </ul>
+
+  <h3 id="webhook">2.10 Webhook endpoint (<code>/hooks/github</code>)</h3>
+  <p><code>POST /hooks/github</code> is the URL <code>WEBHOOK_URL</code> points at (§3.3, §9). GitHub reaches it without a session (§3.11). Next.js forwards the request body <strong>byte for byte</strong> (no parsing, no re-encoding) with the <code>X-Hub-Signature-256</code>, <code>X-GitHub-Event</code> and <code>X-GitHub-Delivery</code> headers to the Go handler.</p>
+  <ol>
+    <li><strong>Size cap.</strong> The handler reads at most <strong>1 MiB</strong>. A larger body is answered 413 and dropped (the safety net of §2.9 covers the repository). GitHub's documented payload cap is 25 MB; the subscribed events' payloads are far smaller, and the cap is raised only if a real payload needs it.</li>
+    <li><strong>HMAC.</strong> HMAC-SHA256 of the <strong>raw body</strong> with the stored webhook secret (§3.4) is compared in constant time with <code>X-Hub-Signature-256</code> (<code>sha256=&lt;hex&gt;</code>) <strong>before anything is parsed</strong>. A missing or wrong signature is answered 401; nothing is stored. With no App configured the endpoint answers 503.</li>
+    <li><strong>Events.</strong> Only the subscribed events are processed (<code>push</code>, <code>pull_request</code>, <code>issues</code>, <code>installation</code>, <code>installation_repositories</code>, §3.3). Any other event, including <code>ping</code>, is answered 202 and ignored.</li>
+    <li><strong>Deduplicate.</strong> <code>X-GitHub-Delivery</code> is recorded; a GUID seen before is answered 202 and does nothing. The record and the resulting enqueue are written in <strong>one transaction</strong>, so a crash cannot record a delivery without its job. Records are pruned after a retention that outlasts GitHub's redelivery window.</li>
+    <li><strong>Decide and enqueue.</strong> The event is evaluated by the rules of §2.9 and enqueued; <code>installation</code> and <code>installation_repositories</code> also update the synced repositories (§3.4). No GitHub call happens in the request path.</li>
+    <li><strong>Answer 202</strong> as soon as the transaction commits, well inside GitHub's 10-second delivery timeout.</li>
+  </ol>
+
+  <h3 id="webhook-recovery">2.11 Recovery &amp; polling fallback</h3>
+  <ul>
+    <li><strong>Failed deliveries.</strong> GitHub does not redeliver a failed delivery by itself. At <strong>startup and every 15 minutes</strong>, when the webhook is active, the app lists the App's recent failed deliveries (<code>GET /app/hook/deliveries</code>, App JWT, <code>status=failure</code>, paged with <code>cursor</code>) and redelivers each with <code>POST /app/hook/deliveries/{delivery_id}/attempts</code> unless a delivery with the same <code>guid</code> has succeeded since. A redelivered event passes through the same endpoint (§2.10). The hourly safety net is the last-resort net behind this.</li>
+    <li><strong>Reconcile.</strong> Together with the safety net, the app reconciles installations and repositories hourly and at startup (§3.4).</li>
+    <li><strong>No public URL: polling fallback (degraded).</strong> With <code>WEBHOOK_URL</code> unset the webhook is inactive (§3.3), no event arrives, and none of the redelivery above applies. The app then <strong>polls per installation</strong> instead, at an interval of minutes, using conditional requests (<code>ETag</code> / <code>If-None-Match</code>) so an unchanged repository costs no rate-limit budget: the Dependency Dashboard and open bot PRs (the poller keeps the last body it saw of each and applies the same tick test as §2.9), the closing of a bot PR, and the default branch head. A change enqueues a <strong>normal</strong>-priority job through the same coalescing. The hourly safety net and "run now" work unchanged.</li>
+    <li><strong>The fallback is degraded</strong>: reaction time is <strong>minutes</strong>, not seconds, the 10-second target of §2.9 does not apply, and a tick made while a run was already in progress can be missed. The customer documentation says so (#223); the Settings page shows that the instance is in polling mode.</li>
+  </ul>
+
+  <h3 id="engine-open">2.12 Open questions of the update engine</h3>
+  <p>Not settled by the brief, the plan or the documentation; to be decided with the first deployment (#231) or by the maintainer:</p>
+  <ul>
+    <li>Numeric defaults: job timeout and lease margin, heartbeat interval, claim long-poll wait, attempt limit and backoff curve, the polling-fallback interval, the delivery-record retention, job history retention, and the worker container's CPU and RAM limits.</li>
+    <li>The in-repository paths of the global config file and the tools directory, and the mount paths in the mounted variant.</li>
+    <li>Whether finer per-job CPU and RAM limits inside the worker container are wanted beyond the container limits and the job timeout.</li>
+    <li>Whether more than one worker container is supported (the cap counts running jobs across workers; v2.0 documents one).</li>
+  </ul>
 
   <h2 id="auth">3. Setup, Authentication &amp; Roles</h2>
   <p>Setup and auth live entirely in <strong>Go</strong>. Next.js is UI-only — the setup and sign-in pages and API clients call Go through the same-origin proxy. GitHub is the only identity provider: there is no local password login. One SQLite file (<code>app.db</code>), one writer process.</p>
@@ -260,7 +444,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <ul>
     <li><strong>One App per instance</strong> (singleton). Stored non-secret fields: App id, slug, client id, owner, HTML URL.</li>
     <li>The <strong>private key (pem), client secret, and webhook secret</strong> are encrypted at rest with the existing credential encryption (§4.8: AES-256-GCM, <code>APP_ENCRYPTION_KEY</code>). They are decrypted only inside the Go process, <strong>never returned by the API</strong> (only <code>hasSecret</code>-style flags) and <strong>never logged</strong> — not on success, not on failure, not inside error messages.</li>
-    <li>Installation tokens are minted in the Go process from an App JWT (RS256 signed with the private key, <code>iss</code> = App id, expiry within 10 minutes) through <code>POST /app/installations/{installation_id}/access_tokens</code>, are valid about one hour, and are held in memory only.</li>
+    <li>Installation tokens are minted in the Go process from an App JWT (RS256 signed with the private key, <code>iss</code> = App id, expiry within 10 minutes) through <code>POST /app/installations/{installation_id}/access_tokens</code>, are valid about one hour, and are held in memory only. A token for a job is issued to the claiming worker only (§2.2).</li>
     <li>Table shapes (<code>github_app</code>, <code>installations</code>, <code>repositories</code>) are specified with the v2 data model (tracked as #187).</li>
   </ul>
   <h4>Installation: exactly one</h4>
@@ -272,7 +456,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   </ul>
   <h4>Repositories</h4>
   <ul>
-    <li>Installed repositories are synced from the <code>installation</code> and <code>installation_repositories</code> events (repositories added and removed) <strong>and</strong> by a reconcile that lists them with an installation token (<code>GET /installation/repositories</code>) and compares the installation with <code>GET /app/installations</code>. The reconcile runs at start and periodically; its schedule belongs to the update-engine section (tracked as #186).</li>
+    <li>Installed repositories are synced from the <code>installation</code> and <code>installation_repositories</code> events (repositories added and removed) <strong>and</strong> by a reconcile that lists them with an installation token (<code>GET /installation/repositories</code>) and compares the installation with <code>GET /app/installations</code>. The reconcile runs at start and hourly, with the safety net (§2.11).</li>
     <li>With <code>WEBHOOK_URL</code> unset the webhook is inactive, no events arrive, and the reconcile is the only sync path — documented as degraded.</li>
   </ul>
   <h4 id="key-rotation">Private key rotation</h4>
@@ -374,7 +558,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
 
   <h3 id="protected-routes">3.11 Protected routes</h3>
   <ul>
-    <li>Go middleware: all <code>/api/v1/*</code> require a valid session except the public sign-in and setup paths listed in §7.0. The GitHub webhook endpoint is not session-authenticated; it is specified with the webhook section (tracked as #186).</li>
+    <li>Go middleware: all <code>/api/v1/*</code> require a valid session except the public sign-in and setup paths listed in §7.0. The GitHub webhook endpoint (<code>/hooks/github</code>) is not session-authenticated; it is authenticated by its HMAC signature (§2.10).</li>
     <li><code>GET /healthz</code> — no auth (container probe).</li>
     <li>Next middleware: pages except <code>/login</code>, <code>/login/link</code> and <code>/setup</code> redirect to <code>/login</code> when <code>GET /api/go/api/v1/auth/session</code> returns <code>user: null</code>, and to <code>/setup</code> while <code>GET /api/go/api/v1/setup/status</code> reports setup required (§8.2).</li>
   </ul>
@@ -424,7 +608,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <p>Singleton (always <code>id = 1</code>). The v2 split into instance and installation settings is part of the v2 data model (tracked as #187); the v1 invitation and password-reset expiry columns are removed.</p>
   <table>
     <tr><th>Column</th><th>Type</th><th>Default</th><th>Description</th></tr>
-    <tr><td><code>poll_interval_minutes</code></td><td>INTEGER</td><td>360</td><td>v1 — global poll interval; min 5. Replaced by the engine's scheduling (tracked as #186)</td></tr>
+    <tr><td><code>concurrency_cap</code></td><td>INTEGER</td><td>2</td><td>Global cap on running jobs (§2.8); min 1. An instance setting, shown on the settings page (§7.2). Replaces the v1 <code>poll_interval_minutes</code>: there is no poll interval (§5.7)</td></tr>
     <tr><td><code>updated_at</code></td><td>TEXT (ISO8601)</td><td>—</td><td>UTC</td></tr>
   </table>
 
@@ -522,20 +706,21 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   </table>
   <p>Default <code>events_json</code>: <code>["create","error","supersede"]</code>. No event on <code>baseline</code> / <code>skip</code>.</p>
 
-  <h3>4.6 <code>poll_runs</code> &amp; <code>poll_run_events</code></h3>
-  <p class="note">v1 — replaced by jobs and job history (tracked as #186).</p>
-  <p>Poller audit. <code>errors_json</code>: array <code>{ "repoId", "message" }</code>. <code>tickets_superseded</code> counts supersede actions.</p>
-  <p><code>poll_runs.trigger_source</code>: <code>manual</code> (dashboard / <code>POST /api/v1/poll/trigger</code>) or <code>scheduled</code> (cron from <code>poll_interval_minutes</code>). Default <code>scheduled</code> for existing rows.</p>
-  <p><code>poll_run_events.action</code>:</p>
-  <ul>
-    <li><code>baseline</code> · <code>skip</code> · <code>create</code> · <code>supersede</code> · <code>merge</code> · <code>skip_open</code> · <code>error</code></li>
-  </ul>
-  <p><code>poll_run_events</code> also records, per event, the ticket and release it refers to. All three columns are nullable and stay NULL for events written before they existed:</p>
-  <ul>
-    <li><code>ticket_external_id</code> · <code>ticket_url</code> — set at poll time on <code>create</code> (the new ticket), <code>merge</code> (the updated, existing ticket) and <code>supersede</code> (the old, superseded ticket); NULL on <code>baseline</code>, <code>skip</code>, <code>skip_open</code> and <code>error</code>. A supersede evaluation records two events, <code>supersede</code> (old ticket) then <code>create</code> (new ticket), each with its own reference. When the new ticket is created but updating or commenting on the old ticket fails, the evaluation records <code>create</code> (new ticket, with its reference) then <code>error</code> (no reference), and the old ticket gets no reference. <code>ticket_url</code> is <code>TicketProvider.TicketWebURL</code> resolved during the poll; if that lookup fails the id is kept, the URL stays NULL and the poll outcome is unchanged.</li>
-    <li><code>release_tag</code> — the triggering release's tag on <code>baseline</code> (when a release exists), <code>create</code>, <code>supersede</code>, <code>merge</code> and <code>skip_open</code>; NULL on <code>skip</code> and <code>error</code>.</li>
-  </ul>
-  <p>The repository of an event is not stored on it: <code>GET /api/v1/poll/runs/{id}</code> joins <code>monitored_repos</code> at read time, so events of a deleted repo (<code>monitored_repo_id</code> NULL) have no repo path.</p>
+  <h3 id="jobs-table">4.6 <code>jobs</code> (queue)</h3>
+  <p>The persistent queue of §2.8. It replaces the v1 <code>poll_runs</code> / <code>poll_run_events</code> poll history: there is no global poll run, only jobs. Written only through the app's writer connection (§4.9). This entry fixes what the queue semantics need; the full DDL and the job-history tables are part of the v2 data model (tracked as #187).</p>
+  <table>
+    <tr><th>Field</th><th>Meaning</th></tr>
+    <tr><td><code>id</code>, <code>kind</code></td><td>Job id; kind (v2.0 has one: a Renovate run of one repository).</td></tr>
+    <tr><td><code>repository_id</code></td><td>The installed repository (§2.7). At most one <code>queued</code> and one <code>running</code> job per repository, enforced by the database (§2.8).</td></tr>
+    <tr><td><code>priority</code></td><td><code>high</code> (webhook triggers, run now) or <code>normal</code> (safety net, polling fallback).</td></tr>
+    <tr><td><code>state</code></td><td><code>queued</code> → <code>running</code> → <code>succeeded</code> or <code>failed</code>. A failed attempt with attempts left, and a reaped lease, go back to <code>queued</code>.</td></tr>
+    <tr><td><code>run_after</code>, <code>attempts</code></td><td>Earliest claim time (backoff, <code>Retry-After</code>, §2.8) and the attempts used.</td></tr>
+    <tr><td><code>lease_owner</code>, <code>lease_expires_at</code>, <code>last_heartbeat_at</code></td><td>The lease of §2.8 (job timeout plus margin) and the last heartbeat (§2.1). The reaper acts on <code>lease_expires_at</code>.</td></tr>
+    <tr><td><code>rerun_requested</code></td><td>Set on a <code>running</code> job when a high-priority trigger arrives mid-run (§2.8).</td></tr>
+    <tr><td>Trigger, matched markers</td><td>What enqueued the job (§2.9) and, for a checkbox tick, the matched markers, for the UI.</td></tr>
+    <tr><td>Webhook arrival, start time</td><td>When the triggering webhook arrived (NULL for scheduled jobs) and when the worker's first heartbeat for the job arrived: the 10-second target of §2.9 is their difference.</td></tr>
+  </table>
+  <p>Two more records belong to the engine: the <strong>webhook delivery record</strong> (the <code>X-GitHub-Delivery</code> GUID with its arrival time, written in the same transaction as the enqueue, §2.10) and the <strong>job history</strong> (<code>job_runs</code> and <code>job_events</code>: what each attempt did, its outcome and log excerpt), which has a bounded retention. Retention values are an open question (§2.12).</p>
 
   <h3>4.7 Timestamps</h3>
   <p>All <code>TEXT</code> timestamps: RFC3339/ISO8601 UTC with milliseconds, e.g. <code>2026-08-06T12:00:00.000Z</code>.</p>
@@ -549,8 +734,20 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <li>API returns <code>has_secret: true</code> for integrations, never the secret value.</li>
   </ul>
 
+  <h3 id="sqlite-settings">4.9 SQLite settings</h3>
+  <p>The queue and the webhook make concurrent access to <code>app.db</code> normal, so the connection setup is part of the design.</p>
+  <ul>
+    <li><strong>WAL mode</strong> (<code>journal_mode=WAL</code>). It replaces the v1 setup (shared cache, a single connection, no WAL), under which any transaction that read through the pool while holding the connection would deadlock itself.</li>
+    <li><strong>One writer connection.</strong> Every write (REST handlers, webhook handler, internal listener, scheduler, reaper, migrations) goes through a single writer connection, so writes are serialized in the app process and never contend with each other.</li>
+    <li><strong>A separate read pool</strong> of read-only connections serves reads, so a long read does not block the writer and a write does not block reads.</li>
+    <li><strong><code>cache=shared</code> is dropped.</strong> Foreign keys stay on.</li>
+    <li>Code that holds a write transaction reads <strong>through that transaction</strong>, never through the pool or the writer handle again.</li>
+    <li>WAL keeps <code>app.db-wal</code> and <code>app.db-shm</code> beside <code>app.db</code> on the data volume; backup and restore handle them as a set (§10).</li>
+  </ul>
+  <p>SQLite stays the only supported database in v2.0. The queue sits behind an interface (§2.8) so Postgres can replace it for a hosted deployment later; there is no dual-database support.</p>
+
   <h2 id="domain">5. Domain logic &amp; Idempotency</h2>
-  <p class="note">v1 text: release decisions, polling and Shoutrrr (§5.1, §5.2, §5.5–§5.7) are replaced by the update-PR and ticket lifecycle (tracked as #187). Ticket projects, status mapping and template mechanics (§5.3, §5.4) carry over; their variables change from release to update-PR data.</p>
+  <p class="note">v1 text: release decisions (§5.1, §5.2) and Shoutrrr notifications (§5.5) are replaced by the update-PR and ticket lifecycle (tracked as #187). §5.6 and §5.7 are the v2 job flow and scheduling. Ticket projects, status mapping and template mechanics (§5.3, §5.4) carry over; their variables change from release to update-PR data.</p>
   <h3>5.1 Release decision (tag change)</h3>
   <ol>
     <li><strong>baseline</strong> — <code>last_known_tag</code> is NULL → store tag, no ticket.</li>
@@ -710,16 +907,27 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <li>After ticket actions and on poll errors: send to all matching targets (globally enabled, optional repo filter).</li>
   </ul>
 
-  <h3>5.6 Poll run flow</h3>
+  <h3>5.6 Job run flow</h3>
+  <p>The v1 poll run (one global run over every repository, guarded by a mutex) is replaced by one job per repository (§2.8):</p>
   <ol>
-    <li>Insert <code>poll_runs</code> status <code>running</code>.</li>
-    <li>For each <code>enabled</code> repo: query source → decision → log event.</li>
-    <li>Run status: <code>success</code> (no errors), <code>partial</code> (some errors), <code>failed</code> (all failed or critical error).</li>
-    <li>No parallel polling of the same run (mutex / <code>running</code> guard).</li>
+    <li><strong>Enqueue.</strong> A trigger (§2.9) creates a <code>queued</code> job for the repository, adds to an existing <code>queued</code> one, or, while the repository's job is <code>running</code>, sets <code>rerun_requested</code>.</li>
+    <li><strong>Claim.</strong> A worker with a free slot long-polls (§2.1) and receives the next eligible job: highest priority first, then oldest, under the concurrency cap, the reserved slot and the one-job-per-repository rule. The job becomes <code>running</code> with a lease.</li>
+    <li><strong>Token.</strong> The worker asks for the installation token; the app mints it for the target repository, the preset repositories and the global config repository when one is configured (§2.2).</li>
+    <li><strong>Prepare and run.</strong> The worker fetches (or mounts) the global config and tools (§2.4), starts Renovate as the second Unix user with the environment of §2.2, and heartbeats. Renovate processes the whole repository.</li>
+    <li><strong>Result.</strong> The worker posts the outcome (§2.1). The app records it (<code>succeeded</code> or <code>failed</code>), passes the repository to the PR-state sync and ticket engine (tracked as #187) and frees the repository.</li>
+    <li><strong>Follow-up.</strong> With <code>rerun_requested</code> set, the app enqueues one high-priority follow-up job. After a failure the job is retried with backoff (§2.8). A lease that expires without a result is reaped (§2.8).</li>
   </ol>
 
-  <h3>5.7 Scheduler</h3>
-  <p>Interval from <code>app_settings.poll_interval_minutes</code>. Additionally: manual trigger via API/UI.</p>
+  <h3>5.7 Scheduling</h3>
+  <p>There is no poll interval and no per-repository interval setting. Time-based work is fixed:</p>
+  <ul>
+    <li><strong>Safety net:</strong> hourly, a normal-priority job per eligible repository (§2.9).</li>
+    <li><strong>Reconcile:</strong> installations and repositories, at start and hourly (§3.4, §2.11).</li>
+    <li><strong>Redelivery of failed webhook deliveries:</strong> at start and every 15 minutes (§2.11).</li>
+    <li><strong>Reaper:</strong> expired leases (§2.8).</li>
+    <li><strong>Polling fallback</strong> without <code>WEBHOOK_URL</code> (§2.11).</li>
+    <li>Admin "run now" per repository (§3.10) is an on-demand high-priority job.</li>
+  </ul>
 
   <h2 id="providers">6. Provider interfaces (Go)</h2>
   <p class="note">The source providers (§6.1–§6.3) and Shoutrrr (§6.5) are v1 and removed in v2; the ticket providers (§6.4) stay.</p>
@@ -900,93 +1108,13 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <p>Role per endpoint group: the integration, ticket-project and settings endpoints (§7.2–§7.4) and manual triggers are <strong>admin</strong>; endpoints that serve the dashboard, update PRs and jobs are readable by a <strong>viewer</strong> filtered to their repositories (§3.9, specified with the update-PR and dashboard sections, tracked as #187).</p>
 
   <h3>7.1 Status</h3>
-  <p class="note">v1 — replaced by the dashboard, update-PR and job endpoints (tracked as #187).</p>
+  <p class="note">The v1 poll endpoints (<code>POST /api/v1/poll/trigger</code>, <code>GET /api/v1/poll/runs</code>, <code>GET /api/v1/poll/runs/{id}</code>) are removed: there is no global poll run, only jobs (§2.8). The endpoints that list jobs, start "run now" for a repository and feed the dashboard are specified with the update-PR and dashboard sections (tracked as #187). The worker routes are on the internal listener, not in this API (§2.1); the webhook is §2.10.</p>
   <table>
     <tr><th>Method</th><th>Path</th><th>Description</th></tr>
-    <tr><td>GET</td><td><code>/api/v1/status</code></td><td>Aggregated operational status (see JSON below)</td></tr>
-    <tr><td>POST</td><td><code>/api/v1/poll/trigger</code></td><td>Manual poll (async start, 202)</td></tr>
-    <tr><td>GET</td><td><code>/api/v1/poll/runs</code></td><td>List of recent runs (paginated, default limit 20)</td></tr>
-    <tr><td>GET</td><td><code>/api/v1/poll/runs/{id}</code></td><td>Run including events</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/status</code></td><td>Aggregated operational status. The v1 poll fields (<code>pollIntervalMinutes</code>, <code>lastRun</code>, <code>repos</code>, <code>isPolling</code>) are removed; the v2 shape is specified with the dashboard section (tracked as #187). It always carries <code>version</code>.</td></tr>
   </table>
-  <pre><code>// GET /api/v1/poll/runs — list item (events omitted)
-{
-  "id": "...",
-  "startedAt": "...",
-  "finishedAt": "...",
-  "status": "success",
-  "triggerSource": "manual",
-  "reposChecked": 5,
-  "ticketsCreated": 1,
-  "ticketsSuperseded": 0,
-  "errors": []
-}
-
-// GET /api/v1/poll/runs/{id} — same fields plus events[]
-{
-  "id": "...",
-  "startedAt": "...",
-  "finishedAt": "...",
-  "status": "success",
-  "triggerSource": "scheduled",
-  "reposChecked": 5,
-  "ticketsCreated": 1,
-  "ticketsSuperseded": 0,
-  "errors": [],
-  "events": [
-    {
-      "id": "...",
-      "pollRunId": "...",
-      "monitoredRepoId": "...",
-      "action": "create",
-      "detail": "...",
-      "createdAt": "...",
-      "sourceKind": "github",
-      "projectPath": "owner/repo",
-      "ticketExternalId": "RO-42",
-      "ticketUrl": "https://tickets.example/RO-42",
-      "releaseTag": "v1.2.0"
-    }
-  ]
-}
-// sourceKind, projectPath, ticketExternalId, ticketUrl, releaseTag: string | null.
-// sourceKind/projectPath come from the event's monitored repo (null once it is deleted);
-// the ticket and tag fields are null where §4.6 says so and for events recorded earlier.
-// GET /api/v1/poll/runs/{id} makes no provider call.</code></pre>
-  <pre><code>// GET /api/v1/status
-{
-  "pollIntervalMinutes": 360,
-  "lastRun": {
-    "id": "...",
-    "startedAt": "...",
-    "finishedAt": "...",
-    "status": "success",
-    "triggerSource": "scheduled",
-    "reposChecked": 5,
-    "ticketsCreated": 1,
-    "ticketsSuperseded": 0,
-    "errors": []
-  },
-  "repos": [
-    {
-      "id": "...",
-      "sourceKind": "github",
-      "projectPath": "FreshRSS/FreshRSS",
-      "ticketProjectId": "...",
-      "ticketProjectName": "Kaneo — Release Ops",
-      "enabled": true,
-      "openTicketExternalId": "task-uuid",
-      "openTicketTag": "1.26.0",
-      "lastKnownTag": "1.26.0",
-      "lastPolledAt": "...",
-      "lastError": null,
-      "repoUrl": "https://github.com/FreshRSS/FreshRSS",
-      "releaseUrl": "https://github.com/FreshRSS/FreshRSS/releases/tag/1.26.0",
-      "openTicketUrl": "https://cloud.kaneo.app/dashboard/workspace/ws-id/project/project-id/task/task-uuid"
-    }
-  ],
-  "isPolling": false,
-  "version": "v0.2.0"
-}
+  <pre><code>// GET /api/v1/status (excerpt)
+{ "version": "v0.2.0" }
 // version: string — the running build: the release tag (v{X.Y.Z}), nightly-{short_sha}, or "dev"
 // when the binary was built without a version (§11.6). Session-protected like the rest of the endpoint.</code></pre>
 
@@ -995,11 +1123,11 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <table>
     <tr><th>Method</th><th>Path</th><th>Body</th></tr>
     <tr><td>GET</td><td><code>/api/v1/settings</code></td><td>—</td></tr>
-    <tr><td>PATCH</td><td><code>/api/v1/settings</code></td><td><code>{ "pollIntervalMinutes"? }</code></td></tr>
+    <tr><td>PATCH</td><td><code>/api/v1/settings</code></td><td><code>{ "concurrencyCap"? }</code> — integer, min 1 (422 <code>VALIDATION_ERROR</code> otherwise). Takes effect for the next claim; a running job is never interrupted (§2.8)</td></tr>
   </table>
   <pre><code>// GET /api/v1/settings — 200
 {
-  "pollIntervalMinutes": 360
+  "concurrencyCap": 2
 }</code></pre>
 
   <h3>7.3 Integrations</h3>
@@ -1129,7 +1257,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   </table>
 
   <h2 id="ui">8. Web UI &amp; COSS Particles</h2>
-  <p class="note">Auth, setup and settings pages are v2 (§8.2–§8.4). The dashboard, poll-runs, repos and notifications pages are v1 text until the update-PR and dashboard sections replace them (tracked as #187).</p>
+  <p class="note">Auth, setup and settings pages are v2 (§8.2–§8.4). The dashboard, poll-runs, repos and notifications pages are v1 text until the update-PR and dashboard sections replace them (tracked as #187). The settings page is v2 (§8.3 <code>/settings</code>).</p>
   <p>All UI with COSS primitives + specified particles (install via <code>npx shadcn@latest add @coss/...</code> or particle JSON URLs).</p>
 
   <h3>8.1 App shell (all authenticated pages)</h3>
@@ -1155,7 +1283,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><code>/integrations</code></td><td>Integrations</td><td>CRUD credentials (sources + ticket providers)</td></tr>
     <tr><td><code>/ticket-projects</code></td><td>Ticket Projects</td><td>CRUD per integration: project/team, status mapping, policy, content templates</td></tr>
     <tr><td><code>/notifications</code></td><td>Notifications</td><td>Shoutrrr targets, events, test</td></tr>
-    <tr><td><code>/settings</code></td><td>Settings</td><td>Admin. Instance settings (poll interval) and the GitHub App panel: App and installation metadata, the read-only role mapping (§3.7), private key rotation (§3.4)</td></tr>
+    <tr><td><code>/settings</code></td><td>Settings</td><td>Admin. Instance settings (the concurrency cap, the global Renovate config as a read-only view, and the polling-mode notice, §2.11) and the GitHub App panel: App and installation metadata, the read-only role mapping (§3.7), private key rotation (§3.4)</td></tr>
   </table>
   <p class="note">The v1 <code>/profile</code> and <code>/settings/users</code> routes are removed: there are no local accounts, passwords, or user management.</p>
   <p>Middleware: all pages except <code>/login</code>, <code>/login/link</code> and <code>/setup</code> require a session (via <code>GET /api/v1/auth/session</code> through the Go proxy); while <code>GET /api/v1/setup/status</code> reports setup required, every page redirects to <code>/setup</code>, and <code>/setup</code> redirects to <code>/login</code> once an App is configured. Pages and navigation entries a viewer may not use (§3.10) are hidden or show a forbidden state; the Go handlers enforce the role.</p>
@@ -1260,8 +1388,9 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <h4>/settings</h4>
   <table>
     <tr><th>Particle</th><th>Usage</th></tr>
-    <tr><td><code>SettingsSection</code></td><td>Polling and GitHub App panels (<code>max-w-4xl</code> layout)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-number-field-1.json">p-number-field-1</a></td><td>Poll interval (minutes, min 5)</td></tr>
+    <tr><td><code>SettingsSection</code></td><td>Engine, global config and GitHub App panels (<code>max-w-4xl</code> layout)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-number-field-1.json">p-number-field-1</a></td><td>Concurrency cap (jobs, min 1; §2.8)</td></tr>
+    <tr><td><code>SettingsSection</code></td><td>Global Renovate config: the raw file as the worker last used it, plain text, read-only, never parsed (§2.4); a notice when the instance runs in polling mode (§2.11)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-textarea-1.json">p-textarea-1</a></td><td>Private key rotation: PEM input, never re-displayed (§3.4)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-table-2.json">p-table-2</a></td><td>Read-only role mapping and App/installation metadata (§3.7)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>Save; Rotate key</td></tr>
@@ -1289,7 +1418,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <p>Agents: <code>.claude/rules/10-i18n.md</code>.</p>
 
   <h2 id="env">9. Environment variables</h2>
-  <p>Variables of the app container (<code>release-ops</code>). Variables of the update engine and worker are specified with those sections (tracked as #186).</p>
+  <p>Variables of the app container (<code>release-ops</code>). The update-engine variables (<code>INTERNAL_ADDR</code> and below) are specified in §2; the worker container has its own table below.</p>
   <table>
     <tr><th>Variable</th><th>Required</th><th>Default</th><th>Description</th></tr>
     <tr><td><code>SESSION_SECRET</code></td><td>yes</td><td>—</td><td>Session cookie signing (32+ random bytes)</td></tr>
@@ -1299,6 +1428,11 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><code>BOOTSTRAP_ADMIN_GITHUB_LOGIN</code></td><td>no</td><td>—</td><td>GitHub login of the pinned first admin. Resolved to the numeric id at the first matching sign-in and stored; ignored afterwards (§3.6)</td></tr>
     <tr><td><code>ADMIN_TEAM</code></td><td>no</td><td>—</td><td><code>org/team-slug</code>; its members are admins (§3.7)</td></tr>
     <tr><td><code>VIEWER_TEAM</code></td><td>no</td><td>—</td><td><code>org/team-slug</code>; when set, only its members (and admins) may sign in as viewers (§3.7)</td></tr>
+    <tr><td><code>INTERNAL_ADDR</code></td><td>yes</td><td>—</td><td>Bind address of the internal listener the worker connects to (e.g. <code>:9090</code>). Compose network only, never published, serves worker routes only (§2.1)</td></tr>
+    <tr><td><code>WORKER_SECRET</code></td><td>yes</td><td>—</td><td>Shared secret authenticating the worker to the internal listener (32+ random bytes). The same value is set on the worker. Never logged; unreadable by Renovate (§2.1, §2.3)</td></tr>
+    <tr><td><code>GLOBAL_CONFIG_REPO</code></td><td>no</td><td>—</td><td><code>owner/repo</code> holding the global Renovate config file and the tools directory, fetched by the worker at job start with the job token (§2.4). Unset: the file and tools are mounted into the worker instead</td></tr>
+    <tr><td><code>GLOBAL_CONFIG_REF</code></td><td>with <code>GLOBAL_CONFIG_REPO</code></td><td>—</td><td>Branch, tag or commit of that repository to fetch (§2.4)</td></tr>
+    <tr><td><code>PRESET_REPOSITORIES</code></td><td>no</td><td>—</td><td>Comma-separated <code>owner/repo</code> list of preset repositories (e.g. a shared presets repository). Each job's token covers the target repository, these, and the global config repository when one is configured (§2.2). The App must be installed on them</td></tr>
     <tr><td><code>GO_API_URL</code></td><td>no</td><td><code>http://127.0.0.1:8080</code></td><td>Next proxy target in the same container</td></tr>
     <tr><td><code>GO_INTERNAL_PORT</code></td><td>no</td><td><code>8080</code></td><td>Go binds only <code>127.0.0.1</code></td></tr>
     <tr><td><code>APP_DB_PATH</code></td><td>no</td><td><code>/data/app.db</code></td><td>SQLite (app data + auth)</td></tr>
@@ -1307,16 +1441,25 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><code>PORT</code></td><td>no</td><td><code>3000</code></td><td>Public HTTP port (Next.js)</td></tr>
   </table>
   <p><strong>Removed</strong> compared to prior specs: <code>APP_PUBLIC_URL</code> (replaced by <code>APP_URL</code> and <code>WEBHOOK_URL</code>), <code>BOOTSTRAP_ADMIN_EMAIL</code>, <code>BOOTSTRAP_ADMIN_PASSWORD</code>, <code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>, <code>SMTP_PASSWORD</code>, <code>SMTP_FROM</code>, <code>SMTP_TLS</code>, <code>BETTER_AUTH_*</code>, <code>DATABASE_URL</code> (auth.db), <code>JWKS_URL</code>, <code>CONFIG_PATH</code>, <code>GITHUB_TOKEN</code>, <code>PHASICAL_API_KEY</code>, <code>PHASICAL_BASE_URL</code>, <code>POLL_INTERVAL_MINUTES</code> (all in DB/UI or Go auth).</p>
+  <h4>Worker container</h4>
+  <p>Variables of the worker container (<code>release-ops worker</code>). It reads no app secret: no <code>APP_ENCRYPTION_KEY</code>, no <code>SESSION_SECRET</code>, no App credential (§2.2).</p>
+  <table>
+    <tr><th>Variable</th><th>Required</th><th>Description</th></tr>
+    <tr><td><code>INTERNAL_URL</code></td><td>yes</td><td>URL of the app's internal listener on the Compose network (e.g. <code>http://release-ops:9090</code>, matching <code>INTERNAL_ADDR</code>)</td></tr>
+    <tr><td><code>WORKER_SECRET</code></td><td>yes</td><td>Same value as the app's. Held by the worker process only; Renovate runs as another Unix user and cannot read it (§2.3)</td></tr>
+  </table>
+  <p><strong>Not environment variables:</strong> the concurrency cap is an instance setting on the settings page (§4.1, §7.2); the number of slots is that cap (§2.5); the hourly safety net and the other timings are fixed (§5.7). The worker accepts no other Renovate override.</p>
+  <h4>Renovate image tag override</h4>
+  <p>The worker image is built <code>FROM</code> the pinned Renovate image (§2.3). Operators who build the worker image themselves can override the Renovate base tag with the build argument <code>WORKER_RENOVATE_TAG</code>. <strong>Running a Renovate version other than the pinned one is at your own risk:</strong> the report and log handling, and the global config handling, are tested against the pinned version only. It is a build-time setting, not a variable of a running container (the worker has no Docker socket and pulls no image).</p>
 
   <h2 id="deployment">10. Deployment</h2>
-  <p class="note">v1 text. v2 ships the app and a separate worker service; see the update-engine and worker sections (tracked as #186).</p>
   <ul>
-    <li><strong>One image</strong> <code>ghcr.io/{owner}/release-ops</code> — no separate <code>-web</code> / <code>-worker</code> image.</li>
-    <li><code>docker-compose.yml</code>: <strong>one</strong> service <code>release-ops</code>, volume <code>release-ops-data:/data</code>, port <code>3000:3000</code>.</li>
-    <li><code>Dockerfile</code> multi-stage: Next standalone build + Go binary + shared runtime layer with <code>docker/entrypoint.sh</code>.</li>
-    <li>Entrypoint: Go on <code>127.0.0.1:8080</code> (applies pending migrations to <code>app.db</code> before it listens) → Next on <code>:3000</code>.</li>
-    <li>Health probe: <code>GET /api/go/healthz</code> or dedicated Next route that proxies Go <code>/healthz</code> — no second service.</li>
-    <li>Coolify / simple self-host: one container, one URL, one volume.</li>
+    <li><strong>Two services, two images.</strong> The <strong>app</strong> image <code>ghcr.io/{owner}/release-ops</code> (Next.js + Go) and the <strong>worker</strong> image <code>ghcr.io/{owner}/release-ops-worker</code> (the pinned Renovate image plus the <code>release-ops</code> binary, §2.3). Both are released with the same tag, and upgraded together.</li>
+    <li><code>docker-compose.yml</code>: service <code>release-ops</code> (the app) and service <code>release-ops-worker</code>. Only the app publishes a port (<code>3000:3000</code>); the internal listener (§2.1) and the worker publish none.</li>
+    <li><strong>Volumes.</strong> The app has <code>release-ops-data:/data</code> (<code>app.db</code>, <code>snapshots/</code>). The worker has only a cache volume (the per-slot Renovate caches, §2.5) and no <code>/data</code>. <strong>No Docker socket is mounted anywhere.</strong></li>
+    <li>App entrypoint: <code>docker/entrypoint.sh</code> — Go on <code>127.0.0.1:8080</code> plus the internal listener (pending migrations are applied to <code>app.db</code> before either listens) → Next on <code>:3000</code>. Worker entrypoint: <code>release-ops worker</code>.</li>
+    <li>Health probe of the app: <code>GET /api/go/healthz</code> or a dedicated Next route that proxies Go <code>/healthz</code>. The worker starts after the app and keeps asking for jobs until the app answers.</li>
+    <li><strong>Without a public URL</strong> (NAT, home lab) leave <code>WEBHOOK_URL</code> unset: the instance runs in the degraded polling mode (§2.11). Exposing only <code>/hooks/github</code> and the UI (including the OAuth callback) is enough for the fast path.</li>
     <li>Image publish via GitHub Actions — see <a href="#ci">§11 CI/CD</a>.</li>
   </ul>
   <pre><code># docker-compose.yml (reference)
@@ -1330,9 +1473,38 @@ services:
     environment:
       SESSION_SECRET: ...
       APP_URL: https://release-ops.example.com
+      WEBHOOK_URL: https://release-ops.example.com/hooks/github   # optional; unset = polling fallback
       APP_ENCRYPTION_KEY: ...
+      INTERNAL_ADDR: ":9090"             # compose network only, not published
+      WORKER_SECRET: ...
+      GLOBAL_CONFIG_REPO: your-org/renovate
+      GLOBAL_CONFIG_REF: main
+      PRESET_REPOSITORIES: your-org/renovate
+
+  release-ops-worker:
+    image: ghcr.io/mdg-labs/release-ops-worker:latest
+    depends_on:
+      - release-ops
+    environment:
+      INTERNAL_URL: http://release-ops:9090
+      WORKER_SECRET: ...
+    volumes:
+      - worker-cache:/cache              # per-slot Renovate caches
+      # - ./renovate-tools:/opt/renovate-tools:ro   # mounted variant (§2.4)
+    cpus: 2                              # example limits, sized for the concurrency cap;
+    mem_limit: 4g                        # tuned on the first deployment (#231)
+
 volumes:
-  release-ops-data:</code></pre>
+  release-ops-data:
+  worker-cache:</code></pre>
+  <h3>Backup, restore &amp; upgrade</h3>
+  <p>All durable state is in <code>app.db</code> on the app's volume (the worker's cache volume is disposable) plus the two secrets that read it: keep <code>APP_ENCRYPTION_KEY</code> and <code>SESSION_SECRET</code> with every backup, because the App's private key and the integration credentials are unreadable without the encryption key (§4.8).</p>
+  <ul>
+    <li><strong>Backup.</strong> Because the database is in WAL mode (§4.9), copying <code>app.db</code> alone from a running app can miss committed data that still sits in <code>app.db-wal</code>. Use <code>VACUUM INTO</code> (a consistent copy while the app runs) or a <strong>volume snapshot</strong> that is atomic across <code>app.db</code>, <code>app.db-wal</code> and <code>app.db-shm</code>, or one taken with the app stopped.</li>
+    <li><strong>Before an upgrade</strong> take a <code>VACUUM INTO</code> copy or a volume snapshot. The app also writes its own <code>VACUUM INTO</code> snapshot before it applies pending migrations (§4.0, <code>/data/snapshots</code>).</li>
+    <li><strong>Restore.</strong> Stop both services, put the backup in place as <code>app.db</code>, delete any stale <code>app.db-wal</code> and <code>app.db-shm</code>, start the app, then the worker. Jobs that were <code>running</code> when the backup was taken have expired leases and are reaped (§2.8); webhook deliveries that failed while the app was down are redelivered at startup (§2.11).</li>
+    <li><strong>Upgrade.</strong> Pull both images at the same tag, restart both. Migrations run at app start (§4.0).</li>
+  </ul>
 
   <h2 id="ci">11. CI/CD (GitHub Actions)</h2>
   <p>
@@ -1360,7 +1532,7 @@ volumes:
     <tr><td><code>release.yml</code></td><td>Entrypoint</td><td><code>release: published</code> → <code>build-and-push-image.yml</code></td></tr>
     <tr><td><code>ci.yml</code></td><td>Reusable</td><td>CI gate — <code>workflow_call</code> only</td></tr>
     <tr><td><code>prepare-release.yml</code></td><td>Reusable</td><td>Draft release + git tag on version bump</td></tr>
-    <tr><td><code>build-and-push-image.yml</code></td><td>Reusable</td><td>One image <code>release-ops</code> → GHCR</td></tr>
+    <tr><td><code>build-and-push-image.yml</code></td><td>Reusable</td><td>The app image <code>release-ops</code> and the worker image <code>release-ops-worker</code> → GHCR (§11.6)</td></tr>
   </table>
   <p>Entrypoints set <code>concurrency</code> per branch/release (<code>cancel-in-progress: true</code> except release publish). Reusable workflows are only invoked via <code>uses: ./.github/workflows/…</code> — no direct <code>on: push</code>.</p>
 
@@ -1456,7 +1628,8 @@ jobs:
   <h3>11.6 GHCR image &amp; tags</h3>
   <table>
     <tr><th>Image</th><th>Registry</th><th>Build</th></tr>
-    <tr><td><code>ghcr.io/{owner}/release-ops</code></td><td>GHCR</td><td>Root <code>Dockerfile</code> — Next + Go in the same image</td></tr>
+    <tr><td><code>ghcr.io/{owner}/release-ops</code></td><td>GHCR</td><td>Root <code>Dockerfile</code> — the app image: Next + Go in the same image</td></tr>
+    <tr><td><code>ghcr.io/{owner}/release-ops-worker</code></td><td>GHCR</td><td>The worker image: the pinned Renovate image plus the <code>release-ops</code> binary (§2.3, §10)</td></tr>
   </table>
   <table>
     <tr><th>Event</th><th>Tags</th></tr>
@@ -1474,19 +1647,19 @@ jobs:
     version:     # optional; passed as the APP_VERSION build arg
       default: ""   # release.yml: the release tag; dev.yml: nightly-{short_sha}</code></pre>
   <p>Version stamping: the root <code>Dockerfile</code> takes <code>ARG APP_VERSION</code> (default <code>dev</code>; an empty value also builds as <code>dev</code>) and sets <code>internal/buildinfo.Version</code> on the server binary with <code>-ldflags "-X"</code>. Go serves it as <code>version</code> on <code>GET /api/v1/status</code> (§7.1); the web app reads it through the existing <code>/api/go</code> proxy.</p>
-  <p>Build: Docker Buildx, registry cache (<code>ghcr.io/{owner}/release-ops:buildcache</code>), no runtime secret in image.</p>
+  <p>Build: Docker Buildx, registry cache per image (the app's is <code>ghcr.io/{owner}/release-ops:buildcache</code>), no runtime secret in image.</p>
 
   <h3>11.7 MVP CI requirements</h3>
   <ul>
     <li>Workflow files as in §11.2 present; reusable workflows have no own <code>on: push</code>.</li>
     <li>PR and push to <code>dev</code>/<code>main</code> block on CI failure.</li>
-    <li><code>dev</code> push produces an image with <code>nightly</code> + SHA after CI.</li>
+    <li><code>dev</code> push produces the app image and the worker image, each with <code>nightly</code> + SHA, after CI.</li>
     <li><code>main</code> push with increased <code>VERSION</code> creates draft release + <code>v*</code> tag; without bump no release artifact.</li>
-    <li>Published release pushes <strong>one</strong> image with <code>latest</code> + version tag.</li>
+    <li>Published release pushes the app image and the worker image, each with <code>latest</code> + version tag.</li>
   </ul>
 
   <h2 id="mvp">12. MVP Acceptance Criteria</h2>
-  <p class="note">Criterion 1 is v2. Criteria 2–15 are v1 acceptance criteria and are replaced by the v2 criteria (tracked as #186, #187).</p>
+  <p class="note">Criteria 1, 14 and 16–18 are v2. Criteria 2–13 are v1 acceptance criteria and are replaced by the v2 ticket and dashboard criteria (tracked as #187). Criterion 15 carries over.</p>
   <ol>
     <li>After first-start setup (§3.2–§3.4), an admin can sign in with GitHub (§3.5); a viewer sees only their repositories (§3.9).</li>
     <li>Admin can create integrations for all eight <code>kind</code> values; secrets never in API responses.</li>
@@ -1501,16 +1674,17 @@ jobs:
     <li>Status mapping is applied <strong>per ticket project</strong> (different open/done values per Kaneo project, Jira key, Linear team).</li>
     <li>Admin can create and test Shoutrrr notification targets; events on create/error/supersede.</li>
     <li>At least one end-to-end test per MVP source (GitHub, GitLab, Gitea, Forgejo, Codeberg) and per ticket provider (Kaneo, Jira, Linear) in CI (mock or sandbox).</li>
-    <li>Dashboard, manual poll, settings interval; <code>docker compose up</code> with <strong>one</strong> service.</li>
+    <li><code>docker compose up</code> starts <strong>two</strong> services, the app and the worker; the worker has no database access, no data volume and no Docker socket (§2, §10).</li>
     <li>Go + web tests green in CI; workflow layout per <a href="#ci">§11 CI/CD</a>.</li>
+    <li>Ticking a Renovate checkbox in a bot PR or in the Dependency Dashboard starts a job for that repository at most 10 seconds after the webhook arrives, measured across the app and worker; the PR or dashboard updates when Renovate finishes. Edits by the App's own bot and edits without an unchecked-to-checked transition start nothing (§2.9).</li>
+    <li>The webhook endpoint verifies the HMAC over the raw body, caps the body, deduplicates <code>X-GitHub-Delivery</code> and answers 202 (§2.10); failed deliveries are redelivered at startup and every 15 minutes; with <code>WEBHOOK_URL</code> unset the instance polls and is documented as degraded (§2.11).</li>
+    <li>The queue runs one job per repository, honours the concurrency cap and its reserved high-priority slot, coalesces triggers with <code>rerun_requested</code>, reclaims expired leases and backs off with <code>Retry-After</code> (§2.8).</li>
   </ol>
 
   <h2 id="future">13. Post-MVP</h2>
   <ul>
     <li>Bitbucket, Azure DevOps, more Git hosts.</li>
-    <li>Per-repo poll interval.</li>
     <li>Release filters (regex on tags). Pre-releases: per-repo <code>include_prereleases</code> (§4.4).</li>
-    <li>Webhook instead of poll.</li>
     <li>Bulk enable/disable on <code>/repos</code> table.</li>
     <li>Linear <code>openTypes</code>/<code>doneTypes</code> status mapping (MVP uses <code>stateId</code> only).</li>
     <li>GitLab and GitHub Enterprise Server as platforms, private-registry <code>hostRules</code>, and a hosted offering (§1).</li>
