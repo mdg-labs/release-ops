@@ -1,5 +1,5 @@
 ---
-description: Never dismiss Dependabot security alerts — bump the dependency, track it as a Kaneo task, leave GitHub issues alone
+description: Never dismiss Dependabot security alerts — bump the dependency, tracked as a GitHub issue through /triage
 ---
 
 # Dependabot alert resolution policy
@@ -13,10 +13,10 @@ The correct resolution is to **upgrade the vulnerable dependency** and land the 
 ## Correct workflow
 
 1. Read the alert (read-only): package, ecosystem (`npm` or Go modules), vulnerable range, patched version.
-2. Track it: `/triage <alert>` searches the Kaneo Release Ops board for an open duplicate and, if none exists, creates a **Kaneo task** in `ready`. It does not create or touch GitHub issues.
+2. Track it: `/triage <alert>` searches the open GitHub issues for a duplicate and, if none exists, creates a **GitHub issue** in `status:ready`.
 3. Upgrade in the relevant manifest — `package.json` (root, `apps/web`, `apps/docs`) + `package-lock.json`, or `go.mod` + `go.sum`.
 4. Run the scoped gate (`06-local-ci-before-commit.md`); Go bumps also run `go test ./... && golangci-lint run`.
-5. Commit: `fix(deps)[#N]: bump <pkg> to <version> (CVE-XXXX-XXXX)` — `#N` resolved read-only per `07-commit-linking.md`; the body ends with the mandatory `fixes #N` trailer (roadmap-only / no issue: no trailer).
+5. Commit: `fix(deps): bump <pkg> to <version> (CVE-XXXX-XXXX)`; the body ends with `Fixes #N` for the tracking issue.
 6. The alert auto-closes when the fix reaches the default branch.
 
 ## Dismissal is only acceptable when

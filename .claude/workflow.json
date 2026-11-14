@@ -3,12 +3,7 @@
   "repo": "mdg-labs/release-ops",
   "maintainer": "mdguggenbichler",
   "githubRunner": "ubuntu-latest",
-  "tracker": {
-    "type": "kaneo",
-    "workspaceId": "ffM0nW62CAq0BeWqTEQuoqsDySEVyxxj",
-    "projectId": "z4janvyjsbbb0esishvd9gb8",
-    "ticketKey": "RO"
-  },
+  "tracker": { "type": "github" },
   "branches": { "integration": "dev", "production": "main" },
   "landing": "dev-cherry-pick",
   "promotionBudget": 300,

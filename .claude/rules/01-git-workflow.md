@@ -16,17 +16,16 @@ description: Git branch policy, commit format, staging rules, push policy
 
 ## Commit messages (Conventional Commits)
 
-Subject ≤72 chars, imperative mood, **scoped**. Task commits carry the GitHub issue number per `07-commit-linking.md`.
+Subject ≤72 chars, imperative mood, **scoped**, no issue number in the subject (`mdg-git.md`).
 
 ```
-feat(<scope>)[#123]: <summary>     # body ends with: fixes #123 (mandatory)
-fix(<scope>)[#123]: <summary>      # body ends with: fixes #123 (mandatory)
-chore(<scope>)[E03-02]: <summary>   # roadmap-only, no GitHub issue, no trailer
+feat(<scope>): <summary>     # body ends with: Fixes #123
+fix(<scope>): <summary>      # body ends with: Fixes #123
 ```
 
 **Allowed scopes**: release-ops, api, db, config, ci, docs, deps
 
-Task commits **must** end their body with `fixes #N` (the commit that completes an epic also `fixes #<epic-N>`, added by the orchestrator at landing). When the commit lands on `main`, GitHub closes the issue and the Kaneo ↔ GitHub sync moves the task to `done`. That trailer is the only closing mechanism — agents never change GitHub issue state via API. PR bodies may also carry closing keywords; they don't need to.
+A commit that completes a tracked issue ends its body with `Fixes #N` (the commit that completes an epic also `Fixes #<epic-N>`, added by the orchestrator at landing). When the commit lands on `main`, GitHub closes the issue. That trailer is the only closing mechanism; agents never close issues by hand (`.claude/trackers/github.md`). One issue per commit.
 
 Session memory (`.agents/project/agent-memory/`) is **gitignored** — never commit session files.
 

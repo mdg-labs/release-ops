@@ -16,7 +16,7 @@ Self-hosted release monitor — polls releases on GitHub, GitLab, Gitea, Forgejo
 
 ## Repository state
 
-Implementation in progress: Go server (`cmd/server`, `internal/`), web app (`apps/web`), customer docs site (`apps/docs`), schema + generated migrations (`db/schema.sql`, `migrations/`). Work is planned and tracked on the Kaneo board (project Release Ops, `RO-<n>`); `docs/roadmap.html` is the historical plan the board was seeded from.
+Implementation in progress: Go server (`cmd/server`, `internal/`), web app (`apps/web`), customer docs site (`apps/docs`), schema + generated migrations (`db/schema.sql`, `migrations/`). Work is planned and tracked as GitHub issues in `mdg-labs/release-ops` (status via `status:*` labels); `docs/roadmap.html` is a historical plan.
 
 ## Spec doc precedence (when docs conflict)
 
@@ -39,5 +39,5 @@ Deprecated (do not use): old learning-path HTML under <code>docs/</code> — rem
 - Orchestration: `.claude/skills/orchestrate/SKILL.md` + `templates/` (vendored by `/mdg-setup:setup`); agents in `.claude/agents/` (`task-executor`, `task-verifier`, `issue-refiner`, `security-reviewer`, `security-verifier`, `ci-investigator`)
 - Promotion: `/dev-diff`, `/open-pr`, `/pr-review`; security: `/security-audit` against `docs/threat-model.md`
 - Project constants: `.claude/workflow.json` (tracker ids, branches, gate, checks) and CLAUDE.md `## Agent workflow` (area → paths, hazards, security units)
-- Board: Kaneo (MCP `Kaneo`, or the claude.ai connector `claude_ai_Kaneo`); GitHub issues are read-only for agents (`07-commit-linking.md`)
+- Tracker: GitHub issues in `mdg-labs/release-ops`, used as `.claude/trackers/github.md` describes (status only through `.claude/scripts/issue-status.sh`; issues close only via a `Fixes #n` commit reaching `main`)
 - Threat model: `docs/threat-model.md` — the yardstick for security review and severity

@@ -13,7 +13,7 @@ Self-hosted release monitor: polls GitHub, GitLab, Gitea, Forgejo and Codeberg f
 | Project constants (tracker ids, branches, gate, checks) / area → paths, hazards, security units | `.claude/workflow.json` / `## Agent workflow` below |
 | Threat model (security yardstick) | `docs/threat-model.md` |
 | Defect patterns that escaped review / session memory (gitignored) | `.claude/known-escapes.md` / `.agents/project/agent-memory/` |
-| Historical roadmap (generated from `docs/roadmap.json`; Kaneo is the live plan) | `docs/roadmap.html` — `docs/index.html` is the doc hub |
+| Historical roadmap (generated from `docs/roadmap.json`; GitHub issues are the live plan) | `docs/roadmap.html` — `docs/index.html` is the doc hub |
 | Third-party skill lock (coss only) | `skills-lock.json` |
 
 Start with `.claude/rules/00-project.md` (identity, doc precedence, hard rules) and `.claude/rules/01-git-workflow.md`.
@@ -28,16 +28,13 @@ go test ./... && golangci-lint run             # Go
 make db-migration name=<change>                # schema change — edit db/schema.sql first; never hand-write migrations/
 ```
 
-## MCP servers
+## Tracker
 
-The harness expects these Claude Code MCP server names (tool prefix `mcp__<name>__`):
-
-- `Kaneo` — Kaneo board, project Release Ops (`RO-<n>`); source of truth for tasks and status. Through the claude.ai connector the same tools appear as `mcp__claude_ai_Kaneo__<tool>`; skills and agents use whichever the session lists. Agents never set `done`: it comes from the Kaneo ↔ GitHub sync when a `fixes #N` commit lands on `main` (or the user sets it).
-- `github` — read-only for issues (resolve the `#N` for commit subjects); without it, `gh issue view <n> -R mdg-labs/release-ops` / `gh issue list -R mdg-labs/release-ops --state all --search "<title> in:title"` do the same reads. Agents never comment on, label, close or create GitHub issues via API. Task commits carry `[#N]` in the subject and a mandatory `fixes #N` trailer in the body — the only way an issue closes (`07-commit-linking.md`).
+GitHub issues in `mdg-labs/release-ops` are the plan and the status (`status:*` labels), used through `gh` exactly as `.claude/trackers/github.md` says: every `gh` call names the repo (`-R mdg-labs/release-ops`), status changes only through `.claude/scripts/issue-status.sh` / `epic-status.sh`, and `.github/workflows/issue-status.yml` sets `status:new`, `closed` and `cancelled`. No agent closes, reopens or deletes an issue; a `Fixes #N` trailer reaching `main` is the only way an issue closes.
 
 ## Workflow
 
-Task → `/triage` (RO-<n>, a problem statement, or a Dependabot alert; stops at `ready`) → `/orchestrate RO-<n>` (scratch-clone executor, independent verifier, land on `dev` after PASS, push `dev`) → `/open-pr` (dev→main PR) → `/pr-review <PR>` → the maintainer merges; the `fixes #N` trailers close the issues and the Kaneo ↔ GitHub sync moves tasks to `done`. `/security-audit` reviews the code against `docs/threat-model.md`.
+Issue → `/triage` (`#N`, a problem statement, or a Dependabot alert; stops at `status:ready`) → `/orchestrate #N` (scratch-clone executor, independent verifier, land on `dev` after PASS, push `dev`) → `/open-pr` (dev→main PR) → `/pr-review <PR>` → the maintainer merges; the `Fixes #N` trailers close the issues. `/security-audit` reviews the code against `docs/threat-model.md`.
 
 ## Agent workflow
 
@@ -87,8 +84,7 @@ Precedence on conflict: `docs/specs.html` (MVP contract, APIs, UI, domain logic)
 - Web UI: zero hardcoded user-facing strings — next-intl keys in `apps/web/messages/en.json` only; ESLint enforces it (`.claude/rules/10-i18n.md`).
 - Credentials and integration tokens are never logged or returned by the API.
 - Dependabot alerts are resolved by upgrading the dependency, never by dismissing (`.claude/rules/08-dependabot-alerts.md`).
-- Task commits: `<type>(<scope>)[#N]: …` with a mandatory `fixes #N` trailer (`.claude/rules/07-commit-linking.md`); allowed scopes `release-ops`, `api`, `db`, `config`, `ci`, `docs`, `deps`. Never amend pushed commits (`.claude/rules/13-no-amend-pushed.md`).
-- Kaneo quirks: `RO-<n>` → `get_task_by_ticket_id` without `projectId`; `get_task` needs the CUID; `search` takes `q` and needs both `workspaceId` and `projectId`. Through the claude.ai connector the tools are `mcp__claude_ai_Kaneo__*`.
+- Task commits: `<type>(<scope>): …` with a `Fixes #N` trailer (`.claude/rules/mdg-git.md`, `01-git-workflow.md`); allowed scopes `release-ops`, `api`, `db`, `config`, `ci`, `docs`, `deps`. Never amend pushed commits (`.claude/rules/13-no-amend-pushed.md`).
 
 ### Risk review
 
