@@ -45,6 +45,8 @@ function resolveCallbackError(code: string, t: SetupT): string {
       return t("callbackRejected");
     case "conversion_failed":
       return t("callbackFailed");
+    case "session_expired":
+      return t("callbackSessionExpired");
     default:
       return t("requestFailed");
   }

@@ -112,9 +112,10 @@ func (h *Handlers) Manifest(w http.ResponseWriter, r *http.Request) {
 // Error codes the callback hands the setup page in the "error" query parameter when it sends
 // the browser back to /setup.
 const (
-	errInvalidState = "invalid_state"
-	errRejected     = "conversion_rejected"
-	errFailed       = "conversion_failed"
+	errInvalidState   = "invalid_state"
+	errRejected       = "conversion_rejected"
+	errFailed         = "conversion_failed"
+	errSessionExpired = "session_expired"
 )
 
 // Callback answers GET /setup/callback behind RequireSession, GitHub's redirect after the owner
@@ -122,7 +123,8 @@ const (
 // this setup session and is spent by the first request that presents it, so a replay is refused
 // before GitHub is called. The code is then converted to the App, which is stored with its
 // secrets encrypted, and the browser is redirected (302) to the App's installation page. A
-// failure before the store leaves nothing behind and redirects to /setup with an error code.
+// failure before the store leaves nothing behind and redirects to /setup with an error code;
+// so does a missing or expired setup session (RequireCallbackSession).
 func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	query := r.URL.Query()

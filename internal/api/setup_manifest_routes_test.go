@@ -344,8 +344,10 @@ func TestSetupManifestRoutesNeedASetupSession(t *testing.T) {
 	if code, body := f.do(t, http.MethodPost, "/manifest", `{"owner":{"type":"user"}}`); code != http.StatusUnauthorized {
 		t.Errorf("POST /setup/manifest without a session = %d %q, want 401", code, body)
 	}
-	if code, location := f.callback(t, "abc123", "whatever"); code != http.StatusUnauthorized {
-		t.Errorf("GET /setup/callback without a session = %d to %q, want 401", code, location)
+	// The callback is GitHub's top-level redirect, so without a session it sends the
+	// browser back to /setup instead of answering 401 JSON.
+	if code, location := f.callback(t, "abc123", "whatever"); code != http.StatusFound || location != setupErrorRedirect("session_expired") {
+		t.Errorf("GET /setup/callback without a session = %d to %q, want 302 to the session_expired error", code, location)
 	}
 	if f.github.calls.Load() != 0 {
 		t.Error("a request without a setup session reached GitHub")

@@ -278,6 +278,7 @@ describe("SetupForm", () => {
     ["invalid_state", "setup.callbackInvalidState"],
     ["conversion_rejected", "setup.callbackRejected"],
     ["conversion_failed", "setup.callbackFailed"],
+    ["session_expired", "setup.callbackSessionExpired"],
     ["something_else", "setup.requestFailed"],
   ])(
     "shows an inline error and the form again when GitHub's callback ends in %s",
@@ -293,6 +294,22 @@ describe("SetupForm", () => {
       ).toBeEnabled();
     },
   );
+
+  it("tells the admin to restart the server when GitHub's callback finds the setup session gone", async () => {
+    searchParams = new URLSearchParams({ error: "session_expired" });
+    statusIs(true);
+    noSession();
+
+    renderSetupForm();
+
+    expect(
+      await screen.findByText("setup.callbackSessionExpiredTitle"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("setup.callbackSessionExpired"),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/setup\.tokenLabel/)).toBeInTheDocument();
+  });
 
   it("posts the manifest to GitHub for a personal App", async () => {
     openSession();

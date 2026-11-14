@@ -175,6 +175,21 @@ func (h *Handlers) GetSession(w http.ResponseWriter, r *http.Request) {
 // expired session is destroyed. A session without a setup marker, such as a user session,
 // is not a setup session.
 func (h *Handlers) RequireSession(next http.Handler) http.Handler {
+	return h.requireSession(next, func(w http.ResponseWriter, _ *http.Request) {
+		writeSetupSessionRequired(w)
+	})
+}
+
+// RequireCallbackSession is RequireSession for GET /setup/callback, a top-level browser
+// redirect from GitHub: a missing or expired setup session sends the browser to
+// /setup?error=session_expired instead of answering 401 JSON the person would read raw.
+func (h *Handlers) RequireCallbackSession(next http.Handler) http.Handler {
+	return h.requireSession(next, func(w http.ResponseWriter, r *http.Request) {
+		h.redirectToSetup(w, r, errSessionExpired)
+	})
+}
+
+func (h *Handlers) requireSession(next http.Handler, noSession func(http.ResponseWriter, *http.Request)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -190,7 +205,7 @@ func (h *Handlers) RequireSession(next http.Handler) http.Handler {
 
 		expires := h.Sessions.GetInt64(ctx, SessionExpiresKey)
 		if expires == 0 {
-			writeSetupSessionRequired(w)
+			noSession(w, r)
 			return
 		}
 		if !h.now().Before(time.Unix(expires, 0)) {
@@ -198,7 +213,7 @@ func (h *Handlers) RequireSession(next http.Handler) http.Handler {
 				writeInternalError(w)
 				return
 			}
-			writeSetupSessionRequired(w)
+			noSession(w, r)
 			return
 		}
 		next.ServeHTTP(w, r)

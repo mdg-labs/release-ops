@@ -77,7 +77,9 @@
     "installApp": "Install the GitHub App",
     "callbackInvalidState": "This setup attempt is no longer valid. Create the GitHub App again.",
     "callbackRejected": "GitHub did not accept the code. It may have expired or been used already. Create the GitHub App again.",
-    "callbackFailed": "GitHub could not be reached or did not answer in time, so the App was not created. Create the GitHub App again."
+    "callbackFailed": "GitHub could not be reached or did not answer in time, so the App was not created. Create the GitHub App again.",
+    "callbackSessionExpiredTitle": "Setup session ended",
+    "callbackSessionExpired": "The setup session ended before GitHub sent you back. If no GitHub App was stored, restart the server to get a new setup token and enter it here."
   },
   "dashboard": {
     "title": "Dashboard",

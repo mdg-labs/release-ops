@@ -137,7 +137,7 @@ func TestCallbackStateLifetimeAndMismatch(t *testing.T) {
 	r.Use(sm.LoadAndSave)
 	r.Post("/setup/session", h.CreateSession)
 	r.With(h.RequireSession).Post("/setup/manifest", h.Manifest)
-	r.With(h.RequireSession).Get("/setup/callback", h.Callback)
+	r.With(h.RequireCallbackSession).Get("/setup/callback", h.Callback)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 	client := newClient(t)
@@ -205,6 +205,78 @@ func TestCallbackStateLifetimeAndMismatch(t *testing.T) {
 	}
 	if conv.calls != 1 {
 		t.Errorf("converter calls = %d, want 1", conv.calls)
+	}
+}
+
+// A callback after the setup session has ended sends the browser back to /setup instead of
+// answering 401 JSON, and never reaches the converter.
+func TestCallbackWithAnExpiredSetupSessionRedirectsToSetup(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.OpenMigrated(t)
+	cipher, err := crypto.NewCipherFromHex(strings.Repeat("ab", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := setup.EnsureToken(context.Background(), db.Writer, configToken, appURL, t.Logf); err != nil {
+		t.Fatal(err)
+	}
+	clk := &clock{now: time.Now()}
+	conv := &fakeConverter{}
+	sm := auth.NewSessionManager(db.Writer, strings.Repeat("s", 32), false)
+	h := &setup.Handlers{
+		Sessions: sm, Queries: storedb.New(db.Writer), Now: clk.Now,
+		Apps: store.New(db, cipher).GitHubApp(), Converter: conv,
+		AppURL: appURL, GitHubBaseURL: "https://github.com",
+	}
+	r := chi.NewRouter()
+	r.Use(sm.LoadAndSave)
+	r.Post("/setup/session", h.CreateSession)
+	r.With(h.RequireSession).Post("/setup/manifest", h.Manifest)
+	r.With(h.RequireCallbackSession).Get("/setup/callback", h.Callback)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+	client := newClient(t)
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
+	callback := func() (int, string) {
+		t.Helper()
+		resp, err := client.Get(srv.URL + "/setup/callback?code=abc&state=whatever")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode, resp.Header.Get("Location")
+	}
+
+	resp, err := client.Post(srv.URL+"/setup/session", "application/json", strings.NewReader(`{"token":"`+configToken+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("redeem = %d", resp.StatusCode)
+	}
+
+	clk.advance(setup.SessionTTL + time.Second)
+	if code, location := callback(); code != http.StatusFound || location != "/setup?error=session_expired" {
+		t.Errorf("callback after the setup session ended = %d to %q, want 302 to the session_expired error", code, location)
+	}
+	// The session was destroyed, so the next request has none and gets the same answer.
+	if code, location := callback(); code != http.StatusFound || location != "/setup?error=session_expired" {
+		t.Errorf("callback without a setup session = %d to %q, want 302 to the session_expired error", code, location)
+	}
+	// Another setup route keeps answering 401.
+	resp, err = client.Post(srv.URL+"/setup/manifest", "application/json", strings.NewReader(`{"owner":{"type":"user"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("POST /setup/manifest without a setup session = %d, want 401", resp.StatusCode)
+	}
+	if conv.calls != 0 {
+		t.Error("a callback without a setup session reached the converter")
 	}
 }
 

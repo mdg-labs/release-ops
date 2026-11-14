@@ -180,6 +180,11 @@ export function SetupForm(): React.ReactElement {
           description={submitError}
           title={t("tokenRefusedTitle")}
         />
+      ) : callbackError === "session_expired" ? (
+        <AuthErrorAlert
+          description={t("callbackSessionExpired")}
+          title={t("callbackSessionExpiredTitle")}
+        />
       ) : null}
       <form className={AUTH_FORM_CLASS} onSubmit={handleSubmit}>
         <Field name="token">
