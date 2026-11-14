@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/alexedwards/scs/v2"
@@ -23,6 +24,10 @@ type Handlers struct {
 	SessionManager *scs.SessionManager
 	Queries        *storedb.Queries
 	TokenService   *TokenService
+	// Authorizer, when set, makes GET /auth/session answer with the role as evaluated now: a
+	// session whose user lost access reads as no session, and one whose role cannot be
+	// evaluated is a 503.
+	Authorizer *Authorizer
 }
 
 type loginRequest struct {
@@ -88,6 +93,22 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 
 // Session handles GET /api/v1/auth/session.
 func (h *Handlers) Session(w http.ResponseWriter, r *http.Request) {
+	if h.Authorizer != nil {
+		switch _, err := h.Authorizer.Authorize(r.Context()); {
+		case err == nil:
+		case errors.Is(err, ErrUnauthenticated):
+			writeJSON(w, http.StatusOK, sessionResponse{User: nil})
+			return
+		case errors.Is(err, ErrRoleUnavailable):
+			slog.Warn("session: the role could not be re-evaluated", "err", err)
+			WriteError(w, "SERVICE_UNAVAILABLE", "the role could not be checked with GitHub", http.StatusServiceUnavailable)
+			return
+		default:
+			slog.Error("session: authorizing failed", "err", err)
+			WriteError(w, "INTERNAL_ERROR", "failed to read the session", http.StatusInternalServerError)
+			return
+		}
+	}
 	if user, ok := githubSessionUser(r.Context(), h.SessionManager); ok {
 		writeJSON(w, http.StatusOK, githubSessionResponse{User: user})
 		return

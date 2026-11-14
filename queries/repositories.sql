@@ -49,3 +49,8 @@ WHERE installation_id = ? AND github_repository_id = ? AND removed_at IS NULL;
 UPDATE repositories
 SET removed_at = ?, updated_at = ?
 WHERE installation_id = ? AND removed_at IS NULL;
+
+-- name: ListActiveRepositoryIDs :many
+SELECT id, github_repository_id
+FROM repositories
+WHERE installation_id = ? AND removed_at IS NULL;

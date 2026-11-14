@@ -53,3 +53,9 @@ WHERE github_installation_id = sqlc.arg(github_installation_id)
 UPDATE installations
 SET status = 'removed', updated_at = ?
 WHERE github_installation_id = ? AND status <> 'removed';
+
+-- The one installation that is not removed (idx_installations_one_not_removed).
+-- name: GetLiveInstallation :one
+SELECT id, github_installation_id, account_id, account_login, account_type, status
+FROM installations
+WHERE status <> 'removed';

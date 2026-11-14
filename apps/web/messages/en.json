@@ -7,7 +7,10 @@
     "save": "Save",
     "cancel": "Cancel",
     "delete": "Delete",
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "forbiddenTitle": "You do not have access to this page",
+    "forbiddenDescription": "This page is for admins. Your role is read-only.",
+    "sessionLoadFailed": "Could not check your access. Try again later."
   },
   "auth": {
     "login": "Log in",

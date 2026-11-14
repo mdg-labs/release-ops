@@ -25,6 +25,36 @@ func (q *Queries) GetInstallationByGitHubID(ctx context.Context, githubInstallat
 	return i, err
 }
 
+const getLiveInstallation = `-- name: GetLiveInstallation :one
+SELECT id, github_installation_id, account_id, account_login, account_type, status
+FROM installations
+WHERE status <> 'removed'
+`
+
+type GetLiveInstallationRow struct {
+	ID                   string `json:"id"`
+	GithubInstallationID int64  `json:"github_installation_id"`
+	AccountID            int64  `json:"account_id"`
+	AccountLogin         string `json:"account_login"`
+	AccountType          string `json:"account_type"`
+	Status               string `json:"status"`
+}
+
+// The one installation that is not removed (idx_installations_one_not_removed).
+func (q *Queries) GetLiveInstallation(ctx context.Context) (GetLiveInstallationRow, error) {
+	row := q.db.QueryRowContext(ctx, getLiveInstallation)
+	var i GetLiveInstallationRow
+	err := row.Scan(
+		&i.ID,
+		&i.GithubInstallationID,
+		&i.AccountID,
+		&i.AccountLogin,
+		&i.AccountType,
+		&i.Status,
+	)
+	return i, err
+}
+
 const listLiveInstallationIDs = `-- name: ListLiveInstallationIDs :many
 SELECT github_installation_id FROM installations WHERE status <> 'removed' ORDER BY github_installation_id
 `

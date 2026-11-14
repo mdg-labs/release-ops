@@ -346,3 +346,34 @@ func TestLoadBootstrapAdminGitHubLogin(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadRoleTeams(t *testing.T) {
+	validEnv(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.AdminTeam != "" || cfg.ViewerTeam != "" {
+		t.Errorf("teams = %q, %q, want both empty by default", cfg.AdminTeam, cfg.ViewerTeam)
+	}
+
+	t.Setenv("ADMIN_TEAM", " acme/release-ops-admins ")
+	t.Setenv("VIEWER_TEAM", "acme/Dev.Team_1")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.AdminTeam != "acme/release-ops-admins" || cfg.ViewerTeam != "acme/Dev.Team_1" {
+		t.Errorf("teams = %q, %q, want the trimmed values", cfg.AdminTeam, cfg.ViewerTeam)
+	}
+
+	for _, name := range []string{"ADMIN_TEAM", "VIEWER_TEAM"} {
+		for _, bad := range []string{"acme", "acme/", "/team", "acme/team/extra", "acme/team slug", "-acme/team", "acme/../x", "acme/.team", strings.Repeat("a", 40) + "/team"} {
+			t.Setenv(name, bad)
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), name) {
+				t.Errorf("Load() with %s=%q error = %v, want a %s error", name, bad, err, name)
+			}
+		}
+		t.Setenv(name, "")
+	}
+}

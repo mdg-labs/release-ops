@@ -48,6 +48,12 @@ type fakeGitHub struct {
 	orgOwners map[string]bool
 	seq       int
 
+	// userRepos are the repository ids each user can access, by user id; repoBearers
+	// records the token of every repository listing.
+	userRepos   map[int64][]int64
+	repoBearers []string
+	repoStatus  atomic.Int32
+
 	exchanges      atomic.Int32
 	exchangeStatus atomic.Int32
 	pkceVerified   atomic.Int32
@@ -61,11 +67,12 @@ type grant struct {
 
 func newFakeGitHub(t *testing.T) *fakeGitHub {
 	t.Helper()
-	f := &fakeGitHub{grants: map[string]grant{}, tokens: map[string]github.User{}, orgOwners: map[string]bool{}}
+	f := &fakeGitHub{grants: map[string]grant{}, tokens: map[string]github.User{}, orgOwners: map[string]bool{}, userRepos: map[int64][]int64{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /login/oauth/access_token", f.accessToken)
 	mux.HandleFunc("GET /api/v3/user", f.user)
 	mux.HandleFunc("GET /api/v3/user/memberships/orgs/{org}", f.membership)
+	mux.HandleFunc("GET /api/v3/user/installations/{id}/repositories", f.installationRepositories)
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
 	return f
@@ -141,6 +148,31 @@ func (f *fakeGitHub) user(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"id": u.ID, "login": u.Login, "type": "User"})
 }
 
+func (f *fakeGitHub) installationRepositories(w http.ResponseWriter, r *http.Request) {
+	token, u, ok := f.userFor(r)
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	f.mu.Lock()
+	f.repoBearers = append(f.repoBearers, token)
+	ids := f.userRepos[u.ID]
+	f.mu.Unlock()
+	if status := int(f.repoStatus.Load()); status != 0 {
+		w.WriteHeader(status)
+		return
+	}
+	if r.PathValue("id") != "1" {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	repos := make([]map[string]any, len(ids))
+	for i, id := range ids {
+		repos[i] = map[string]any{"id": id, "full_name": fmt.Sprintf("acme/repo-%d", id), "default_branch": "main"}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"total_count": len(repos), "repositories": repos})
+}
+
 func (f *fakeGitHub) membership(w http.ResponseWriter, r *http.Request) {
 	token, _, ok := f.userFor(r)
 	if !ok {
@@ -177,6 +209,10 @@ type harnessOptions struct {
 	ownerType      string
 	ownerLogin     string
 	noApp          bool
+	// roles decides the role of a user who is not the bootstrap admin; repositories seeds
+	// the installation and that many repositories (github ids 1..n, row ids repo-1..repo-n).
+	roles        auth.RoleEvaluator
+	repositories int
 }
 
 func newSignInHarness(t *testing.T, opts harnessOptions) *signInHarness {
@@ -217,6 +253,11 @@ func newSignInHarness(t *testing.T, opts harnessOptions) *signInHarness {
 		BootstrapAdminLogin: opts.bootstrapLogin,
 		Now:                 func() time.Time { return time.Unix(h.clock.Load(), 0) },
 	}
+	if opts.repositories > 0 {
+		storetest.SeedRepositories(t, db, opts.repositories)
+	}
+	h.handlers.Roles = opts.roles
+	h.handlers.Access = st.Access()
 	linkHandlers := &auth.LoginLinkHandlers{Sessions: sm, Users: st.SignIn()}
 
 	r := chi.NewRouter()

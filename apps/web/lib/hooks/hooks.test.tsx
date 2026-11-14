@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MockAgent, setGlobalDispatcher } from "undici";
 import { useIntegrations } from "./use-integrations";
 import { useRedeemLoginLink } from "./use-login";
-import { useSession } from "./use-session";
+import { useSession, useSessionRole } from "./use-session";
 import { useSettings } from "./use-settings";
 import { useStatus } from "./use-status";
 
@@ -96,6 +96,32 @@ describe("React Query hooks", () => {
     expect(result.current.data).toEqual({
       user: { id: "u1", email: "admin@example.com" },
     });
+  });
+
+  it("useSessionRole reads the role from the session and none when it fails", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/auth/session", method: "GET" })
+      .reply(200, { user: { id: 5, login: "vera", role: "viewer" } });
+
+    const queryClient = createTestQueryClient();
+    const { result } = renderHook(() => useSessionRole(), {
+      wrapper: createWrapper(queryClient),
+    });
+    expect(result.current).toEqual({
+      role: null,
+      isLoading: true,
+      isError: false,
+    });
+    await waitFor(() => expect(result.current.role).toBe("viewer"));
+
+    // The last data stays after a failed refetch; the role must not.
+    pool
+      .intercept({ path: "/api/go/api/v1/auth/session", method: "GET" })
+      .reply(503, { error: { code: "SERVICE_UNAVAILABLE" } });
+    await queryClient.refetchQueries();
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.role).toBeNull();
   });
 
   it("useStatus fetches GET /api/v1/status", async () => {

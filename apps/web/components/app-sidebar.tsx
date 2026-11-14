@@ -13,6 +13,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import type React from "react";
 import { apiClient } from "@/lib/api/client";
+import { useSessionRole } from "@/lib/hooks/use-session";
 import { useStatus } from "@/lib/hooks/use-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,21 +35,25 @@ const NAV_ITEMS = [
     href: "/",
     icon: LayoutDashboardIcon,
     labelKey: "dashboard",
+    adminOnly: false,
   },
   {
     href: "/integrations",
     icon: PlugIcon,
     labelKey: "integrations",
+    adminOnly: true,
   },
   {
     href: "/ticket-projects",
     icon: TicketIcon,
     labelKey: "ticketProjects",
+    adminOnly: true,
   },
   {
     href: "/settings",
     icon: SettingsIcon,
     labelKey: "settings",
+    adminOnly: true,
   },
 ] as const;
 
@@ -84,6 +89,7 @@ export function AppSidebar(): React.ReactElement {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: status, isError: statusFailed } = useStatus();
+  const { role } = useSessionRole();
   const tNav = useTranslations("nav");
   const tAuth = useTranslations("auth");
   const tCommon = useTranslations("common");
@@ -91,6 +97,12 @@ export function AppSidebar(): React.ReactElement {
   // A failed refetch keeps the last data; show no badge then (spec §8).
   const version = statusFailed ? null : status?.version || null;
   const versionLink = version ? versionHref(version) : null;
+
+  // Admin entries show for an admin only: while the role loads, or if it could not be read,
+  // they stay hidden. The Go API refuses a viewer on these pages' endpoints regardless.
+  const navItems = NAV_ITEMS.filter(
+    (item) => !item.adminOnly || role === "admin",
+  );
 
   const logout = useMutation({
     mutationFn: () => apiClient.post("/auth/logout"),
@@ -138,7 +150,7 @@ export function AppSidebar(): React.ReactElement {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {NAV_ITEMS.map((item) => (
+              {navItems.map((item) => (
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton
                     isActive={isNavActive(pathname, item.href)}

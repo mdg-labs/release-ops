@@ -18,8 +18,10 @@ import (
 //  3. Setup: GET /setup/status and POST /setup/session are public; GET /setup/session,
 //     POST /setup/manifest and GET /setup/callback require a setup session, which opens
 //     only the setup routes; GET /setup/installed is public
-//  4. Protected group (RequireSession): logout, status, settings, integrations,
-//     ticket-projects, users
+//  4. Logout, behind a session alone, so a user whose role cannot be evaluated can still end it
+//  5. Protected group (Authenticate: a session with a role, re-evaluated every 15 minutes):
+//     status for any role; settings, integrations, ticket-projects and users for an admin
+//     only (RequireAdmin), a viewer getting 403
 func RegisterAll(api chi.Router, deps *ServerDeps) {
 	if deps == nil || deps.Session == nil {
 		return
@@ -27,10 +29,12 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 
 	api.Use(deps.Session.LoadAndSave)
 
+	authorizer := &auth.Authorizer{Sessions: deps.Session, Roles: deps.Roles}
 	authHandlers := &auth.Handlers{
 		SessionManager: deps.Session,
 		Queries:        deps.Queries,
 		TokenService:   auth.NewTokenService(deps.Queries),
+		Authorizer:     authorizer,
 	}
 
 	rateLimiter := apimw.NewRateLimiter()
@@ -78,23 +82,33 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 		api.With(apimw.NewRateLimiter().SetupSession).Get("/setup/installed", setupHandlers.Installed)
 	}
 
+	api.With(apimw.RequireSession(deps.Session)).Post("/auth/logout", authHandlers.Logout)
+
+	if deps.Store == nil {
+		return
+	}
 	api.Group(func(protected chi.Router) {
-		protected.Use(apimw.RequireSession(deps.Session))
-		protected.Post("/auth/logout", authHandlers.Logout)
-
-		if deps.Store == nil {
-			return
-		}
-
+		protected.Use(apimw.Authenticate(authorizer, deps.Store.Access()))
 		registerProtectedAPIRoutes(protected, deps, appURL, rateLimiter)
 	})
 }
 
 func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appURL string, rateLimiter *apimw.RateLimiter) {
-	st := deps.Store
-
-	settingsHandlers := &handlers.SettingsHandlers{Settings: st.Settings()}
 	statusHandlers := &handlers.StatusHandlers{}
+
+	protected.Get("/status", statusHandlers.Get)
+
+	protected.Group(func(admin chi.Router) {
+		admin.Use(apimw.RequireAdmin)
+		registerAdminRoutes(admin, deps, appURL, rateLimiter)
+	})
+}
+
+// registerAdminRoutes registers the routes only an admin may call. Every route added to the
+// protected API that is not meant for a viewer belongs here, behind RequireAdmin.
+func registerAdminRoutes(protected chi.Router, deps *ServerDeps, appURL string, rateLimiter *apimw.RateLimiter) {
+	st := deps.Store
+	settingsHandlers := &handlers.SettingsHandlers{Settings: st.Settings()}
 	integrationHandlers := &handlers.IntegrationHandlers{
 		Integrations: st.Integrations(),
 		Tester:       deps.IntegrationTester,
@@ -119,8 +133,6 @@ func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appURL s
 		Mailer:       deps.Mailer,
 		AppPublicURL: appURL,
 	}
-
-	protected.Get("/status", statusHandlers.Get)
 
 	protected.Get("/settings", settingsHandlers.Get)
 	protected.Patch("/settings", settingsHandlers.Patch)
@@ -173,6 +185,8 @@ func registerGitHubSignIn(api chi.Router, deps *ServerDeps, rateLimiter *apimw.R
 		Apps:                deps.Store.GitHubApp(),
 		Users:               users,
 		GitHub:              provider,
+		Roles:               deps.Roles,
+		Access:              deps.Store.Access(),
 		AppURL:              deps.AppURL,
 		BootstrapAdminLogin: deps.BootstrapAdminGitHubLogin,
 	}

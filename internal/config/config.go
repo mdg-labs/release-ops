@@ -49,8 +49,13 @@ type Config struct {
 	// (BOOTSTRAP_ADMIN_GITHUB_LOGIN); empty means the App's owner is the first admin. It is
 	// resolved to a numeric id at the first matching sign-in and ignored afterwards.
 	BootstrapAdminGitHubLogin string
-	BootstrapAdminEmail       string
-	BootstrapAdminPassword    string
+	// AdminTeam and ViewerTeam are ADMIN_TEAM and VIEWER_TEAM as org/team-slug, empty when
+	// unset: the members of AdminTeam are admins, and with ViewerTeam set only its members
+	// (and admins) may sign in as viewers (docs/specs.html § 3.7).
+	AdminTeam              string
+	ViewerTeam             string
+	BootstrapAdminEmail    string
+	BootstrapAdminPassword string
 	// InternalAddr is where the internal listener for the worker binds (INTERNAL_ADDR); empty
 	// means no internal listener. WorkerSecret authenticates the worker to it and is set
 	// together with it.
@@ -77,6 +82,8 @@ func Load() (*Config, error) {
 		GitHubBaseURL:             strings.TrimRight(envOrDefault("GITHUB_BASE_URL", defaultGitHubURL), "/"),
 		SetupToken:                strings.TrimSpace(os.Getenv("SETUP_TOKEN")),
 		BootstrapAdminGitHubLogin: strings.TrimSpace(os.Getenv("BOOTSTRAP_ADMIN_GITHUB_LOGIN")),
+		AdminTeam:                 strings.TrimSpace(os.Getenv("ADMIN_TEAM")),
+		ViewerTeam:                strings.TrimSpace(os.Getenv("VIEWER_TEAM")),
 		BootstrapAdminEmail:       strings.TrimSpace(os.Getenv("BOOTSTRAP_ADMIN_EMAIL")),
 		BootstrapAdminPassword:    os.Getenv("BOOTSTRAP_ADMIN_PASSWORD"),
 		InternalAddr:              strings.TrimSpace(os.Getenv("INTERNAL_ADDR")),
@@ -179,6 +186,11 @@ func (c *Config) validate() error {
 	if c.BootstrapAdminGitHubLogin != "" && (len(c.BootstrapAdminGitHubLogin) > 39 || !githubLoginPattern.MatchString(c.BootstrapAdminGitHubLogin)) {
 		return fmt.Errorf("BOOTSTRAP_ADMIN_GITHUB_LOGIN must be a GitHub login: up to 39 letters, digits and single hyphens")
 	}
+	for name, team := range map[string]string{"ADMIN_TEAM": c.AdminTeam, "VIEWER_TEAM": c.ViewerTeam} {
+		if team != "" && !validTeam(team) {
+			return fmt.Errorf("%s must be org/team-slug, e.g. acme/release-ops-admins", name)
+		}
+	}
 	if c.BootstrapAdminEmail != "" && c.BootstrapAdminPassword == "" {
 		return fmt.Errorf("BOOTSTRAP_ADMIN_PASSWORD is required when BOOTSTRAP_ADMIN_EMAIL is set")
 	}
@@ -211,6 +223,15 @@ var repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[
 // githubLoginPattern is GitHub's account name syntax: up to 39 letters, digits and single
 // hyphens, neither starting nor ending with a hyphen.
 var githubLoginPattern = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$`)
+
+// teamPattern is org/team-slug: a GitHub account name and a team slug of letters, digits,
+// dots, hyphens and underscores.
+var teamPattern = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
+
+func validTeam(s string) bool {
+	org, _, _ := strings.Cut(s, "/")
+	return len(org) <= 39 && teamPattern.MatchString(s)
+}
 
 func validRepository(s string) bool {
 	return repositoryPattern.MatchString(s) && !strings.HasSuffix(s, "/.") && !strings.HasSuffix(s, "/..")

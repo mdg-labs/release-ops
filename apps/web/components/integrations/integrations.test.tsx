@@ -91,6 +91,33 @@ describe("IntegrationsView", () => {
     vi.unstubAllGlobals();
   });
 
+  it("shows a forbidden state, not an empty list, when the API answers 403", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({
+        path: "/api/go/api/v1/integrations",
+        method: "GET",
+      })
+      .reply(
+        403,
+        {
+          error: {
+            code: "FORBIDDEN",
+            message: "this action needs the admin role",
+          },
+        },
+        { headers: { "content-type": "application/json" } },
+      );
+
+    renderIntegrationsPage();
+
+    expect(await screen.findByTestId("forbidden-state")).toBeInTheDocument();
+    expect(screen.queryByText("No integrations yet")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Failed to load integrations."),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders empty state when no integrations exist", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool

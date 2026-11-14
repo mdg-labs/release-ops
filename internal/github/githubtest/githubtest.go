@@ -85,7 +85,17 @@ type Fake struct {
 	fileStatus  map[string]int      // owner/name -> status for its contents calls
 	pageSize    int                 // entries per page for listings; 0 means everything on one page
 	foreignNext string              // host a Link header names as the next page instead of the fake
+
+	users          map[int64]string             // user id -> current login
+	orgMembers     map[string]Membership        // "org/login" (lower-cased) -> membership
+	teamMembers    map[string]Membership        // "org/team/login" (lower-cased) -> membership
+	memberStatus   int                          // status for every user and membership call; 0 answers normally
+	userRepos      map[string]map[int64][]int64 // user token -> installation id -> repository ids
+	userRepoStatus int                          // status for the user's repository listing; 0 answers normally
 }
+
+// Membership is the state and role the fake reports for an organization or team membership.
+type Membership struct{ State, Role string }
 
 // Repo is a repository an installation grants.
 type Repo struct {
@@ -111,6 +121,10 @@ func New(t testing.TB, now func() time.Time) *Fake {
 		repos:       map[int64][]Repo{},
 		repoStatus:  map[int64]int{},
 		tokenOwner:  map[string]int64{},
+		users:       map[int64]string{},
+		orgMembers:  map[string]Membership{},
+		teamMembers: map[string]Membership{},
+		userRepos:   map[string]map[int64][]int64{},
 		files:       map[string][]string{},
 		fileStatus:  map[string]int{},
 		tokenTTL:    time.Hour,
@@ -218,6 +232,63 @@ func (f *Fake) RejectRepository(name string) {
 	f.tokenFor422[name] = true
 }
 
+// SetUser makes GET /user/{id} answer the login for the account.
+func (f *Fake) SetUser(id int64, login string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.users[id] = login
+}
+
+// SetOrganizationMember makes the organization membership of login answer state and role;
+// without a call the user is not a member.
+func (f *Fake) SetOrganizationMember(org, login, state, role string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.orgMembers[strings.ToLower(org+"/"+login)] = Membership{State: state, Role: role}
+}
+
+// RemoveOrganizationMember removes the user from the organization again.
+func (f *Fake) RemoveOrganizationMember(org, login string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.orgMembers, strings.ToLower(org+"/"+login))
+}
+
+// SetTeamMember makes the team membership of login answer state and role; without a call
+// the user is not in the team.
+func (f *Fake) SetTeamMember(org, team, login, state, role string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.teamMembers[strings.ToLower(org+"/"+team+"/"+login)] = Membership{State: state, Role: role}
+}
+
+// FailMemberships makes every user and membership call answer status; 0 restores normal
+// answers.
+func (f *Fake) FailMemberships(status int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.memberStatus = status
+}
+
+// SetUserRepositories makes GET /user/installations/{id}/repositories list the repository
+// ids for the user token.
+func (f *Fake) SetUserRepositories(userToken string, installationID int64, repositoryIDs ...int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.userRepos[userToken] == nil {
+		f.userRepos[userToken] = map[int64][]int64{}
+	}
+	f.userRepos[userToken][installationID] = repositoryIDs
+}
+
+// FailUserRepositories makes the user's repository listing answer status; 0 restores
+// normal answers.
+func (f *Fake) FailUserRepositories(status int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.userRepoStatus = status
+}
+
 // Requests returns a copy of the requests received so far.
 func (f *Fake) Requests() []Request {
 	f.mu.Lock()
@@ -260,7 +331,11 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Unlock()
 
 	bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if strings.HasPrefix(r.URL.Path, "/installation/") || strings.HasPrefix(r.URL.Path, "/repos/") {
+	if strings.HasPrefix(r.URL.Path, "/user/installations/") {
+		f.serveUserRepositories(w, r, bearer)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/installation/") || strings.HasPrefix(r.URL.Path, "/orgs/") || strings.HasPrefix(r.URL.Path, "/user/") || strings.HasPrefix(r.URL.Path, "/repos/") {
 		f.serveWithToken(w, r, bearer)
 		return
 	}
@@ -393,6 +468,11 @@ func (f *Fake) serveWithToken(w http.ResponseWriter, r *http.Request, token stri
 		return
 	}
 
+	if strings.HasPrefix(r.URL.Path, "/orgs/") || strings.HasPrefix(r.URL.Path, "/user/") {
+		f.serveDirectory(w, r)
+		return
+	}
+
 	if r.URL.Path == "/installation/repositories" {
 		if status := f.repoStatus[installationID]; status != 0 {
 			w.WriteHeader(status)
@@ -466,6 +546,73 @@ func (f *Fake) serveWithToken(w http.ResponseWriter, r *http.Request, token stri
 		return
 	}
 	_ = json.NewEncoder(w).Encode(entries)
+}
+
+// serveDirectory answers the user and membership calls an installation token makes; the
+// caller holds the lock.
+func (f *Fake) serveDirectory(w http.ResponseWriter, r *http.Request) {
+	if f.memberStatus != 0 {
+		w.WriteHeader(f.memberStatus)
+		return
+	}
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	switch {
+	case len(parts) == 2 && parts[0] == "user":
+		id, err := strconv.ParseInt(parts[1], 10, 64)
+		login, ok := f.users[id]
+		if err != nil || !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "login": login, "type": "User"})
+	case len(parts) == 4 && parts[0] == "orgs" && parts[2] == "memberships":
+		f.writeMembership(w, f.orgMembers, strings.ToLower(parts[1]+"/"+parts[3]))
+	case len(parts) == 6 && parts[0] == "orgs" && parts[2] == "teams" && parts[4] == "memberships":
+		f.writeMembership(w, f.teamMembers, strings.ToLower(parts[1]+"/"+parts[3]+"/"+parts[5]))
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (f *Fake) writeMembership(w http.ResponseWriter, members map[string]Membership, key string) {
+	m, ok := members[key]
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"state": m.State, "role": m.Role})
+}
+
+// serveUserRepositories answers GET /user/installations/{id}/repositories for a user token.
+func (f *Fake) serveUserRepositories(w http.ResponseWriter, r *http.Request, token string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	byInstallation, known := f.userRepos[token]
+	if !known {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	if f.userRepoStatus != 0 {
+		w.WriteHeader(f.userRepoStatus)
+		return
+	}
+	idText, ok := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/user/installations/"), "/repositories")
+	installationID, err := strconv.ParseInt(idText, 10, 64)
+	if !ok || err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	ids := byInstallation[installationID]
+	entries := make([]any, len(ids))
+	for i, id := range ids {
+		var doc map[string]any
+		_ = json.Unmarshal(repositoryFixture, &doc)
+		doc["id"] = id
+		entries[i] = doc
+	}
+	f.page(w, r, entries, func(e []any) any {
+		return map[string]any{"total_count": len(entries), "repositories": e}
+	})
 }
 
 func (f *Fake) checkJWT(token string) bool {

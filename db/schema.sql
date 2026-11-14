@@ -204,6 +204,17 @@ CREATE TABLE repositories (
   UNIQUE (installation_id, full_name)
 ) STRICT;
 
+-- The repository-access list of a viewer's session (specs.html § 3.9): the repositories the user
+-- can access, written at sign-in and never refreshed. Rows go with the session and with a deleted
+-- repository; an admin session has none, and a viewer session without rows sees no repository.
+CREATE TABLE session_repositories (
+  session_token TEXT NOT NULL REFERENCES sessions(token) ON DELETE CASCADE,
+  repository_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+  PRIMARY KEY (session_token, repository_id)
+) STRICT;
+
+CREATE INDEX idx_session_repositories_repository ON session_repositories (repository_id);
+
 -- One row per bot update PR of a repository.
 CREATE TABLE update_prs (
   id TEXT PRIMARY KEY,

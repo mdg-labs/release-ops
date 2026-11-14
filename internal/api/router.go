@@ -45,6 +45,10 @@ type ServerDeps struct {
 	// GitHubOAuth runs the OAuth sign-in. When nil it is built from GitHub and GitHubBaseURL;
 	// tests set it to a fake.
 	GitHubOAuth auth.OAuthProvider
+	// Roles derives the role of a GitHub user from the installation's account and
+	// memberships, at sign-in and every 15 minutes of a session. Without it only the
+	// bootstrap admin can sign in, and a session whose role is due for a re-check is refused.
+	Roles auth.RoleEvaluator
 	// BootstrapAdminGitHubLogin is BOOTSTRAP_ADMIN_GITHUB_LOGIN.
 	BootstrapAdminGitHubLogin string
 	// WebhookRoutes holds the handlers of the webhook events. When nil, the route serves

@@ -4,6 +4,10 @@ import { CircleCheckIcon, ClockIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { SettingsSection } from "@/components/common/settings-section";
+import {
+  ForbiddenState,
+  isForbiddenError,
+} from "@/components/common/forbidden-state";
 import { PageHeader } from "@/components/common/page-header";
 import { SettingsNav } from "@/components/settings/settings-nav";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -35,7 +39,7 @@ type SettingsFormState = {
 export function SettingsView(): React.ReactElement {
   const t = useTranslations("settings");
   const tCommon = useTranslations("common");
-  const { data, isLoading, isError, updateSettings } = useSettings();
+  const { data, isLoading, isError, error, updateSettings } = useSettings();
 
   const [form, setForm] = useState<SettingsFormState>({
     pollIntervalMinutes: null,
@@ -95,7 +99,8 @@ export function SettingsView(): React.ReactElement {
       <PageHeader title={t("title")} />
       <SettingsNav />
 
-      {isError ? (
+      {isError && isForbiddenError(error) ? <ForbiddenState /> : null}
+      {isError && !isForbiddenError(error) ? (
         <p className="text-destructive-foreground text-sm" role="alert">
           {t("loadFailed")}
         </p>

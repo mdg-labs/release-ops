@@ -18,7 +18,11 @@ import (
 )
 
 // stubOAuth is GitHub's side of the sign-in with one fixed user.
-type stubOAuth struct{ user github.User }
+type stubOAuth struct {
+	user github.User
+	// repoIDs are the GitHub ids of the repositories the user can access.
+	repoIDs []int64
+}
 
 func (stubOAuth) AuthorizeURL(clientID, redirectURI, state, challenge string) string {
 	return "https://github.example/login/oauth/authorize?client_id=" + clientID + "&state=" + state + "&code_challenge=" + challenge
@@ -32,6 +36,10 @@ func (s stubOAuth) User(context.Context, github.UserToken) (github.User, error) 
 
 func (stubOAuth) IsOrganizationOwner(context.Context, github.UserToken, string) (bool, error) {
 	return false, nil
+}
+
+func (s stubOAuth) InstallationRepositoryIDs(context.Context, github.UserToken, int64) ([]int64, error) {
+	return s.repoIDs, nil
 }
 
 func newSignInRoutesServer(t *testing.T) (*httptest.Server, *ServerDeps) {

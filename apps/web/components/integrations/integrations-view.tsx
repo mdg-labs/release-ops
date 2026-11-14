@@ -3,6 +3,10 @@
 import { PencilIcon, PlugZapIcon, Trash2Icon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useRef, useState } from "react";
+import {
+  ForbiddenState,
+  isForbiddenError,
+} from "@/components/common/forbidden-state";
 import { PageHeader } from "@/components/common/page-header";
 import { DeleteIntegrationDialog } from "@/components/integrations/delete-integration-dialog";
 import { IntegrationDrawer } from "@/components/integrations/integration-drawer";
@@ -43,6 +47,7 @@ export function IntegrationsView(): React.ReactElement {
     data,
     isLoading,
     isError,
+    error,
     createIntegration,
     updateIntegration,
     deleteIntegration,
@@ -101,7 +106,8 @@ export function IntegrationsView(): React.ReactElement {
         title={t("title")}
       />
 
-      {isError ? (
+      {isError && isForbiddenError(error) ? <ForbiddenState /> : null}
+      {isError && !isForbiddenError(error) ? (
         <p className="text-destructive-foreground text-sm" role="alert">
           {t("loadFailed")}
         </p>

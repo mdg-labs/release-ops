@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -52,6 +53,9 @@ type OAuthProvider interface {
 	ExchangeCode(ctx context.Context, p github.ExchangeParams) (github.UserToken, error)
 	User(ctx context.Context, t github.UserToken) (github.User, error)
 	IsOrganizationOwner(ctx context.Context, t github.UserToken, org string) (bool, error)
+	// InstallationRepositoryIDs lists the GitHub ids of the installation's repositories the
+	// token's user can access.
+	InstallationRepositoryIDs(ctx context.Context, t github.UserToken, installationID int64) ([]int64, error)
 }
 
 // AppSignIn yields the stored App's sign-in credentials.
@@ -65,6 +69,11 @@ type GitHubSignInHandlers struct {
 	Apps     AppSignIn
 	Users    store.SignInRepository
 	GitHub   OAuthProvider
+	// Roles decides the role of a user the bootstrap rules do not cover. Without it only the
+	// bootstrap admin can sign in. Access reads the installation and its repositories for a
+	// viewer's scope; a viewer cannot sign in without it.
+	Roles  RoleEvaluator
+	Access store.AccessRepository
 	// AppURL is APP_URL; the redirect_uri sent to GitHub is built from it alone.
 	AppURL string
 	// BootstrapAdminLogin is BOOTSTRAP_ADMIN_GITHUB_LOGIN: the login of the first admin,
@@ -165,17 +174,22 @@ func (h *GitHubSignInHandlers) Callback(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	pin, permitted, err := h.permit(ctx, token, user, app)
+	role, err := h.decide(ctx, token, user, app)
 	if err != nil {
 		RedirectToLogin(w, r, exchangeErrorCode(err))
 		return
 	}
-	if !permitted {
+	if role.name == "" {
 		RedirectToLogin(w, r, LoginErrorNoRole)
 		return
 	}
+	repositoryIDs, err := h.viewerScope(ctx, token, role.name)
+	if err != nil {
+		RedirectToLogin(w, r, exchangeErrorCode(err))
+		return
+	}
 
-	userID, err := h.Users.SignIn(ctx, store.GitHubUser{ID: user.ID, Login: user.Login}, pin)
+	userID, err := h.Users.SignIn(ctx, store.GitHubUser{ID: user.ID, Login: user.Login}, role.pin)
 	switch {
 	case errors.Is(err, store.ErrBootstrapAdminTaken):
 		RedirectToLogin(w, r, LoginErrorNoRole)
@@ -186,7 +200,10 @@ func (h *GitHubSignInHandlers) Callback(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := StartGitHubSession(ctx, h.Sessions, userID, user.ID, user.Login, RoleAdmin); err != nil {
+	if err := StartGitHubSession(ctx, h.Sessions, GitHubSession{
+		UserID: userID, GitHubID: user.ID, Login: user.Login, Role: role.name,
+		EvaluatedAt: h.now(), RepositoryIDs: repositoryIDs,
+	}); err != nil {
 		slog.Error("github sign-in: starting the session failed", "err", err)
 		RedirectToLogin(w, r, LoginErrorServer)
 		return
@@ -194,32 +211,96 @@ func (h *GitHubSignInHandlers) Callback(w http.ResponseWriter, r *http.Request) 
 	http.Redirect(w, r, redirect, http.StatusFound)
 }
 
-// permit decides whether the user may sign in, and whether doing so pins them as the
-// bootstrap admin. Until roles are derived from GitHub the bootstrap admin is the only user
-// let in. With none pinned yet, the first sign-in of BOOTSTRAP_ADMIN_GITHUB_LOGIN is pinned;
-// when that is unset, the App's owner (the owning user, or an owner of the owning
-// organization) is. A user nobody permits gets no user row.
-func (h *GitHubSignInHandlers) permit(ctx context.Context, token github.UserToken, user github.User, app store.GitHubAppSignIn) (pin, permitted bool, err error) {
+// decision is the outcome of the role decision at sign-in: the role ("" for no access) and
+// whether the sign-in also pins the user as the bootstrap admin.
+type decision struct {
+	name string
+	pin  bool
+}
+
+// decide gives the role of the user signing in. The pinned bootstrap admin is admin. With
+// none pinned yet, the first sign-in of BOOTSTRAP_ADMIN_GITHUB_LOGIN is pinned; when that
+// is unset, the App's owner (the owning user, or an owner of the owning organization) is.
+// Everyone else gets the role GitHub's memberships give them, or none. A user nobody
+// permits gets no user row.
+func (h *GitHubSignInHandlers) decide(ctx context.Context, token github.UserToken, user github.User, app store.GitHubAppSignIn) (decision, error) {
 	admin, pinned, err := h.Users.BootstrapAdmin(ctx)
 	if err != nil {
 		slog.Error("github sign-in: reading the bootstrap admin failed", "err", err)
-		return false, false, errServer
+		return decision{}, errServer
 	}
-	if pinned {
-		return false, admin.ID == user.ID, nil
+	if pinned && admin.ID == user.ID {
+		return decision{name: RoleAdmin}, nil
 	}
+	if !pinned {
+		permitted, err := h.firstAdmin(ctx, token, user, app)
+		if err != nil {
+			return decision{}, err
+		}
+		if permitted {
+			return decision{name: RoleAdmin, pin: true}, nil
+		}
+	}
+	if h.Roles == nil {
+		return decision{}, nil
+	}
+	name, err := h.Roles.Evaluate(ctx, user.ID)
+	if err != nil {
+		slog.Error("github sign-in: evaluating the role failed", "err", err)
+		return decision{}, err
+	}
+	return decision{name: name}, nil
+}
 
+// firstAdmin reports whether the user is the one to pin as the bootstrap admin.
+func (h *GitHubSignInHandlers) firstAdmin(ctx context.Context, token github.UserToken, user github.User, app store.GitHubAppSignIn) (bool, error) {
 	if h.BootstrapAdminLogin != "" {
-		return true, strings.EqualFold(user.Login, h.BootstrapAdminLogin), nil
+		return strings.EqualFold(user.Login, h.BootstrapAdminLogin), nil
 	}
 	if app.OwnerType == "Organization" {
-		owner, err := h.GitHub.IsOrganizationOwner(ctx, token, app.OwnerLogin)
-		if err != nil {
-			return false, false, err
-		}
-		return true, owner, nil
+		return h.GitHub.IsOrganizationOwner(ctx, token, app.OwnerLogin)
 	}
-	return true, strings.EqualFold(user.Login, app.OwnerLogin), nil
+	return strings.EqualFold(user.Login, app.OwnerLogin), nil
+}
+
+// viewerScope returns the row ids of the repositories a viewer may see: those the user can
+// access on GitHub, with the user's own token, that are installed here. An admin has no
+// list. Any failure is an error, never a shorter or wider list.
+func (h *GitHubSignInHandlers) viewerScope(ctx context.Context, token github.UserToken, role string) ([]string, error) {
+	if role != RoleViewer {
+		return nil, nil
+	}
+	if h.Access == nil {
+		slog.Error("github sign-in: a viewer signed in without an access repository")
+		return nil, errServer
+	}
+	inst, ok, err := h.Access.LiveInstallation(ctx)
+	if err != nil {
+		slog.Error("github sign-in: reading the installation failed", "err", err)
+		return nil, errServer
+	}
+	if !ok {
+		return nil, errServer
+	}
+	accessible, err := h.GitHub.InstallationRepositoryIDs(ctx, token, inst.GitHubInstallationID)
+	if err != nil {
+		return nil, err
+	}
+	installed, err := h.Access.InstalledRepositoryIDs(ctx, inst.ID)
+	if err != nil {
+		slog.Error("github sign-in: reading the installed repositories failed", "err", err)
+		return nil, errServer
+	}
+	seen := map[string]bool{}
+	ids := []string{}
+	for _, githubID := range accessible {
+		if id, ok := installed[githubID]; ok && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	return ids, nil
 }
 
 var errServer = errors.New("server error")

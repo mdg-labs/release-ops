@@ -42,6 +42,15 @@ func CreateLoginLink(ctx context.Context, users store.SignInRepository, appURL s
 type LoginLinkHandlers struct {
 	Sessions *scs.SessionManager
 	Users    store.SignInRepository
+	// Now is the clock; nil means time.Now.
+	Now func() time.Time
+}
+
+func (h *LoginLinkHandlers) now() time.Time {
+	if h.Now != nil {
+		return h.Now()
+	}
+	return time.Now()
 }
 
 type loginLinkRequest struct {
@@ -71,7 +80,9 @@ func (h *LoginLinkHandlers) Redeem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := StartGitHubSession(r.Context(), h.Sessions, admin.UserID, admin.ID, admin.Login, RoleAdmin); err != nil {
+	if err := StartGitHubSession(r.Context(), h.Sessions, GitHubSession{
+		UserID: admin.UserID, GitHubID: admin.ID, Login: admin.Login, Role: RoleAdmin, EvaluatedAt: h.now(),
+	}); err != nil {
 		slog.Error("login link: starting the session failed", "err", err)
 		WriteError(w, "INTERNAL_ERROR", "Sign-in failed.", http.StatusInternalServerError)
 		return

@@ -44,6 +44,40 @@ func (q *Queries) ListActiveRepositoryConfigStates(ctx context.Context, installa
 	return items, nil
 }
 
+const listActiveRepositoryIDs = `-- name: ListActiveRepositoryIDs :many
+SELECT id, github_repository_id
+FROM repositories
+WHERE installation_id = ? AND removed_at IS NULL
+`
+
+type ListActiveRepositoryIDsRow struct {
+	ID                 string `json:"id"`
+	GithubRepositoryID int64  `json:"github_repository_id"`
+}
+
+func (q *Queries) ListActiveRepositoryIDs(ctx context.Context, installationID string) ([]ListActiveRepositoryIDsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listActiveRepositoryIDs, installationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveRepositoryIDsRow
+	for rows.Next() {
+		var i ListActiveRepositoryIDsRow
+		if err := rows.Scan(&i.ID, &i.GithubRepositoryID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markInstallationRepositoriesRemoved = `-- name: MarkInstallationRepositoriesRemoved :execrows
 UPDATE repositories
 SET removed_at = ?, updated_at = ?

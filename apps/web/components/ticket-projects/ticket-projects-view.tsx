@@ -3,6 +3,10 @@
 import { LayoutListIcon, PencilIcon, Trash2Icon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useMemo, useRef, useState } from "react";
+import {
+  ForbiddenState,
+  isForbiddenError,
+} from "@/components/common/forbidden-state";
 import { PageHeader } from "@/components/common/page-header";
 import { DeleteTicketProjectDialog } from "@/components/ticket-projects/delete-ticket-project-dialog";
 import { ProjectDrawer } from "@/components/ticket-projects/project-drawer";
@@ -43,6 +47,7 @@ export function TicketProjectsView(): React.ReactElement {
     data: projects,
     isLoading,
     isError,
+    error,
     createTicketProject,
     updateTicketProject,
     deleteTicketProject,
@@ -104,7 +109,8 @@ export function TicketProjectsView(): React.ReactElement {
         title={t("title")}
       />
 
-      {isError ? (
+      {isError && isForbiddenError(error) ? <ForbiddenState /> : null}
+      {isError && !isForbiddenError(error) ? (
         <p className="text-destructive-foreground text-sm" role="alert">
           {t("loadFailed")}
         </p>

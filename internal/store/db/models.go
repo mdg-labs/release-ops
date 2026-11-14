@@ -170,6 +170,11 @@ type Session struct {
 	UserID string  `json:"user_id"`
 }
 
+type SessionRepository struct {
+	SessionToken string `json:"session_token"`
+	RepositoryID string `json:"repository_id"`
+}
+
 type TicketProject struct {
 	ID                 string `json:"id"`
 	IntegrationID      string `json:"integration_id"`

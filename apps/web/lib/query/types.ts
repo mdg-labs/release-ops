@@ -1,7 +1,10 @@
+/** The role GitHub gives a user (docs/specs.html §3.7); the Go API enforces it. */
+export type UserRole = "admin" | "viewer";
+
 export type User = {
   id: string | number;
   login?: string;
-  role?: string;
+  role?: UserRole;
   email?: string;
 };
 

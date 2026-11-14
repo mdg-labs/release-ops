@@ -19,6 +19,12 @@ const NAV_ROUTES = [
   "/settings",
 ] as const;
 
+const ADMIN_ROUTES = [
+  "/integrations",
+  "/ticket-projects",
+  "/settings",
+] as const;
+
 const pushMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
@@ -62,6 +68,22 @@ function interceptStatus(
     .reply(
       statusCode,
       statusCode === 200 ? { version: reply.version } : { error: {} },
+      { headers: { "content-type": "application/json" } },
+    );
+}
+
+function interceptSession(
+  pool: ReturnType<MockAgent["get"]>,
+  reply: { role?: "admin" | "viewer"; statusCode?: number },
+) {
+  const statusCode = reply.statusCode ?? 200;
+  pool
+    .intercept({ path: "/api/go/api/v1/auth/session", method: "GET" })
+    .reply(
+      statusCode,
+      statusCode === 200
+        ? { user: { id: 583231, login: "octocat", role: reply.role } }
+        : { error: {} },
       { headers: { "content-type": "application/json" } },
     );
 }
@@ -122,13 +144,53 @@ describe("AppSidebar", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders sidebar links for all §8.1 routes", () => {
+  it("renders sidebar links for all §8.1 routes for an admin", async () => {
+    interceptSession(mockAgent.get(ORIGIN), { role: "admin" });
     renderSidebar();
 
     for (const href of NAV_ROUTES) {
       expect(
-        screen.getByRole("link", { name: `nav.${hrefToKey(href)}` }),
+        await screen.findByRole("link", { name: `nav.${hrefToKey(href)}` }),
       ).toHaveAttribute("href", href);
+    }
+  });
+
+  it("shows a viewer the dashboard only, not the admin pages", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    interceptSession(pool, { role: "viewer" });
+    renderSidebar();
+
+    expect(
+      await screen.findByRole("link", { name: "nav.dashboard" }),
+    ).toHaveAttribute("href", "/");
+    await waitFor(() =>
+      expect(mockAgent.pendingInterceptors()).toHaveLength(0),
+    );
+    for (const href of ADMIN_ROUTES) {
+      expect(document.querySelector(`a[href="${href}"]`)).toBeNull();
+    }
+  });
+
+  it("hides the admin pages while the role is loading", () => {
+    renderSidebar();
+
+    expect(
+      screen.getByRole("link", { name: "nav.dashboard" }),
+    ).toBeInTheDocument();
+    for (const href of ADMIN_ROUTES) {
+      expect(document.querySelector(`a[href="${href}"]`)).toBeNull();
+    }
+  });
+
+  it("hides the admin pages when the session request fails", async () => {
+    interceptSession(mockAgent.get(ORIGIN), { statusCode: 500 });
+    renderSidebar();
+
+    await waitFor(() =>
+      expect(mockAgent.pendingInterceptors()).toHaveLength(0),
+    );
+    for (const href of ADMIN_ROUTES) {
+      expect(document.querySelector(`a[href="${href}"]`)).toBeNull();
     }
   });
 
