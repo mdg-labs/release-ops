@@ -11,6 +11,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/providers/source"
 	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 	"github.com/mdg-labs/release-ops/internal/store"
+	"github.com/mdg-labs/release-ops/internal/store/db"
 )
 
 func TestGetAppSettingsPollInterval(t *testing.T) {
@@ -199,7 +200,7 @@ func TestTicketProjectCreateWithValidJSONConfigs(t *testing.T) {
 		t.Fatalf("ContentTemplates = %q, want %q", project.ContentTemplates, contentTemplates)
 	}
 
-	row, err := s.Queries().GetTicketProject(ctx, project.ID)
+	row, err := db.New(s.DB().Reader).GetTicketProject(ctx, project.ID)
 	if err != nil {
 		t.Fatalf("GetTicketProject raw: %v", err)
 	}
@@ -382,15 +383,15 @@ func TestIntegrationDefaultEnforcedByDatabase(t *testing.T) {
 	}
 
 	// Bypass the repository: the schema alone must refuse a second default of a kind...
-	if _, err := s.DB().ExecContext(ctx, `UPDATE integrations SET is_default = 1 WHERE id = ?`, b.ID); err == nil {
+	if _, err := s.DB().Writer.ExecContext(ctx, `UPDATE integrations SET is_default = 1 WHERE id = ?`, b.ID); err == nil {
 		t.Fatal("second default for the same kind was accepted")
 	}
 	// ...a default on a ticket kind...
-	if _, err := s.DB().ExecContext(ctx, `UPDATE integrations SET is_default = 1 WHERE id = ?`, linear.ID); err == nil {
+	if _, err := s.DB().Writer.ExecContext(ctx, `UPDATE integrations SET is_default = 1 WHERE id = ?`, linear.ID); err == nil {
 		t.Fatal("default on a ticket kind was accepted")
 	}
 	// ...and a value other than 0/1.
-	if _, err := s.DB().ExecContext(ctx, `UPDATE integrations SET is_default = 2 WHERE id = ?`, a.ID); err == nil {
+	if _, err := s.DB().Writer.ExecContext(ctx, `UPDATE integrations SET is_default = 2 WHERE id = ?`, a.ID); err == nil {
 		t.Fatal("is_default = 2 was accepted")
 	}
 }

@@ -189,7 +189,7 @@ func newStateWriteFixture(t *testing.T) *stateWriteFixture {
 		t.Fatalf("seed last_known_tag: %v", err)
 	}
 	return &stateWriteFixture{
-		sqlDB: sqlDB, store: s, repo: repo, creates: &creates, sends: &sendRecorder{},
+		sqlDB: sqlDB.Writer, store: s, repo: repo, creates: &creates, sends: &sendRecorder{},
 		tracker: tracker, createStatus: &createStatus, onCreate: &onCreate, oldTouches: &oldTouches,
 	}
 }

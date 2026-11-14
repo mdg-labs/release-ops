@@ -28,11 +28,11 @@ type settingsRepo struct {
 }
 
 func (r settingsRepo) EnsureDefault(ctx context.Context) error {
-	return r.store.q.EnsureAppSettings(ctx, nowUTC())
+	return r.store.writes.EnsureAppSettings(ctx, nowUTC())
 }
 
 func (r settingsRepo) Get(ctx context.Context) (*AppSettings, error) {
-	row, err := r.store.q.GetAppSettings(ctx)
+	row, err := r.store.reads.GetAppSettings(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +40,7 @@ func (r settingsRepo) Get(ctx context.Context) (*AppSettings, error) {
 }
 
 func (r settingsRepo) UpdatePollInterval(ctx context.Context, pollIntervalMinutes int64) (*AppSettings, error) {
-	row, err := r.store.q.UpdatePollInterval(ctx, db.UpdatePollIntervalParams{
+	row, err := r.store.writes.UpdatePollInterval(ctx, db.UpdatePollIntervalParams{
 		PollIntervalMinutes: pollIntervalMinutes,
 		UpdatedAt:           nowUTC(),
 	})
@@ -51,7 +51,7 @@ func (r settingsRepo) UpdatePollInterval(ctx context.Context, pollIntervalMinute
 }
 
 func (r settingsRepo) UpdateTokenExpiry(ctx context.Context, inviteTokenExpiryHours, passwordResetTokenExpiryMinutes int64) (*AppSettings, error) {
-	row, err := r.store.q.UpdateTokenExpirySettings(ctx, db.UpdateTokenExpirySettingsParams{
+	row, err := r.store.writes.UpdateTokenExpirySettings(ctx, db.UpdateTokenExpirySettingsParams{
 		InviteTokenExpiryHours:          inviteTokenExpiryHours,
 		PasswordResetTokenExpiryMinutes: passwordResetTokenExpiryMinutes,
 		UpdatedAt:                       nowUTC(),

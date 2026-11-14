@@ -17,29 +17,28 @@ var ErrInvalidJSON = errors.New("invalid JSON")
 var DefaultNotificationEvents = []string{"create", "error", "supersede"}
 
 // Store wraps sqlc queries with domain repositories and credential encryption.
+// Its repositories send every write and transaction through the writer connection
+// and every plain read through the read pool; the raw handles stay inside the store.
 type Store struct {
-	db     *sql.DB
-	q      *db.Queries
+	db     *DB
+	reads  *db.Queries
+	writes *db.Queries
 	cipher *crypto.Cipher
 }
 
 // New creates a Store from an open database and encryption cipher.
-func New(sqlDB *sql.DB, cipher *crypto.Cipher) *Store {
+func New(sqlDB *DB, cipher *crypto.Cipher) *Store {
 	return &Store{
 		db:     sqlDB,
-		q:      db.New(sqlDB),
+		reads:  db.New(sqlDB.Reader),
+		writes: db.New(sqlDB.Writer),
 		cipher: cipher,
 	}
 }
 
 // DB returns the underlying database handle.
-func (s *Store) DB() *sql.DB {
+func (s *Store) DB() *DB {
 	return s.db
-}
-
-// Queries returns the raw sqlc query handle (for auth and other low-level callers).
-func (s *Store) Queries() *db.Queries {
-	return s.q
 }
 
 // Settings returns the app settings repository.

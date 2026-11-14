@@ -93,7 +93,7 @@ type pollRepo struct {
 }
 
 func (r pollRepo) UpdatePollState(ctx context.Context, repoID string, update PollStateUpdate) (*MonitoredRepo, error) {
-	row, err := r.store.q.UpdatePollState(ctx, db.UpdatePollStateParams{
+	row, err := r.store.writes.UpdatePollState(ctx, db.UpdatePollStateParams{
 		OpenTicketExternalID:   stringPtrToNull(update.OpenTicketExternalID),
 		OpenTicketTag:          stringPtrToNull(update.OpenTicketTag),
 		LastKnownTag:           stringPtrToNull(update.LastKnownTag),
@@ -110,7 +110,7 @@ func (r pollRepo) UpdatePollState(ctx context.Context, repoID string, update Pol
 
 	repo := monitoredRepoFromRow(monitoredRepoRow(row))
 	// The UPDATE above is already committed: a failing read must not look like a failed write.
-	ids, err := r.store.q.ListNotificationTargetIDsForRepo(ctx, repoID)
+	ids, err := r.store.reads.ListNotificationTargetIDsForRepo(ctx, repoID)
 	if err != nil {
 		return repo, fmt.Errorf("%w: %w", ErrNotificationTargetsUnread, err)
 	}
@@ -119,7 +119,7 @@ func (r pollRepo) UpdatePollState(ctx context.Context, repoID string, update Pol
 }
 
 func (r pollRepo) InsertRun(ctx context.Context, triggerSource string) (*PollRun, error) {
-	row, err := r.store.q.InsertRun(ctx, db.InsertRunParams{
+	row, err := r.store.writes.InsertRun(ctx, db.InsertRunParams{
 		ID:            newID(),
 		StartedAt:     nowUTC(),
 		TriggerSource: triggerSource,
@@ -137,7 +137,7 @@ func (r pollRepo) FinishRun(
 	reposChecked, ticketsCreated, ticketsSuperseded int64,
 	errorsJSON string,
 ) (*PollRun, error) {
-	row, err := r.store.q.FinishRun(ctx, db.FinishRunParams{
+	row, err := r.store.writes.FinishRun(ctx, db.FinishRunParams{
 		FinishedAt:        sql.NullString{String: nowUTC(), Valid: true},
 		Status:            status,
 		ReposChecked:      reposChecked,
@@ -153,7 +153,7 @@ func (r pollRepo) FinishRun(
 }
 
 func (r pollRepo) GetRun(ctx context.Context, id string) (*PollRun, error) {
-	row, err := r.store.q.GetPollRun(ctx, id)
+	row, err := r.store.reads.GetPollRun(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func (r pollRepo) GetRun(ctx context.Context, id string) (*PollRun, error) {
 }
 
 func (r pollRepo) ListRuns(ctx context.Context, limit, offset int64) ([]PollRun, error) {
-	rows, err := r.store.q.ListPollRuns(ctx, db.ListPollRunsParams{
+	rows, err := r.store.reads.ListPollRuns(ctx, db.ListPollRunsParams{
 		Limit:  limit,
 		Offset: offset,
 	})
@@ -183,7 +183,7 @@ func (r pollRepo) InsertEvent(
 	detail *string,
 	ref PollEventRef,
 ) (*PollRunEvent, error) {
-	row, err := r.store.q.InsertEvent(ctx, db.InsertEventParams{
+	row, err := r.store.writes.InsertEvent(ctx, db.InsertEventParams{
 		ID:               newID(),
 		PollRunID:        pollRunID,
 		MonitoredRepoID:  stringPtrToNull(monitoredRepoID),
@@ -201,7 +201,7 @@ func (r pollRepo) InsertEvent(
 }
 
 func (r pollRepo) ListEventsByRunID(ctx context.Context, pollRunID string) ([]PollRunEvent, error) {
-	rows, err := r.store.q.ListPollRunEventsByRunID(ctx, pollRunID)
+	rows, err := r.store.reads.ListPollRunEventsByRunID(ctx, pollRunID)
 	if err != nil {
 		return nil, err
 	}

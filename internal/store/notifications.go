@@ -66,7 +66,7 @@ func (r notificationTargetRepo) Create(ctx context.Context, input CreateNotifica
 	}
 
 	now := nowUTC()
-	row, err := r.store.q.CreateNotificationTarget(ctx, db.CreateNotificationTargetParams{
+	row, err := r.store.writes.CreateNotificationTarget(ctx, db.CreateNotificationTargetParams{
 		ID:                   newID(),
 		Name:                 input.Name,
 		ShoutrrrUrlEncrypted: encrypted,
@@ -82,7 +82,7 @@ func (r notificationTargetRepo) Create(ctx context.Context, input CreateNotifica
 }
 
 func (r notificationTargetRepo) Get(ctx context.Context, id string) (*NotificationTarget, error) {
-	row, err := r.store.q.GetNotificationTarget(ctx, id)
+	row, err := r.store.reads.GetNotificationTarget(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func (r notificationTargetRepo) Get(ctx context.Context, id string) (*Notificati
 }
 
 func (r notificationTargetRepo) List(ctx context.Context) ([]NotificationTarget, error) {
-	rows, err := r.store.q.ListNotificationTargets(ctx)
+	rows, err := r.store.reads.ListNotificationTargets(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +98,7 @@ func (r notificationTargetRepo) List(ctx context.Context) ([]NotificationTarget,
 }
 
 func (r notificationTargetRepo) ListEnabled(ctx context.Context) ([]NotificationTarget, error) {
-	rows, err := r.store.q.ListEnabledNotificationTargets(ctx)
+	rows, err := r.store.reads.ListEnabledNotificationTargets(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (r notificationTargetRepo) ListEnabled(ctx context.Context) ([]Notification
 }
 
 func (r notificationTargetRepo) Update(ctx context.Context, id string, input UpdateNotificationTargetInput) (*NotificationTarget, error) {
-	existing, err := r.store.q.GetNotificationTarget(ctx, id)
+	existing, err := r.store.reads.GetNotificationTarget(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (r notificationTargetRepo) Update(ctx context.Context, id string, input Upd
 		}
 	}
 
-	row, err := r.store.q.UpdateNotificationTarget(ctx, db.UpdateNotificationTargetParams{
+	row, err := r.store.writes.UpdateNotificationTarget(ctx, db.UpdateNotificationTargetParams{
 		Name:                 input.Name,
 		ShoutrrrUrlEncrypted: encrypted,
 		EventsJson:           eventsJSON,
@@ -139,11 +139,11 @@ func (r notificationTargetRepo) Update(ctx context.Context, id string, input Upd
 }
 
 func (r notificationTargetRepo) Delete(ctx context.Context, id string) error {
-	return r.store.q.DeleteNotificationTarget(ctx, id)
+	return r.store.writes.DeleteNotificationTarget(ctx, id)
 }
 
 func (r notificationTargetRepo) DecryptURL(ctx context.Context, id string) (string, error) {
-	row, err := r.store.q.GetNotificationTarget(ctx, id)
+	row, err := r.store.reads.GetNotificationTarget(ctx, id)
 	if err != nil {
 		return "", err
 	}

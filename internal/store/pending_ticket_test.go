@@ -117,7 +117,7 @@ func TestOpenPathAppliesBusyTimeout(t *testing.T) {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	var millis int
-	if err := sqlDB.QueryRow(`PRAGMA busy_timeout`).Scan(&millis); err != nil {
+	if err := sqlDB.Writer.QueryRow(`PRAGMA busy_timeout`).Scan(&millis); err != nil {
 		t.Fatalf("PRAGMA busy_timeout: %v", err)
 	}
 	if millis != 5000 {
@@ -125,7 +125,7 @@ func TestOpenPathAppliesBusyTimeout(t *testing.T) {
 	}
 
 	var foreignKeys int
-	if err := sqlDB.QueryRow(`PRAGMA foreign_keys`).Scan(&foreignKeys); err != nil {
+	if err := sqlDB.Writer.QueryRow(`PRAGMA foreign_keys`).Scan(&foreignKeys); err != nil {
 		t.Fatalf("PRAGMA foreign_keys: %v", err)
 	}
 	if foreignKeys != 1 {

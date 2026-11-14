@@ -67,7 +67,7 @@ func (r ticketProjectRepo) Create(ctx context.Context, input CreateTicketProject
 		contentTemplates = defaultContentTemplatesJSON
 	}
 
-	row, err := r.store.q.CreateTicketProject(ctx, db.CreateTicketProjectParams{
+	row, err := r.store.writes.CreateTicketProject(ctx, db.CreateTicketProjectParams{
 		ID:                 newID(),
 		IntegrationID:      input.IntegrationID,
 		ExternalProjectID:  input.ExternalProjectID,
@@ -86,7 +86,7 @@ func (r ticketProjectRepo) Create(ctx context.Context, input CreateTicketProject
 }
 
 func (r ticketProjectRepo) Get(ctx context.Context, id string) (*TicketProject, error) {
-	row, err := r.store.q.GetTicketProject(ctx, id)
+	row, err := r.store.reads.GetTicketProject(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (r ticketProjectRepo) Get(ctx context.Context, id string) (*TicketProject, 
 }
 
 func (r ticketProjectRepo) List(ctx context.Context) ([]TicketProject, error) {
-	rows, err := r.store.q.ListTicketProjects(ctx)
+	rows, err := r.store.reads.ListTicketProjects(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func (r ticketProjectRepo) List(ctx context.Context) ([]TicketProject, error) {
 }
 
 func (r ticketProjectRepo) ListByIntegration(ctx context.Context, integrationID string) ([]TicketProject, error) {
-	rows, err := r.store.q.ListTicketProjectsByIntegration(ctx, integrationID)
+	rows, err := r.store.reads.ListTicketProjectsByIntegration(ctx, integrationID)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func (r ticketProjectRepo) Update(ctx context.Context, id string, input UpdateTi
 		contentTemplates = defaultContentTemplatesJSON
 	}
 
-	row, err := r.store.q.UpdateTicketProject(ctx, db.UpdateTicketProjectParams{
+	row, err := r.store.writes.UpdateTicketProject(ctx, db.UpdateTicketProjectParams{
 		Name:               input.Name,
 		CreateConfig:       input.CreateConfig,
 		StatusMapping:      input.StatusMapping,
@@ -131,11 +131,11 @@ func (r ticketProjectRepo) Update(ctx context.Context, id string, input UpdateTi
 }
 
 func (r ticketProjectRepo) Delete(ctx context.Context, id string) error {
-	return r.store.q.DeleteTicketProject(ctx, id)
+	return r.store.writes.DeleteTicketProject(ctx, id)
 }
 
 func (r ticketProjectRepo) CountMonitoredRepos(ctx context.Context, id string) (int64, error) {
-	return r.store.q.CountMonitoredReposByTicketProject(ctx, id)
+	return r.store.reads.CountMonitoredReposByTicketProject(ctx, id)
 }
 
 const defaultContentTemplatesJSON = `{"title":"","description":"","supersedeComment":""}`

@@ -68,14 +68,14 @@ func (r integrationRepo) Create(ctx context.Context, input CreateIntegrationInpu
 		}
 	}
 
-	tx, err := r.store.db.BeginTx(ctx, nil)
+	tx, err := r.store.db.Writer.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
 		_ = tx.Rollback()
 	}()
-	q := r.store.q.WithTx(tx)
+	q := r.store.writes.WithTx(tx)
 
 	now := nowUTC()
 	id := newID()
@@ -107,7 +107,7 @@ func (r integrationRepo) Create(ctx context.Context, input CreateIntegrationInpu
 }
 
 func (r integrationRepo) Get(ctx context.Context, id string) (*Integration, error) {
-	row, err := r.store.q.GetIntegration(ctx, id)
+	row, err := r.store.reads.GetIntegration(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func (r integrationRepo) Get(ctx context.Context, id string) (*Integration, erro
 }
 
 func (r integrationRepo) List(ctx context.Context) ([]Integration, error) {
-	rows, err := r.store.q.ListIntegrations(ctx)
+	rows, err := r.store.reads.ListIntegrations(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func (r integrationRepo) List(ctx context.Context) ([]Integration, error) {
 }
 
 func (r integrationRepo) ListByKind(ctx context.Context, kind string) ([]Integration, error) {
-	rows, err := r.store.q.ListByKind(ctx, kind)
+	rows, err := r.store.reads.ListByKind(ctx, kind)
 	if err != nil {
 		return nil, err
 	}
@@ -131,14 +131,14 @@ func (r integrationRepo) ListByKind(ctx context.Context, kind string) ([]Integra
 }
 
 func (r integrationRepo) Update(ctx context.Context, id string, input UpdateIntegrationInput) (*Integration, error) {
-	tx, err := r.store.db.BeginTx(ctx, nil)
+	tx, err := r.store.db.Writer.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
 		_ = tx.Rollback()
 	}()
-	q := r.store.q.WithTx(tx)
+	q := r.store.writes.WithTx(tx)
 
 	existing, err := q.GetIntegration(ctx, id)
 	if err != nil {
@@ -184,18 +184,18 @@ func (r integrationRepo) Update(ctx context.Context, id string, input UpdateInte
 }
 
 func (r integrationRepo) Delete(ctx context.Context, id string) error {
-	return r.store.q.DeleteIntegration(ctx, id)
+	return r.store.writes.DeleteIntegration(ctx, id)
 }
 
 func (r integrationRepo) CountReferences(ctx context.Context, id string) (int64, error) {
-	return r.store.q.CountIntegrationReferences(ctx, db.CountIntegrationReferencesParams{
+	return r.store.reads.CountIntegrationReferences(ctx, db.CountIntegrationReferencesParams{
 		SourceIntegrationID: sql.NullString{String: id, Valid: true},
 		IntegrationID:       id,
 	})
 }
 
 func (r integrationRepo) DecryptPayload(ctx context.Context, id string) ([]byte, error) {
-	row, err := r.store.q.GetIntegration(ctx, id)
+	row, err := r.store.reads.GetIntegration(ctx, id)
 	if err != nil {
 		return nil, err
 	}

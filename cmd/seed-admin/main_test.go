@@ -28,7 +28,7 @@ func countUsers(t *testing.T, dbPath string) int64 {
 		t.Fatalf("open db: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	n, err := storedb.New(db).CountUsers(context.Background())
+	n, err := storedb.New(db.Writer).CountUsers(context.Background())
 	if err != nil {
 		t.Fatalf("count users: %v", err)
 	}

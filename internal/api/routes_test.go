@@ -301,11 +301,11 @@ func newRoutesTestDeps(t *testing.T) *ServerDeps {
 		t.Fatalf("NewCipherFromHex: %v", err)
 	}
 
-	sm := auth.NewSessionManager(db, strings.Repeat("s", 32), false)
+	sm := auth.NewSessionManager(db.Writer, strings.Repeat("s", 32), false)
 	return &ServerDeps{
-		DB:      db,
+		DB:      db.Writer,
 		Session: sm,
-		Queries: storedb.New(db),
+		Queries: storedb.New(db.Writer),
 		Store:   store.New(db, cipher),
 		Mailer:  mail.NoopMailer{},
 	}
@@ -342,7 +342,7 @@ func seedAppSettingsRow(t *testing.T, db *sql.DB) {
 	}
 }
 
-func openRoutesTestDB(t *testing.T) *sql.DB {
+func openRoutesTestDB(t *testing.T) *store.DB {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -350,18 +350,14 @@ func openRoutesTestDB(t *testing.T) *sql.DB {
 	return openRoutesTestDBAt(t, dbPath)
 }
 
-func openRoutesTestDBAt(t *testing.T, dbPath string) *sql.DB {
+func openRoutesTestDBAt(t *testing.T, dbPath string) *store.DB {
 	t.Helper()
 
 	storetest.Migrate(t, dbPath)
 
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?_foreign_keys=on")
+	db, err := store.OpenPath(dbPath)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	if err := db.Ping(); err != nil {
-		_ = db.Close()
-		t.Fatalf("ping sqlite: %v", err)
+		t.Fatalf("OpenPath: %v", err)
 	}
 	return db
 }

@@ -51,7 +51,7 @@ func TestMigrateCreatesStrictSchemaOnce(t *testing.T) {
 
 	for _, table := range wantTables {
 		var strict, count int
-		if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(strict), 0) FROM pragma_table_list WHERE schema = 'main' AND name = ?`, table).Scan(&count, &strict); err != nil {
+		if err := db.Writer.QueryRow(`SELECT COUNT(*), COALESCE(SUM(strict), 0) FROM pragma_table_list WHERE schema = 'main' AND name = ?`, table).Scan(&count, &strict); err != nil {
 			t.Fatalf("table_list %q: %v", table, err)
 		}
 		if count != 1 {
@@ -63,7 +63,7 @@ func TestMigrateCreatesStrictSchemaOnce(t *testing.T) {
 	}
 
 	var foreignKeys int
-	if err := db.QueryRow("PRAGMA foreign_keys").Scan(&foreignKeys); err != nil {
+	if err := db.Writer.QueryRow("PRAGMA foreign_keys").Scan(&foreignKeys); err != nil {
 		t.Fatalf("pragma foreign_keys: %v", err)
 	}
 	if foreignKeys != 1 {
@@ -180,7 +180,7 @@ func TestSessionsUserIDForeignKey(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	insertSession := func(token string, userID any) error {
-		_, err := db.Exec(
+		_, err := db.Writer.Exec(
 			`INSERT INTO sessions (token, data, expiry, user_id) VALUES (?, x'00', 2460000.5, ?)`,
 			token, userID,
 		)
@@ -194,7 +194,7 @@ func TestSessionsUserIDForeignKey(t *testing.T) {
 		t.Fatalf("session without user_id: %v", err)
 	}
 
-	if _, err := db.Exec(
+	if _, err := db.Writer.Exec(
 		`INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES ('u1', 'u1@example.com', 'x', 't', 't')`,
 	); err != nil {
 		t.Fatalf("insert user: %v", err)
@@ -203,10 +203,10 @@ func TestSessionsUserIDForeignKey(t *testing.T) {
 		t.Fatalf("session with known user_id: %v", err)
 	}
 
-	if _, err := db.Exec(`DELETE FROM sessions WHERE user_id = 'u1'`); err != nil {
+	if _, err := db.Writer.Exec(`DELETE FROM sessions WHERE user_id = 'u1'`); err != nil {
 		t.Fatalf("delete user sessions: %v", err)
 	}
-	if _, err := db.Exec(`DELETE FROM users WHERE id = 'u1'`); err != nil {
+	if _, err := db.Writer.Exec(`DELETE FROM users WHERE id = 'u1'`); err != nil {
 		t.Fatalf("delete user after its sessions: %v", err)
 	}
 }

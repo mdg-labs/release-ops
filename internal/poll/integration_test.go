@@ -2,7 +2,6 @@ package poll_test
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -439,7 +438,7 @@ func assertEventRef(t *testing.T, ctx context.Context, env *pollIntegrationEnv, 
 	}
 }
 
-func openIntegrationDB(t *testing.T, dbPath string) *sql.DB {
+func openIntegrationDB(t *testing.T, dbPath string) *store.DB {
 	t.Helper()
 
 	storetest.Migrate(t, dbPath)
@@ -451,10 +450,10 @@ func openIntegrationDB(t *testing.T, dbPath string) *sql.DB {
 	return sqlDB
 }
 
-func seedIntegrationAppSettings(t *testing.T, sqlDB *sql.DB) {
+func seedIntegrationAppSettings(t *testing.T, sqlDB *store.DB) {
 	t.Helper()
 
-	_, err := sqlDB.Exec(
+	_, err := sqlDB.Writer.Exec(
 		`INSERT INTO app_settings (id, poll_interval_minutes, updated_at) VALUES (1, 360, ?)`,
 		"2026-08-06T12:00:00.000Z",
 	)

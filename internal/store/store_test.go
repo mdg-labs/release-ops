@@ -37,7 +37,7 @@ func testStore(t *testing.T) (*store.Store, *crypto.Cipher) {
 	return store.New(sqlDB, cipher), cipher
 }
 
-func openMigratedDB(t *testing.T, dbPath string) *sql.DB {
+func openMigratedDB(t *testing.T, dbPath string) *store.DB {
 	t.Helper()
 
 	storetest.Migrate(t, dbPath)
@@ -49,10 +49,10 @@ func openMigratedDB(t *testing.T, dbPath string) *sql.DB {
 	return sqlDB
 }
 
-func seedAppSettings(t *testing.T, sqlDB *sql.DB) {
+func seedAppSettings(t *testing.T, sqlDB *store.DB) {
 	t.Helper()
 
-	_, err := sqlDB.Exec(
+	_, err := sqlDB.Writer.Exec(
 		`INSERT INTO app_settings (id, poll_interval_minutes, updated_at) VALUES (1, 360, ?)`,
 		"2026-08-06T12:00:00.000Z",
 	)
@@ -133,7 +133,7 @@ func TestIntegrationCreateEncryptsPayload(t *testing.T) {
 		t.Fatal("HasSecret = false, want true")
 	}
 
-	row, err := s.Queries().GetIntegration(ctx, created.ID)
+	row, err := db.New(s.DB().Reader).GetIntegration(ctx, created.ID)
 	if err != nil {
 		t.Fatalf("GetIntegration raw: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestUpdatePollStateKeepsStoredStateWhenTargetReadFails(t *testing.T) {
 
 	// Dropping the link table fails the follow-up read of the repo's notification
 	// targets while the UPDATE on monitored_repos still succeeds.
-	if _, err := s.DB().ExecContext(ctx, `DROP TABLE monitored_repo_notifications`); err != nil {
+	if _, err := s.DB().Writer.ExecContext(ctx, `DROP TABLE monitored_repo_notifications`); err != nil {
 		t.Fatalf("drop monitored_repo_notifications: %v", err)
 	}
 
@@ -256,7 +256,7 @@ func TestUpdatePollStateKeepsStoredStateWhenTargetReadFails(t *testing.T) {
 	}
 
 	var stored sql.NullString
-	if err := s.DB().QueryRowContext(ctx, `SELECT last_known_tag FROM monitored_repos WHERE id = ?`, fixture.repoID).Scan(&stored); err != nil {
+	if err := s.DB().Writer.QueryRowContext(ctx, `SELECT last_known_tag FROM monitored_repos WHERE id = ?`, fixture.repoID).Scan(&stored); err != nil {
 		t.Fatalf("read last_known_tag: %v", err)
 	}
 	if stored.String != tag {
@@ -336,7 +336,7 @@ func TestRepoCreateUpdatePersistsNotificationTargetIDs(t *testing.T) {
 		t.Fatalf("updated NotificationTargetIDs = %v, want [%s]", updated.NotificationTargetIDs, targetB.ID)
 	}
 
-	ids, err := s.Queries().ListNotificationTargetIDsForRepo(ctx, created.ID)
+	ids, err := db.New(s.DB().Reader).ListNotificationTargetIDsForRepo(ctx, created.ID)
 	if err != nil {
 		t.Fatalf("ListNotificationTargetIDsForRepo: %v", err)
 	}
@@ -374,7 +374,7 @@ func TestNotificationTargetEventsJSONValid(t *testing.T) {
 		t.Fatalf("Events = %v, want 2 entries", target.Events)
 	}
 
-	row, err := s.Queries().GetNotificationTarget(ctx, target.ID)
+	row, err := db.New(s.DB().Reader).GetNotificationTarget(ctx, target.ID)
 	if err != nil {
 		t.Fatalf("GetNotificationTarget: %v", err)
 	}

@@ -72,7 +72,7 @@ type monitoredRepoRepo struct {
 }
 
 func (r monitoredRepoRepo) Create(ctx context.Context, input CreateMonitoredRepoInput) (*MonitoredRepo, error) {
-	tx, err := r.store.db.BeginTx(ctx, nil)
+	tx, err := r.store.db.Writer.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func (r monitoredRepoRepo) Create(ctx context.Context, input CreateMonitoredRepo
 		_ = tx.Rollback()
 	}()
 
-	q := r.store.q.WithTx(tx)
+	q := r.store.writes.WithTx(tx)
 	now := nowUTC()
 	id := newID()
 
@@ -111,7 +111,7 @@ func (r monitoredRepoRepo) Create(ctx context.Context, input CreateMonitoredRepo
 }
 
 func (r monitoredRepoRepo) Get(ctx context.Context, id string) (*MonitoredRepo, error) {
-	row, err := r.store.q.GetMonitoredRepo(ctx, id)
+	row, err := r.store.reads.GetMonitoredRepo(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +119,7 @@ func (r monitoredRepoRepo) Get(ctx context.Context, id string) (*MonitoredRepo, 
 }
 
 func (r monitoredRepoRepo) List(ctx context.Context) ([]MonitoredRepo, error) {
-	rows, err := r.store.q.ListMonitoredRepos(ctx)
+	rows, err := r.store.reads.ListMonitoredRepos(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func (r monitoredRepoRepo) List(ctx context.Context) ([]MonitoredRepo, error) {
 }
 
 func (r monitoredRepoRepo) ListEnabled(ctx context.Context) ([]MonitoredRepo, error) {
-	rows, err := r.store.q.ListEnabled(ctx)
+	rows, err := r.store.reads.ListEnabled(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +140,7 @@ func (r monitoredRepoRepo) ListEnabled(ctx context.Context) ([]MonitoredRepo, er
 }
 
 func (r monitoredRepoRepo) Update(ctx context.Context, id string, input UpdateMonitoredRepoInput) (*MonitoredRepo, error) {
-	tx, err := r.store.db.BeginTx(ctx, nil)
+	tx, err := r.store.db.Writer.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (r monitoredRepoRepo) Update(ctx context.Context, id string, input UpdateMo
 		_ = tx.Rollback()
 	}()
 
-	q := r.store.q.WithTx(tx)
+	q := r.store.writes.WithTx(tx)
 	existing, err := q.GetMonitoredRepo(ctx, id)
 	if err != nil {
 		return nil, err
@@ -216,7 +216,7 @@ func resetPollStateOnTargetChange(ctx context.Context, q *db.Queries, before, af
 }
 
 func (r monitoredRepoRepo) SetEnabled(ctx context.Context, id string, enabled bool) (*MonitoredRepo, error) {
-	row, err := r.store.q.SetMonitoredRepoEnabled(ctx, db.SetMonitoredRepoEnabledParams{
+	row, err := r.store.writes.SetMonitoredRepoEnabled(ctx, db.SetMonitoredRepoEnabledParams{
 		Enabled:   boolToInt64(enabled),
 		UpdatedAt: nowUTC(),
 		ID:        id,
@@ -228,7 +228,7 @@ func (r monitoredRepoRepo) SetEnabled(ctx context.Context, id string, enabled bo
 }
 
 func (r monitoredRepoRepo) Delete(ctx context.Context, id string) error {
-	return r.store.q.DeleteMonitoredRepo(ctx, id)
+	return r.store.writes.DeleteMonitoredRepo(ctx, id)
 }
 
 func (r monitoredRepoRepo) repoWithNotificationIDs(
@@ -241,7 +241,7 @@ func (r monitoredRepoRepo) repoWithNotificationIDs(
 		repo.NotificationTargetIDs = append([]string(nil), knownIDs...)
 		return repo, nil
 	}
-	ids, err := r.store.q.ListNotificationTargetIDsForRepo(ctx, row.ID)
+	ids, err := r.store.reads.ListNotificationTargetIDsForRepo(ctx, row.ID)
 	if err != nil {
 		return nil, err
 	}
