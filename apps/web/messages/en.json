@@ -73,7 +73,7 @@
     "createApp": "Create GitHub App",
     "createFailedTitle": "Could not start the GitHub App setup",
     "invalidOwnerOrName": "Check the organization name and the App name: the organization must be a valid GitHub name and the App name at most 34 characters.",
-    "sessionExpired": "The setup session has ended. Enter the setup token again.",
+    "sessionExpired": "The setup session has ended. If no GitHub App was stored, restart the server to get a new setup token and enter it here.",
     "installApp": "Install the GitHub App",
     "callbackInvalidState": "This setup attempt is no longer valid. Create the GitHub App again.",
     "callbackRejected": "GitHub did not accept the code. It may have expired or been used already. Create the GitHub App again.",
