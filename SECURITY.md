@@ -6,11 +6,11 @@ Report a suspected vulnerability privately through GitHub private vulnerability 
 
 <https://github.com/mdg-labs/release-ops/security/advisories/new>
 
-Please do not open a public issue, pull request or discussion for a vulnerability, and do not describe it in a commit message or comment. A public report gives everyone running Release Ops the details before a fix exists.
+Please do not open a public issue, pull request or discussion for a vulnerability yourself, and do not describe it in a commit message or comment. A public report gives everyone running Release Ops the details before a fix exists; for a lower-rated finding the maintainer opens the public issue once it is triaged.
 
 A useful report says which version you tested, what an attacker needs to start with (no account, a signed-in user, access to the container's network or to the `/data` volume), what they gain, and the steps to reproduce it. Do not include real credentials, tokens or private keys; redact them.
 
-Reports are read by the maintainer. A confirmed vulnerability is fixed in a private advisory, and the advisory is published once the fix has been released.
+Reports are read by the maintainer, who rates each confirmed vulnerability under the [threat model's severity rubric](docs/threat-model.md#6-severity-rubric). One rated Critical or High is fixed in a private advisory, and the advisory is published once the fix has been released. One rated Medium, Low or Info is tracked as a public issue labelled `security`, which the maintainer files after triage; see [disclosure split](docs/threat-model.md#7-disclosure-split).
 
 ## Supported versions
 
