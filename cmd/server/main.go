@@ -28,14 +28,22 @@ import (
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
 
-const (
-	// reapInterval is how often the app requeues jobs whose lease has expired.
-	reapInterval = 15 * time.Second
+// The intervals of the periodic jobs are variables only so a test can shorten them.
+var (
 	// installationSyncInterval is how often the app reconciles the installation and its
 	// repositories with GitHub, after the sync at startup: hourly, as docs/specs.html
 	// §3.4 fixes it. A pass over an unchanged installation is a handful of list calls.
 	installationSyncInterval = time.Hour
+	// pollingInterval replaces it when no webhook is configured, because the reconcile is
+	// then the only way a change reaches the instance (docs/specs.html §2.11).
+	pollingInterval = github.PollingInterval
+	// redeliveryInterval is how often failed webhook deliveries are redelivered, after the
+	// pass at startup.
+	redeliveryInterval = github.RedeliveryInterval
 )
+
+// reapInterval is how often the app requeues jobs whose lease has expired.
+const reapInterval = 15 * time.Second
 
 func main() {
 	if len(os.Args) > 1 {
@@ -114,6 +122,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	githubClient := github.NewClient(github.APIBaseURL(cfg.GitHubBaseURL), 0)
 	appClient := github.NewAppClient(githubClient, appStore.GitHubApp(), github.AppClientOptions{})
 	syncer := github.NewSyncer(appClient, appStore.InstallationSync())
+	recovery := github.NewRecovery(appClient, github.RecoveryOptions{})
 	webhookRoutes := hooks.NewRoutes()
 	hooks.RegisterInstallationHandlers(webhookRoutes, appStore.InstallationSync(), syncer.Trigger)
 
@@ -164,8 +173,26 @@ func run(ctx context.Context, cfg *config.Config) error {
 	background.Go(func() {
 		queue.RunReaper(appCtx, jobs, reapInterval, func(err error) { log.Printf("job reaper: %v", err) })
 	})
+	syncEvery := installationSyncInterval
+	if cfg.PollingMode() {
+		syncEvery = pollingInterval
+		log.Printf("WEBHOOK_URL is not set: running in polling mode (degraded), re-reading installations and repositories from GitHub every %s; changes reach this instance with minutes of latency", pollingInterval)
+	} else {
+		background.Go(func() {
+			ticker := time.NewTicker(redeliveryInterval)
+			defer ticker.Stop()
+			recovery.Run(appCtx, ticker.C, func(redelivered int, err error) {
+				if err != nil {
+					log.Printf("github redelivery: %v", err)
+				}
+				if redelivered > 0 {
+					log.Printf("github redelivery: asked GitHub to redeliver %d failed webhook deliveries", redelivered)
+				}
+			})
+		})
+	}
 	background.Go(func() {
-		ticker := time.NewTicker(installationSyncInterval)
+		ticker := time.NewTicker(syncEvery)
 		defer ticker.Stop()
 		syncer.Run(appCtx, ticker.C, func(err error) {
 			if err != nil {

@@ -140,6 +140,12 @@ func (c *Config) SecureCookies() bool {
 	return u.Scheme == "https"
 }
 
+// PollingMode reports that no webhook is configured (WEBHOOK_URL is unset): GitHub delivers no
+// events, so the instance polls instead and runs degraded, with minutes of latency.
+func (c *Config) PollingMode() bool {
+	return c.WebhookURL == ""
+}
+
 // BootstrapAdminConfigured reports whether one-time admin bootstrap env is set.
 func (c *Config) BootstrapAdminConfigured() bool {
 	return c.BootstrapAdminEmail != "" || c.BootstrapAdminPassword != ""

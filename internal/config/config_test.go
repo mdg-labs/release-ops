@@ -147,6 +147,15 @@ func TestLoadWebhookAndGitHubURLs(t *testing.T) {
 	}
 }
 
+func TestPollingModeFollowsWebhookURL(t *testing.T) {
+	if !(&Config{}).PollingMode() {
+		t.Error("PollingMode() = false without WEBHOOK_URL, want true")
+	}
+	if (&Config{WebhookURL: "https://hooks.example.com/hooks/github"}).PollingMode() {
+		t.Error("PollingMode() = true with WEBHOOK_URL, want false")
+	}
+}
+
 func TestLoadSetupTokenMinimumStrength(t *testing.T) {
 	validEnv(t)
 

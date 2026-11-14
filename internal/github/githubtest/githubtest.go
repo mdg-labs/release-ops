@@ -37,6 +37,9 @@ var repositoryFixture []byte
 //go:embed testdata/content_entry.json
 var contentEntryFixture []byte
 
+//go:embed testdata/hook_delivery.json
+var hookDeliveryFixture []byte
+
 // TokenPrefix starts every token the fake mints; a counter follows.
 const TokenPrefix = "fixture-installation-token-"
 
@@ -92,6 +95,23 @@ type Fake struct {
 	memberStatus   int                          // status for every user and membership call; 0 answers normally
 	userRepos      map[string]map[int64][]int64 // user token -> installation id -> repository ids
 	userRepoStatus int                          // status for the user's repository listing; 0 answers normally
+
+	deliveries       []Delivery         // newest first, as GitHub lists them
+	deliveryStatus   int                // status of GET /app/hook/deliveries; 0 answers the list
+	redeliveryStatus map[int64]int      // delivery id -> status for its redelivery; 0 answers 202
+	onRedelivery     func(Delivery) int // called for each accepted redelivery; returns the receiver's status
+}
+
+// Delivery is a webhook delivery of the App as GET /app/hook/deliveries lists it.
+type Delivery struct {
+	ID   int64
+	GUID string
+	// DeliveredAt is when the delivery was attempted.
+	DeliveredAt time.Time
+	// StatusCode is the status the receiver answered; 0 stands for no answer at all.
+	StatusCode int
+	Event      string
+	Redelivery bool
 }
 
 // Membership is the state and role the fake reports for an organization or team membership.
@@ -127,8 +147,10 @@ func New(t testing.TB, now func() time.Time) *Fake {
 		userRepos:   map[string]map[int64][]int64{},
 		files:       map[string][]string{},
 		fileStatus:  map[string]int{},
-		tokenTTL:    time.Hour,
-		PEM:         pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}),
+
+		redeliveryStatus: map[int64]int{},
+		tokenTTL:         time.Hour,
+		PEM:              pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}),
 	}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
@@ -289,6 +311,55 @@ func (f *Fake) FailUserRepositories(status int) {
 	f.userRepoStatus = status
 }
 
+// SetDeliveries sets the deliveries GET /app/hook/deliveries lists, newest first.
+func (f *Fake) SetDeliveries(deliveries ...Delivery) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deliveries = deliveries
+}
+
+// FailDeliveryList makes GET /app/hook/deliveries answer status; 0 restores normal answers.
+func (f *Fake) FailDeliveryList(status int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deliveryStatus = status
+}
+
+// FailRedelivery makes the redelivery of the delivery answer status; 0 restores 202.
+func (f *Fake) FailRedelivery(id int64, status int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.redeliveryStatus[id] = status
+}
+
+// OnRedelivery sets what happens when GitHub is asked to redeliver: fn gets the delivery
+// being repeated, outside the fake's lock, and returns the status the receiver answered. The
+// fake then lists a new attempt of the same GUID with that status, newest first, as GitHub
+// does. Without it a redelivery is accepted and nothing is listed.
+func (f *Fake) OnRedelivery(fn func(Delivery) int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onRedelivery = fn
+}
+
+// Redeliveries returns the ids of the deliveries redelivery was requested for, in order.
+func (f *Fake) Redeliveries() []int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []int64
+	for _, r := range f.requests {
+		rest, ok := strings.CutPrefix(r.Path, "/app/hook/deliveries/")
+		idText, suffix, _ := strings.Cut(rest, "/")
+		if !ok || r.Method != http.MethodPost || suffix != "attempts" {
+			continue
+		}
+		if id, err := strconv.ParseInt(idText, 10, 64); err == nil {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // Requests returns a copy of the requests received so far.
 func (f *Fake) Requests() []Request {
 	f.mu.Lock()
@@ -345,6 +416,10 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/app/installations" {
 		f.serveInstallationList(w, r)
+		return
+	}
+	if rest, ok := strings.CutPrefix(r.URL.Path, "/app/hook/deliveries"); ok {
+		f.serveDeliveries(w, r, rest)
 		return
 	}
 	rest, ok := strings.CutPrefix(r.URL.Path, "/app/installations/")
@@ -404,6 +479,81 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func (f *Fake) deliveryDoc(d Delivery) map[string]any {
+	var doc map[string]any
+	_ = json.Unmarshal(hookDeliveryFixture, &doc)
+	doc["id"] = d.ID
+	doc["guid"] = d.GUID
+	doc["delivered_at"] = d.DeliveredAt.UTC().Format(time.RFC3339)
+	doc["status_code"] = d.StatusCode
+	doc["redelivery"] = d.Redelivery
+	if d.Event != "" {
+		doc["event"] = d.Event
+	}
+	if d.StatusCode >= 200 && d.StatusCode < 300 {
+		doc["status"] = "OK"
+	} else {
+		doc["status"] = fmt.Sprintf("Invalid HTTP Response: %d", d.StatusCode)
+	}
+	return doc
+}
+
+// serveDeliveries answers the list of deliveries and a redelivery request; rest is the path
+// after /app/hook/deliveries.
+func (f *Fake) serveDeliveries(w http.ResponseWriter, r *http.Request, rest string) {
+	f.mu.Lock()
+	if rest == "" && r.Method == http.MethodGet {
+		defer f.mu.Unlock()
+		if f.deliveryStatus != 0 {
+			w.WriteHeader(f.deliveryStatus)
+			return
+		}
+		entries := make([]any, len(f.deliveries))
+		for i, d := range f.deliveries {
+			entries[i] = f.deliveryDoc(d)
+		}
+		f.page(w, r, entries, func(e []any) any { return e })
+		return
+	}
+	idText, ok := strings.CutSuffix(strings.TrimPrefix(rest, "/"), "/attempts")
+	id, err := strconv.ParseInt(idText, 10, 64)
+	if r.Method != http.MethodPost || !ok || err != nil {
+		f.mu.Unlock()
+		http.NotFound(w, r)
+		return
+	}
+	var original *Delivery
+	for i := range f.deliveries {
+		if f.deliveries[i].ID == id {
+			original = &f.deliveries[i]
+			break
+		}
+	}
+	if original == nil {
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if status := f.redeliveryStatus[id]; status != 0 {
+		f.mu.Unlock()
+		w.WriteHeader(status)
+		return
+	}
+	d, hook := *original, f.onRedelivery
+	f.mu.Unlock()
+
+	if hook != nil {
+		status := hook(d)
+		f.mu.Lock()
+		next := slices.MaxFunc(f.deliveries, func(a, b Delivery) int { return int(a.ID - b.ID) }).ID + 1
+		d.ID, d.StatusCode, d.Redelivery, d.DeliveredAt = next, status, true, f.now()
+		f.deliveries = append([]Delivery{d}, f.deliveries...)
+		f.mu.Unlock()
+	}
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = w.Write([]byte(`{}`))
 }
 
 func (f *Fake) installationDoc(id int64) map[string]any {

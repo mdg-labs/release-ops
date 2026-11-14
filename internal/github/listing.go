@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -119,6 +120,9 @@ func (c *Client) ListDirectory(ctx context.Context, token, fullName, dir string)
 	return entries, nil
 }
 
+// errStopPaging is what a page handler returns to end a listing early without an error.
+var errStopPaging = errors.New("stop paging")
+
 // pages GETs path and every page its Link headers point to, handing each body to handle. A
 // next link to another host ends the listing with an error, so the bearer credential never
 // leaves the configured API host; so does a page that fails, because a partial listing is
@@ -140,7 +144,9 @@ func (c *Client) pages(ctx context.Context, path, bearer string, handle func(bod
 		if status != http.StatusOK {
 			return statusError(status)
 		}
-		if err := handle(body); err != nil {
+		if err := handle(body); errors.Is(err, errStopPaging) {
+			return nil
+		} else if err != nil {
 			return err
 		}
 		next, err = nextLink(header.Values("Link"), base)
