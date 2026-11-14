@@ -1,0 +1,292 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/mdg-labs/release-ops/internal/config"
+	"github.com/mdg-labs/release-ops/internal/queue"
+	"github.com/mdg-labs/release-ops/internal/queue/internalapi"
+	"github.com/mdg-labs/release-ops/internal/queue/worker"
+	"github.com/mdg-labs/release-ops/internal/store"
+	"github.com/mdg-labs/release-ops/internal/store/storetest"
+)
+
+const testWorkerSecret = "0123456789abcdef0123456789abcdef-test-secret"
+
+type testClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *testClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *testClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
+type appSide struct {
+	db    *store.DB
+	q     *store.JobQueue
+	clock *testClock
+	url   string
+	repo  string
+}
+
+// newAppSide stands in for the app: the queue over a migrated database and the internal
+// listener's handler on a loopback httptest server.
+func newAppSide(t *testing.T) *appSide {
+	t.Helper()
+
+	db := storetest.OpenMigrated(t)
+	clock := &testClock{now: time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)}
+	q := store.NewJobQueue(db, store.JobQueueOptions{Now: clock.Now, Rand: func() float64 { return 0.5 }})
+	srv := httptest.NewServer(internalapi.NewHandler(q, internalapi.Options{Secret: testWorkerSecret, ClaimWait: 100 * time.Millisecond}))
+	t.Cleanup(srv.Close)
+	return &appSide{db: db, q: q, clock: clock, url: srv.URL, repo: storetest.SeedRepositories(t, db, 1)[0]}
+}
+
+func (a *appSide) enqueue(t *testing.T) string {
+	t.Helper()
+	res, err := a.q.Enqueue(context.Background(), queue.EnqueueParams{
+		RepositoryID: a.repo, Priority: queue.PriorityHigh, Trigger: queue.TriggerPush,
+	})
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	return res.JobID
+}
+
+func (a *appSide) jobState(t *testing.T, id string) (string, int) {
+	t.Helper()
+	var state string
+	var attempts int
+	if err := a.db.Writer.QueryRow(`SELECT state, attempts FROM jobs WHERE id = ?`, id).Scan(&state, &attempts); err != nil {
+		t.Fatalf("read job: %v", err)
+	}
+	return state, attempts
+}
+
+func (a *appSide) waitState(t *testing.T, id, want string) {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		if state, _ := a.jobState(t, id); state == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	state, attempts := a.jobState(t, id)
+	t.Fatalf("job %s is %s (attempts %d), want %s", id, state, attempts, want)
+}
+
+// `release-ops worker` starts with no app secret and no database path in its environment,
+// long-polls the internal listener, claims the queued job, runs the handler registered for
+// its kind and reports the result. The command registers the no-op handler for renovate_run.
+func TestWorkerCommandClaimsAndCompletesAJob(t *testing.T) {
+	app := newAppSide(t)
+	id := app.enqueue(t)
+
+	for _, name := range []string{"SESSION_SECRET", "APP_ENCRYPTION_KEY", "APP_DB_PATH"} {
+		t.Setenv(name, "")
+	}
+	t.Setenv("INTERNAL_URL", app.url)
+	t.Setenv("WORKER_SECRET", testWorkerSecret)
+
+	done := make(chan error, 1)
+	go func() { done <- runWorkerCommand() }()
+
+	app.waitState(t, id, "succeeded")
+
+	// SIGTERM is what stops a worker container; the command's signal context catches it.
+	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+		t.Fatalf("signal: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("worker command = %v, want a clean stop", err)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("the worker command did not stop on SIGTERM")
+	}
+}
+
+func TestWorkerCommandRefusesIncompleteConfig(t *testing.T) {
+	t.Setenv("INTERNAL_URL", "")
+	t.Setenv("WORKER_SECRET", testWorkerSecret)
+	if err := runWorkerCommand(); err == nil || !strings.Contains(err.Error(), "INTERNAL_URL") {
+		t.Fatalf("runWorkerCommand = %v, want INTERNAL_URL refused", err)
+	}
+}
+
+// A worker killed mid-job never renews its lease and never reports: the job stays running.
+// Once the lease has expired the app's reaper requeues it and a second worker runs it once;
+// the dead worker's late result changes nothing.
+func TestKilledWorkerJobIsReapedAndRunOnceBySecondWorker(t *testing.T) {
+	app := newAppSide(t)
+	id := app.enqueue(t)
+	ctx := context.Background()
+
+	// The first worker claims and is then killed: modelled by a claim nobody heartbeats.
+	dead, err := app.q.Claim(ctx)
+	if err != nil || dead.ID != id {
+		t.Fatalf("first worker claim = %+v, %v", dead, err)
+	}
+	if state, _ := app.jobState(t, id); state != "running" {
+		t.Fatalf("job = %s with its worker dead, want running", state)
+	}
+	if res, err := app.q.Reap(ctx); err != nil || res != (queue.ReapResult{}) {
+		t.Fatalf("Reap with a live lease = %+v, %v", res, err)
+	}
+
+	app.clock.Advance(3 * time.Minute)
+	if res, err := app.q.Reap(ctx); err != nil || res.Requeued != 1 {
+		t.Fatalf("Reap after the lease expired = %+v, %v; want the job requeued", res, err)
+	}
+	app.clock.Advance(time.Hour)
+
+	var runs atomic.Int32
+	workerCtx, stop := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runWorker(workerCtx, &config.WorkerConfig{InternalURL: app.url, WorkerSecret: testWorkerSecret}, worker.Registry{
+			queue.KindRenovateRun: worker.HandlerFunc(func(_ context.Context, job queue.ClaimedJob) worker.Result {
+				runs.Add(1)
+				if job.Attempt != 2 {
+					t.Errorf("second worker got attempt %d, want 2", job.Attempt)
+				}
+				return worker.Result{}
+			}),
+		}, worker.Options{Slots: 2, HeartbeatInterval: 10 * time.Millisecond})
+	}()
+	t.Cleanup(func() {
+		stop()
+		<-done
+	})
+
+	app.waitState(t, id, "succeeded")
+	time.Sleep(300 * time.Millisecond) // two claim loops: neither may run the job again
+	if n := runs.Load(); n != 1 {
+		t.Fatalf("the job ran %d times on the second worker, want once", n)
+	}
+	if err := app.q.Complete(ctx, id, dead.LeaseOwner); !errors.Is(err, queue.ErrLeaseLost) {
+		t.Fatalf("the dead worker's late result = %v, want ErrLeaseLost", err)
+	}
+	if state, attempts := app.jobState(t, id); state != "succeeded" || attempts != 2 {
+		t.Fatalf("job = %s after %d attempts, want succeeded after 2", state, attempts)
+	}
+}
+
+// The app serves the worker routes on INTERNAL_ADDR only, behind the worker secret; the
+// public Go listener does not mount them, with or without the secret.
+func TestServerMountsWorkerRoutesOnTheInternalListenerOnly(t *testing.T) {
+	publicPort, internalPort := freePort(t), freePort(t)
+	cfg := &config.Config{
+		SessionSecret:          strings.Repeat("s", 32),
+		AppEncryptionKey:       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+		AppDBPath:              filepath.Join(t.TempDir(), "app.db"),
+		GoInternalPort:         publicPort,
+		BootstrapAdminEmail:    "admin@example.com",
+		BootstrapAdminPassword: "correct-horse-battery",
+		InternalAddr:           fmt.Sprintf("127.0.0.1:%d", internalPort),
+		WorkerSecret:           testWorkerSecret,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, cfg) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("run: %v", err)
+			}
+		case <-time.After(20 * time.Second):
+			t.Error("server did not shut down")
+		}
+	})
+
+	public := fmt.Sprintf("http://127.0.0.1:%d", publicPort)
+	internal := fmt.Sprintf("http://127.0.0.1:%d", internalPort)
+	waitForStatus(t, public+"/healthz", http.StatusOK, false)
+	waitForStatus(t, internal+"/internal/v1/jobs/x/heartbeat", http.StatusMethodNotAllowed, true)
+
+	post := func(url string, bearer bool) int {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader([]byte(`{}`)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bearer {
+			req.Header.Set("Authorization", "Bearer "+testWorkerSecret)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("POST %s: %v", url, err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	if got := post(internal+"/internal/v1/jobs/x/heartbeat", false); got != http.StatusUnauthorized {
+		t.Errorf("internal heartbeat without the secret = %d, want 401", got)
+	}
+	if got := post(internal+"/internal/v1/jobs/x/heartbeat", true); got != http.StatusOK {
+		t.Errorf("internal heartbeat with the secret = %d, want 200 (an abort for the unknown job)", got)
+	}
+	if got := post(internal+"/api/v1/auth/login", true); got != http.StatusNotFound {
+		t.Errorf("an API route on the internal listener = %d, want 404", got)
+	}
+	for _, path := range []string{"/internal/v1/jobs/claim", "/internal/v1/jobs/x/heartbeat", "/internal/v1/jobs/x/result", "/api/v1/internal/v1/jobs/claim"} {
+		for _, bearer := range []bool{false, true} {
+			if got := post(public+path, bearer); got != http.StatusNotFound {
+				t.Errorf("public listener POST %s (secret %v) = %d, want 404", path, bearer, got)
+			}
+		}
+	}
+}
+
+func waitForStatus(t *testing.T, url string, want int, bearer bool) {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	var last error
+	for time.Now().Before(deadline) {
+		req, _ := http.NewRequest(http.MethodGet, url, nil)
+		if bearer {
+			req.Header.Set("Authorization", "Bearer "+testWorkerSecret)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == want {
+				return
+			}
+			last = fmt.Errorf("status %d", resp.StatusCode)
+		} else {
+			last = err
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("%s did not answer %d: %v", url, want, last)
+}

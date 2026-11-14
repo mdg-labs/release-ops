@@ -16,6 +16,8 @@ func validEnv(t *testing.T) {
 	t.Setenv("APP_PUBLIC_URL", "")
 	t.Setenv("BOOTSTRAP_ADMIN_EMAIL", "")
 	t.Setenv("BOOTSTRAP_ADMIN_PASSWORD", "")
+	t.Setenv("INTERNAL_ADDR", "")
+	t.Setenv("WORKER_SECRET", "")
 }
 
 func TestLoadDefaults(t *testing.T) {

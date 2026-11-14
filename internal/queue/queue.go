@@ -1,0 +1,252 @@
+// Package queue defines the persistent job queue of the update engine (specs.html § 2.8), the
+// wire types the app and the worker exchange over the internal listener (§ 2.1) and the
+// backoff curve of failed attempts. The queue itself is owned by the app process, the only
+// database writer; the SQLite implementation lives in internal/store. The worker packages
+// import this package and never the store.
+package queue
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"time"
+)
+
+// Kind is the type of work a job asks for. v2.0 has one.
+type Kind string
+
+// KindRenovateRun is a Renovate run of one repository.
+const KindRenovateRun Kind = "renovate_run"
+
+// Priority orders claims: high before normal.
+type Priority string
+
+const (
+	// PriorityHigh is for webhook triggers and admin "run now".
+	PriorityHigh Priority = "high"
+	// PriorityNormal is for the hourly safety net and the polling fallback.
+	PriorityNormal Priority = "normal"
+)
+
+// Trigger is what enqueued a job (specs.html § 2.9).
+type Trigger string
+
+const (
+	TriggerDashboardCheckbox Trigger = "dashboard_checkbox"
+	TriggerPRCheckbox        Trigger = "pr_checkbox"
+	TriggerPRClosed          Trigger = "pr_closed"
+	TriggerPush              Trigger = "push"
+	TriggerRepositoryAdded   Trigger = "repository_added"
+	TriggerSchedule          Trigger = "schedule"
+	TriggerPolling           Trigger = "polling"
+	TriggerRunNow            Trigger = "run_now"
+)
+
+// Job states of the jobs table.
+const (
+	StateQueued    = "queued"
+	StateRunning   = "running"
+	StateSucceeded = "succeeded"
+	StateFailed    = "failed"
+)
+
+var (
+	// ErrNoJob is returned by Claim when no job is eligible.
+	ErrNoJob = errors.New("no job is claimable")
+	// ErrLeaseLost is returned when the caller does not hold the job's lease: the job is
+	// unknown, not running, or leased to another claim.
+	ErrLeaseLost = errors.New("lease is not held for this job")
+)
+
+// EnqueueParams describes one trigger for a repository.
+type EnqueueParams struct {
+	RepositoryID string
+	Kind         Kind
+	Priority     Priority
+	Trigger      Trigger
+	// MatchedMarkers are the checkbox markers of a tick (specs.html § 2.9).
+	MatchedMarkers []string
+	// WebhookReceivedAt is when the triggering webhook arrived; nil for scheduled jobs.
+	WebhookReceivedAt *time.Time
+}
+
+// EnqueueOutcome says what an enqueue did.
+type EnqueueOutcome string
+
+const (
+	// EnqueueQueued created a new queued job.
+	EnqueueQueued EnqueueOutcome = "queued"
+	// EnqueueCoalesced added the trigger to the repository's queued job.
+	EnqueueCoalesced EnqueueOutcome = "coalesced"
+	// EnqueueRerunRequested flagged the repository's running job for one follow-up run.
+	EnqueueRerunRequested EnqueueOutcome = "rerun_requested"
+	// EnqueueDropped ignored a normal-priority trigger: the run in progress covers it.
+	EnqueueDropped EnqueueOutcome = "dropped"
+)
+
+// EnqueueResult is the outcome of an enqueue and the job it landed on.
+type EnqueueResult struct {
+	Outcome EnqueueOutcome
+	JobID   string
+}
+
+// ClaimedJob is a job leased to a worker. It is the body of a successful claim.
+type ClaimedJob struct {
+	ID                 string    `json:"id"`
+	Kind               Kind      `json:"kind"`
+	RepositoryID       string    `json:"repository_id"`
+	RepositoryFullName string    `json:"repository_full_name"`
+	Priority           Priority  `json:"priority"`
+	Trigger            Trigger   `json:"trigger"`
+	Attempt            int       `json:"attempt"`
+	Slot               int       `json:"slot"`
+	LeaseOwner         string    `json:"lease_owner"`
+	LeaseExpiresAt     time.Time `json:"lease_expires_at"`
+}
+
+// HeartbeatResult answers a heartbeat. Abort tells the worker to stop the job.
+type HeartbeatResult struct {
+	Abort  bool   `json:"abort"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// AbortLeaseLost is the Reason of an abort because the lease is no longer held.
+const AbortLeaseLost = "lease_lost"
+
+// FailParams describes a failed attempt.
+type FailParams struct {
+	// RetryAfter is the minimum delay an upstream asked for (Retry-After, a rate-limit
+	// reset); zero when there is none.
+	RetryAfter time.Duration
+}
+
+// FailOutcome says what became of a failed or expired attempt.
+type FailOutcome string
+
+const (
+	// FailRequeued put the job back in the queue with a later run_after.
+	FailRequeued FailOutcome = "requeued"
+	// FailExhausted ended the job in the failed state: no attempts are left.
+	FailExhausted FailOutcome = "failed"
+)
+
+// ReapResult counts what a reap pass did.
+type ReapResult struct {
+	Requeued int
+	Failed   int
+}
+
+// Queue is the job queue. The app owns the only implementation in v2.0 (SQLite); the
+// interface keeps a Postgres one possible. Every method that names a lease takes the
+// lease owner the claim returned and answers ErrLeaseLost when it no longer holds; a
+// heartbeat reports that as an abort instead.
+type Queue interface {
+	// Enqueue records a trigger for a repository: one queued job per repository, a
+	// high-priority trigger during a run flags the running job for one follow-up.
+	Enqueue(ctx context.Context, p EnqueueParams) (EnqueueResult, error)
+	// Claim leases the next eligible job, or returns ErrNoJob. It never blocks.
+	Claim(ctx context.Context) (*ClaimedJob, error)
+	// Heartbeat renews the lease and marks the job started on its first call.
+	Heartbeat(ctx context.Context, jobID, leaseOwner string) (HeartbeatResult, error)
+	// Complete ends the job as succeeded; a repeat for an already finished job is a no-op.
+	Complete(ctx context.Context, jobID, leaseOwner string) error
+	// Fail ends the attempt: the job is requeued with backoff, or failed when no attempts
+	// are left. A repeat for an already failed job is a no-op.
+	Fail(ctx context.Context, jobID, leaseOwner string, p FailParams) (FailOutcome, error)
+	// Release gives the lease back without using an attempt.
+	Release(ctx context.Context, jobID, leaseOwner string) error
+	// Reap requeues, or fails, every running job whose lease has expired.
+	Reap(ctx context.Context) (ReapResult, error)
+	// Changed returns a channel that is closed when the queue next changes in a way that
+	// can make a job claimable. Take it before trying a claim, so no change is missed.
+	Changed() <-chan struct{}
+}
+
+// Notifier is a broadcast wake-up: every waiter holding the current channel is released
+// by the next Notify.
+type Notifier struct {
+	mu sync.Mutex
+	ch chan struct{}
+}
+
+// Changed returns the channel the next Notify closes.
+func (n *Notifier) Changed() <-chan struct{} {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.ch == nil {
+		n.ch = make(chan struct{})
+	}
+	return n.ch
+}
+
+// Notify wakes every waiter.
+func (n *Notifier) Notify() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.ch != nil {
+		close(n.ch)
+		n.ch = nil
+	}
+}
+
+// Config holds the queue's numeric defaults (specs.html § 2.12 leaves their values to the
+// first deployment).
+type Config struct {
+	// LeaseDuration is how long a claim or heartbeat keeps a lease alive.
+	LeaseDuration time.Duration
+	// MaxAttempts is the number of attempts a job gets before it ends failed.
+	MaxAttempts int
+	// BackoffBase is the delay after the first failed attempt; it doubles per attempt.
+	BackoffBase time.Duration
+	// BackoffMax caps the delay.
+	BackoffMax time.Duration
+	// BackoffJitter is the fraction of the delay the jitter spreads it by, in [0, 1).
+	BackoffJitter float64
+	// DefaultConcurrencyCap applies while instance_settings holds no row.
+	DefaultConcurrencyCap int
+}
+
+// DefaultConfig returns the defaults.
+func DefaultConfig() Config {
+	return Config{
+		LeaseDuration:         2 * time.Minute,
+		MaxAttempts:           3,
+		BackoffBase:           30 * time.Second,
+		BackoffMax:            15 * time.Minute,
+		BackoffJitter:         0.2,
+		DefaultConcurrencyCap: 2,
+	}
+}
+
+// Backoff returns the delay before the retry that follows attemptsUsed failed attempts:
+// BackoffBase doubled per attempt up to BackoffMax, spread by the jitter. rnd is a value
+// in [0, 1); it maps to a factor in [1-jitter, 1+jitter].
+func (c Config) Backoff(attemptsUsed int, rnd float64) time.Duration {
+	d := c.BackoffBase
+	for i := 1; i < attemptsUsed && d < c.BackoffMax; i++ {
+		d *= 2
+	}
+	if d > c.BackoffMax {
+		d = c.BackoffMax
+	}
+	factor := 1 - c.BackoffJitter + 2*c.BackoffJitter*rnd
+	return time.Duration(float64(d) * factor)
+}
+
+// RunReaper reaps expired leases once at start and then every interval until ctx ends, so
+// a job left running by a previous app process is reclaimed once its lease has expired.
+// A failing pass is passed to onError and the loop goes on.
+func RunReaper(ctx context.Context, q Queue, interval time.Duration, onError func(error)) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		if _, err := q.Reap(ctx); err != nil && ctx.Err() == nil {
+			onError(err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}

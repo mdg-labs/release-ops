@@ -15,6 +15,7 @@ const (
 	defaultGoAPIURL       = "http://127.0.0.1:8080"
 	minSessionSecretLen   = 32
 	encryptionKeyHexLen   = 64
+	minWorkerSecretLen    = 32
 )
 
 // Config holds environment-backed server configuration.
@@ -28,6 +29,11 @@ type Config struct {
 	AppPublicURL           string
 	BootstrapAdminEmail    string
 	BootstrapAdminPassword string
+	// InternalAddr is where the internal listener for the worker binds (INTERNAL_ADDR); empty
+	// means no internal listener. WorkerSecret authenticates the worker to it and is set
+	// together with it.
+	InternalAddr string
+	WorkerSecret string
 }
 
 // Load reads and validates configuration from the process environment.
@@ -40,6 +46,8 @@ func Load() (*Config, error) {
 		AppPublicURL:           strings.TrimSpace(os.Getenv("APP_PUBLIC_URL")),
 		BootstrapAdminEmail:    strings.TrimSpace(os.Getenv("BOOTSTRAP_ADMIN_EMAIL")),
 		BootstrapAdminPassword: os.Getenv("BOOTSTRAP_ADMIN_PASSWORD"),
+		InternalAddr:           strings.TrimSpace(os.Getenv("INTERNAL_ADDR")),
+		WorkerSecret:           strings.TrimSpace(os.Getenv("WORKER_SECRET")),
 	}
 
 	var err error
@@ -110,6 +118,29 @@ func (c *Config) validate() error {
 	}
 	if c.BootstrapAdminPassword != "" && c.BootstrapAdminEmail == "" {
 		return fmt.Errorf("BOOTSTRAP_ADMIN_EMAIL is required when BOOTSTRAP_ADMIN_PASSWORD is set")
+	}
+	return c.validateInternalListener()
+}
+
+// validateInternalListener requires INTERNAL_ADDR and WORKER_SECRET together: a listener
+// without a secret would serve the worker routes to anyone on the network, and a secret
+// without a listener has nothing to protect.
+func (c *Config) validateInternalListener() error {
+	if c.InternalAddr == "" && c.WorkerSecret == "" {
+		return nil
+	}
+	if c.InternalAddr == "" {
+		return fmt.Errorf("INTERNAL_ADDR is required when WORKER_SECRET is set")
+	}
+	if c.WorkerSecret == "" {
+		return fmt.Errorf("WORKER_SECRET is required when INTERNAL_ADDR is set")
+	}
+	return validateWorkerSecret(c.WorkerSecret)
+}
+
+func validateWorkerSecret(secret string) error {
+	if len(secret) < minWorkerSecretLen {
+		return fmt.Errorf("WORKER_SECRET must be at least %d bytes; generate one with: openssl rand -base64 32", minWorkerSecretLen)
 	}
 	return nil
 }

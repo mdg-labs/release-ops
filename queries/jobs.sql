@@ -1,0 +1,119 @@
+-- name: GetConcurrencyCap :one
+SELECT concurrency_cap
+FROM instance_settings
+WHERE id = 1;
+
+-- name: ListRunningJobLeaseOwners :many
+SELECT lease_owner
+FROM jobs
+WHERE state = 'running'
+  AND lease_owner IS NOT NULL;
+
+-- A queued job is claimable when its run_after has passed, its repository has no running
+-- job and the number of running jobs is below the limit for its priority. The limit of a
+-- normal job leaves one slot free for high-priority jobs when the cap is 2 or more.
+-- name: ClaimNextJob :one
+UPDATE jobs
+SET state = 'running',
+    lease_owner = CAST(sqlc.arg(lease_owner) AS TEXT),
+    lease_expires_at = CAST(sqlc.arg(lease_expires_at) AS TEXT),
+    last_heartbeat_at = CAST(sqlc.arg(now) AS TEXT)
+WHERE id = (
+  SELECT j.id
+  FROM jobs j
+  WHERE j.state = 'queued'
+    AND j.run_after <= sqlc.arg(now)
+    AND NOT EXISTS (
+      SELECT 1 FROM jobs r
+      WHERE r.repository_id = j.repository_id AND r.state = 'running'
+    )
+    AND (SELECT COUNT(*) FROM jobs c WHERE c.state = 'running') <
+      CASE j.priority WHEN 'high' THEN CAST(sqlc.arg(high_limit) AS INTEGER) ELSE CAST(sqlc.arg(normal_limit) AS INTEGER) END
+  ORDER BY CASE j.priority WHEN 'high' THEN 0 ELSE 1 END, j.created_at, j.id
+  LIMIT 1
+)
+RETURNING *;
+
+-- name: GetJob :one
+SELECT *
+FROM jobs
+WHERE id = ?;
+
+-- name: GetRepositoryFullName :one
+SELECT full_name
+FROM repositories
+WHERE id = ?;
+
+-- name: GetQueuedJobForRepository :one
+SELECT *
+FROM jobs
+WHERE repository_id = ?
+  AND state = 'queued';
+
+-- name: GetRunningJobForRepository :one
+SELECT *
+FROM jobs
+WHERE repository_id = ?
+  AND state = 'running';
+
+-- name: InsertJob :exec
+INSERT INTO jobs (
+  id, kind, repository_id, priority, state, run_after, "trigger", matched_markers,
+  webhook_received_at, created_at
+) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?);
+
+-- name: CoalesceQueuedJob :exec
+UPDATE jobs
+SET priority = ?,
+    "trigger" = ?,
+    matched_markers = ?,
+    webhook_received_at = ?
+WHERE id = ?
+  AND state = 'queued';
+
+-- name: SetJobRerunRequested :exec
+UPDATE jobs
+SET rerun_requested = 1
+WHERE id = ?
+  AND state = 'running';
+
+-- name: HeartbeatJob :one
+UPDATE jobs
+SET last_heartbeat_at = sqlc.arg(now),
+    lease_expires_at = CAST(sqlc.arg(lease_expires_at) AS TEXT),
+    started_at = COALESCE(started_at, sqlc.arg(now))
+WHERE id = sqlc.arg(id)
+  AND state = 'running'
+  AND lease_owner = sqlc.arg(lease_owner)
+RETURNING id;
+
+-- name: ListExpiredJobs :many
+SELECT *
+FROM jobs
+WHERE state = 'running'
+  AND lease_expires_at < ?
+ORDER BY lease_expires_at, id;
+
+-- name: FinishJob :execrows
+UPDATE jobs
+SET state = sqlc.arg(state),
+    attempts = sqlc.arg(attempts),
+    finished_at = CAST(sqlc.arg(now) AS TEXT)
+WHERE id = sqlc.arg(id)
+  AND state = 'running';
+
+-- A requeued job keeps the high priority of a trigger that arrived while it ran: the retry
+-- is the follow-up that trigger asked for.
+-- name: RequeueJob :execrows
+UPDATE jobs
+SET state = 'queued',
+    attempts = sqlc.arg(attempts),
+    run_after = sqlc.arg(run_after),
+    priority = CASE WHEN rerun_requested = 1 THEN 'high' ELSE priority END,
+    rerun_requested = 0,
+    lease_owner = NULL,
+    lease_expires_at = NULL,
+    last_heartbeat_at = NULL,
+    started_at = NULL
+WHERE id = sqlc.arg(id)
+  AND state = 'running';
