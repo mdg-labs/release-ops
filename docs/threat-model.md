@@ -238,7 +238,7 @@ Routing follows `.claude/rules/mdg-security.md` and `.claude/scripts/security-ro
 - **Repository private (route `issues`, `security.privateRepoIssues`).** A private repository's issues are not public and GitHub offers it no advisories, so every finding, whatever its rating, is an ordinary issue labelled `security`. No advisory is proposed. The route is never `issues` on a public repository.
 - A public finding that shares a root cause with a withheld one is withheld too.
 - **Fixing an advisory:** run `/orchestrate --advisory GHSA-…`. The commit uses a neutral subject (no vulnerability wording) and its body ends with `Refs: GHSA-…`; it carries no reproduction, payload or severity. The maintainer publishes the advisory once the fix reaches `main`.
-- **Outside reports** arrive through GitHub private vulnerability reporting for the repository, and are triaged with `/security-audit triage`. A `SECURITY.md` pointing reporters there does not exist yet (open question 13).
+- **Outside reports** arrive through GitHub private vulnerability reporting for the repository (`https://github.com/mdg-labs/release-ops/security/advisories/new`), and are triaged with `/security-audit triage`. [`SECURITY.md`](../SECURITY.md) tells reporters to use that channel, not to open public issues, and that only the latest release receives fixes until v2.0.0 ships.
 
 ---
 
@@ -258,7 +258,7 @@ Decided by the maintainer on 2026-11-14 and applied above: attacker numbers `2.1
 10. **CSRF.** Protection rests on `SameSite=Lax`; Go does not check `Origin`. Key rotation and "run now" are state-changing admin actions. *Default:* reject state-changing requests whose `Origin` does not match `APP_URL`.
 11. **Redirects and base URLs for ticket systems.** No client sets `CheckRedirect`; `validateBaseURL` checks presence only. *Default:* refuse cross-host redirects for credentialed clients and require `http` or `https` with a host.
 12. **Session rows in a DB copy (2.5).** Live session tokens sit in `sessions`. *Default:* accept, given the 8-hour cap; consider storing session tokens hashed.
-13. **No `SECURITY.md`.** §7 assumes private vulnerability reporting. *Default:* add one that points reporters to GitHub private vulnerability reporting.
+13. **Resolved: `SECURITY.md`.** Outside reports go through GitHub private vulnerability reporting; see §7 and [`SECURITY.md`](../SECURITY.md).
 14. **Actions pinned by tag.** *Default:* pin third-party actions by commit SHA; the Renovate base image of the worker by digest.
 15. **Bounds on untrusted sizes.** The webhook body is capped at 1 MiB; the worker's result, report, log excerpts and GitHub or ticket responses have no stated caps. *Default:* cap each with `io.LimitReader` or a request-size limit and record the numbers with the first deployment.
 16. **`SESSION_SECRET`.** The spec names it the signing key, while the session manager stores random tokens server-side and ignores it. *Default:* keep the startup check and document it as reserved, or drop it from the spec.
