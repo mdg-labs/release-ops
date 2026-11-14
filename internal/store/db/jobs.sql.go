@@ -343,9 +343,14 @@ UPDATE jobs
 SET last_heartbeat_at = ?1,
     lease_expires_at = CAST(?2 AS TEXT),
     started_at = COALESCE(started_at, ?1)
-WHERE id = ?3
-  AND state = 'running'
-  AND lease_owner = ?4
+WHERE jobs.id = ?3
+  AND jobs.state = 'running'
+  AND jobs.lease_owner = ?4
+  AND jobs.repository_id IN (
+    SELECT repo.id FROM repositories repo
+    WHERE repo.enabled = 1
+      AND repo.removed_at IS NULL
+  )
 RETURNING id
 `
 
@@ -356,6 +361,8 @@ type HeartbeatJobParams struct {
 	LeaseOwner     sql.NullString `json:"lease_owner"`
 }
 
+// A heartbeat renews the lease only while the job's repository is enabled and not removed; for
+// a paused or removed repository no row matches and the worker is told to abort.
 func (q *Queries) HeartbeatJob(ctx context.Context, arg HeartbeatJobParams) (string, error) {
 	row := q.db.QueryRowContext(ctx, heartbeatJob,
 		arg.Now,

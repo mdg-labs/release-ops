@@ -910,3 +910,33 @@ func TestHeldJobRefusesAJobOfAPausedOrRemovedRepository(t *testing.T) {
 		})
 	}
 }
+
+func TestHeartbeatAbortsAJobOfAPausedOrRemovedRepository(t *testing.T) {
+	for name, change := range map[string]func(*jobEnv, *testing.T, string){
+		"paused":  (*jobEnv).pause,
+		"removed": (*jobEnv).remove,
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newJobEnv(t, 1)
+			ctx := context.Background()
+			e.enqueue(t, e.repos[0], queue.PriorityHigh)
+			job := e.claim(t)
+
+			e.clock.Advance(30 * time.Second)
+			if res, err := e.q.Heartbeat(ctx, job.ID, job.LeaseOwner); err != nil || res.Abort {
+				t.Fatalf("Heartbeat before the change = %+v, %v; want no abort", res, err)
+			}
+			before := e.row(t, job.ID)
+
+			change(e, t, e.repos[0])
+			e.clock.Advance(30 * time.Second)
+			res, err := e.q.Heartbeat(ctx, job.ID, job.LeaseOwner)
+			if err != nil || !res.Abort || res.Reason != queue.AbortLeaseLost {
+				t.Errorf("Heartbeat = %+v, %v; want an abort", res, err)
+			}
+			if after := e.row(t, job.ID); after != before {
+				t.Errorf("a refused heartbeat changed the job: %+v, was %+v", after, before)
+			}
+		})
+	}
+}

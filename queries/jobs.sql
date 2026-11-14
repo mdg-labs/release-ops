@@ -81,14 +81,21 @@ SET rerun_requested = 1
 WHERE id = ?
   AND state = 'running';
 
+-- A heartbeat renews the lease only while the job's repository is enabled and not removed; for
+-- a paused or removed repository no row matches and the worker is told to abort.
 -- name: HeartbeatJob :one
 UPDATE jobs
 SET last_heartbeat_at = sqlc.arg(now),
     lease_expires_at = CAST(sqlc.arg(lease_expires_at) AS TEXT),
     started_at = COALESCE(started_at, sqlc.arg(now))
-WHERE id = sqlc.arg(id)
-  AND state = 'running'
-  AND lease_owner = sqlc.arg(lease_owner)
+WHERE jobs.id = sqlc.arg(id)
+  AND jobs.state = 'running'
+  AND jobs.lease_owner = sqlc.arg(lease_owner)
+  AND jobs.repository_id IN (
+    SELECT repo.id FROM repositories repo
+    WHERE repo.enabled = 1
+      AND repo.removed_at IS NULL
+  )
 RETURNING id;
 
 -- name: ListExpiredJobs :many
