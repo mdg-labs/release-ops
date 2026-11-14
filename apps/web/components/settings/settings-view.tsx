@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleCheckIcon, ClockIcon, TimerIcon } from "lucide-react";
+import { CircleCheckIcon, ClockIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { SettingsSection } from "@/components/common/settings-section";
@@ -27,15 +27,9 @@ import { ApiError } from "@/lib/api/client";
 import { useSettings } from "@/lib/hooks/use-settings";
 
 const MIN_POLL_INTERVAL_MINUTES = 5;
-const MIN_INVITE_TOKEN_EXPIRY_HOURS = 1;
-const MAX_INVITE_TOKEN_EXPIRY_HOURS = 720;
-const MIN_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES = 5;
-const MAX_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES = 1440;
 
 type SettingsFormState = {
   pollIntervalMinutes: number | null;
-  inviteTokenExpiryHours: number | null;
-  passwordResetTokenExpiryMinutes: number | null;
 };
 
 export function SettingsView(): React.ReactElement {
@@ -45,8 +39,6 @@ export function SettingsView(): React.ReactElement {
 
   const [form, setForm] = useState<SettingsFormState>({
     pollIntervalMinutes: null,
-    inviteTokenExpiryHours: null,
-    passwordResetTokenExpiryMinutes: null,
   });
   const [validationError, setValidationError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -58,8 +50,6 @@ export function SettingsView(): React.ReactElement {
     }
     setForm({
       pollIntervalMinutes: data.pollIntervalMinutes,
-      inviteTokenExpiryHours: data.inviteTokenExpiryHours,
-      passwordResetTokenExpiryMinutes: data.passwordResetTokenExpiryMinutes,
     });
     setShowSuccess(false);
   }, [data]);
@@ -70,22 +60,6 @@ export function SettingsView(): React.ReactElement {
       form.pollIntervalMinutes < MIN_POLL_INTERVAL_MINUTES
     ) {
       return t("validation.minInterval");
-    }
-    if (
-      form.inviteTokenExpiryHours === null ||
-      form.inviteTokenExpiryHours < MIN_INVITE_TOKEN_EXPIRY_HOURS ||
-      form.inviteTokenExpiryHours > MAX_INVITE_TOKEN_EXPIRY_HOURS
-    ) {
-      return t("validation.inviteExpiryRange");
-    }
-    if (
-      form.passwordResetTokenExpiryMinutes === null ||
-      form.passwordResetTokenExpiryMinutes <
-        MIN_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES ||
-      form.passwordResetTokenExpiryMinutes >
-        MAX_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES
-    ) {
-      return t("validation.resetExpiryRange");
     }
     return null;
   }
@@ -105,9 +79,6 @@ export function SettingsView(): React.ReactElement {
     try {
       await updateSettings.mutateAsync({
         pollIntervalMinutes: form.pollIntervalMinutes ?? undefined,
-        inviteTokenExpiryHours: form.inviteTokenExpiryHours ?? undefined,
-        passwordResetTokenExpiryMinutes:
-          form.passwordResetTokenExpiryMinutes ?? undefined,
       });
       setShowSuccess(true);
     } catch (error) {
@@ -162,68 +133,6 @@ export function SettingsView(): React.ReactElement {
                 </NumberFieldGroup>
               </NumberField>
               <FieldDescription>{t("pollIntervalHint")}</FieldDescription>
-            </Field>
-          </SettingsSection>
-
-          <SettingsSection
-            description={t("tokenExpiryDescription")}
-            icon={<TimerIcon aria-hidden="true" />}
-            title={t("tokenExpirySection")}
-          >
-            <Field>
-              <FieldLabel>{t("inviteTokenExpiry")}</FieldLabel>
-              <NumberField
-                min={MIN_INVITE_TOKEN_EXPIRY_HOURS}
-                max={MAX_INVITE_TOKEN_EXPIRY_HOURS}
-                value={
-                  form.inviteTokenExpiryHours ?? MIN_INVITE_TOKEN_EXPIRY_HOURS
-                }
-                onValueChange={(value) => {
-                  if (value !== null) {
-                    setForm((current) => ({
-                      ...current,
-                      inviteTokenExpiryHours: value,
-                    }));
-                  }
-                  setValidationError(null);
-                  setShowSuccess(false);
-                }}
-              >
-                <NumberFieldGroup>
-                  <NumberFieldDecrement />
-                  <NumberFieldInput />
-                  <NumberFieldIncrement />
-                </NumberFieldGroup>
-              </NumberField>
-              <FieldDescription>{t("inviteTokenExpiryHint")}</FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel>{t("resetTokenExpiry")}</FieldLabel>
-              <NumberField
-                min={MIN_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES}
-                max={MAX_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES}
-                value={
-                  form.passwordResetTokenExpiryMinutes ??
-                  MIN_PASSWORD_RESET_TOKEN_EXPIRY_MINUTES
-                }
-                onValueChange={(value) => {
-                  if (value !== null) {
-                    setForm((current) => ({
-                      ...current,
-                      passwordResetTokenExpiryMinutes: value,
-                    }));
-                  }
-                  setValidationError(null);
-                  setShowSuccess(false);
-                }}
-              >
-                <NumberFieldGroup>
-                  <NumberFieldDecrement />
-                  <NumberFieldInput />
-                  <NumberFieldIncrement />
-                </NumberFieldGroup>
-              </NumberField>
-              <FieldDescription>{t("resetTokenExpiryHint")}</FieldDescription>
             </Field>
             {validationError ? (
               <FieldError>{validationError}</FieldError>

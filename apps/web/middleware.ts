@@ -7,15 +7,7 @@ const DEFAULT_GO_API_URL = "http://127.0.0.1:8080";
 const GO_SESSION_PATH = "/api/v1/auth/session";
 const LOGIN_PATH = "/login";
 
-export const PUBLIC_AUTH_PATHS = [
-  "/login",
-  "/login/link",
-  "/accept-invitation",
-  "/forgot-password",
-  "/reset-password",
-  "/confirm-email-change",
-  "/setup",
-] as const;
+export const PUBLIC_AUTH_PATHS = ["/login", "/login/link", "/setup"] as const;
 
 function getSessionCheckUrl(): string {
   const base = (process.env.GO_API_URL ?? DEFAULT_GO_API_URL).replace(

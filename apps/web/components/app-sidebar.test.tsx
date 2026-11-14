@@ -50,14 +50,6 @@ vi.mock("@/hooks/use-media-query", () => ({
   useMediaQuery: () => false,
 }));
 
-vi.mock("@/lib/hooks/use-session", () => ({
-  useSession: () => ({
-    data: { user: { id: "user-1", email: "admin@example.com" } },
-    isLoading: false,
-    isError: false,
-  }),
-}));
-
 const REPO_URL = "https://github.com/mdg-labs/release-ops";
 
 function interceptStatus(
@@ -149,12 +141,14 @@ describe("AppSidebar", () => {
     },
   );
 
-  it("renders profile link with session email", () => {
-    renderSidebar();
+  it.each(["/profile", "/settings/users"])(
+    "has no sidebar link to the removed %s page",
+    (href) => {
+      renderSidebar();
 
-    const profileLink = screen.getByRole("link", { name: "admin@example.com" });
-    expect(profileLink).toHaveAttribute("href", "/profile");
-  });
+      expect(document.querySelector(`a[href="${href}"]`)).toBeNull();
+    },
+  );
 
   it("links the wordmark to the repository in a new tab", () => {
     renderSidebar();

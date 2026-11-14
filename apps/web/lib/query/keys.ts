@@ -7,8 +7,6 @@ export const queryKeys = {
   ticketProjects: (integrationId?: string) =>
     ["ticket-projects", integrationId ?? null] as const,
   settings: () => ["settings"] as const,
-  users: () => ["users"] as const,
-  invitations: () => ["invitations"] as const,
   ticketMetadata: (
     integrationId: string | null | undefined,
     resource: string,

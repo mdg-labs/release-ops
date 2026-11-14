@@ -155,9 +155,6 @@ describe("React Query hooks", () => {
       })
       .reply(200, {
         pollIntervalMinutes: 360,
-        inviteTokenExpiryHours: 168,
-        passwordResetTokenExpiryMinutes: 60,
-        smtpConfigured: false,
       });
 
     const queryClient = createTestQueryClient();
@@ -176,9 +173,6 @@ describe("React Query hooks", () => {
       })
       .reply(200, {
         pollIntervalMinutes: 120,
-        inviteTokenExpiryHours: 168,
-        passwordResetTokenExpiryMinutes: 60,
-        smtpConfigured: false,
       });
 
     pool
@@ -188,9 +182,6 @@ describe("React Query hooks", () => {
       })
       .reply(200, {
         pollIntervalMinutes: 120,
-        inviteTokenExpiryHours: 168,
-        passwordResetTokenExpiryMinutes: 60,
-        smtpConfigured: false,
       });
 
     const updated = await result.current.updateSettings.mutateAsync({

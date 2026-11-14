@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -11,6 +13,28 @@ import {
 } from "./middleware";
 
 const ORIGIN = "http://localhost:3000";
+
+const REMOVED_LOCAL_ACCOUNT_PATHS = [
+  "/forgot-password",
+  "/reset-password",
+  "/accept-invitation",
+  "/confirm-email-change",
+  "/profile",
+  "/settings/users",
+] as const;
+
+// Where each removed route's page folder would live under apps/web/app. The two
+// signed-in pages sat in the (authenticated) route group, so they are checked there too.
+const REMOVED_PAGE_DIRS = [
+  "forgot-password",
+  "reset-password",
+  "accept-invitation",
+  "confirm-email-change",
+  "profile",
+  "settings/users",
+  "(authenticated)/profile",
+  "(authenticated)/settings/users",
+] as const;
 const GO_SESSION_URL = "http://127.0.0.1:8080/api/v1/auth/session";
 
 function makeRequest(path: string, cookie?: string): NextRequest {
@@ -47,7 +71,30 @@ describe("auth middleware", () => {
       for (const path of PUBLIC_AUTH_PATHS) {
         expect(isPublicAuthPath(path)).toBe(true);
       }
-      expect(isPublicAuthPath("/accept-invitation/extra")).toBe(true);
+    });
+
+    it("lists exactly the sign-in and setup paths", () => {
+      expect([...PUBLIC_AUTH_PATHS]).toEqual([
+        "/login",
+        "/login/link",
+        "/setup",
+      ]);
+    });
+
+    it("does not treat the removed local-account paths as public", () => {
+      for (const path of REMOVED_LOCAL_ACCOUNT_PATHS) {
+        expect(isPublicAuthPath(path)).toBe(false);
+        expect(isPublicAuthPath(`${path}/extra`)).toBe(false);
+      }
+    });
+
+    it("has no page left for the removed local-account paths", () => {
+      for (const dir of REMOVED_PAGE_DIRS) {
+        expect(
+          existsSync(resolve(__dirname, "app", dir)),
+          `apps/web/app/${dir} must not exist`,
+        ).toBe(false);
+      }
     });
 
     it("lists the break-glass sign-in page and keeps its siblings protected", () => {
@@ -174,13 +221,7 @@ describe("auth middleware", () => {
     it("allows public auth routes without a session", async () => {
       mockNoSession();
 
-      const paths = [
-        "/accept-invitation?token=abc",
-        "/forgot-password",
-        "/reset-password?token=abc",
-        "/confirm-email-change?token=abc",
-        "/setup",
-      ];
+      const paths = ["/login/link", "/setup"];
 
       for (const path of paths) {
         const response = await middleware(makeRequest(path));
@@ -231,7 +272,19 @@ describe("auth middleware", () => {
       expect(response.headers.get("location")).toBeNull();
     });
 
-    it("allows authenticated users on other public auth routes", async () => {
+    it("redirects the removed local-account paths to /login without a session", async () => {
+      mockNoSession();
+
+      for (const path of REMOVED_LOCAL_ACCOUNT_PATHS) {
+        const response = await middleware(makeRequest(`${path}?token=abc`));
+        expect(response.status).toBe(307);
+        expect(response.headers.get("location")).toBe(
+          `${ORIGIN}/login?redirect=${encodeURIComponent(path)}`,
+        );
+      }
+    });
+
+    it("passes the removed local-account paths on to the Next.js 404 when signed in", async () => {
       vi.stubGlobal(
         "fetch",
         vi.fn().mockResolvedValue({
@@ -242,9 +295,11 @@ describe("auth middleware", () => {
         }),
       );
 
-      const response = await middleware(makeRequest("/forgot-password"));
-      expect(response.status).toBe(200);
-      expect(response.headers.get("location")).toBeNull();
+      for (const path of REMOVED_LOCAL_ACCOUNT_PATHS) {
+        const response = await middleware(makeRequest(path));
+        expect(response.status).toBe(200);
+        expect(response.headers.get("location")).toBeNull();
+      }
     });
   });
 
@@ -254,10 +309,9 @@ describe("auth middleware", () => {
     it("matches app routes that require auth checks", () => {
       expect(regex.test("/")).toBe(true);
       expect(regex.test("/login")).toBe(true);
-      expect(regex.test("/accept-invitation")).toBe(true);
-      expect(regex.test("/forgot-password")).toBe(true);
-      expect(regex.test("/reset-password")).toBe(true);
-      expect(regex.test("/confirm-email-change")).toBe(true);
+      for (const path of REMOVED_LOCAL_ACCOUNT_PATHS) {
+        expect(regex.test(path)).toBe(true);
+      }
       expect(regex.test("/repos")).toBe(true);
       expect(regex.test("/settings")).toBe(true);
     });
