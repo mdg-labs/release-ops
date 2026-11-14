@@ -74,7 +74,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   </p>
 
   <div class="card amber">
-    <strong>Version:</strong> Spec v3.0 (2026-11-14) — v2 product: GitHub App setup · GitHub login · admin/viewer roles
+    <strong>Version:</strong> Spec v3.0 (2026-11-14) — v2 product: update engine · GitHub App setup · GitHub login · admin/viewer roles · update PRs and tickets · dashboard and REST API
     <p style="margin:10px 0 0;font-size:14px;color:var(--text-dim)">
       The spec version is numbered independently of the product version: this document describes the <strong>v2 product</strong> (release v2.0.0).
     </p>
@@ -84,10 +84,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <strong>Status of this revision</strong>
     <table style="margin-top:10px">
       <tr><th>Sections</th><th>State</th></tr>
-      <tr><td>§1, §3</td><td>Rewritten for v2.</td></tr>
-      <tr><td>§2 (update engine, worker, job queue, triggers, webhook), §4.1 (concurrency cap), §4.6, §4.9, §5.6, §5.7, §7.1, §7.2, the settings page of §8.3, §10, §12 items 14 and 16–18, §13</td><td>Rewritten for v2.</td></tr>
-      <tr><td>§4.0.1, §4.0.2, §4.1, §7.0, §7.0.1, §7.2, the auth, setup and settings parts of §8.2 / §8.3 / §8.4, §9, §12 item 1, §13</td><td>Auth, setup and environment parts rewritten for v2.</td></tr>
-      <tr><td>§4.2–§4.5, §5.1–§5.5, §6, §7.3–§7.6, the rest of §8, §12 items 2–13</td><td>Still v1 text (release monitoring, Shoutrrr notifications, five source forges). Replaced by the update-PR, ticket, dashboard, REST and v2 data-model sections (tracked as #187). Where they conflict with §1, §2 or §3, those win.</td></tr>
+      <tr><td>§1–§13</td><td>All sections describe the v2 product: update engine (§2), setup, login and roles (§3), data model (§4), update PRs and tickets (§5), ticket providers (§6), REST API (§7), web UI (§8), environment, deployment, CI and acceptance criteria. The v1 release-monitoring, Shoutrrr-notification and five-source-forge text is removed.</td></tr>
     </table>
   </div>
 
@@ -127,9 +124,9 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
         </ol>
       </li>
       <li><a href="#schema">Data model</a></li>
-      <li><a href="#domain">Domain logic &amp; Idempotency</a></li>
+      <li><a href="#domain">Update PRs, Tickets &amp; Idempotency</a></li>
       <li><a href="#ticket-projects">Ticket projects &amp; status mapping</a></li>
-      <li><a href="#notifications">Notifications (Shoutrrr)</a></li>
+      <li><a href="#notifications">Notifications (removed)</a></li>
       <li><a href="#providers">Provider interfaces (Go)</a></li>
       <li><a href="#api">REST API (Go)</a></li>
       <li><a href="#ui">Web UI &amp; COSS Particles</a></li>
@@ -139,6 +136,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
       <li><a href="#ci">CI/CD (GitHub Actions)</a></li>
       <li><a href="#mvp">MVP Acceptance Criteria</a></li>
       <li><a href="#future">Post-MVP</a></li>
+      <li><a href="#v1-templates">Appendix A. v1 template contract (transitional)</a></li>
     </ol>
   </nav>
 
@@ -231,7 +229,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
         <tr><td><code>RENOVATE_GIT_AUTHOR</code></td><td>The App's bot identity: <code>&lt;slug&gt;[bot] &lt;&lt;id&gt;+&lt;slug&gt;[bot]@users.noreply.github.com&gt;</code>, where <code>id</code> is the numeric id of the App's bot user (§2.9). The app sends the string with the job, because the worker has no GitHub identity of its own</td></tr>
       </table>
       plus the config-file location and job-level settings of §2.4–§2.5. Renovate reads the repository, opens or updates branches and PRs as the App's bot user and updates the Dependency Dashboard.</li>
-    <li><strong>Result.</strong> The worker posts the result (§2.1) and frees its slot. The app writes the outcome and hands the repository to the PR-state sync and ticket engine (what they do with it: §5.6 and the update-PR sections, tracked as #187).</li>
+    <li><strong>Result.</strong> The worker posts the result (§2.1) and frees its slot. The app writes the outcome, ingests the report and hands the repository to the PR-state sync and ticket engine (what they do with it: §5.1, §5.2 and §5.6).</li>
   </ol>
   <ul>
     <li><strong>The worker never holds the encryption key (<code>APP_ENCRYPTION_KEY</code>) or the App's private key, and never mints a token.</strong> Its only secrets are the worker secret and the token of the job it is running.</li>
@@ -289,7 +287,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <ul>
     <li><strong>No explicit repository list.</strong> A repository takes part when the <strong>App is installed on it</strong> (the installation's repository selection, §3.4) <strong>and a Renovate config file is present</strong> (<code>renovate.json</code>, or any other file name Renovate accepts). Presence is decided by Renovate itself through <code>requireConfig=required</code>: a repository without one ends its job early and is recorded as "no config". The app skips scheduled runs (§2.9) for a repository last recorded as "no config"; a <code>push</code> to its default branch, <code>installation_repositories.added</code> and an admin "run now" still start a job, so adding the file is noticed.</li>
     <li><strong>Pause and enable.</strong> An admin can <strong>pause</strong> a repository and enable it again (§3.10). A paused repository gets no job from any trigger; events for it are accepted and dropped.</li>
-    <li><strong>"Enable repo".</strong> For a repository without a config file, an admin action opens a PR that adds a <code>renovate.json</code> extending the configured preset (the page and endpoint are specified with the update-PR and dashboard sections, tracked as #187).</li>
+    <li><strong>"Enable repo".</strong> For a repository without a config file, an admin action opens a PR that adds a <code>renovate.json</code> extending the configured preset (endpoint: §7.5; page: §8.3).</li>
   </ul>
 
   <h3 id="job-queue">2.8 Job queue</h3>
@@ -312,7 +310,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <tr><th>Trigger</th><th>Source</th><th>Condition</th><th>Priority</th></tr>
     <tr><td>Dashboard checkbox</td><td><code>issues</code> <code>edited</code></td><td>The issue's author is the App's bot user, the edit contains a tick (below), and the sender is not the App's own bot</td><td>high</td></tr>
     <tr><td>PR checkbox</td><td><code>pull_request</code> <code>edited</code></td><td>The PR's author is the App's bot user, the edit contains a tick, and the sender is not the App's own bot</td><td>high</td></tr>
-    <tr><td>PR closed</td><td><code>pull_request</code> <code>closed</code> (merged or not)</td><td>The PR's author is the App's bot user. A merge or close frees a <code>prConcurrentLimit</code> slot; the PR-state sync and ticket transition are #187</td><td>high</td></tr>
+    <tr><td>PR closed</td><td><code>pull_request</code> <code>closed</code> (merged or not)</td><td>The PR's author is the App's bot user. A merge or close frees a <code>prConcurrentLimit</code> slot; the PR-state sync (§5.1) and the ticket transition (§5.2.1) follow</td><td>high</td></tr>
     <tr><td>Default branch changed</td><td><code>push</code></td><td><code>ref</code> is the repository's default branch (<code>refs/heads/&lt;default_branch&gt;</code>) and the push is not a branch deletion: config or manifests may have changed</td><td>high</td></tr>
     <tr><td>Repository added</td><td><code>installation_repositories</code> <code>added</code></td><td>One job per added repository</td><td>high</td></tr>
     <tr><td>Safety net</td><td>Hourly scheduler</td><td>Every enabled, unpaused repository that is not recorded as "no config" (§2.7); a repository with a <code>queued</code> or <code>running</code> job is skipped</td><td>normal</td></tr>
@@ -327,7 +325,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   </ul>
   <h4>Identifying the bot and its objects</h4>
   <ul>
-    <li>The App's bot user is <code>&lt;slug&gt;[bot]</code>. Its <strong>numeric user id</strong> is read once with <code>GET /users/&lt;slug&gt;[bot]</code> after the App is stored, kept with the App (§3.4; table with the v2 data model, tracked as #187) and used for every comparison and for <code>RENOVATE_GIT_AUTHOR</code> (§2.2); identity is the id, never the login.</li>
+    <li>The App's bot user is <code>&lt;slug&gt;[bot]</code>. Its <strong>numeric user id</strong> is read once with <code>GET /users/&lt;slug&gt;[bot]</code> after the App is stored, kept with the App (§3.4, <code>github_app.bot_user_id</code>, §4.4) and used for every comparison and for <code>RENOVATE_GIT_AUTHOR</code> (§2.2); identity is the id, never the login.</li>
     <li>A bot PR or the Dependency Dashboard is identified by <strong>author = the App's bot user plus Renovate's markers</strong> (the checkbox markers above, or Renovate's PR body markers). <strong>Never</strong> by <code>branchPrefix</code> or by the dashboard's title: those are set in per-repository or preset JavaScript configuration that Release Ops cannot evaluate.</li>
   </ul>
   <h4>Loop prevention</h4>
@@ -347,7 +345,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <li><strong>HMAC.</strong> HMAC-SHA256 of the <strong>raw body</strong> with the stored webhook secret (§3.4) is compared in constant time with <code>X-Hub-Signature-256</code> (<code>sha256=&lt;hex&gt;</code>) <strong>before anything is parsed</strong>. A missing or wrong signature is answered 401; nothing is stored. With no App configured the endpoint answers 503.</li>
     <li><strong>Events.</strong> Only the subscribed events are processed (<code>push</code>, <code>pull_request</code>, <code>issues</code>, <code>installation</code>, <code>installation_repositories</code>, §3.3). Any other event, including <code>ping</code>, is answered 202 and ignored.</li>
     <li><strong>Deduplicate.</strong> <code>X-GitHub-Delivery</code> is recorded; a GUID seen before is answered 202 and does nothing. The record and the resulting enqueue are written in <strong>one transaction</strong>, so a crash cannot record a delivery without its job. Records are pruned after a retention that outlasts GitHub's redelivery window.</li>
-    <li><strong>Decide and enqueue.</strong> The event is evaluated by the rules of §2.9 and enqueued; <code>installation</code> and <code>installation_repositories</code> also update the synced repositories (§3.4). No GitHub call happens in the request path.</li>
+    <li><strong>Decide and enqueue.</strong> The event is evaluated by the rules of §2.9 and enqueued; <code>installation</code> and <code>installation_repositories</code> also update the synced repositories (§3.4), and a <code>pull_request</code> event of a bot PR also upserts the update PR (§5.1). No GitHub call happens in the request path.</li>
     <li><strong>Answer 202</strong> as soon as the transaction commits, well inside GitHub's 10-second delivery timeout.</li>
   </ol>
 
@@ -362,7 +360,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <h3 id="engine-open">2.12 Open questions of the update engine</h3>
   <p>Not settled by the brief, the plan or the documentation; to be decided with the first deployment (#231) or by the maintainer:</p>
   <ul>
-    <li>Numeric defaults: job timeout and lease margin, heartbeat interval, claim long-poll wait, attempt limit and backoff curve, the polling-fallback interval, the delivery-record retention, job history retention, and the worker container's CPU and RAM limits.</li>
+    <li>Numeric defaults: job timeout and lease margin, heartbeat interval, claim long-poll wait, attempt limit and backoff curve, the polling-fallback interval, the delivery-record retention, the ticket engine's retry backoff and the grace period before an unconfirmed ticket creation is looked up (§5.2.2), and the worker container's CPU and RAM limits. Job history retention is settled at 30 days (§4.6).</li>
     <li>The in-repository paths of the global config file and the tools directory, and the mount paths in the mounted variant.</li>
     <li>Whether finer per-job CPU and RAM limits inside the worker container are wanted beyond the container limits and the job timeout.</li>
     <li>Whether more than one worker container is supported (the cap counts running jobs across workers; v2.0 documents one).</li>
@@ -445,7 +443,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <li><strong>One App per instance</strong> (singleton). Stored non-secret fields: App id, slug, client id, owner, HTML URL.</li>
     <li>The <strong>private key (pem), client secret, and webhook secret</strong> are encrypted at rest with the existing credential encryption (§4.8: AES-256-GCM, <code>APP_ENCRYPTION_KEY</code>). They are decrypted only inside the Go process, <strong>never returned by the API</strong> (only <code>hasSecret</code>-style flags) and <strong>never logged</strong> — not on success, not on failure, not inside error messages.</li>
     <li>Installation tokens are minted in the Go process from an App JWT (RS256 signed with the private key, <code>iss</code> = App id, expiry within 10 minutes) through <code>POST /app/installations/{installation_id}/access_tokens</code>, are valid about one hour, and are held in memory only. A token for a job is issued to the claiming worker only (§2.2).</li>
-    <li>Table shapes (<code>github_app</code>, <code>installations</code>, <code>repositories</code>) are specified with the v2 data model (tracked as #187).</li>
+    <li>Table shapes (<code>github_app</code>, <code>installations</code>, <code>repositories</code>) are specified in §4.4.</li>
   </ul>
   <h4>Installation: exactly one</h4>
   <ul>
@@ -549,6 +547,11 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <tr><td>Ticket projects (status mapping, templates)</td><td>no</td><td>yes</td></tr>
     <tr><td>Repository enable / pause</td><td>no</td><td>yes</td></tr>
     <tr><td>Ticket-project mapping of a repository</td><td>no</td><td>yes</td></tr>
+    <tr><td>"Enable repo" (open a <code>renovate.json</code> PR)</td><td>no</td><td>yes</td></tr>
+    <tr><td>Problems — job errors, and the fact that a ticket operation is failing (<code>ticket.hasError</code>, a <code>ticket_failed</code> problem without text)</td><td>yes — their repositories only</td><td>yes — all</td></tr>
+    <tr><td>Ticket error text (<code>ticket.lastError</code>, the message of a <code>ticket_failed</code> problem)</td><td>no</td><td>yes</td></tr>
+    <tr><td>Problems — rate limits, lost App permissions</td><td>no</td><td>yes</td></tr>
+    <tr><td>About and licence (Renovate version, AGPL-3.0 notice)</td><td>yes</td><td>yes</td></tr>
     <tr><td>Settings</td><td>no</td><td>yes</td></tr>
     <tr><td>GitHub App and setup (metadata, private key rotation)</td><td>no</td><td>yes</td></tr>
     <tr><td>View the global Renovate config (read-only)</td><td>no</td><td>yes</td></tr>
@@ -559,7 +562,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <h3 id="protected-routes">3.11 Protected routes</h3>
   <ul>
     <li>Go middleware: all <code>/api/v1/*</code> require a valid session except the public sign-in and setup paths listed in §7.0. The GitHub webhook endpoint (<code>/hooks/github</code>) is not session-authenticated; it is authenticated by its HMAC signature (§2.10).</li>
-    <li><code>GET /healthz</code> — no auth (container probe).</li>
+    <li><code>GET /healthz</code> and <code>GET /readyz</code> — no auth (container probe, readiness). <code>/metrics</code> is not an <code>/api/v1</code> route: it is served on its own listener <code>METRICS_ADDR</code>, never through the proxy (§7.8).</li>
     <li>Next middleware: pages except <code>/login</code>, <code>/login/link</code> and <code>/setup</code> redirect to <code>/login</code> when <code>GET /api/go/api/v1/auth/session</code> returns <code>user: null</code>, and to <code>/setup</code> while <code>GET /api/go/api/v1/setup/status</code> reports setup required (§8.2).</li>
   </ul>
 
@@ -588,66 +591,66 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <p><code>internal/store/migrate_test.go</code> covers the runner: a fresh database gets the baseline once and a second start applies nothing; a failing migration leaves the database unchanged; an edited or missing applied migration is rejected; every table is <code>STRICT</code>; and <code>sessions.user_id</code> rejects an unknown user.</p>
 
   <h3>4.0.1 <code>users</code> &amp; <code>sessions</code></h3>
-  <p>Auth tables — written only by Go.</p>
+  <p>Auth tables — written only by Go. Identity is the numeric GitHub user id (§3.5); a role is never stored, it is derived from GitHub and held in the session (§3.8).</p>
   <table>
     <tr><th>Table</th><th>Columns</th><th>Notes</th></tr>
-    <tr><td><code>users</code></td><td>Specified with the v2 data model (tracked as #187)</td><td>Keyed on the <strong>numeric GitHub user id</strong> (§3.5); carries the current login. No email, no <code>password_hash</code>. Together with <code>auth_identities</code> (designed so another forge can be linked later), these replace the v1 <code>users</code> table.</td></tr>
-    <tr><td><code>sessions</code></td><td><code>token</code> (PK), <code>data</code> (BLOB), <code>expiry</code> (REAL), <code>user_id</code> (references the v2 <code>users</code> row, NULL for a pre-login session)</td><td>Server-side session store (§3.1). <code>user_id</code> is set at sign-in. A session carries the role, the time of its last evaluation (§3.8) and, for a viewer, the repository id list (§3.9); the schema for that list is part of the v2 data model. Index on <code>expiry</code> and <code>user_id</code>.</td></tr>
+    <tr><td><code>users</code></td><td><code>id</code> (TEXT UUID, PK), <code>login</code> (the current GitHub login, display data), <code>created_at</code>, <code>last_login_at</code></td><td>Created at the first sign-in (§3.5), the login updated at every sign-in. No email, no <code>password_hash</code>, no role column. Replaces the v1 <code>users</code> table.</td></tr>
+    <tr><td><code>auth_identities</code></td><td><code>id</code> (TEXT UUID, PK), <code>user_id</code> (FK <code>users</code>, ON DELETE CASCADE), <code>provider</code> (<code>github</code> in v2.0), <code>subject</code> (TEXT: the numeric GitHub user id), <code>login</code>, <code>created_at</code></td><td>Unique on <code>(provider, subject)</code>: <strong>this is the identity</strong>. A user is found by it at sign-in, never by login. It exists as its own table so another forge can be linked to the same user later.</td></tr>
+    <tr><td><code>sessions</code></td><td><code>token</code> (PK), <code>data</code> (BLOB), <code>expiry</code> (REAL), <code>user_id</code> (FK <code>users</code>, NULL for a pre-login session)</td><td>Server-side session store (§3.1). <code>user_id</code> is set at sign-in. A session carries the role and the time of its last evaluation (§3.8) in <code>data</code>. Index on <code>expiry</code> and <code>user_id</code>.</td></tr>
+    <tr><td><code>session_repositories</code></td><td><code>session_token</code> (FK <code>sessions</code>, ON DELETE CASCADE), <code>repository_id</code> (FK <code>repositories</code>, ON DELETE CASCADE); primary key on both</td><td>The <strong>repository-access list</strong> of a viewer's session (§3.9): the repository ids the user can access, written at sign-in, never refreshed during the session. Rows go with the session (its expiry or logout) and with a deleted repository. <strong>Never a token</strong>: the user token is discarded at sign-in (§3.5). No rows for an admin session.</td></tr>
   </table>
 
   <h3>4.0.2 One-time secrets</h3>
   <p>The v1 <code>auth_tokens</code> table (invitation, password-reset and email-change tokens) is removed. v2 has two one-time secrets, each stored only as a SHA-256 hash and consumed with a guarded write (a token is matched only while unconsumed and, where it expires, unexpired):</p>
   <table>
-    <tr><th>Secret</th><th>Rules</th></tr>
-    <tr><td>Setup token</td><td>§3.2 — single use, valid only while no App is configured.</td></tr>
-    <tr><td>Break-glass login link token</td><td>§3.6 — 15 minutes, single use.</td></tr>
+    <tr><th>Secret</th><th>Rules</th><th>Table</th></tr>
+    <tr><td>Setup token</td><td>§3.2 — single use, valid only while no App is configured.</td><td><code>setup_tokens</code>: <code>token_hash</code>, <code>consumed_at</code> (NULL while unconsumed), <code>created_at</code>. At most one unconsumed row; a start that finds no App replaces it (§3.2).</td></tr>
+    <tr><td>Setup attempt</td><td>§3.3 step 2 — the single-use <code>state</code> of one manifest attempt, valid 1 hour.</td><td><code>setup_attempts</code>: <code>state_hash</code>, <code>owner_type</code>, <code>owner_login</code> (NULL for a personal account), <code>app_name</code> (NULL), <code>expires_at</code>, <code>consumed_at</code>.</td></tr>
+    <tr><td>Break-glass login link token</td><td>§3.6 — 15 minutes, single use.</td><td><code>login_link_tokens</code>: <code>token_hash</code>, <code>expires_at</code>, <code>consumed_at</code>, <code>created_at</code>.</td></tr>
   </table>
-  <p>Their table shape is part of the v2 data model (tracked as #187). The App credentials (<code>github_app</code>, §3.4) use the credential encryption of §4.8.</p>
+  <p>The App credentials (<code>github_app</code>, §4.4) use the credential encryption of §4.8.</p>
 
-  <h3>4.1 <code>app_settings</code></h3>
-  <p>Singleton (always <code>id = 1</code>). The v2 split into instance and installation settings is part of the v2 data model (tracked as #187); the v1 invitation and password-reset expiry columns are removed.</p>
+  <h3>4.1 Instance &amp; installation settings</h3>
+  <p>Settings are split by scope. Both tables are written only by Go. Environment configuration (§9) is <strong>not stored</strong>: the global config repository and ref, the preset repositories and <code>WEBHOOK_URL</code> are read from the environment, never from a row.</p>
+  <h4><code>instance_settings</code></h4>
+  <p>Singleton (always <code>id = 1</code>). Settings of the whole instance.</p>
   <table>
     <tr><th>Column</th><th>Type</th><th>Default</th><th>Description</th></tr>
-    <tr><td><code>concurrency_cap</code></td><td>INTEGER</td><td>2</td><td>Global cap on running jobs (§2.8); min 1. An instance setting, shown on the settings page (§7.2). Replaces the v1 <code>poll_interval_minutes</code>: there is no poll interval (§5.7)</td></tr>
+    <tr><td><code>concurrency_cap</code></td><td>INTEGER</td><td>2</td><td>Global cap on running jobs (§2.8); min 1. Edited on the settings page (§7.2). There is <strong>no schedule-interval setting</strong>: the safety net is fixed at hourly (§5.7)</td></tr>
+    <tr><td><code>bootstrap_admin_user_id</code></td><td>TEXT NULL</td><td>NULL</td><td>FK <code>users</code>. The bootstrap admin, set once at the first sign-in that matches <code>BOOTSTRAP_ADMIN_GITHUB_LOGIN</code> (§3.6); never changed afterwards</td></tr>
     <tr><td><code>updated_at</code></td><td>TEXT (ISO8601)</td><td>—</td><td>UTC</td></tr>
+  </table>
+  <h4><code>installation_settings</code></h4>
+  <p>One row per installation (primary key <code>installation_id</code>, FK <code>installations</code>).</p>
+  <table>
+    <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+    <tr><td><code>default_ticket_project_id</code></td><td>TEXT NULL</td><td>FK <code>ticket_projects</code>. The ticket project of every repository of the installation that has no override of its own (§5.2). NULL: such repositories get no tickets</td></tr>
+    <tr><td><code>global_config_content</code></td><td>TEXT NULL</td><td>The raw global Renovate config text the worker returned with its last job result (§2.1, §2.4); never parsed, shown read-only on the settings page. NULL until a job has returned one</td></tr>
+    <tr><td><code>global_config_source</code></td><td>TEXT NULL</td><td><code>repository</code> (fetched from <code>GLOBAL_CONFIG_REPO</code> at <code>GLOBAL_CONFIG_REF</code>) or <code>mounted</code></td></tr>
+    <tr><td><code>global_config_captured_at</code></td><td>TEXT NULL</td><td>UTC; when the content was last returned</td></tr>
+    <tr><td><code>updated_at</code></td><td>TEXT</td><td>UTC</td></tr>
   </table>
 
   <h3>4.2 <code>integrations</code></h3>
-  <p class="note">The source kinds (<code>github</code>, <code>gitlab</code>, <code>gitea</code>, <code>forgejo</code>, <code>codeberg</code>) and the per-kind default flag are v1 and are removed in v2; the ticket kinds stay. The v2 <code>integrations</code> entity is specified with the v2 data model (tracked as #187).</p>
-  <p>Credential store for external APIs. Secrets never in plaintext — see §4.8.</p>
+  <p>Credential store for the ticket systems. Secrets never in plaintext — see §4.8. The v1 source kinds (<code>github</code>, <code>gitlab</code>, <code>gitea</code>, <code>forgejo</code>, <code>codeberg</code>) and the per-kind default flag do not exist in v2: GitHub access is the App (§3.4), and Renovate reads other hosts as datasources with no Release Ops credential.</p>
   <table>
     <tr><th>Column</th><th>Type</th><th>Description</th></tr>
     <tr><td><code>id</code></td><td>TEXT (UUID)</td><td>PK</td></tr>
-    <tr><td><code>kind</code></td><td>TEXT</td><td>Source: <code>github</code> | <code>gitlab</code> | <code>gitea</code> | <code>forgejo</code> | <code>codeberg</code> · Ticket: <code>kaneo</code> | <code>jira</code> | <code>linear</code></td></tr>
+    <tr><td><code>kind</code></td><td>TEXT</td><td><code>kaneo</code> | <code>jira</code> | <code>linear</code> (CHECK)</td></tr>
     <tr><td><code>name</code></td><td>TEXT</td><td>Display name in UI</td></tr>
     <tr><td><code>base_url</code></td><td>TEXT NULL</td><td>See table below</td></tr>
     <tr><td><code>encrypted_payload</code></td><td>TEXT</td><td>Encrypted JSON</td></tr>
     <tr><td><code>created_at</code>, <code>updated_at</code></td><td>TEXT</td><td>UTC ISO8601</td></tr>
-    <tr><td><code>is_default</code></td><td>INTEGER</td><td>0 | 1, default 0. Source kinds only (CHECK); at most one row per <code>kind</code> has 1 (partial unique index <code>idx_integrations_default_kind</code>). UI preselection in Add Repo only — the poller reads <code>monitored_repos.source_integration_id</code> and never falls back to the default</td></tr>
   </table>
   <table>
-    <tr><th>kind</th><th>Role</th><th>base_url</th></tr>
-    <tr><td><code>github</code></td><td>Source</td><td>NULL (api.github.com)</td></tr>
-    <tr><td><code>gitlab</code></td><td>Source</td><td>Required — e.g. <code>https://gitlab.com</code> or self-hosted</td></tr>
-    <tr><td><code>gitea</code></td><td>Source</td><td>Required — instance root, e.g. <code>https://gitea.example.com</code></td></tr>
-    <tr><td><code>forgejo</code></td><td>Source</td><td>Required — instance root, e.g. <code>https://forgejo.example.org</code></td></tr>
-    <tr><td><code>codeberg</code></td><td>Source</td><td>NULL (<code>https://codeberg.org</code> fixed)</td></tr>
-    <tr><td><code>kaneo</code></td><td>Ticket</td><td>Required — Kaneo host or API base (Kaneo cloud: <code>https://cloud.kaneo.app</code>; <code>/api</code> appended when missing)</td></tr>
-    <tr><td><code>jira</code></td><td>Ticket</td><td>Required — e.g. <code>https://company.atlassian.net</code></td></tr>
-    <tr><td><code>linear</code></td><td>Ticket</td><td>NULL (<code>api.linear.app</code> fixed)</td></tr>
+    <tr><th>kind</th><th>base_url</th></tr>
+    <tr><td><code>kaneo</code></td><td>Required — Kaneo host or API base (Kaneo cloud: <code>https://cloud.kaneo.app</code>; <code>/api</code> appended when missing)</td></tr>
+    <tr><td><code>jira</code></td><td>Required — e.g. <code>https://company.atlassian.net</code></td></tr>
+    <tr><td><code>linear</code></td><td>NULL (<code>api.linear.app</code> fixed)</td></tr>
   </table>
 
   <h4>Payload schema (before encryption)</h4>
-  <pre><code>// github — token optional
-{ "token": "ghp_..." }
-
-// gitlab — token required
-{ "token": "glpat-..." }
-
-// gitea | forgejo | codeberg — token optional (recommended for rate limits / private repos)
-{ "token": "..." }
-
-// kaneo
+  <pre><code>// kaneo
 { "api_key": "..." }
 
 // jira — Basic Auth
@@ -659,7 +662,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <h3>4.3 <code>ticket_projects</code></h3>
   <p>
     One ticket <strong>integration</strong> (credentials) can serve multiple <strong>projects/teams</strong>.
-    Each row is a configurable target with its own status mapping — Kaneo projects, Jira project keys, and Linear teams
+    Each row is a configurable target with its own status mapping and its own <strong>ticket filter</strong> — Kaneo projects, Jira project keys, and Linear teams
     typically have different workflow statuses.
   </p>
   <table>
@@ -669,58 +672,148 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <tr><td><code>external_project_id</code></td><td>TEXT</td><td>Kaneo <code>projectId</code> · Jira <code>projectKey</code> · Linear <code>teamId</code></td></tr>
     <tr><td><code>name</code></td><td>TEXT</td><td>Display name in UI</td></tr>
     <tr><td><code>create_config</code></td><td>TEXT (JSON)</td><td>Defaults when <strong>creating</strong> a ticket (§5.3)</td></tr>
-    <tr><td><code>status_mapping</code></td><td>TEXT (JSON)</td><td>Open/Done/Cancelled/Superseded — §5.3</td></tr>
-    <tr><td><code>content_templates</code></td><td>TEXT (JSON)</td><td>Per-project ticket title, description, and supersede comment templates (§5.4). Default: <code>{"title":"","description":"","supersedeComment":""}</code> — empty string per key uses integration-kind default.</td></tr>
-    <tr><td><code>on_open_ticket_policy</code></td><td>TEXT</td><td><code>supersede</code> (default) | <code>merge</code> | <code>skip_if_open</code></td></tr>
+    <tr><td><code>status_mapping</code></td><td>TEXT (JSON)</td><td>Open / done / cancelled / superseded — §5.3; used to classify a ticket's live status and as the target of the lifecycle transitions (§5.2.1)</td></tr>
+    <tr><td><code>content_templates</code></td><td>TEXT (JSON)</td><td>Per-project ticket title, description, update note and supersede comment templates (§5.4). Default: <code>{"title":"","description":"","updateComment":"","supersedeComment":""}</code> — empty string per key uses the integration-kind default.</td></tr>
+    <tr><td><code>filter</code></td><td>TEXT (JSON)</td><td>Which update PRs get a ticket (§5.2). Default: <code>{"updateTypes":[],"labels":[],"skipAutomerged":true}</code> — all update types, no label restriction, automerged PRs skipped</td></tr>
     <tr><td><code>created_at</code>, <code>updated_at</code></td><td>TEXT</td><td>UTC</td></tr>
   </table>
-  <p>Unique: <code>(integration_id, external_project_id)</code>.</p>
+  <p>Unique: <code>(integration_id, external_project_id)</code>. The v1 <code>on_open_ticket_policy</code> column does not exist in v2: a ticket follows its own PR (§5.2.1), so there is no "an open ticket already exists" decision.</p>
 
-  <h3>4.4 <code>monitored_repos</code></h3>
-  <p class="note">v1 — replaced by the installed repositories and update PRs of the v2 data model (tracked as #187).</p>
+  <h3 id="installation-tables">4.4 <code>github_app</code>, <code>installations</code> &amp; <code>repositories</code></h3>
+  <p>These replace the v1 <code>monitored_repos</code> (a repository to poll for releases): a repository now exists because the App is installed on it (§2.7).</p>
+  <h4>Installation scoping</h4>
+  <p>Single-tenant by design (one instance, one App, one installation, §3.4), but <strong>data is scoped by installation</strong>, so a future hosted deployment with one public App (installation = tenant) needs no schema change. Every table that holds repository, update, ticket or job data hangs off <code>installations</code>:</p>
+  <table>
+    <tr><th>Table</th><th>Reaches <code>installations</code> through</th></tr>
+    <tr><td><code>installation_settings</code>, <code>repositories</code></td><td><code>installation_id</code> (FK)</td></tr>
+    <tr><td><code>webhook_deliveries</code> (§4.6)</td><td><code>installation_id</code> (FK; NULL until an installation is recorded)</td></tr>
+    <tr><td><code>jobs</code>, <code>update_prs</code>, <code>session_repositories</code></td><td><code>repository_id</code> → <code>repositories</code></td></tr>
+    <tr><td><code>job_runs</code>, <code>job_events</code></td><td><code>job_id</code> → <code>jobs</code></td></tr>
+    <tr><td><code>update_pr_dependencies</code>, <code>update_tickets</code></td><td><code>update_pr_id</code> → <code>update_prs</code></td></tr>
+  </table>
+  <p>The tables that are <strong>instance-level</strong> and not installation-scoped are identity, secrets and shared configuration: <code>github_app</code>, <code>users</code>, <code>auth_identities</code>, <code>sessions</code>, the setup and login-link secrets (§4.0.2), <code>instance_settings</code>, <code>integrations</code> and <code>ticket_projects</code>.</p>
+
+  <h4><code>github_app</code></h4>
+  <p>Singleton (<code>id = 1</code>). Written at the end of the manifest flow (§3.3) and by key rotation (§3.4). Secrets are encrypted (§4.8) and never returned by the API or logged.</p>
+  <table>
+    <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+    <tr><td><code>app_id</code></td><td>INTEGER</td><td>GitHub App id (the JWT <code>iss</code>, §3.4)</td></tr>
+    <tr><td><code>slug</code>, <code>client_id</code>, <code>html_url</code></td><td>TEXT</td><td>Non-secret App fields</td></tr>
+    <tr><td><code>owner_login</code>, <code>owner_type</code></td><td>TEXT</td><td>The App's owner: <code>User</code> or <code>Organization</code></td></tr>
+    <tr><td><code>bot_user_id</code></td><td>INTEGER NULL</td><td>Numeric id of the App's bot user <code>&lt;slug&gt;[bot]</code>, read once after the App is stored (§2.9); the identity of every bot comparison and of <code>RENOVATE_GIT_AUTHOR</code>. NULL until read</td></tr>
+    <tr><td><code>webhook_active</code></td><td>INTEGER 0/1</td><td>Whether the manifest registered an active webhook (<code>WEBHOOK_URL</code> was set, §3.3)</td></tr>
+    <tr><td><code>encrypted_private_key</code>, <code>encrypted_client_secret</code>, <code>encrypted_webhook_secret</code></td><td>TEXT</td><td>Encrypted at rest (§4.8)</td></tr>
+    <tr><td><code>key_id</code></td><td>TEXT</td><td>Identifies the encryption key the three secrets were encrypted with, for a later encryption-key rotation (§4.8)</td></tr>
+    <tr><td><code>created_at</code>, <code>updated_at</code></td><td>TEXT</td><td>UTC</td></tr>
+  </table>
+
+  <h4><code>installations</code></h4>
+  <p>Exactly one non-removed row (§3.4): a partial unique index allows at most one row whose <code>status</code> is not <code>removed</code>.</p>
   <table>
     <tr><th>Column</th><th>Type</th><th>Description</th></tr>
     <tr><td><code>id</code></td><td>TEXT (UUID)</td><td>PK</td></tr>
-    <tr><td><code>source_kind</code></td><td>TEXT</td><td><code>github</code> | <code>gitlab</code> | <code>gitea</code> | <code>forgejo</code> | <code>codeberg</code></td></tr>
-    <tr><td><code>project_path</code></td><td>TEXT</td><td>GitHub/Gitea/Forgejo/Codeberg: <code>owner/repo</code> · GitLab: <code>namespace/project</code></td></tr>
-    <tr><td><code>enabled</code></td><td>INTEGER 0/1</td><td>Disabled = no poll</td></tr>
-    <tr><td><code>include_prereleases</code></td><td>INTEGER 0/1</td><td>Default <code>0</code> — when <code>1</code>, poll lists releases and picks newest by <code>published_at</code> (including pre-releases); when <code>0</code>, uses each host's latest non–pre-release endpoint</td></tr>
-    <tr><td><code>source_integration_id</code></td><td>TEXT FK NULL</td><td>GitHub/Codeberg optional; GitLab/Gitea/Forgejo <strong>required</strong> (instance + token)</td></tr>
-    <tr><td><code>ticket_project_id</code></td><td>TEXT FK</td><td>Required — references <code>ticket_projects</code></td></tr>
-    <tr><td><code>open_ticket_external_id</code></td><td>TEXT NULL</td><td>ID of the currently open ticket in the target system</td></tr>
-    <tr><td><code>open_ticket_tag</code></td><td>TEXT NULL</td><td>Release tag of the open ticket</td></tr>
-    <tr><td><code>last_known_tag</code></td><td>TEXT NULL</td><td>Last polled release tag</td></tr>
-    <tr><td><code>pending_ticket_tag</code></td><td>TEXT NULL</td><td>Release tag whose ticket is being created: set before the ticket is created, cleared by the write that stores its link. While it equals the tag about to be ticketed, the poll creates nothing and reports that a ticket may already exist. A failed create clears it only when the tracker cannot have stored a ticket: it answered with a 4xx status (408 and 429 included), or the request never left (DNS failure, connection refused, or any failure before the request was sent). After any other failure (a 5xx, a timeout, a 2xx answer with an unreadable body or no ID, a shutdown or cancellation while the request was in flight) it stays set. Also cleared when a newer tag gets its ticket and when a source or ticket project change resets the poll state</td></tr>
-    <tr><td><code>last_polled_at</code>, <code>last_error</code></td><td>TEXT NULL</td><td>UTC / error text</td></tr>
+    <tr><td><code>github_installation_id</code></td><td>INTEGER</td><td>GitHub's installation id; unique. Verified with the App JWT before it is stored (§3.4)</td></tr>
+    <tr><td><code>account_id</code>, <code>account_login</code>, <code>account_type</code></td><td>INTEGER, TEXT, TEXT</td><td>The account the App is installed on, read from GitHub (§3.4); <code>account_type</code> is <code>User</code> or <code>Organization</code> and decides the role rules (§3.7)</td></tr>
+    <tr><td><code>status</code></td><td>TEXT</td><td><code>active</code> | <code>suspended</code> | <code>removed</code> — from the <code>installation</code> event (<code>suspend</code>, <code>unsuspend</code>, <code>deleted</code>) or the reconcile</td></tr>
+    <tr><td><code>repository_selection</code></td><td>TEXT</td><td><code>all</code> | <code>selected</code>, as GitHub reports it</td></tr>
+    <tr><td><code>permissions</code></td><td>TEXT (JSON)</td><td>The permissions GitHub reports for the installation, refreshed by the reconcile and the <code>installation</code> event. Compared with the manifest's permission list (§3.3): a missing one is a "lost App permission" problem (§7.7)</td></tr>
+    <tr><td><code>rate_limit_remaining</code>, <code>rate_limit_limit</code>, <code>rate_limit_reset_at</code></td><td>INTEGER NULL, INTEGER NULL, TEXT NULL</td><td>The installation's shared GitHub rate-limit budget as last seen in a response (§2.8); the source of the rate-limit metric (§7.8)</td></tr>
     <tr><td><code>created_at</code>, <code>updated_at</code></td><td>TEXT</td><td>UTC</td></tr>
   </table>
-  <p>Unique: <code>(source_kind, project_path)</code>. Policy and status mapping come from the linked <code>ticket_project</code> — not from the repo itself.</p>
 
-  <h3>4.5 <code>notification_targets</code> &amp; <code>monitored_repo_notifications</code></h3>
-  <p class="note">v1 — removed in v2 (no Shoutrrr notifications, §1).</p>
-  <p>Notifications via <a href="https://containrrr.dev/shoutrrr/">Shoutrrr</a> (Go library). URL is stored encrypted.</p>
+  <h4><code>repositories</code></h4>
+  <p>The installed repositories, kept in sync by the <code>installation</code> events and the reconcile (§3.4).</p>
   <table>
-    <tr><th>Table</th><th>Content</th></tr>
-    <tr><td><code>notification_targets</code></td><td><code>name</code>, <code>shoutrrr_url_encrypted</code>, <code>events_json</code>, <code>enabled</code></td></tr>
-    <tr><td><code>monitored_repo_notifications</code></td><td>Optional: repo → target(s). <strong>No rows</strong> = all globally enabled targets receive events.</td></tr>
+    <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+    <tr><td><code>id</code></td><td>TEXT (UUID)</td><td>PK</td></tr>
+    <tr><td><code>installation_id</code></td><td>TEXT FK</td><td>→ <code>installations</code></td></tr>
+    <tr><td><code>github_repository_id</code></td><td>INTEGER</td><td>GitHub's numeric repository id; unique. The viewer's repository list (§3.9) holds these ids, and a renamed repository keeps its row</td></tr>
+    <tr><td><code>full_name</code></td><td>TEXT</td><td><code>owner/repo</code>, updated on rename. Unique with <code>installation_id</code></td></tr>
+    <tr><td><code>default_branch</code></td><td>TEXT</td><td>Compared with the <code>ref</code> of a <code>push</code> (§2.9)</td></tr>
+    <tr><td><code>enabled</code></td><td>INTEGER 0/1</td><td>Default <code>1</code>. <code>0</code> = <strong>paused</strong>: no job from any trigger (§2.7). The state the admin pauses and enables (§7.5)</td></tr>
+    <tr><td><code>ticket_project_id</code></td><td>TEXT NULL</td><td>FK <code>ticket_projects</code>. The <strong>per-repository override</strong> of the installation's default ticket project (§5.2); NULL = use the default</td></tr>
+    <tr><td><code>config_state</code></td><td>TEXT</td><td><code>unknown</code> (default) | <code>present</code> | <code>missing</code> — whether Renovate found a config file in the last job; <code>missing</code> is the "no config" of §2.7</td></tr>
+    <tr><td><code>dashboard_issue_number</code></td><td>INTEGER NULL</td><td>The Dependency Dashboard issue's number, from the Renovate report (<code>dependencyDashboardIssue</code>, §5.1); the dashboard links to it. NULL when unknown or none</td></tr>
+    <tr><td><code>removed_at</code></td><td>TEXT NULL</td><td>Set when the repository leaves the installation; such a row gets no job and is hidden from the lists but keeps its history. A repository that returns to the installation clears it (the row is found by <code>github_repository_id</code>)</td></tr>
+    <tr><td><code>created_at</code>, <code>updated_at</code></td><td>TEXT</td><td>UTC</td></tr>
   </table>
-  <p>Default <code>events_json</code>: <code>["create","error","supersede"]</code>. No event on <code>baseline</code> / <code>skip</code>.</p>
+  <p>Unique: <code>(installation_id, full_name)</code> and <code>github_repository_id</code>. The ticket-project override is a reference, not a copy: changing it affects tickets created <strong>afterwards</strong>; an existing ticket keeps the project it was created in (<code>update_tickets.ticket_project_id</code>, §4.5), so its status mapping still matches its system.</p>
 
-  <h3 id="jobs-table">4.6 <code>jobs</code> (queue)</h3>
-  <p>The persistent queue of §2.8. It replaces the v1 <code>poll_runs</code> / <code>poll_run_events</code> poll history: there is no global poll run, only jobs. Written only through the app's writer connection (§4.9). This entry fixes what the queue semantics need; the full DDL and the job-history tables are part of the v2 data model (tracked as #187).</p>
+  <h3 id="update-tables">4.5 <code>update_prs</code>, <code>update_pr_dependencies</code> &amp; <code>update_tickets</code></h3>
+  <p>The update PR model of §5.1 and the ticket model of §5.2. Written only by Go (the PR-state sync, the report ingest and the ticket engine).</p>
+  <h4><code>update_prs</code></h4>
+  <p>One row per bot update PR of a repository (§5.1).</p>
+  <table>
+    <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+    <tr><td><code>id</code></td><td>TEXT (UUID)</td><td>PK</td></tr>
+    <tr><td><code>repository_id</code></td><td>TEXT FK</td><td>→ <code>repositories</code></td></tr>
+    <tr><td><code>number</code></td><td>INTEGER</td><td>GitHub PR number. Unique with <code>repository_id</code></td></tr>
+    <tr><td><code>node_id</code>, <code>url</code>, <code>title</code>, <code>head_ref</code></td><td>TEXT</td><td>GitHub's node id, the PR's web URL, its title and head branch name</td></tr>
+    <tr><td><code>head_sha</code></td><td>TEXT NULL</td><td>The PR's head commit as of the last event or reconcile</td></tr>
+    <tr><td><code>state</code></td><td>TEXT</td><td><code>open</code> | <code>merged</code> | <code>closed</code> | <code>superseded</code> (§5.1)</td></tr>
+    <tr><td><code>superseded_by_id</code></td><td>TEXT NULL</td><td>FK <code>update_prs</code>; the replacing PR when <code>state</code> is <code>superseded</code></td></tr>
+    <tr><td><code>labels</code></td><td>TEXT (JSON)</td><td>The PR's label names, as GitHub reports them; input to the ticket filter (§5.2)</td></tr>
+    <tr><td><code>automerge</code></td><td>INTEGER NULL</td><td>0/1 from the report's <code>automerge</code> for the PR's branch, or from the PR body's Configuration section; NULL = unknown (treated as not automerged)</td></tr>
+    <tr><td><code>release_notes</code></td><td>TEXT NULL</td><td>The PR body's release-notes section, truncated (§5.4); NULL when the body has none</td></tr>
+    <tr><td><code>report_sha</code></td><td>TEXT NULL</td><td>The head commit the stored report dependencies were read for (§5.1); NULL when no report entry has been ingested</td></tr>
+    <tr><td><code>opened_at</code>, <code>merged_at</code>, <code>closed_at</code></td><td>TEXT NULL</td><td>UTC, as GitHub reports them (<code>opened_at</code> is the PR's <code>created_at</code>)</td></tr>
+    <tr><td><code>last_seen_at</code></td><td>TEXT</td><td>UTC; last event or reconcile that saw the PR</td></tr>
+    <tr><td><code>created_at</code>, <code>updated_at</code></td><td>TEXT</td><td>UTC</td></tr>
+  </table>
+  <h4><code>update_pr_dependencies</code></h4>
+  <p>The dependencies a PR updates (one row per dependency; a grouped PR has several). Replaced as a set, never merged row by row (§5.1).</p>
+  <table>
+    <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+    <tr><td><code>id</code></td><td>TEXT (UUID)</td><td>PK</td></tr>
+    <tr><td><code>update_pr_id</code></td><td>TEXT FK</td><td>→ <code>update_prs</code> (ON DELETE CASCADE)</td></tr>
+    <tr><td><code>name</code></td><td>TEXT</td><td>The dependency's name. Required: a row exists only for a dependency whose name is known</td></tr>
+    <tr><td><code>manager</code>, <code>datasource</code></td><td>TEXT NULL</td><td>Renovate's manager and datasource for the dependency. <strong>Nullable enrichment</strong>: only the report supplies them</td></tr>
+    <tr><td><code>from_version</code>, <code>to_version</code></td><td>TEXT NULL</td><td>The current and the new version (or digest). <strong>Nullable enrichment</strong>; <code>.From</code> and <code>.To</code> in templates (§5.4)</td></tr>
+    <tr><td><code>update_type</code></td><td>TEXT NULL</td><td>One of <code>major</code>, <code>minor</code>, <code>patch</code>, <code>digest</code>, <code>lockfile</code>, <code>other</code> (normalised from Renovate's update type, §5.1). <strong>Nullable enrichment</strong></td></tr>
+    <tr><td><code>source</code></td><td>TEXT</td><td><code>report</code> or <code>body</code>: where the row came from (§5.1)</td></tr>
+  </table>
+  <h4><code>update_tickets</code></h4>
+  <p><strong>At most one row per update PR</strong> (unique <code>update_pr_id</code>): one ticket per PR (§5.2). A row exists from the moment the engine decides the PR gets a ticket, before the ticket does (§5.2.2).</p>
+  <table>
+    <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+    <tr><td><code>id</code></td><td>TEXT (UUID)</td><td>PK; also the <strong>external key</strong> written into the ticket for the lookup of §5.2.2</td></tr>
+    <tr><td><code>update_pr_id</code></td><td>TEXT FK</td><td>→ <code>update_prs</code>; unique</td></tr>
+    <tr><td><code>ticket_project_id</code></td><td>TEXT FK</td><td>The ticket project the ticket was (or is being) created in; fixed for the life of the ticket</td></tr>
+    <tr><td><code>external_id</code>, <code>external_url</code></td><td>TEXT NULL</td><td>The ticket's id in the target system and its web URL (<code>TicketWebURL</code>, §6.2; omitted when the provider cannot build one). NULL until the link is stored</td></tr>
+    <tr><td><code>state</code></td><td>TEXT</td><td><code>pending</code> (no confirmed ticket yet) | <code>open</code> | <code>done</code> | <code>cancelled</code> (won't do) | <code>superseded</code> (§5.2.1)</td></tr>
+    <tr><td><code>pending_since</code></td><td>TEXT NULL</td><td>The <strong>pending marker</strong> (§5.2.2): set before the create call, cleared by the write that stores <code>external_id</code></td></tr>
+    <tr><td><code>synced_hash</code></td><td>TEXT NULL</td><td>Hash of the PR's dependency list (name, from, to) the ticket content was last rendered for; a different hash means a new version (§5.2.1)</td></tr>
+    <tr><td><code>pr_comment_id</code>, <code>pr_comment_hash</code></td><td>INTEGER NULL, TEXT NULL</td><td>The bot comment on the PR (§5.2.3) and a hash of the body last written to it</td></tr>
+    <tr><td><code>attempts</code>, <code>next_attempt_at</code>, <code>last_error</code>, <code>last_error_at</code></td><td>INTEGER, TEXT NULL, TEXT NULL, TEXT NULL</td><td>Retry state of the engine and the last failure (a redacted message), for the Problems view (§7.7); cleared by the next success</td></tr>
+    <tr><td><code>created_at</code>, <code>updated_at</code></td><td>TEXT</td><td>UTC</td></tr>
+  </table>
+
+  <h3 id="jobs-table">4.6 <code>jobs</code> (queue), job history &amp; webhook deliveries</h3>
+  <p>The persistent queue of §2.8. It replaces the v1 <code>poll_runs</code> / <code>poll_run_events</code> poll history: there is no global poll run, only jobs. Written only through the app's writer connection (§4.9).</p>
+  <h4><code>jobs</code></h4>
   <table>
     <tr><th>Field</th><th>Meaning</th></tr>
-    <tr><td><code>id</code>, <code>kind</code></td><td>Job id; kind (v2.0 has one: a Renovate run of one repository).</td></tr>
-    <tr><td><code>repository_id</code></td><td>The installed repository (§2.7). At most one <code>queued</code> and one <code>running</code> job per repository, enforced by the database (§2.8).</td></tr>
+    <tr><td><code>id</code>, <code>kind</code></td><td>Job id; kind (v2.0 has one: <code>renovate_run</code>, a Renovate run of one repository).</td></tr>
+    <tr><td><code>repository_id</code></td><td>The installed repository (§2.7). At most one <code>queued</code> and one <code>running</code> job per repository, enforced by the database (partial unique indexes on those states, §2.8).</td></tr>
     <tr><td><code>priority</code></td><td><code>high</code> (webhook triggers, run now) or <code>normal</code> (safety net, polling fallback).</td></tr>
     <tr><td><code>state</code></td><td><code>queued</code> → <code>running</code> → <code>succeeded</code> or <code>failed</code>. A failed attempt with attempts left, and a reaped lease, go back to <code>queued</code>.</td></tr>
     <tr><td><code>run_after</code>, <code>attempts</code></td><td>Earliest claim time (backoff, <code>Retry-After</code>, §2.8) and the attempts used.</td></tr>
     <tr><td><code>lease_owner</code>, <code>lease_expires_at</code>, <code>last_heartbeat_at</code></td><td>The lease of §2.8 (job timeout plus margin) and the last heartbeat (§2.1). The reaper acts on <code>lease_expires_at</code>.</td></tr>
     <tr><td><code>rerun_requested</code></td><td>Set on a <code>running</code> job when a high-priority trigger arrives mid-run (§2.8).</td></tr>
-    <tr><td>Trigger, matched markers</td><td>What enqueued the job (§2.9) and, for a checkbox tick, the matched markers, for the UI.</td></tr>
-    <tr><td>Webhook arrival, start time</td><td>When the triggering webhook arrived (NULL for scheduled jobs) and when the worker's first heartbeat for the job arrived: the 10-second target of §2.9 is their difference.</td></tr>
+    <tr><td><code>trigger</code>, <code>matched_markers</code></td><td>What enqueued the job (<code>dashboard_checkbox</code>, <code>pr_checkbox</code>, <code>pr_closed</code>, <code>push</code>, <code>repository_added</code>, <code>schedule</code>, <code>polling</code>, <code>run_now</code>; §2.9) and, for a checkbox tick, the matched markers (JSON array), for the UI.</td></tr>
+    <tr><td><code>webhook_received_at</code>, <code>started_at</code></td><td>When the triggering webhook arrived (NULL for scheduled jobs) and when the worker's first heartbeat for the job arrived: the 10-second target of §2.9 is their difference.</td></tr>
+    <tr><td><code>created_at</code>, <code>finished_at</code></td><td>UTC; <code>finished_at</code> is set when the job reaches <code>succeeded</code> or <code>failed</code>.</td></tr>
   </table>
-  <p>Two more records belong to the engine: the <strong>webhook delivery record</strong> (the <code>X-GitHub-Delivery</code> GUID with its arrival time, written in the same transaction as the enqueue, §2.10) and the <strong>job history</strong> (<code>job_runs</code> and <code>job_events</code>: what each attempt did, its outcome and log excerpt), which has a bounded retention. Retention values are an open question (§2.12).</p>
+  <h4><code>job_runs</code> &amp; <code>job_events</code> (job history)</h4>
+  <table>
+    <tr><th>Table</th><th>Columns</th></tr>
+    <tr><td><code>job_runs</code></td><td>One row per attempt. <code>id</code>, <code>job_id</code> (FK, ON DELETE CASCADE), <code>attempt</code>, <code>started_at</code>, <code>finished_at</code> (NULL while running), <code>outcome</code> (<code>running</code> | <code>succeeded</code> | <code>no_config</code> | <code>failed</code> | <code>aborted</code> | <code>lease_expired</code>), <code>exit_code</code> (Renovate's, NULL when it did not run), <code>error_code</code> and <code>error_message</code> (a short code and a bounded, redacted message; NULL on success), <code>retry_after</code> (the delay the worker reported, §2.8), <code>report_status</code> (<code>ok</code> | <code>missing</code> | <code>unreadable</code>; §2.2), <code>log_excerpt</code> (the bounded, redacted excerpt of §2.1)</td></tr>
+    <tr><td><code>job_events</code></td><td>What happened to a job, in order. <code>id</code>, <code>job_id</code> (FK, ON DELETE CASCADE), <code>job_run_id</code> (NULL for events outside an attempt), <code>at</code>, <code>kind</code> (for example <code>enqueued</code>, <code>coalesced</code>, <code>claimed</code>, <code>config_fetched</code>, <code>renovate_started</code>, <code>result_posted</code>, <code>retry_scheduled</code>, <code>lease_reaped</code>, <code>rerun_requested</code>, <code>follow_up_enqueued</code>), <code>message</code> (bounded, redacted)</td></tr>
+  </table>
+  <p>No token, key or secret is ever stored in either table: every value is redacted before it is written (§2.2).</p>
+  <p><strong>Retention.</strong> A job in a terminal state is deleted <strong>30 days after it finished</strong>, together with its <code>job_runs</code> and <code>job_events</code> (the foreign keys cascade). A daily pass in the app does it, in bounded batches through the writer connection (§4.9), so history never grows without limit. There is no retention for <code>update_prs</code>, <code>update_pr_dependencies</code> and <code>update_tickets</code> in v2.0: they are small and are the dashboard's history.</p>
+  <h4><code>webhook_deliveries</code></h4>
+  <p>The delivery record of §2.10: <code>guid</code> (the <code>X-GitHub-Delivery</code> value, primary key), <code>event</code>, <code>installation_id</code> (see §4.4), <code>received_at</code>. Written in the same transaction as the resulting enqueue or PR-state write. Pruned after a retention that outlasts GitHub's redelivery window (value: §2.12).</p>
 
   <h3>4.7 Timestamps</h3>
   <p>All <code>TEXT</code> timestamps: RFC3339/ISO8601 UTC with milliseconds, e.g. <code>2026-08-06T12:00:00.000Z</code>.</p>
@@ -729,7 +822,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <ul>
     <li>Algorithm: AES-256-GCM.</li>
     <li>Key: <code>APP_ENCRYPTION_KEY</code> — 32 bytes, hex-encoded (64 characters).</li>
-    <li>Stored format: <code>base64(nonce + ciphertext + tag)</code> — 12-byte random nonce prepended to ciphertext; entire blob base64-encoded in <code>encrypted_payload</code> / <code>shoutrrr_url_encrypted</code>.</li>
+    <li>Stored format: <code>base64(nonce + ciphertext + tag)</code> — 12-byte random nonce prepended to ciphertext; entire blob base64-encoded in <code>integrations.encrypted_payload</code> and the three encrypted columns of <code>github_app</code> (§4.4).</li>
     <li>Go decrypts credentials only in the Go process — never sent to frontend except “configured” / masking.</li>
     <li>API returns <code>has_secret: true</code> for integrations, never the secret value.</li>
   </ul>
@@ -746,48 +839,114 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   </ul>
   <p>SQLite stays the only supported database in v2.0. The queue sits behind an interface (§2.8) so Postgres can replace it for a hosted deployment later; there is no dual-database support.</p>
 
-  <h2 id="domain">5. Domain logic &amp; Idempotency</h2>
-  <p class="note">v1 text: release decisions (§5.1, §5.2) and Shoutrrr notifications (§5.5) are replaced by the update-PR and ticket lifecycle (tracked as #187). §5.6 and §5.7 are the v2 job flow and scheduling. Ticket projects, status mapping and template mechanics (§5.3, §5.4) carry over; their variables change from release to update-PR data.</p>
-  <h3>5.1 Release decision (tag change)</h3>
-  <ol>
-    <li><strong>baseline</strong> — <code>last_known_tag</code> is NULL → store tag, no ticket.</li>
-    <li><strong>skip</strong> — tag identical to <code>last_known_tag</code> → do nothing.</li>
-    <li><strong>new tag</strong> — proceed to §5.2 (open ticket? policy?) → then <code>create</code>, <code>supersede</code>, <code>merge</code>, or <code>skip_open</code>.</li>
-    <li><strong>error</strong> — API error (except “no release”) → <code>last_error</code>, continue run.</li>
-  </ol>
-  <p>“No release”: GitHub/GitLab/Gitea/Forgejo/Codeberg 404 on latest release — not an error.</p>
-  <p><strong>Tag comparison:</strong> poll skip uses <strong>exact string equality</strong> between the fetched release tag and <code>last_known_tag</code> (no semver ordering). Provider tests may assert tag parsing separately; poll decisions never reorder tags.</p>
+  <h2 id="domain">5. Update PRs, Tickets &amp; Idempotency</h2>
+  <p>Renovate opens and maintains the update pull requests (§2); this section is what Release Ops does with them: it tracks each as an <strong>update PR</strong> (§5.1) and keeps <strong>one ticket per PR</strong> in sync (§5.2–§5.4). §5.6 and §5.7 are the job flow and scheduling. There is no release decision: a ticket exists because an update PR exists, never because an upstream project published a release (§1).</p>
 
-  <h3>5.2 Open ticket &amp; idempotency</h3>
-  <p>On a new tag, Go checks the linked ticket status (<code>open_ticket_external_id</code>) <strong>live</strong>, not only the local DB — the ticket may have been closed manually.</p>
-  <p>Status classification always via <code>ticket_projects.status_mapping</code> of the linked ticket project.</p>
+  <h3 id="update-pr-model">5.1 Update PR model</h3>
+  <h4>Source of truth: GitHub</h4>
+  <p><strong>GitHub is the source of truth for a PR's state.</strong> Release Ops learns it from two inputs and the Renovate report only enriches it:</p>
+  <ul>
+    <li><strong><code>pull_request</code> webhooks</strong> (<code>opened</code>, <code>reopened</code>, <code>edited</code>, <code>synchronize</code>, <code>closed</code>, <code>labeled</code>, <code>unlabeled</code>). For a bot PR (below) the handler upserts the <code>update_prs</code> row from the payload in the same transaction as the delivery record (§2.10): no GitHub call happens in the request path. The ticket engine (§5.2) is then woken.</li>
+    <li><strong>Reconcile.</strong> The app <strong>lists the open PRs authored by the App's bot user</strong> of a repository (<code>GET /repos/{owner}/{repo}/pulls?state=open</code>, all pages, conditional requests with <code>ETag</code>, keeping the PRs whose <code>user.id</code> is the bot's numeric id, §2.9) and compares them with the stored rows. A stored <code>open</code> PR that is no longer listed is fetched (<code>GET /repos/{owner}/{repo}/pulls/{number}</code>) and set to <code>merged</code> or <code>closed</code> as GitHub reports it. The reconcile runs after every job result for the repository (Renovate has just changed its PRs), hourly with the safety net (§5.7) and at startup, so a missed webhook is repaired. With <code>WEBHOOK_URL</code> unset it is the only input (§2.11). It draws on the installation's shared rate-limit budget (§2.8).</li>
+  </ul>
+  <h4>Identifying a bot PR</h4>
+  <p>A PR is an update PR when its <strong>author is the App's bot user</strong> (numeric id, never the login, §2.9) <strong>and</strong> its body carries Renovate's markers: the <code>&lt;!--renovate-debug:…--&gt;</code> comment Renovate appends to the body it generates from its body template, or a checkbox marker of the form <code> - [ ] &lt;!-- name --&gt;</code> (§2.9). It is <strong>never</strong> identified by <code>branchPrefix</code> or by its title: those are set in per-repository or preset configuration Release Ops cannot evaluate. A PR by the bot that has no marker (the "Enable repo" PR, §2.7, §7.5) is not an update PR.</p>
+  <h4>States</h4>
   <table>
-    <tr><th>Live status</th><th>Behavior on new tag</th></tr>
-    <tr><td>in <code>done</code> or <code>cancelled</code></td><td>clear <code>open_ticket_*</code> → normal <strong>create</strong></td></tr>
-    <tr><td>in <code>open</code></td><td>policy from <code>ticket_projects.on_open_ticket_policy</code> (§5.2.1)</td></tr>
-    <tr><td>unknown / API error</td><td><code>error</code> for repo; no new ticket</td></tr>
+    <tr><th><code>state</code></th><th>Meaning</th><th>How it is reached</th></tr>
+    <tr><td><code>open</code></td><td>The PR is open.</td><td>An <code>opened</code> or <code>reopened</code> event; the reconcile lists it.</td></tr>
+    <tr><td><code>merged</code></td><td>The PR was merged.</td><td>A <code>closed</code> event with <code>merged: true</code>, or the reconcile's fetch.</td></tr>
+    <tr><td><code>closed</code></td><td>Closed without being merged and not replaced.</td><td>A <code>closed</code> event with <code>merged: false</code> (by a person, or by Renovate), or the reconcile's fetch.</td></tr>
+    <tr><td><code>superseded</code></td><td>Closed without being merged <strong>because another bot PR replaced it</strong>.</td><td>A PR closed unmerged becomes <code>superseded</code> when an <code>open</code> update PR of the same repository carries a dependency with the same <code>name</code> and <code>manager</code> (and <code>datasource</code> when both known) as one of its dependencies; <code>superseded_by_id</code> points to it. The check runs when the PR is closed and again at the next report ingest or reconcile, because the replacement may appear after the close. Without enrichment (no manager) the name alone is compared. A PR for which no replacement is found stays <code>closed</code>.</td></tr>
   </table>
-
-  <h4>5.2.1 <code>on_open_ticket_policy</code></h4>
-  <table>
-    <tr><th>Policy</th><th>Action</th><th>Poll event</th></tr>
-    <tr><td><code>supersede</code> (default)</td><td>Create new ticket; add supersede comment on old ticket (with new-ticket URL); old ticket → <code>superseded</code> status</td><td><code>supersede</code> + <code>create</code></td></tr>
-    <tr><td><code>merge</code></td><td>Update existing ticket (title/description/tag); no second ticket</td><td><code>merge</code></td></tr>
-    <tr><td><code>skip_if_open</code></td><td>No ticket; optional notification</td><td><code>skip_open</code></td></tr>
-  </table>
-  <p><strong>Supersede execution order</strong> (policy <code>supersede</code>):</p>
+  <h4>Dependencies and what the report enriches</h4>
+  <p>The dependencies of a PR are the child list <code>update_pr_dependencies</code> (§4.5): a grouped PR has several. They come from two sources, and a PR's list is <strong>replaced as a set</strong> by whichever applies, never merged row by row:</p>
   <ol>
-    <li><strong>Create</strong> new ticket (title + description from templates — §5.4).</li>
-    <li>Resolve provider web URL for the new ticket → populate <code>.Supersede.NewTicketURL</code>.</li>
-    <li>Render <code>supersedeComment</code> template on the old ticket context.</li>
-    <li><strong>Update</strong> old ticket status → mapped <code>superseded</code> value.</li>
-    <li><strong>Add comment</strong> on old ticket with rendered supersede body (includes new-ticket URL when template references it).</li>
+    <li><strong>The Renovate report</strong> (<code>reportType=file</code>, §2.2), at each job result. The report's <code>repositories["owner/repo"].branches[]</code> entry whose <code>prNo</code> equals the PR's number (or, failing that, whose <code>branchName</code> equals the PR's head branch) carries an <code>upgrades[]</code> list; each upgrade becomes one dependency (<code>source = report</code>), and the branch's <code>sha</code> is stored as <code>update_prs.report_sha</code>.</li>
+    <li><strong>The PR body</strong>, at each PR event, <strong>only while the stored report dependencies are not for the PR's current head commit</strong> (<code>report_sha</code> is NULL or differs from <code>head_sha</code>): the body's updates table (Renovate's <code>prBodyColumns</code>; the columns <code>Package</code>, <code>Update</code> and <code>Change</code> are read) gives the name (the link text of <code>Package</code>), the update type (<code>Update</code>) and the from and to versions (<code>Change</code>, written <code>`from` -&gt; `to`</code>) with <code>source = body</code>. The columns are configurable in Renovate, so an unrecognised table yields no dependency, never a guess. A new push to the PR makes <code>head_sha</code> differ from <code>report_sha</code>, so the fresh body wins until the next report arrives and carries the matching <code>sha</code>.</li>
   </ol>
-  <p>Supersede comment body comes from <code>content_templates.supersedeComment</code> (or integration-kind default). Invalid template syntax → poll <code>error</code> for that repo (§5.4).</p>
-  <p>After successful <code>create</code> / <code>supersede</code>: update <code>open_ticket_external_id</code> and <code>open_ticket_tag</code>. After <code>merge</code>: only <code>open_ticket_tag</code>.</p>
+  <p>The report is <strong>enrichment only</strong>: its schema is experimental and unstable (§2.2), so a missing, unreadable or changed report never fails a job or changes a PR's state. Fields used, read from Renovate's source (<code>lib/instrumentation/types.ts</code> for the report, <code>lib/util/cache/repository/types.ts</code> for <code>BranchCache</code> and <code>BranchUpgradeCache</code>) and re-asserted against the pinned version by the fixture test (#222):</p>
+  <table>
+    <tr><th>Stored</th><th>Report field</th></tr>
+    <tr><td><code>update_pr_dependencies.name</code></td><td><code>upgrades[].depName</code> (else <code>packageName</code>)</td></tr>
+    <tr><td><code>.manager</code>, <code>.datasource</code></td><td><code>upgrades[].manager</code>, <code>upgrades[].datasource</code></td></tr>
+    <tr><td><code>.from_version</code></td><td><code>upgrades[].currentVersion</code> (else <code>currentValue</code>, else <code>currentDigest</code>)</td></tr>
+    <tr><td><code>.to_version</code></td><td><code>upgrades[].newVersion</code> (else <code>newValue</code>, else <code>newDigest</code>)</td></tr>
+    <tr><td><code>.update_type</code></td><td><code>upgrades[].updateType</code>, normalised: <code>major</code>, <code>minor</code>, <code>patch</code> as is; <code>digest</code> and <code>pinDigest</code> → <code>digest</code>; <code>lockFileMaintenance</code> and <code>lockfileUpdate</code> → <code>lockfile</code>; anything else (<code>pin</code>, <code>rollback</code>, <code>bump</code>, <code>replacement</code>, absent) → <code>other</code></td></tr>
+    <tr><td><code>update_prs.automerge</code></td><td><code>branches[].automerge</code></td></tr>
+    <tr><td><code>repositories.dashboard_issue_number</code></td><td><code>dependencyDashboardIssue</code></td></tr>
+  </table>
+  <p>The <strong>release notes are not in the report</strong>: <code>BranchUpgradeCache</code> has no release-notes field. They are read from the PR body (§5.4).</p>
+  <p>Every enrichment column is <strong>nullable</strong> (§4.5): where the report cannot supply a field the column stays NULL, and the PR-body parse above is the fallback for name, update type and the two versions; <code>manager</code> and <code>datasource</code> have no body fallback.</p>
+
+  <h3 id="ticket-rules">5.2 Ticket rules</h3>
+  <p><strong>One ticket per update PR.</strong> A grouped PR is one ticket that lists all its dependencies (the template ranges over them, §5.4). The ticket engine is a process of the app, woken by every write to <code>update_prs</code> and run periodically as a safety net (§5.7). It reads PR state and writes tickets and nothing else; it never calls GitHub except to upsert the PR comment (§5.2.3).</p>
+  <h4>Which PR gets a ticket</h4>
+  <p>A PR gets a ticket when <strong>all</strong> of these hold at the time the engine looks at it:</p>
+  <ol>
+    <li>It is an <strong>update PR</strong> (§5.1) in state <code>open</code>. A PR first seen already merged or closed gets no ticket: tickets follow open PRs.</li>
+    <li>It has <strong>at least one dependency</strong> (§5.1). This is how three kinds of bot PR are left out: <strong>no ticket is created for Renovate's config-migration PR, for onboarding PRs, or for any PR without dependencies</strong>, because none of them updates a dependency, so none has a report upgrade or an updates table. The onboarding PR the report names (<code>onboardingPrNumber</code>) is excluded explicitly as well. Release Ops never recognises these PRs by title or branch name.</li>
+    <li>The repository has a <strong>ticket project</strong> (below).</li>
+    <li>The PR passes the project's <strong>filter</strong> (below).</li>
+  </ol>
+  <h4>Ticket project of a repository</h4>
+  <p>The project is the repository's own <code>ticket_project_id</code> when set (the <strong>per-repository override</strong>), otherwise the installation's <code>default_ticket_project_id</code> (§4.1). With neither, the repository's PRs get no tickets, and the repositories page says so (§8.3).</p>
+  <h4>Ticket filter</h4>
+  <p>Each ticket project has a <code>filter</code> (§4.3), edited on the ticket-projects page. <strong>The default lets every non-automerged PR through.</strong></p>
+  <table>
+    <tr><th>Key</th><th>Type</th><th>Rule</th></tr>
+    <tr><td><code>updateTypes</code></td><td>array of <code>major</code>, <code>minor</code>, <code>patch</code>, <code>digest</code>, <code>lockfile</code></td><td>Empty (default) = every update type, including <code>other</code>. Otherwise the PR passes when <strong>at least one</strong> of its dependencies has one of the listed types; a dependency of type <code>other</code> or with no type matches only an empty list.</td></tr>
+    <tr><td><code>labels</code></td><td>array of strings</td><td>Empty (default) = no label restriction. Otherwise the PR passes when it carries <strong>at least one</strong> of the listed labels (exact name match).</td></tr>
+    <tr><td><code>skipAutomerged</code></td><td>boolean, default <code>true</code></td><td>When <code>true</code>, a PR with <code>automerge = 1</code> gets no ticket. An unknown value (NULL) counts as not automerged.</td></tr>
+  </table>
+  <p>The filter is evaluated on every PR event and report ingest, so a PR whose label is added later passes then. A ticket that already exists is <strong>never removed</strong> because the PR stops matching.</p>
+
+  <h4 id="ticket-lifecycle">5.2.1 Ticket lifecycle</h4>
+  <p>The ticket follows its PR. Status values come from the <code>status_mapping</code> of the ticket project the ticket was created in (§5.3, §4.5): <code>done[0]</code> and <code>cancelled[0]</code> (the <strong>first</strong> entry of each list) and <code>superseded</code> are the target statuses; <code>open</code>, <code>done</code> and <code>cancelled</code> classify a live status.</p>
+  <table>
+    <tr><th>PR event</th><th>Ticket action</th><th>Templates</th><th>Provider calls</th></tr>
+    <tr><td>An eligible PR appears (§5.2)</td><td><strong>Create</strong> (§5.2.2), then the PR comment (§5.2.3)</td><td><code>title</code>, <code>description</code></td><td><code>CreateTicket</code></td></tr>
+    <tr><td><strong>The same PR gets a new version</strong>: its dependency list hash differs from <code>synced_hash</code> (a new push, a new report)</td><td><strong>Update</strong> the ticket and <strong>add a note</strong>; <code>synced_hash</code> is stored</td><td><code>title</code>, <code>description</code>; the note: <code>updateComment</code></td><td><code>UpdateTicket</code> → <code>AddTicketComment</code></td></tr>
+    <tr><td><strong>The PR is replaced by a new PR</strong> (state <code>superseded</code>, §5.1)</td><td><strong>Supersede</strong> the old ticket: its status becomes the mapped <code>superseded</code> value and a comment links the new PR and, when it has one, the new PR's ticket. If the new PR is not yet ticketed, the supersede waits for its ticket; if the new PR gets no ticket (the filter, §5.2), the comment names the new PR only. This also applies to a ticket the engine had already moved to won't do because the PR was closed unmerged before its replacement appeared (see "Live status first")</td><td><code>supersedeComment</code></td><td><code>UpdateTicketStatus</code> → <code>AddTicketComment</code></td></tr>
+    <tr><td><strong>The PR is merged</strong></td><td>Ticket → <strong>done</strong></td><td>—</td><td><code>UpdateTicketStatus</code> (<code>done[0]</code>)</td></tr>
+    <tr><td><strong>The PR is closed unmerged</strong> and no replacement is found yet (§5.1)</td><td>Ticket → <strong>won't do</strong> (<code>cancelled</code>); a replacement found later supersedes it</td><td>—</td><td><code>UpdateTicketStatus</code> (<code>cancelled[0]</code>)</td></tr>
+  </table>
+  <ul>
+    <li><strong>Live status first.</strong> Before an update or a transition the engine reads the ticket's live status (<code>GetTicketStatus</code>) and classifies it with <code>status_mapping</code>, then compares the class with the ticket's stored <code>state</code> (§4.5), which records the last transition Release Ops made. A live class that <strong>equals</strong> the stored <code>state</code> means nobody changed the ticket outside Release Ops. A live class that <strong>differs</strong> (a ticket closed, reopened or moved by hand) means the ticket is <strong>left alone</strong>: not reopened, not edited, not superseded, no new ticket for the PR. The one operation allowed on a ticket whose live class equals its stored <code>state</code> <code>cancelled</code> is the supersede: a ticket the engine moved to won't do because its PR was closed unmerged is still moved to the mapped <code>superseded</code> value and linked when the supersede check (§5.1) later finds the replacing PR. A ticket whose stored <code>state</code> is <code>done</code> or <code>superseded</code> gets no further operation. An unclassifiable status or an API error is retried with backoff and shown in the Problems view; it is never guessed.</li>
+    <li>The ticket's own <code>state</code> (§4.5) records the last transition Release Ops made; it is what the dashboard shows. A page load never calls the ticket system.</li>
+    <li><strong>Ordering.</strong> The engine handles one ticket's events in order and never runs two operations on one ticket at once. Template syntax that fails to render fails that one operation with a message (no silent fallback, §5.4) and is retried after the admin fixes the template.</li>
+    <li>A PR merged or closed while its ticket creation is still unconfirmed (§5.2.2) first reconciles the creation, then the transition follows.</li>
+  </ul>
+
+  <h4 id="at-most-once">5.2.2 At-most-once creation</h4>
+  <p>A ticket must never be created twice for one PR, and a failed create must never block the PR for good. The pattern the v1 engine used for one release tag now protects one PR:</p>
+  <ol>
+    <li><strong>Marker before the call.</strong> The engine inserts the <code>update_tickets</code> row (state <code>pending</code>) and sets <code>pending_since</code> <strong>before</strong> calling <code>CreateTicket</code>. The create call carries the <strong>external key</strong> (the row's <code>id</code>): the engine appends the line <code>Release Ops key: &lt;id&gt;</code> to the ticket description <strong>outside the template</strong>, so an admin's template cannot drop it and a lookup can find the ticket.</li>
+    <li><strong>The link write clears it.</strong> The write that stores <code>external_id</code> and <code>external_url</code> sets the state to <code>open</code> and clears <code>pending_since</code> in <strong>one transaction</strong>. Nothing else clears a marker that may have a ticket behind it.</li>
+    <li><strong>A failed create.</strong> The marker is cleared at once only when the ticket system <strong>cannot have stored a ticket</strong>: it answered with a 4xx status (408 and 429 included), or the request never left (DNS failure, connection refused, any failure before the request was sent). The next attempt is scheduled with backoff. After any other failure (a 5xx, a timeout, a 2xx answer with an unreadable body or no ID, a shutdown or cancellation while the request was in flight) <strong>the marker stays set</strong>.</li>
+    <li><strong>A stuck marker is reconciled, not looped on.</strong> While the marker is set the engine creates nothing for that PR. Once a short grace period has passed (§2.12) it <strong>looks the ticket up by the external key</strong> (<code>FindTicketByKey</code>, §6.1) in the ticket project: <em>found</em> → the link is stored and the marker cleared (step 2); <em>definitely not found</em> → the marker is cleared and the create is retried (step 1); the lookup <em>failing</em> → the marker stays and the lookup is retried with backoff, with the error shown in the Problems view. A timeout or 5xx therefore ends in a link or in a retry, <strong>never in a permanent error loop</strong> (the v1 gap: a marker with no way to clear it).</li>
+    <li><strong>Crash safety.</strong> The row and the marker are written before the call, and the link and the marker clear together after it. A crash between them leaves a marker, which the lookup resolves at the next start.</li>
+  </ol>
+  <p>Residual risk, stated: a ticket system whose search index lags can answer "not found" for a ticket it just stored, so a retried create can make a duplicate. The key line in the description lets a person recognise it. The same reconcile covers the PR comment (§5.2.3), which looks for its own marker before posting.</p>
+
+  <h4 id="pr-comment">5.2.3 The ticket link on the PR</h4>
+  <p>The ticket link is a <strong>comment by the App's bot user on the PR</strong>, written by the engine after the link is stored (§5.2.2):</p>
+  <ul>
+    <li>The comment starts with the hidden marker <code>&lt;!-- release-ops:ticket --&gt;</code> and contains the link to the ticket and its Release Ops state. Its text is fixed by Release Ops, not a template.</li>
+    <li><strong>Upserted, not re-posted.</strong> When <code>pr_comment_id</code> is stored the comment is <strong>edited in place</strong> (<code>PATCH /repos/{owner}/{repo}/issues/comments/{id}</code>) whenever its body changes (a new state, a supersede); if GitHub answers 404 the comment is gone and one new comment is posted and its id stored. When no id is stored the PR's comments are listed first and a comment by the bot with the marker is adopted, so a crash between posting and storing cannot post twice. <code>pr_comment_hash</code> avoids an edit when nothing changed.</li>
+    <li><strong>Never the PR body.</strong> Renovate owns the body and rewrites it (it hashes the body it would generate and replaces a body that differs), so nothing of Release Ops is ever written into it.</li>
+    <li>A comment write that fails is retried with backoff and does not hold back the ticket.</li>
+    <li>Assumption, to be confirmed on the first deployment (#232): Renovate does not edit or delete comments it did not write.</li>
+  </ul>
+  <h4>Not in v2.0</h4>
+  <ul>
+    <li><strong>Ticket → PR.</strong> One direction only: nothing a person does to a ticket (closing, moving, commenting) acts on the PR.</li>
+    <li><strong>No check run or commit status</strong> on the PR for the ticket; the comment is the only link.</li>
+    <li><strong>No ticket-first mode:</strong> Release Ops does not inject <code>prBodyNotes</code> or a ticket key into Renovate's configuration, so Renovate opens a PR before any ticket exists.</li>
+  </ul>
 
   <h3 id="ticket-projects">5.3 Ticket projects &amp; status mapping</h3>
-  <p>UI flow: create integration (credentials) → define <strong>ticket projects</strong> below → monitored repo selects a <code>ticket_project_id</code>.</p>
+  <p>UI flow: create integration (credentials) → define <strong>ticket projects</strong> below → an admin sets the installation's default ticket project and, optionally, a ticket project per repository (§5.2).</p>
 
   <h4><code>create_config</code> (when creating a ticket)</h4>
   <pre><code>// kaneo — ticket_projects.external_project_id = projectId; workspaceId = Kaneo workspace (used for task web links)
@@ -809,10 +968,10 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
 }</code></pre>
   <table>
     <tr><th>Key</th><th>Type</th><th>Description</th></tr>
-    <tr><td><code>open</code></td><td>array</td><td>Status counts as “still open” — no new ticket without policy</td></tr>
-    <tr><td><code>done</code></td><td>array</td><td>Completed — next release creates a fresh ticket</td></tr>
-    <tr><td><code>cancelled</code></td><td>array</td><td>Cancelled — treat like done</td></tr>
-    <tr><td><code>superseded</code></td><td>string</td><td>Target status for policy <code>supersede</code> (single value)</td></tr>
+    <tr><td><code>open</code></td><td>array</td><td>Status counts as “still open”: the ticket may be updated (§5.2.1)</td></tr>
+    <tr><td><code>done</code></td><td>array</td><td>Completed. Classifies a live status (a ticket closed by hand is left alone, §5.2.1); the <strong>first</strong> entry is the target when the PR is merged</td></tr>
+    <tr><td><code>cancelled</code></td><td>array</td><td>Cancelled / won't do. Classifies a live status like <code>done</code>; the <strong>first</strong> entry is the target when the PR is closed unmerged</td></tr>
+    <tr><td><code>superseded</code></td><td>string</td><td>Target status when the PR is replaced by a new PR (single value, §5.2.1)</td></tr>
   </table>
 
   <h4>Provider notes</h4>
@@ -830,66 +989,69 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   "superseded": "state-uuid-canceled"
 }</code></pre>
 
-  <h3>5.4 Ticket content (all providers)</h3>
+  <h3 id="ticket-content">5.4 Ticket content (all providers)</h3>
   <p>
-    Ticket title, description, and supersede comment are rendered from per–ticket-project templates stored in
+    Ticket title, description, update note and supersede comment are rendered from per–ticket-project templates stored in
     <code>ticket_projects.content_templates</code>. Templates use Go <code>text/template</code> syntax with dot paths
-    (e.g. <code>{{ .Release.Tag }}</code>). Renderer uses <code>missingkey=zero</code>.
+    (e.g. <code>{{ .PullRequest.Title }}</code>). Renderer uses <code>missingkey=zero</code>.
   </p>
+  <p>The release-based template contract that the code still implements until #213 is kept in <a href="#v1-templates">Appendix A</a>; it is not the contract of this section.</p>
 
-  <h4><code>content_templates</code> JSON shape</h4>
+  <p><strong>Content is data, never template source.</strong> The PR's title, body, labels, dependency names, versions and release notes come from GitHub and Renovate, which repository owners and package authors control. They reach the renderer only as <strong>plain-string values of the context</strong> (no methods, no nested templates): a value is never parsed as a template, so <code>{{ ... }}</code> inside a PR title or a release note is output literally. Only the admin-authored template string is parsed. The web UI shows all of it through React escaping, and link URLs are built server-side.</p>
+
+  <h4>v2 <code>content_templates</code> JSON shape</h4>
   <pre><code>{
-  "title": "Release: {{ .Repo.SourceKind }} {{ .Repo.ProjectPath }} {{ .Release.Tag }}",
-  "description": "**Source:** {{ .Repo.SourceKind }}\n**Repository:** {{ .Repo.ProjectPath }} ({{ .Repo.URL }})\n\n**Release:** {{ .Release.Tag }} — {{ .Release.Name }}\n**URL:** {{ .Release.URL }}\n**Published:** {{ .Release.PublishedAt }}\n**Pre-release:** {{ yesNo .Release.IsPrerelease }}\n\n**Previous tag:** {{ .Previous.Tag }}\n\n**Release notes:**\n{{ .Release.Notes }}",
-  "supersedeComment": "Superseded: {{ .Supersede.OldTag }} → {{ .Supersede.NewTag }}\n{{ .Release.URL }}\n\nNew ticket: {{ .Supersede.NewTicketURL }}"
+  "title": "{{ .PullRequest.Title }} ({{ .Repository }})",
+  "description": "**Repository:** {{ .Repository }}\n**Pull request:** [#{{ .PullRequest.Number }} {{ .PullRequest.Title }}]({{ .PullRequest.URL }})\n\n**Dependencies:**\n{{ range .Dependencies }}- {{ .Name }}: {{ .From }} → {{ .To }} ({{ .UpdateType }})\n{{ end }}\n**Release notes:**\n{{ .ReleaseNotes }}",
+  "updateComment": "Pull request updated:\n{{ range .Dependencies }}- {{ .Name }}: {{ .From }} → {{ .To }} ({{ .UpdateType }})\n{{ end }}{{ .PullRequest.URL }}",
+  "supersedeComment": "Superseded by {{ .Supersede.NewPullRequest.URL }}\nNew ticket: {{ .Supersede.NewTicketURL }}"
 }</code></pre>
   <table>
     <tr><th>Key</th><th>Used on</th><th>Description</th></tr>
-    <tr><td><code>title</code></td><td><code>create</code>, <code>merge</code>, <code>supersede</code> (new ticket)</td><td>Ticket title sent to provider</td></tr>
-    <tr><td><code>description</code></td><td><code>create</code>, <code>merge</code>, <code>supersede</code> (new ticket)</td><td>Ticket body (markdown for Kaneo/Linear; plain text for Jira)</td></tr>
-    <tr><td><code>supersedeComment</code></td><td><code>supersede</code> (comment on old ticket)</td><td>Comment body after new ticket exists (§5.2.1)</td></tr>
+    <tr><td><code>title</code></td><td>create, update</td><td>Ticket title sent to the provider</td></tr>
+    <tr><td><code>description</code></td><td>create, update</td><td>Ticket body (markdown for Kaneo/Linear; plain text for Jira). The engine appends the key line of §5.2.2 after it</td></tr>
+    <tr><td><code>updateComment</code></td><td>update (the same PR gets a new version)</td><td>The note added to the ticket (§5.2.1)</td></tr>
+    <tr><td><code>supersedeComment</code></td><td>supersede (comment on the old ticket)</td><td>Comment body added when the old ticket is superseded (§5.2.1)</td></tr>
   </table>
   <p>
-    Empty string for a key → use integration-kind default template (Go constants — not DB seed).
+    Empty string for a key → use the integration-kind default template (Go constants — not DB seed).
     Kaneo and Linear defaults use markdown; Jira defaults use plain text (existing ADF path).
-    Invalid template syntax at render time → poll <code>error</code> for that repo; no silent fallback.
+    Invalid template syntax is rejected when the ticket project is saved, and one that fails at render time fails that ticket operation with a message (no silent fallback).
   </p>
 
-  <h4>MVP template variables</h4>
+  <h4>Template variables</h4>
   <table>
-    <tr><th>Template path</th><th>Description</th><th>Available on</th></tr>
-    <tr><td><code>.Repo.SourceKind</code></td><td><code>monitored_repos.source_kind</code></td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Repo.ProjectPath</code></td><td><code>monitored_repos.project_path</code></td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Repo.URL</code></td><td>Repository web URL (derived from source kind + integration base URL + path)</td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Release.Tag</code></td><td>Latest release tag</td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Release.Name</code></td><td>Release name/title from source API</td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Release.URL</code></td><td>Release page URL</td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Release.Notes</code></td><td>Release body/changelog text from source API</td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Release.PublishedAt</code></td><td>Release timestamp (RFC3339 UTC string in templates)</td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Release.IsPrerelease</code></td><td>Whether the release is a pre-release (<code>true</code>/<code>false</code>)</td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Previous.Tag</code></td><td><code>last_known_tag</code> before this poll action</td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Supersede.OldTag</code></td><td>Tag on the open ticket being superseded</td><td>supersede comment; also populated on supersede new-ticket render (use <code>.Previous.Tag</code> for create/merge)</td></tr>
-    <tr><td><code>.Supersede.NewTag</code></td><td>New release tag</td><td>supersede comment only</td></tr>
-    <tr><td><code>.Supersede.NewTicketURL</code></td><td>Provider web URL for the ticket created during supersede</td><td>supersede comment only (after step 1 in §5.2.1)</td></tr>
+    <tr><th>Template path</th><th>Description</th><th>Available in</th></tr>
+    <tr><td><code>.PullRequest.URL</code></td><td>The PR's web URL</td><td>all keys</td></tr>
+    <tr><td><code>.PullRequest.Number</code></td><td>The PR number</td><td>all keys</td></tr>
+    <tr><td><code>.PullRequest.Title</code></td><td>The PR title as GitHub reports it</td><td>all keys</td></tr>
+    <tr><td><code>.Repository</code></td><td>The repository's full name, <code>owner/repo</code></td><td>all keys</td></tr>
+    <tr><td><code>.Dependencies</code></td><td>The PR's dependencies (§4.5), a list: <code>{{ range .Dependencies }}…{{ end }}</code>; empty items are empty strings, never an error</td><td>all keys</td></tr>
+    <tr><td><code>.Name</code>, <code>.From</code>, <code>.To</code>, <code>.UpdateType</code></td><td>Inside the range: the dependency's name, current version, new version and update type (<code>major</code>, <code>minor</code>, <code>patch</code>, <code>digest</code>, <code>lockfile</code>, <code>other</code>; empty when unknown)</td><td>all keys</td></tr>
+    <tr><td><code>.ReleaseNotes</code></td><td>The release notes (below), truncated</td><td>title, description, updateComment</td></tr>
+    <tr><td><code>.Supersede.NewPullRequest.URL</code>, <code>.Number</code>, <code>.Title</code></td><td>The PR that replaced this one</td><td>supersedeComment only</td></tr>
+    <tr><td><code>.Supersede.NewTicketURL</code></td><td>Web URL of the replacing PR's ticket; empty when it has none</td><td>supersedeComment only</td></tr>
   </table>
-  <p>Template helper functions (MVP): <code>formatRFC3339</code>, <code>formatDate</code>, <code>yesNo</code> (for booleans in plain text).</p>
+  <p>The v1 variables are removed: <code>.Repo.SourceKind</code>, <code>.Repo.ProjectPath</code> and <code>.Repo.URL</code> (use <code>.Repository</code>), <code>.Release.*</code> and <code>.Previous.Tag</code> (an update PR has no release; use <code>.Dependencies</code> and <code>.ReleaseNotes</code>), <code>.Supersede.OldTag</code> and <code>.Supersede.NewTag</code> (use the PR variables). <code>.Supersede.NewTicketURL</code> keeps its name. Template helper functions: <code>formatRFC3339</code>, <code>formatDate</code>, <code>yesNo</code>.</p>
+
+  <h4><code>.ReleaseNotes</code></h4>
+  <ul>
+    <li><strong>Source: the PR body, not the report.</strong> Renovate gathers release notes while it builds the PR and renders them into the body under the heading <code>### Release Notes</code>, one <code>&lt;details&gt;</code> block per dependency, wrapped in horizontal rules (<code>lib/workers/repository/update/pr/body/changelogs.ts</code> and <code>lib/workers/repository/update/pr/changelog/hbs-template.ts</code>). The report's upgrade entries carry no release notes (§5.1). The app extracts the text from that heading to the closing <code>---</code> rule of the body it receives from GitHub (the webhook payload or the reconcile fetch) and stores it in <code>update_prs.release_notes</code>.</li>
+    <li><strong>Truncated to 4,000 characters</strong> (the limit fits Jira and Linear description limits), ending in an ellipsis (<code>…</code>) when cut; the ellipsis counts toward the 4,000. The text is passed through otherwise unchanged, including its markdown and HTML, and Kaneo's own comment limit of §6.2 applies on top.</li>
+    <li>Empty when the body has no such section (no notes found, <code>fetchChangeLogs</code> off, or a custom body template that drops them). A body whose section Release Ops cannot find gives an empty value, never an error.</li>
+  </ul>
+
+  <h4>Default templates (when a key is empty)</h4>
+  <table>
+    <tr><th>Key</th><th>Default value</th></tr>
+    <tr><td><code>title</code></td><td><code>{{ .PullRequest.Title }} ({{ .Repository }})</code></td></tr>
+    <tr><td><code>description</code></td><td>Markdown (Kaneo/Linear) or plain text (Jira): repository, PR number, title and URL, the dependency list (name, from, to, update type) and the release notes</td></tr>
+    <tr><td><code>updateComment</code></td><td>The dependencies and versions the PR now carries, and the PR URL</td></tr>
+    <tr><td><code>supersedeComment</code></td><td>The replacing PR's URL and, when it has one, its ticket's URL</td></tr>
+  </table>
 
   <h4>Write actions</h4>
-  <table>
-    <tr><th>Poll action</th><th>Templates rendered</th><th>Provider calls</th></tr>
-    <tr><td><code>create</code></td><td><code>title</code>, <code>description</code></td><td><code>CreateTicket</code></td></tr>
-    <tr><td><code>merge</code></td><td><code>title</code>, <code>description</code></td><td><code>UpdateTicket</code> (title + description)</td></tr>
-    <tr><td><code>supersede</code></td><td><code>title</code> + <code>description</code> on new ticket; <code>supersedeComment</code> on old ticket</td><td><code>CreateTicket</code> → <code>UpdateTicketStatus</code> → <code>AddTicketComment</code> (order §5.2.1)</td></tr>
-  </table>
-  <p><code>UpdateTicketStatus</code> does not use templates.</p>
-
-  <h4>Legacy hardcoded defaults (when all template keys empty)</h4>
-  <table>
-    <tr><th>Field</th><th>Default value</th></tr>
-    <tr><td><code>title</code></td><td><code>Release: {source_kind} {project_path} {tag}</code></td></tr>
-    <tr><td><code>description</code></td><td>Markdown (Kaneo/Linear) or plain text (Jira): repo source/path/URL, release tag/name/URL/notes/publishedAt/isPrerelease, previous tag</td></tr>
-    <tr><td><code>supersedeComment</code></td><td>Old tag → new tag, release URL, new ticket URL</td></tr>
-  </table>
+  <p>The table of §5.2.1 lists, per lifecycle event, the templates rendered and the provider calls made. <code>UpdateTicketStatus</code> does not use templates.</p>
 
   <h4>API calls (verify implementation)</h4>
   <table>
@@ -898,14 +1060,16 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <tr><td>Jira</td><td>Basic</td><td><code>POST /rest/api/3/issue</code></td><td>Transition + comment</td></tr>
     <tr><td>Linear</td><td>API Key header</td><td>GraphQL <code>issueCreate</code></td><td><code>issueUpdate</code> + comment</td></tr>
   </table>
+  <p>The lookup by external key (<code>FindTicketByKey</code>, §6.1) is a search of the ticket project for the key line of §5.2.2; how each provider searches (Jira JQL, Linear issue filter, Kaneo task search) is an open question (§5.8).</p>
 
-  <h3 id="notifications">5.5 Notifications (Shoutrrr)</h3>
+  <h3 id="notifications">5.5 Notifications (removed)</h3>
+  <p>v2 has <strong>no notifications</strong>. Release Ops sends no email, no Slack, no Shoutrrr message and no webhook of its own: the ticket systems already notify on ticket creation and assignment, and GitHub notifies on PRs. The v1 <code>notification_targets</code> and <code>monitored_repo_notifications</code> tables, the Shoutrrr library, the <code>/notifications</code> page and the notification-target endpoints do not exist. The one signal not otherwise covered is <strong>failure</strong>, and it is surfaced three ways:</p>
   <ul>
-    <li>Library: <code>github.com/containrrr/shoutrrr</code> in the Go process — no custom Slack/Discord/Telegram integrations.</li>
-    <li>UI: Shoutrrr URL per target (e.g. <code>slack://…</code>, <code>ntfy://…</code>, <code>generic://…</code>), encrypted in DB.</li>
-    <li>Events: <code>create</code>, <code>error</code>, <code>supersede</code> (configurable per target).</li>
-    <li>After ticket actions and on poll errors: send to all matching targets (globally enabled, optional repo filter).</li>
+    <li>the <strong>Problems view</strong> (§7.7, §8.3): job errors, ticket creation errors, rate limits and lost App permissions;</li>
+    <li><strong><code>/metrics</code></strong> (§7.8): failure counters, queue age and the rate-limit gauge, with example alert rules in the customer documentation (#223);</li>
+    <li><strong><code>/healthz</code> and <code>/readyz</code></strong> (§7.8): liveness, and readiness with a non-secret reason.</li>
   </ul>
+  <p>A generic error webhook for operators without Prometheus is not in v2.0 (§13).</p>
 
   <h3>5.6 Job run flow</h3>
   <p>The v1 poll run (one global run over every repository, guarded by a mutex) is replaced by one job per repository (§2.8):</p>
@@ -914,7 +1078,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <li><strong>Claim.</strong> A worker with a free slot long-polls (§2.1) and receives the next eligible job: highest priority first, then oldest, under the concurrency cap, the reserved slot and the one-job-per-repository rule. The job becomes <code>running</code> with a lease.</li>
     <li><strong>Token.</strong> The worker asks for the installation token; the app mints it for the target repository, the preset repositories and the global config repository when one is configured (§2.2).</li>
     <li><strong>Prepare and run.</strong> The worker fetches (or mounts) the global config and tools (§2.4), starts Renovate as the second Unix user with the environment of §2.2, and heartbeats. Renovate processes the whole repository.</li>
-    <li><strong>Result.</strong> The worker posts the outcome (§2.1). The app records it (<code>succeeded</code> or <code>failed</code>), passes the repository to the PR-state sync and ticket engine (tracked as #187) and frees the repository.</li>
+    <li><strong>Result.</strong> The worker posts the outcome (§2.1). The app records it (<code>succeeded</code> or <code>failed</code>), ingests the report, passes the repository to the PR-state sync (reconcile, §5.1) and wakes the ticket engine (§5.2), and frees the repository.</li>
     <li><strong>Follow-up.</strong> With <code>rerun_requested</code> set, the app enqueues one high-priority follow-up job. After a failure the job is retried with backoff (§2.8). A lease that expires without a result is reaped (§2.8).</li>
   </ol>
 
@@ -924,125 +1088,88 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <li><strong>Safety net:</strong> hourly, a normal-priority job per eligible repository (§2.9).</li>
     <li><strong>Reconcile:</strong> installations and repositories, at start and hourly (§3.4, §2.11).</li>
     <li><strong>Redelivery of failed webhook deliveries:</strong> at start and every 15 minutes (§2.11).</li>
+    <li><strong>PR reconcile:</strong> open bot PRs of every enabled repository, hourly with the safety net and after every job result (§5.1).</li>
+    <li><strong>Ticket engine:</strong> woken by every PR write, and run periodically as a safety net for retries and unconfirmed creations (interval: §2.12, §5.2.2).</li>
+    <li><strong>Retention:</strong> a daily pass deletes finished jobs older than 30 days with their history (§4.6) and delivery records past their retention (§2.10).</li>
     <li><strong>Reaper:</strong> expired leases (§2.8).</li>
     <li><strong>Polling fallback</strong> without <code>WEBHOOK_URL</code> (§2.11).</li>
     <li>Admin "run now" per repository (§3.10) is an on-demand high-priority job.</li>
   </ul>
 
+  <h3 id="ticket-open">5.8 Open questions of the update PR and ticket model</h3>
+  <p>Not settled by the brief, the plan or the documentation; to be decided during implementation or by the maintainer:</p>
+  <ul>
+    <li><strong>The provider lookup.</strong> How each ticket system searches by the key line (Jira JQL text search, Linear issue filter, Kaneo task search) and whether each can do it reliably (§5.2.2). A provider that cannot is a gap the lookup cannot close.</li>
+    <li><strong>Ticket-engine timings:</strong> the retry backoff and the grace period before an unconfirmed creation is looked up (§2.12).</li>
+    <li><strong>A reopened PR.</strong> A PR that goes from closed back to open keeps its ticket as it is: a ticket moved to won't do or superseded is not moved back, and no second ticket is created. Whether it should reopen the ticket is not decided.</li>
+    <li><strong>No manual clear of an unconfirmed creation.</strong> v2.0 has the lookup (§5.2.2) and no admin action that clears a marker by hand.</li>
+    <li><strong>PRs whose body Release Ops cannot read.</strong> A custom Renovate body template can leave a PR with no updates table; without a report entry it has no dependencies and so no ticket (§5.2). Whether such a PR should get a ticket without a dependency list is not decided.</li>
+    <li><strong>Renovate and foreign comments</strong> (§5.2.3): that Renovate leaves the bot's comment alone is an assumption, confirmed on the first deployment.</li>
+  </ul>
+
   <h2 id="providers">6. Provider interfaces (Go)</h2>
-  <p class="note">The source providers (§6.1–§6.3) and Shoutrrr (§6.5) are v1 and removed in v2; the ticket providers (§6.4) stay.</p>
-  <pre><code>type Release struct {
-    Tag          string
-    Name         string
-    URL          string
-    Notes        string    // release body / changelog from source API
-    PublishedAt  time.Time
-    IsPrerelease bool      // from source API pre-release flag
-}
+  <p>Only the <strong>ticket providers</strong> (Kaneo, Jira, Linear) are provider interfaces in v2. The v1 source providers (GitHub, GitLab, Gitea, Forgejo, Codeberg release fetching) and the Shoutrrr notifier do not exist: Renovate discovers updates (§2), GitHub is reached through the App (§3.4), and there are no notifications (§5.5).</p>
 
-type SourceProvider interface {
-    GetLatestRelease(ctx context.Context, projectPath string, opts ReleaseOptions) (*Release, error)
-    // (*Release, nil) = no release; (nil, err) = real error
-}
-
-type ReleaseOptions struct {
-    IncludePrereleases bool // from monitored_repos.include_prereleases
-}
-
-// Source factory: github | gitlab | gitea-compatible (gitea, forgejo, codeberg)</code></pre>
-  <p><code>gitea</code>, <code>forgejo</code>, and <code>codeberg</code> use the same <code>GiteaCompatibleSource</code> client; difference is only default <code>base_url</code> and whether <code>source_integration_id</code> is required.</p>
-  <pre><code>
-type TicketProject struct {
-    ID                 string
-    IntegrationID      string
-    ExternalProjectID  string
-    CreateConfig       map[string]any
-    StatusMapping      StatusMapping
-    ContentTemplates   ContentTemplates
-    OnOpenTicketPolicy string // supersede | merge | skip_if_open
+  <h3>6.1 Ticket providers</h3>
+  <pre><code>type TicketProject struct {
+    ID                string
+    IntegrationID     string
+    ExternalProjectID string
+    CreateConfig      map[string]any
+    StatusMapping     StatusMapping
+    ContentTemplates  ContentTemplates
+    Filter            TicketFilter // updateTypes, labels, skipAutomerged (§5.2)
 }
 
 type ContentTemplates struct {
     Title            string // empty → integration-kind default
     Description      string
+    UpdateComment    string `json:"updateComment"`
     SupersedeComment string `json:"supersedeComment"`
 }
 
 type StatusMapping struct {
     Open        []string
-    Done        []string
-    Cancelled   []string
-    Superseded  string
+    Done        []string // Done[0] is the target when the PR is merged
+    Cancelled   []string // Cancelled[0] is the target when the PR is closed unmerged
+    Superseded  string   // target when the PR is superseded
     // Linear post-MVP: OpenTypes, DoneTypes, CancelledTypes []string
 }
 
 type TicketInput struct {
     Title       string
-    Description string
+    Description string // rendered template + the key line of §5.2.2
+    Key         string // external key (update_tickets.id)
     Project     TicketProject
 }
 
 type TicketProvider interface {
     CreateTicket(ctx context.Context, input TicketInput) (externalID string, err error)
+    // FindTicketByKey searches the project for the ticket carrying key (§5.2.2).
+    // (id, true, nil) found; ("", false, nil) definitely not found; err = lookup failed.
+    FindTicketByKey(ctx context.Context, project TicketProject, key string) (externalID string, found bool, err error)
     GetTicketStatus(ctx context.Context, externalID string) (status string, err error)
     UpdateTicketStatus(ctx context.Context, externalID, status string) error
     AddTicketComment(ctx context.Context, externalID, body string) error
-    UpdateTicket(ctx context.Context, externalID string, title, description string) error // merge policy
+    UpdateTicket(ctx context.Context, externalID string, title, description string) error
+    TicketWebURL(project TicketProject, externalID string) (string, error)
 }
 
 // ClassifyStatus maps raw provider status → open | done | cancelled | unknown
-func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
+func ClassifyStatus(mapping StatusMapping, rawStatus string) string
 
-  <h3>6.1 Source: GitHub</h3>
-  <ul>
-    <li>Default (<code>include_prereleases = 0</code>): <code>GET https://api.github.com/repos/{projectPath}/releases/latest</code></li>
-    <li>When <code>include_prereleases = 1</code>: <code>GET .../releases?per_page=100</code> — exclude drafts; pick newest by <code>published_at</code> (pre-releases included)</li>
-    <li>Headers: <code>Accept: application/vnd.github+json</code>, <code>X-GitHub-Api-Version: 2022-11-28</code>, <code>User-Agent: release-ops</code></li>
-    <li><code>Authorization: Bearer</code> when token in integration</li>
-    <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>name</code>→<code>Name</code>, <code>html_url</code>→<code>URL</code>, <code>body</code>→<code>Notes</code>, <code>published_at</code>→<code>PublishedAt</code>, <code>prerelease</code>→<code>IsPrerelease</code></li>
-  </ul>
+// CreateDefinitelyNotStored reports whether a CreateTicket error proves the ticket
+// system stored no ticket (4xx, or the request never left), so the pending marker
+// may be cleared at once (§5.2.2).
+func CreateDefinitelyNotStored(err error) bool</code></pre>
+  <p>The providers and the template renderer of v1 are kept; v2 adds <code>FindTicketByKey</code>, the update and transition calls the lifecycle needs, and the new template context (§5.4).</p>
 
-  <h3>6.2 Source: GitLab</h3>
-  <ul>
-    <li>Default: <code>GET {base_url}/api/v4/projects/{urlencoded_path}/releases/permalink/latest</code></li>
-    <li>When <code>include_prereleases = 1</code>: <code>GET .../releases</code> — pick newest by <code>released_at</code></li>
-    <li><code>projectPath</code> → URL-encode (<code>/</code> → <code>%2F</code>)</li>
-    <li>Header: <code>PRIVATE-TOKEN: {token}</code></li>
-    <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>name</code>→<code>Name</code>, <code>_links.self</code> or <code>assets.links</code>→<code>URL</code>, <code>description</code>→<code>Notes</code>, <code>released_at</code>→<code>PublishedAt</code>, pre-release flag from release metadata→<code>IsPrerelease</code></li>
-    <li>404 = no release</li>
-  </ul>
-
-  <h3>6.3 Source: Gitea / Forgejo / Codeberg (Gitea API)</h3>
-  <p>Gitea, Forgejo, and Codeberg share the same REST API (<code>/api/v1</code>). Go implementation: one <code>GiteaCompatibleSource</code> client; <code>kind</code> controls default <code>base_url</code> and UI label.</p>
-  <table>
-    <tr><th>kind</th><th>Default <code>base_url</code></th><th><code>source_integration_id</code></th></tr>
-    <tr><td><code>gitea</code></td><td>from integration (instance root)</td><td>Required</td></tr>
-    <tr><td><code>forgejo</code></td><td>from integration (instance root)</td><td>Required</td></tr>
-    <tr><td><code>codeberg</code></td><td><code>https://codeberg.org</code> (fixed)</td><td>optional (token recommended)</td></tr>
-  </table>
-  <ul>
-    <li>Default: <code>GET {base_url}/api/v1/repos/{owner}/{repo}/releases/latest</code></li>
-    <li>When <code>include_prereleases = 1</code>: <code>GET .../releases</code> — exclude drafts; pick newest by <code>published_at</code></li>
-    <li><code>projectPath</code> = <code>owner/repo</code> (like GitHub)</li>
-    <li>Header with token: <code>Authorization: token {token}</code> (Gitea standard)</li>
-    <li>Mapping: <code>tag_name</code>→<code>Tag</code>, <code>name</code>→<code>Name</code>, <code>html_url</code>→<code>URL</code>, <code>body</code>→<code>Notes</code>, <code>published_at</code>→<code>PublishedAt</code>, <code>prerelease</code>→<code>IsPrerelease</code></li>
-    <li>404 = no release; returns latest non-prerelease, non-draft release (Forgejo/GitHub-compatible)</li>
-    <li>Connectivity test: with a token <code>GET {base_url}/api/v1/user</code>; without one (token optional, §4.2) <code>GET {base_url}/api/v1/version</code> with no <code>Authorization</code> header (<a href="#providers">§6.4</a>)</li>
-  </ul>
-
-  <h3>6.4 Ticket: Kaneo / Jira / Linear</h3>
+  <h3>6.2 Kaneo / Jira / Linear</h3>
   <p>Factory per integration <code>kind</code>. Reads <code>ticket_projects</code> for create defaults and status mapping.</p>
-  <p><strong>Kaneo:</strong> normalize stored <code>base_url</code> by appending <code>/api</code> when missing (same rule as metadata discovery and connectivity test). Ticket CRUD paths are relative to that API root: <code>POST /task/{projectId}</code>, <code>GET /task/{id}</code>, <code>PUT /task/status/{id}</code>, <code>PUT /task/title/{id}</code>, <code>PUT /task/description/{id}</code>, <code>POST /comment/{taskId}</code>. Merge policy uses the dedicated title/description routes (not partial <code>PUT /task/{id}</code>).</p>
-  <p>Connectivity tests (with a token; tokenless source integrations below): GitHub <code>GET /user</code>; GitLab <code>GET /api/v4/user</code>; Gitea/Forgejo/Codeberg <code>GET /api/v1/user</code>; Kaneo <code>GET /api/auth/organization/list</code>; Jira <code>GET /rest/api/3/myself</code>; Linear GraphQL <code>viewer</code>.</p>
-  <p>Tokenless source integrations (token optional for GitHub, Gitea, Forgejo, Codeberg — §4.2): <code>/user</code> answers 401 without a token, so the test probes a public endpoint instead and sends no <code>Authorization</code> header — GitHub <code>GET /rate_limit</code>; Gitea/Forgejo/Codeberg <code>GET {base_url}/api/v1/version</code>. A 2xx is success; any other status or an unreachable host is a failed test. With a token the authenticated probes above are used unchanged. GitLab keeps <code>GET /api/v4/user</code>.</p>
-  <p>Kaneo comment content is limited to 10000 characters; longer supersede comments are truncated.</p>
-  <p><strong>Kaneo task link:</strong> <code>TicketWebURL</code> strips the trailing <code>/api</code> from the normalized base and returns <code>{web base}/dashboard/workspace/{create_config.workspaceId}/project/{external_project_id}/task/{taskId}</code> — no extra API call. Used for the dashboard <code>openTicketUrl</code> and the supersede comment <code>newTicketUrl</code>. When <code>workspaceId</code> is missing the link is omitted.</p>
-
-  <h3>6.5 Notifications: Shoutrrr</h3>
-  <ul>
-    <li><code>shoutrrr.Send(shoutrrrURL, message)</code> — URL from <code>notification_targets</code> (decrypted).</li>
-    <li>Test endpoint: sends probe message to a target.</li>
-  </ul>
+  <p><strong>Kaneo:</strong> normalize stored <code>base_url</code> by appending <code>/api</code> when missing (same rule as metadata discovery and connectivity test). Ticket CRUD paths are relative to that API root: <code>POST /task/{projectId}</code>, <code>GET /task/{id}</code>, <code>PUT /task/status/{id}</code>, <code>PUT /task/title/{id}</code>, <code>PUT /task/description/{id}</code>, <code>POST /comment/{taskId}</code>. Updating a ticket (§5.2.1) uses the dedicated title/description routes (not partial <code>PUT /task/{id}</code>).</p>
+  <p>Connectivity tests: Kaneo <code>GET /api/auth/organization/list</code>; Jira <code>GET /rest/api/3/myself</code>; Linear GraphQL <code>viewer</code>. A 2xx is success; any other status or an unreachable host is a failed test.</p>
+  <p>Kaneo comment content is limited to 10000 characters; longer comments are truncated.</p>
+  <p><strong>Kaneo task link:</strong> <code>TicketWebURL</code> strips the trailing <code>/api</code> from the normalized base and returns <code>{web base}/dashboard/workspace/{create_config.workspaceId}/project/{external_project_id}/task/{taskId}</code> — no extra API call. Used for the ticket link on the dashboard (<code>external_url</code>, §4.5), in the PR comment (§5.2.3) and in the supersede comment. When <code>workspaceId</code> is missing the link is omitted.</p>
 
   <h2 id="api">7. REST API (Go)</h2>
   <p>Base path: <code>/api/v1</code>. JSON request/response. Error format:</p>
@@ -1102,57 +1229,96 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <p>The v1 user, invitation, password-change and email-change endpoints (<code>/api/v1/users/*</code>) are removed; users are created at first GitHub sign-in (§3.5) and there is no user management.</p>
   <table>
     <tr><th>Method</th><th>Path</th><th>Role</th><th>Description</th></tr>
-    <tr><td>GET</td><td><code>/api/v1/github-app</code></td><td>admin</td><td>Non-secret App metadata (App id, slug, client id, HTML URL), the recorded installation and its account, and the read-only role mapping (<code>ADMIN_TEAM</code> / <code>VIEWER_TEAM</code> and configuration problems, §3.7). Never a private key, client secret or webhook secret. Full field list with the v2 data model (tracked as #187)</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/github-app</code></td><td>admin</td><td>Non-secret App metadata (App id, slug, client id, HTML URL), the recorded installation and its account, and the read-only role mapping (<code>ADMIN_TEAM</code> / <code>VIEWER_TEAM</code> and configuration problems, §3.7). Never a private key, client secret or webhook secret. Fields: <code>app</code> (<code>appId</code>, <code>slug</code>, <code>clientId</code>, <code>htmlUrl</code>, <code>ownerLogin</code>, <code>ownerType</code>, <code>webhookActive</code>, <code>hasPrivateKey</code>, <code>hasClientSecret</code>, <code>hasWebhookSecret</code>), <code>installation</code> (the item of <code>GET /api/v1/installations</code>, §7.2), <code>roleMapping</code> (<code>adminTeam</code>, <code>viewerTeam</code>, <code>problems</code>)</td></tr>
     <tr><td>PUT</td><td><code>/api/v1/github-app/private-key</code></td><td>admin</td><td><code>{ "privateKey": "&lt;PEM&gt;" }</code> — rotation (§3.4): the key is verified with <code>GET /app</code> before it replaces the old one. 204 on success; 422 <code>VALIDATION_ERROR</code> when it is not a valid key or GitHub rejects it; 502 when GitHub cannot be reached. The old key stays in place on every failure. The request body is never logged and the key is never part of a response</td></tr>
   </table>
-  <p>Role per endpoint group: the integration, ticket-project and settings endpoints (§7.2–§7.4) and manual triggers are <strong>admin</strong>; endpoints that serve the dashboard, update PRs and jobs are readable by a <strong>viewer</strong> filtered to their repositories (§3.9, specified with the update-PR and dashboard sections, tracked as #187).</p>
+  <p>Role per endpoint group: the integration, ticket-project and settings endpoints (§7.2–§7.4), repository changes and "run now" (§7.5) are <strong>admin</strong>; the status, dashboard, repository, update PR, job and problem reads (§7.1, §7.5–§7.7) and <code>about</code> are readable by a <strong>viewer</strong>, filtered to their repositories (§3.9). Every endpoint of §7.1–§7.8 states its role.</p>
 
-  <h3>7.1 Status</h3>
-  <p class="note">The v1 poll endpoints (<code>POST /api/v1/poll/trigger</code>, <code>GET /api/v1/poll/runs</code>, <code>GET /api/v1/poll/runs/{id}</code>) are removed: there is no global poll run, only jobs (§2.8). The endpoints that list jobs, start "run now" for a repository and feed the dashboard are specified with the update-PR and dashboard sections (tracked as #187). The worker routes are on the internal listener, not in this API (§2.1); the webhook is §2.10.</p>
+  <h3>7.1 Status &amp; dashboard</h3>
+  <p><strong>Conventions for §7.1–§7.8.</strong> Every endpoint needs a session (§3.11) and states its <strong>role</strong>. <em>viewer</em> means a viewer or an admin may call it, and a viewer's response is <strong>limited to the repositories on their access list</strong> (§3.9): lists omit the others, and a single resource outside the list answers <strong>404</strong> <code>NOT_FOUND</code>. <em>admin</em> means admin only (a viewer gets 403 <code>FORBIDDEN</code>). Lists are paged with <code>page</code> (1-based) and <code>pageSize</code> (default 25, max 100) and answer <code>{ "items": [...], "page", "pageSize", "total" }</code>. Timestamps are UTC ISO8601 (§4.7). Secrets, tokens and keys are never in any response.</p>
   <table>
-    <tr><th>Method</th><th>Path</th><th>Description</th></tr>
-    <tr><td>GET</td><td><code>/api/v1/status</code></td><td>Aggregated operational status. The v1 poll fields (<code>pollIntervalMinutes</code>, <code>lastRun</code>, <code>repos</code>, <code>isPolling</code>) are removed; the v2 shape is specified with the dashboard section (tracked as #187). It always carries <code>version</code>.</td></tr>
+    <tr><th>Method</th><th>Path</th><th>Role</th><th>Description</th></tr>
+    <tr><td>GET</td><td><code>/api/v1/status</code></td><td>viewer</td><td>Operational status of the instance: version, the engine mode, the worker's last contact, and queue counts. Nothing repository-specific, so a viewer sees the same values as an admin. The v1 poll fields (<code>pollIntervalMinutes</code>, <code>lastRun</code>, <code>repos</code>, <code>isPolling</code>) do not exist</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/dashboard</code></td><td>viewer</td><td>The counts behind the dashboard cards (§8.3), for the caller's repositories</td></tr>
   </table>
-  <pre><code>// GET /api/v1/status (excerpt)
-{ "version": "v0.2.0" }
+  <pre><code>// GET /api/v1/status
+{
+  "version": "v0.2.0",
+  "mode": "webhook",                       // "webhook" | "polling" (WEBHOOK_URL unset, §2.11)
+  "worker": { "connected": true, "lastContactAt": "2026-11-14T12:00:00.000Z" },
+  "queue": { "queued": 1, "running": 1, "concurrencyCap": 2 }
+}
 // version: string — the running build: the release tag (v{X.Y.Z}), nightly-{short_sha}, or "dev"
-// when the binary was built without a version (§11.6). Session-protected like the rest of the endpoint.</code></pre>
+// when the binary was built without a version (§11.6).
+// worker.lastContactAt: the last claim, heartbeat or result from any worker (§2.1); connected is
+// false when it is older than the readiness window (§7.8). null before the first contact.
 
-  <h3>7.2 Settings</h3>
-  <p>Admin only (§3.10).</p>
+// GET /api/v1/dashboard
+{
+  "openUpdatePrs": 12,
+  "openByUpdateType": { "major": 1, "minor": 4, "patch": 5, "digest": 2, "lockfile": 0, "other": 0 },
+  "mergedLast7Days": 9,
+  "failingRepositories": 1,    // repositories whose latest job failed (§7.7)
+  "problems": 2                // open problems the caller may see (§7.7)
+}
+// An open PR counts once per update type among its dependencies, so the type counts can exceed openUpdatePrs.</code></pre>
+
+  <h3>7.2 Settings, installations &amp; global config</h3>
+  <p>All admin (§3.10).</p>
   <table>
-    <tr><th>Method</th><th>Path</th><th>Body</th></tr>
-    <tr><td>GET</td><td><code>/api/v1/settings</code></td><td>—</td></tr>
-    <tr><td>PATCH</td><td><code>/api/v1/settings</code></td><td><code>{ "concurrencyCap"? }</code> — integer, min 1 (422 <code>VALIDATION_ERROR</code> otherwise). Takes effect for the next claim; a running job is never interrupted (§2.8)</td></tr>
+    <tr><th>Method</th><th>Path</th><th>Role</th><th>Body / description</th></tr>
+    <tr><td>GET</td><td><code>/api/v1/settings</code></td><td>admin</td><td>The instance settings and the read-only environment configuration</td></tr>
+    <tr><td>PATCH</td><td><code>/api/v1/settings</code></td><td>admin</td><td><code>{ "concurrencyCap"? }</code> — integer, min 1 (422 <code>VALIDATION_ERROR</code> otherwise). Takes effect for the next claim; a running job is never interrupted (§2.8)</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/settings/global-config</code></td><td>admin</td><td>The global Renovate config exactly as the worker last used it (§2.4): the raw text, never parsed. <code>content</code> is <code>null</code> until a job has returned one. Read-only: there is no write endpoint</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/installations</code></td><td>admin</td><td>The installation (a list of at most one active, plus a removed one kept for history): account, status, repository selection, permissions, rate-limit budget, default ticket project</td></tr>
+    <tr><td>PATCH</td><td><code>/api/v1/installations/{id}</code></td><td>admin</td><td><code>{ "defaultTicketProjectId" }</code> — a ticket project id or <code>null</code> (§5.2); 422 for an unknown id. Applies to tickets created afterwards (§4.4)</td></tr>
   </table>
   <pre><code>// GET /api/v1/settings — 200
 {
-  "concurrencyCap": 2
-}</code></pre>
+  "concurrencyCap": 2,
+  "mode": "webhook",
+  "presetRepositories": ["your-org/renovate"],
+  "globalConfig": { "source": "repository", "repository": "your-org/renovate", "ref": "main" }
+}
+// presetRepositories and globalConfig come from the environment (§9) and are read-only.
+
+// GET /api/v1/settings/global-config — 200
+{ "source": "repository", "repository": "your-org/renovate", "ref": "main",
+  "capturedAt": "2026-11-14T12:00:00.000Z", "content": "module.exports = { ... };" }
+
+// GET /api/v1/installations — 200
+{ "items": [ {
+  "id": "uuid", "accountLogin": "your-org", "accountType": "Organization", "status": "active",
+  "repositorySelection": "selected", "repositoryCount": 14,
+  "permissions": { "contents": "write", "pull_requests": "write" },
+  "missingPermissions": [],
+  "rateLimit": { "remaining": 4812, "limit": 5000, "resetAt": "2026-11-14T13:00:00.000Z" },
+  "defaultTicketProjectId": "uuid-or-null"
+} ] }</code></pre>
 
   <h3>7.3 Integrations</h3>
+  <p>Ticket integrations only (<code>kaneo</code>, <code>jira</code>, <code>linear</code>, §4.2). All admin (§3.10).</p>
   <table>
-    <tr><th>Method</th><th>Path</th><th>Notes</th></tr>
-    <tr><td>GET</td><td><code>/api/v1/integrations</code></td><td>List without secrets; each item carries <code>isDefault</code></td></tr>
-    <tr><td>POST</td><td><code>/api/v1/integrations</code></td><td>Create with <code>kind</code>, <code>name</code>, <code>baseUrl?</code>, <code>secret</code> (one-time), <code>isDefault?</code> (source kinds only, else 400; setting <code>true</code> moves the flag from the kind's previous default in one transaction)</td></tr>
-    <tr><td>PATCH</td><td><code>/api/v1/integrations/{id}</code></td><td><code>name</code>, optional <code>secret</code> (replace), optional <code>isDefault</code> (omitted = unchanged; <code>true</code> on a ticket kind → 400)</td></tr>
-    <tr><td>DELETE</td><td><code>/api/v1/integrations/{id}</code></td><td>409 if still referenced by repos or ticket projects</td></tr>
-    <tr><td>POST</td><td><code>/api/v1/integrations/{id}/test</code></td><td>Connectivity per kind (§6.3)</td></tr>
+    <tr><th>Method</th><th>Path</th><th>Role</th><th>Notes</th></tr>
+    <tr><td>GET</td><td><code>/api/v1/integrations</code></td><td>admin</td><td>List without secrets</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/integrations</code></td><td>admin</td><td>Create with <code>kind</code> (a source kind answers 422), <code>name</code>, <code>baseUrl?</code>, <code>secret</code> (one-time)</td></tr>
+    <tr><td>PATCH</td><td><code>/api/v1/integrations/{id}</code></td><td>admin</td><td><code>name</code>, optional <code>secret</code> (replace)</td></tr>
+    <tr><td>DELETE</td><td><code>/api/v1/integrations/{id}</code></td><td>admin</td><td>409 if still referenced by ticket projects</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/integrations/{id}/test</code></td><td>admin</td><td>Connectivity per kind (§6.2)</td></tr>
   </table>
   <pre><code>// Integration list item (never includes secret)
 {
   "id": "...",
-  "kind": "github",
-  "name": "GitHub PAT",
-  "baseUrl": null,
+  "kind": "jira",
+  "name": "Jira — company",
+  "baseUrl": "https://company.atlassian.net",
   "hasSecret": true,
-  "isDefault": false,
   "createdAt": "...",
   "updatedAt": "..."
 }</code></pre>
 
   <h4>7.3.1 Ticket integration metadata</h4>
-  <p>Discovery endpoints proxy provider APIs using stored (decrypted) credentials. Responses use the same actionable error pattern as <code>POST …/test</code>: HTTP 200 with <code>message</code> when the provider rejects credentials or the request fails.</p>
+  <p>Admin only (§3.10). Discovery endpoints proxy provider APIs using stored (decrypted) credentials. Responses use the same actionable error pattern as <code>POST …/test</code>: HTTP 200 with <code>message</code> when the provider rejects credentials or the request fails.</p>
   <p><strong>Kaneo:</strong> append <code>/api</code> to <code>baseUrl</code> when missing (ticket provider, metadata discovery, and connectivity test share this rule). Workspace list: <code>GET /auth/organization/list</code> (Better Auth organizations; response <code>[{ id, name, slug, … }]</code>). Project/column discovery unchanged: <code>/project</code>, <code>/column/{projectId}</code>. UI flow: workspace → project → column slugs / fixed priorities.</p>
   <table>
     <tr><th>Method</th><th>Path</th><th>Query</th><th>Notes</th></tr>
@@ -1177,13 +1343,13 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
 }</code></pre>
 
   <h3>7.4 Ticket Projects</h3>
-  <p>Multiple project/team targets per ticket integration with their own status mapping.</p>
+  <p>Multiple project/team targets per ticket integration with their own status mapping, content templates and ticket filter. All admin (§3.10): this is the <strong>ticket-project mapping</strong> (which projects exist and how they behave); which project a repository uses is §7.5.</p>
   <table>
-    <tr><th>Method</th><th>Path</th><th>Notes</th></tr>
-    <tr><td>GET</td><td><code>/api/v1/ticket-projects</code></td><td>Filter optional <code>?integrationId=</code></td></tr>
-    <tr><td>POST</td><td><code>/api/v1/ticket-projects</code></td><td>Create</td></tr>
-    <tr><td>PATCH</td><td><code>/api/v1/ticket-projects/{id}</code></td><td>Update mapping, policy, create_config, contentTemplates</td></tr>
-    <tr><td>DELETE</td><td><code>/api/v1/ticket-projects/{id}</code></td><td>409 if still referenced by repos</td></tr>
+    <tr><th>Method</th><th>Path</th><th>Role</th><th>Notes</th></tr>
+    <tr><td>GET</td><td><code>/api/v1/ticket-projects</code></td><td>admin</td><td>Filter optional <code>?integrationId=</code></td></tr>
+    <tr><td>POST</td><td><code>/api/v1/ticket-projects</code></td><td>admin</td><td>Create</td></tr>
+    <tr><td>PATCH</td><td><code>/api/v1/ticket-projects/{id}</code></td><td>admin</td><td>Update mapping, create_config, contentTemplates, filter</td></tr>
+    <tr><td>DELETE</td><td><code>/api/v1/ticket-projects/{id}</code></td><td>admin</td><td>409 if still referenced by a repository, an installation's default, or a ticket</td></tr>
   </table>
   <pre><code>// POST /api/v1/ticket-projects
 {
@@ -1203,67 +1369,135 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   "contentTemplates": {
     "title": "",
     "description": "",
+    "updateComment": "",
     "supersedeComment": ""
   },
-  "onOpenTicketPolicy": "supersede"
+  "filter": {
+    "updateTypes": ["major", "minor", "patch"],
+    "labels": [],
+    "skipAutomerged": true
+  }
 }</code></pre>
   <p>
-    GET list/detail responses include <code>contentTemplates</code> with the same shape.
-    PATCH accepts partial updates; omitted keys leave existing template values unchanged.
-    All three keys must be present on POST; use empty strings for integration-kind defaults.
+    GET list/detail responses include <code>contentTemplates</code> and <code>filter</code> with the same shapes.
+    PATCH accepts partial updates; omitted keys leave existing values unchanged.
+    All four template keys must be present on POST; use empty strings for integration-kind defaults. <code>filter</code> is optional on POST (default of §4.3). A template that does not parse, or an <code>updateTypes</code> value outside the five of §5.2, is 422 <code>VALIDATION_ERROR</code>.
   </p>
 
-  <h3>7.5 Monitored Repos</h3>
-  <p class="note">v1 — replaced by installed-repository endpoints (tracked as #187).</p>
+  <h3>7.5 Repositories</h3>
+  <p>The installed repositories (§4.4). A viewer's list and detail are limited to their repositories (§3.9); the ticket-project fields are <strong>admin only</strong> and are omitted from a viewer's response.</p>
   <table>
-    <tr><th>Method</th><th>Path</th></tr>
-    <tr><td>GET</td><td><code>/api/v1/repos</code></td></tr>
-    <tr><td>POST</td><td><code>/api/v1/repos</code></td></tr>
-    <tr><td>PATCH</td><td><code>/api/v1/repos/{id}</code></td></tr>
-    <tr><td>DELETE</td><td><code>/api/v1/repos/{id}</code></td></tr>
+    <tr><th>Method</th><th>Path</th><th>Role</th><th>Description</th></tr>
+    <tr><td>GET</td><td><code>/api/v1/repositories</code></td><td>viewer</td><td>List. Optional <code>?search=</code> (full-name substring), <code>?enabled=true|false</code>, <code>?configState=</code></td></tr>
+    <tr><td>GET</td><td><code>/api/v1/repositories/{id}</code></td><td>viewer</td><td>One repository</td></tr>
+    <tr><td>PATCH</td><td><code>/api/v1/repositories/{id}</code></td><td>admin</td><td><code>{ "enabled"?, "ticketProjectId"? }</code> — <strong>pause</strong> (<code>enabled: false</code>) or enable the repository (§2.7), and set (<code>uuid</code>) or clear (<code>null</code>) its ticket-project override (§5.2). 422 for an unknown ticket project. Pausing drops its queued job; a running job is aborted at its next heartbeat (§2.1)</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/repositories/{id}/run</code></td><td>admin</td><td><strong>Run now</strong>: enqueues a high-priority job (§2.9, <code>trigger = run_now</code>). 202 <code>{ "jobId" }</code>; when the repository already has a queued job the trigger coalesces into it and its id is returned (§2.8). 409 <code>REPOSITORY_PAUSED</code> for a paused repository</td></tr>
+    <tr><td>POST</td><td><code>/api/v1/repositories/{id}/enable-renovate</code></td><td>admin</td><td>The <strong>"Enable repo"</strong> action (§2.7): opens a PR that adds a <code>renovate.json</code> extending the configured preset. 201 <code>{ "pullRequestUrl", "number" }</code>. 409 <code>CONFIG_EXISTS</code> when Renovate already found a config file (<code>configState = present</code>) or the default branch has one; when an earlier "Enable repo" PR is still open its URL is returned (200), so the action is idempotent. The PR is created by the app with an installation token for this repository (§3.4) and is not a Renovate PR (no markers, §5.1), so it gets no ticket</td></tr>
   </table>
-  <pre><code>// POST /api/v1/repos
-{
-  "sourceKind": "github",
-  "projectPath": "FreshRSS/FreshRSS",
-  "enabled": true,
-  "includePrereleases": false,
-  "sourceIntegrationId": "uuid-or-null",
-  "ticketProjectId": "uuid",
-  "notificationTargetIds": ["uuid-optional"]
-}</code></pre>
+  <p><strong>The preset the PR extends.</strong> The first entry of <code>PRESET_REPOSITORIES</code> (§9), written as <code>local&gt;owner/repo</code>; when the variable is unset, <code>config:recommended</code>. The file Release Ops writes is fixed, minimal (<code>extends</code> only) and the same for every repository. Once the PR is merged, the <code>push</code> to the default branch starts a job (§2.9) and the repository's <code>configState</code> becomes <code>present</code>.</p>
+  <pre><code>// GET /api/v1/repositories — 200 (admin; a viewer gets no ticketProject* fields)
+{ "items": [ {
+  "id": "uuid", "fullName": "your-org/api", "defaultBranch": "main",
+  "enabled": true, "configState": "present",
+  "ticketProjectId": null, "effectiveTicketProjectId": "uuid", "effectiveTicketProjectName": "Jira — DEV",
+  "dashboardUrl": "https://github.com/your-org/api/issues/7",   // the Dependency Dashboard, null when unknown
+  "openUpdatePrs": 3,
+  "lastJob": { "id": "uuid", "state": "succeeded", "finishedAt": "2026-11-14T12:00:00.000Z" }
+} ], "page": 1, "pageSize": 25, "total": 14 }
 
-  <h3>7.6 Notification Targets</h3>
-  <p class="note">v1 — removed in v2 (no Shoutrrr notifications, §1).</p>
-  <table>
-    <tr><th>Method</th><th>Path</th><th>Notes</th></tr>
-    <tr><td>GET</td><td><code>/api/v1/notification-targets</code></td><td>List without Shoutrrr URL</td></tr>
-    <tr><td>POST</td><td><code>/api/v1/notification-targets</code></td><td><code>name</code>, <code>shoutrrrUrl</code> (one-time), <code>events?</code>, <code>enabled?</code></td></tr>
-    <tr><td>PATCH</td><td><code>/api/v1/notification-targets/{id}</code></td><td>Optional <code>shoutrrrUrl</code> replace</td></tr>
-    <tr><td>DELETE</td><td><code>/api/v1/notification-targets/{id}</code></td><td>—</td></tr>
-    <tr><td>POST</td><td><code>/api/v1/notification-targets/{id}/test</code></td><td>Probe message via Shoutrrr</td></tr>
-  </table>
-  <pre><code>// POST body
-{
-  "name": "Slack — releases",
-  "shoutrrrUrl": "slack://token@channel",
-  "events": ["create", "error", "supersede"],
-  "enabled": true
-}</code></pre>
+// PATCH /api/v1/repositories/{id}
+{ "enabled": false, "ticketProjectId": "uuid-or-null" }</code></pre>
 
-  <h3>7.7 Health</h3>
+  <h3>7.6 Update PRs</h3>
+  <p>The dashboard's data (§5.1, §8.3). Read-only: PR state comes from GitHub, tickets from the engine; no endpoint changes either. A viewer sees only the PRs of their repositories.</p>
   <table>
-    <tr><th>GET</th><th><code>/healthz</code></th><th>200 OK, no auth</th></tr>
+    <tr><th>Method</th><th>Path</th><th>Role</th><th>Description</th></tr>
+    <tr><td>GET</td><td><code>/api/v1/update-prs</code></td><td>viewer</td><td>List. <code>?state=</code> (<code>open</code> default, <code>merged</code>, <code>closed</code>, <code>superseded</code>), <code>?repositoryId=</code>, <code>?updateType=</code>, <code>?sort=</code> (<code>openedAt</code>, <code>-openedAt</code>, <code>mergedAt</code>, <code>-mergedAt</code>; default <code>-openedAt</code>; the "recently merged" list is <code>state=merged&amp;sort=-mergedAt</code>)</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/update-prs/{id}</code></td><td>viewer</td><td>One PR with its dependencies and its ticket</td></tr>
   </table>
+  <pre><code>// GET /api/v1/update-prs — item
+{
+  "id": "uuid",
+  "repository": { "id": "uuid", "fullName": "your-org/api", "dashboardUrl": "https://github.com/your-org/api/issues/7" },
+  "number": 42, "url": "https://github.com/your-org/api/pull/42", "title": "Update dependency foo to v2",
+  "state": "open", "openedAt": "...", "mergedAt": null, "closedAt": null,
+  "supersededBy": null,                                  // { "id", "number", "url" } when superseded
+  "updateTypes": ["major"],                              // the distinct types among its dependencies
+  "dependencies": [ { "name": "foo", "from": "1.4.0", "to": "2.0.0", "updateType": "major" } ],
+  "ticket": { "state": "open", "externalId": "DEV-12", "url": "https://company.atlassian.net/browse/DEV-12", "hasError": false }   // null when none
+}
+// ticket.state is the last state Release Ops recorded (§5.2.1); the page never calls the ticket system.
+// ticket.hasError is true while a ticket operation for this PR is failing (§7.7 ticket_failed); it is returned to viewers and admins alike.
+// ticket.lastError (the redacted message) is returned only to an admin, only on the detail response, and only while hasError is true; a viewer never receives it.</code></pre>
+
+  <h3>7.7 Jobs &amp; Problems</h3>
+  <p>Jobs and their history (§4.6) and the Problems view. A viewer sees the jobs and problems of their repositories only.</p>
+  <table>
+    <tr><th>Method</th><th>Path</th><th>Role</th><th>Description</th></tr>
+    <tr><td>GET</td><td><code>/api/v1/jobs</code></td><td>viewer</td><td>List, newest first. <code>?repositoryId=</code>, <code>?state=</code> (<code>queued</code>, <code>running</code>, <code>succeeded</code>, <code>failed</code>)</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/jobs/{id}</code></td><td>viewer</td><td>One job with its attempts (<code>runs</code>, each with its bounded, redacted <strong>log excerpt</strong>) and its <code>events</code></td></tr>
+    <tr><td>GET</td><td><code>/api/v1/problems</code></td><td>viewer</td><td>The open problems. An admin sees all kinds; a viewer sees <code>job_failed</code> and <code>ticket_failed</code> for their repositories only (installation-level problems carry no repository and are admin only). For a viewer a <code>ticket_failed</code> problem carries <strong>no error text</strong>: <code>message</code> is <code>null</code> and only <code>kind</code>, <code>repository</code>, <code>since</code> and the update PR in <code>ref</code> are given; the message from <code>update_tickets.last_error</code> is returned to an admin only</td></tr>
+  </table>
+  <pre><code>// GET /api/v1/jobs — item
+{
+  "id": "uuid", "repository": { "id": "uuid", "fullName": "your-org/api" },
+  "kind": "renovate_run", "state": "succeeded", "priority": "high",
+  "trigger": "dashboard_checkbox", "matchedMarkers": ["rebase-branch=renovate/foo-2.x"],
+  "attempts": 1, "createdAt": "...", "startedAt": "...", "finishedAt": "...",
+  "startLatencyMs": 3200                                  // webhook arrival → first heartbeat (§2.9); null for scheduled jobs
+}
+
+// GET /api/v1/jobs/{id} — adds
+{ "runs": [ { "attempt": 1, "startedAt": "...", "finishedAt": "...", "outcome": "succeeded",
+              "exitCode": 0, "errorCode": null, "errorMessage": null, "reportStatus": "ok",
+              "logExcerpt": "..." } ],
+  "events": [ { "at": "...", "kind": "claimed", "message": "..." } ] }
+
+// GET /api/v1/problems — item
+{ "kind": "job_failed", "repository": { "id": "uuid", "fullName": "your-org/api" },
+  "since": "...", "message": "...", "ref": { "jobId": "uuid" } }</code></pre>
+  <p><strong>Problem kinds.</strong> Problems are derived from stored state when asked for, not stored; a problem disappears when its cause does.</p>
+  <table>
+    <tr><th><code>kind</code></th><th>Shown while</th><th>From</th></tr>
+    <tr><td><code>job_failed</code></td><td>The repository's latest finished job is <code>failed</code></td><td><code>jobs</code>, <code>job_runs.error_message</code></td></tr>
+    <tr><td><code>ticket_failed</code></td><td>An <code>update_tickets</code> row has a <code>last_error</code> (creation, update, transition or lookup failing, §5.2) or a marker the lookup cannot resolve</td><td><code>update_tickets</code>; <code>ref</code> carries the update PR id; <code>message</code> is <code>last_error</code> for an admin and <code>null</code> for a viewer</td></tr>
+    <tr><td><code>rate_limited</code></td><td>The installation's budget is exhausted and its reset time is in the future (§2.8), or the latest attempt ended rate-limited</td><td><code>installations.rate_limit_*</code></td></tr>
+    <tr><td><code>permissions_lost</code></td><td>The installation's <code>permissions</code> miss one the manifest requests (§3.3), or its status is <code>suspended</code> or <code>removed</code></td><td><code>installations</code>; the message names the missing permissions, never a credential</td></tr>
+  </table>
+
+  <h3>7.8 About, health &amp; metrics</h3>
+  <table>
+    <tr><th>Method</th><th>Path</th><th>Role</th><th>Description</th></tr>
+    <tr><td>GET</td><td><code>/api/v1/about</code></td><td>viewer</td><td><code>{ "version", "renovate": { "version", "license": "AGPL-3.0-only", "sourceUrl" } }</code> — the build, and the pinned Renovate version with its licence and a pointer to that version's source (§2.3). Static; no repository data</td></tr>
+    <tr><td>GET</td><td><code>/healthz</code></td><td>none</td><td>Liveness: 200 OK, never touches the database. Container probe (§10)</td></tr>
+    <tr><td>GET</td><td><code>/readyz</code></td><td>none</td><td>Readiness: 200 only when a database ping succeeds and the worker contact is fresh; 503 with a non-secret reason otherwise (#196)</td></tr>
+    <tr><td>GET</td><td><code>/metrics</code></td><td>none (listener)</td><td>Prometheus text format, on the listener <code>METRICS_ADDR</code> (§9) — see below</td></tr>
+  </table>
+  <h4><code>/metrics</code></h4>
+  <ul>
+    <li><strong>Where.</strong> Both the app and the worker serve <code>/metrics</code> on their own <code>METRICS_ADDR</code> (§9), on a listener that serves nothing else. It is <strong>never</strong> reachable through the <code>/api/go</code> proxy (a request to <code>/api/go/metrics</code> answers 404) and never published to the host by the reference Compose file (#196).</li>
+    <li><strong>Who may scrape.</strong> No authentication. The protection is the bind address (loopback by default) and not publishing the port; an operator who exposes the listener beyond the Compose network puts their own authentication in front. No secret, token or path to one is ever in the output, and label values are bounded: a repository full name, a priority, an outcome, the installation's account login, never a delivery, user or PR id.</li>
+  </ul>
+  <table>
+    <tr><th>Metric</th><th>Type, labels</th><th>Process</th><th>Meaning</th></tr>
+    <tr><td><code>release_ops_job_runs_total</code></td><td>counter: <code>repository</code>, <code>outcome</code></td><td>worker; app for attempts that end without a result</td><td>Job attempts finished, by outcome (<code>succeeded</code>, <code>no_config</code>, <code>failed</code>, <code>aborted</code>, <code>lease_expired</code>)</td></tr>
+    <tr><td><code>release_ops_job_failures_total</code></td><td>counter: <code>repository</code></td><td>worker; app</td><td>Attempts that ended <code>failed</code> or <code>lease_expired</code></td></tr>
+    <tr><td><code>release_ops_job_duration_seconds</code></td><td>histogram: <code>repository</code></td><td>worker</td><td>Wall time of an attempt, from the claim to the result</td></tr>
+    <tr><td><code>release_ops_queue_depth</code></td><td>gauge: <code>priority</code></td><td>app</td><td>Jobs in state <code>queued</code> and eligible (<code>run_after</code> passed)</td></tr>
+    <tr><td><code>release_ops_queue_oldest_age_seconds</code></td><td>gauge</td><td>app</td><td>Age of the oldest eligible queued job; 0 when none</td></tr>
+    <tr><td><code>release_ops_webhook_lag_seconds</code></td><td>histogram</td><td>app</td><td>Webhook arrival → the worker's first heartbeat for the job it started (§2.9: the 10-second target)</td></tr>
+    <tr><td><code>release_ops_open_update_prs</code></td><td>gauge: <code>repository</code></td><td>app</td><td>Open update PRs (§5.1)</td></tr>
+    <tr><td><code>release_ops_github_rate_limit_remaining</code></td><td>gauge: <code>installation</code></td><td>app</td><td>Remaining requests of the installation's shared budget (§2.8), as last seen in a GitHub response</td></tr>
+  </table>
+  <p>The Go runtime and process collectors are served as well. Example alert rules over these (job failures, queue age, webhook lag, rate limit) replace the v1 notification targets and are published with the customer documentation (#223).</p>
 
   <h2 id="ui">8. Web UI &amp; COSS Particles</h2>
-  <p class="note">Auth, setup and settings pages are v2 (§8.2–§8.4). The dashboard, poll-runs, repos and notifications pages are v1 text until the update-PR and dashboard sections replace them (tracked as #187). The settings page is v2 (§8.3 <code>/settings</code>).</p>
-  <p>All UI with COSS primitives + specified particles (install via <code>npx shadcn@latest add @coss/...</code> or particle JSON URLs).</p>
+  <p>All UI with COSS primitives + specified particles (install via <code>npx shadcn@latest add @coss/...</code> or particle JSON URLs). Every page reads its data through the REST API of §7, and the API — not the page — enforces the role and the viewer's repository scope (§3.9, §3.10).</p>
 
   <h3>8.1 App shell (all authenticated pages)</h3>
   <table>
     <tr><th>Primitive</th><th>Particle / Pattern</th><th>Usage</th></tr>
-    <tr><td><code>Sidebar</code> (+ <code>SidebarProvider</code>)</td><td>sidebar primitive docs</td><td>Navigation: Dashboard, Poll runs, Repos, Integrations, Ticket Projects, Notifications, Settings</td></tr>
+    <tr><td><code>Sidebar</code> (+ <code>SidebarProvider</code>)</td><td>sidebar primitive docs</td><td>Navigation: Dashboard, Repositories, Jobs, Integrations, Ticket Projects, Settings, About. A viewer sees Dashboard, Repositories, Jobs and About only (§8.2)</td></tr>
     <tr><td><code>Frame</code></td><td><a href="https://coss.com/ui/r/p-frame-3.json">p-frame-3</a> — multiple separated panels</td><td>Page layout with header area + content</td></tr>
     <tr><td><code>Breadcrumb</code></td><td><a href="https://coss.com/ui/r/p-breadcrumb-3.json">p-breadcrumb-3</a> — home icon</td><td>Sub-page context</td></tr>
     <tr><td>Sidebar header</td><td>wordmark + <code>Badge</code></td><td>The "Release Ops" wordmark links to the repository root. Next to it, a badge shows <code>version</code> from <code>GET /api/v1/status</code>: a release tag (<code>v{X.Y.Z}</code>) links to <code>/releases/tag/v{X.Y.Z}</code>, <code>nightly-{short_sha}</code> links to <code>/commit/{short_sha}</code>, <code>dev</code> is plain text. Links open in a new tab (<code>rel="noopener noreferrer"</code>). No badge while the status request is loading or failed. Both hidden when the sidebar is collapsed to icons.</td></tr>
@@ -1273,19 +1507,19 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
 
   <h3>8.2 Routes</h3>
   <table>
-    <tr><th>Route</th><th>Page</th><th>Description</th></tr>
-    <tr><td><code>/login</code></td><td>Sign in</td><td>Unauthenticated. "Sign in with GitHub" starts the OAuth flow (§3.5); shows a fixed error message per error code</td></tr>
-    <tr><td><code>/login/link</code></td><td>Break-glass sign-in</td><td>Unauthenticated. Redeems the one-time link printed by <code>release-ops admin login-link</code> (§3.6)</td></tr>
-    <tr><td><code>/setup</code></td><td>First-start setup</td><td>Unauthenticated, usable only while no App is configured. Setup token, owner choice (personal account or organization), optional App name; hands off to GitHub (§3.3). After installation GitHub returns to <code>/login</code></td></tr>
-    <tr><td><code>/</code></td><td>Dashboard</td><td>Status, last run, quick actions; repo status table linkifies path → <code>repoUrl</code>, last tag → <code>releaseUrl</code> (when present), open ticket ID → <code>openTicketUrl</code> (when present); external links open in a new tab</td></tr>
-    <tr><td><code>/poll-runs</code></td><td>Poll runs</td><td>Paginated poll run history with per-run detail drawer</td></tr>
-    <tr><td><code>/repos</code></td><td>Repos</td><td>CRUD monitored repos</td></tr>
-    <tr><td><code>/integrations</code></td><td>Integrations</td><td>CRUD credentials (sources + ticket providers)</td></tr>
-    <tr><td><code>/ticket-projects</code></td><td>Ticket Projects</td><td>CRUD per integration: project/team, status mapping, policy, content templates</td></tr>
-    <tr><td><code>/notifications</code></td><td>Notifications</td><td>Shoutrrr targets, events, test</td></tr>
-    <tr><td><code>/settings</code></td><td>Settings</td><td>Admin. Instance settings (the concurrency cap, the global Renovate config as a read-only view, and the polling-mode notice, §2.11) and the GitHub App panel: App and installation metadata, the read-only role mapping (§3.7), private key rotation (§3.4)</td></tr>
+    <tr><th>Route</th><th>Page</th><th>Visible to</th><th>Description</th></tr>
+    <tr><td><code>/login</code></td><td>Sign in</td><td>anyone</td><td>Unauthenticated. "Sign in with GitHub" starts the OAuth flow (§3.5); shows a fixed error message per error code</td></tr>
+    <tr><td><code>/login/link</code></td><td>Break-glass sign-in</td><td>anyone</td><td>Unauthenticated. Redeems the one-time link printed by <code>release-ops admin login-link</code> (§3.6)</td></tr>
+    <tr><td><code>/setup</code></td><td>First-start setup</td><td>anyone</td><td>Unauthenticated, usable only while no App is configured. Setup token, owner choice (personal account or organization), optional App name; hands off to GitHub (§3.3). After installation GitHub returns to <code>/login</code></td></tr>
+    <tr><td><code>/</code></td><td>Dashboard</td><td>viewer, admin</td><td>Open update PRs and recently merged update PRs, with the summary cards and a Problems notice (§8.3)</td></tr>
+    <tr><td><code>/repositories</code></td><td>Repositories</td><td>viewer, admin</td><td>The installed repositories and their state. Admin actions: pause and enable, ticket project, run now, "Enable repo" (§8.3). A viewer sees their repositories, read-only</td></tr>
+    <tr><td><code>/jobs</code></td><td>Jobs</td><td>viewer, admin</td><td>Job history with a per-job detail (log excerpt), and the Problems view (<code>/jobs?view=problems</code>) (§8.3). A viewer sees their repositories' jobs and problems, without the text of ticket errors; installation-level problems are admin only</td></tr>
+    <tr><td><code>/integrations</code></td><td>Integrations</td><td>admin</td><td>CRUD ticket-system credentials (Kaneo, Jira, Linear)</td></tr>
+    <tr><td><code>/ticket-projects</code></td><td>Ticket Projects</td><td>admin</td><td>CRUD per integration: project/team, status mapping, ticket filter, content templates</td></tr>
+    <tr><td><code>/settings</code></td><td>Settings</td><td>admin</td><td>The concurrency cap and the installation's default ticket project, the global Renovate config as a read-only view, the polling-mode notice (§2.11), and the GitHub App panel: App and installation metadata, the read-only role mapping (§3.7), private key rotation (§3.4)</td></tr>
+    <tr><td><code>/about</code></td><td>About &amp; licence</td><td>viewer, admin</td><td>The Release Ops version and licence, and the pinned Renovate version with its AGPL-3.0 notice and a pointer to its source (§8.3)</td></tr>
   </table>
-  <p class="note">The v1 <code>/profile</code> and <code>/settings/users</code> routes are removed: there are no local accounts, passwords, or user management.</p>
+  <p class="note">The v1 <code>/profile</code> and <code>/settings/users</code> routes are removed: there are no local accounts, passwords, or user management. The v1 <code>/poll-runs</code>, <code>/repos</code> (release monitoring) and <code>/notifications</code> routes are removed too (§1, §5.5).</p>
   <p>Middleware: all pages except <code>/login</code>, <code>/login/link</code> and <code>/setup</code> require a session (via <code>GET /api/v1/auth/session</code> through the Go proxy); while <code>GET /api/v1/setup/status</code> reports setup required, every page redirects to <code>/setup</code>, and <code>/setup</code> redirects to <code>/login</code> once an App is configured. Pages and navigation entries a viewer may not use (§3.10) are hidden or show a forbidden state; the Go handlers enforce the role.</p>
 
   <h3>8.3 Page detail &amp; particles</h3>
@@ -1317,35 +1551,39 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   </table>
 
   <h4>/ — Dashboard</h4>
+  <p>Viewer and admin; a viewer's data is limited to their repositories (§3.9).</p>
   <table>
     <tr><th>Particle</th><th>Usage</th></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-card-10.json">p-card-10</a> frame header+footer</td><td>"Last poll" summary card</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-badge-5.json">p-badge-5</a> (semantic)</td><td>Run status badge</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>"Run poll now" (triggers POST trigger)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a> TanStack sort+pagination</td><td>Repo status table (subset): source, path, last tag, open ticket, last polled (<code>lastPolledAt</code>)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-alert-6.json">p-alert-6</a> warning</td><td>Errors from last run</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-empty-1.json">p-empty-1</a></td><td>No repos configured → CTA to /repos</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-card-10.json">p-card-10</a> frame header+footer</td><td>Summary cards from <code>GET /api/v1/dashboard</code> (§7.1): open update PRs with the count per update type, merged in the last 7 days, failing repositories</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-alert-6.json">p-alert-6</a> warning</td><td>Problems notice with the count, linking to <code>/jobs?view=problems</code> (§7.7); hidden when there are none</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a> TanStack sort+pagination</td><td><strong>Open update PRs</strong> (<code>GET /api/v1/update-prs?state=open</code>): repository, PR title (links to the PR; external links open in a new tab), update types, <strong>age</strong> (from <code>openedAt</code>), <strong>ticket</strong> (the ticket id as a link to <code>ticket.url</code> and its state badge, with an error marker while <code>ticket.hasError</code> is true; a dash when the PR has none), and a link to the repository's <strong>Dependency Dashboard</strong> issue (<code>dashboardUrl</code>; omitted when unknown)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a></td><td><strong>Recently merged</strong> (<code>state=merged&amp;sort=-mergedAt</code>, the 10 most recent): the same columns with the merge time instead of the age</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-badge-5.json">p-badge-5</a> (semantic)</td><td>Update type and ticket state badges (<code>pending</code>, <code>open</code>, <code>done</code>, <code>cancelled</code>, <code>superseded</code>)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-empty-1.json">p-empty-1</a></td><td>No update PRs yet → link to <code>/repositories</code> (an admin is pointed to "Enable repo")</td></tr>
   </table>
 
-  <h4>/poll-runs</h4>
+  <h4>/repositories</h4>
+  <p>Viewer: read-only list of their repositories. Admin: all repositories and the actions below.</p>
   <table>
     <tr><th>Particle</th><th>Usage</th></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a> pagination</td><td>Poll run history table</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-badge-5.json">p-badge-5</a> (semantic)</td><td>Run status badge</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-dialog-5.json">p-dialog-5</a></td><td>Per-run detail (wide dialog, scrollable body: counters, errors, events table with repo, tag and ticket link)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-empty-1.json">p-empty-1</a></td><td>No poll runs yet</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a> sort+pagination</td><td>Repository list with search: full name (links to GitHub), config state badge (<code>present</code>, <code>missing</code>, <code>unknown</code>), open update PRs, last job state, link to the Dependency Dashboard</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-switch-1.json">p-switch-1</a></td><td>Admin: <strong>enabled</strong> toggle — off = paused (§2.7)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td>Admin: <strong>ticket project</strong> of the repository. <em>Installation default</em> (shown with the project it resolves to) is the empty choice (§5.2)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>Admin: <strong>Run now</strong> (<code>POST …/run</code>, disabled while the repository is paused); a toast reports the queued job with a link to <code>/jobs</code></td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-alert-dialog-1.json">p-alert-dialog-1</a></td><td>Admin: <strong>Enable repo</strong>, offered for a repository whose config state is <code>missing</code>. Confirms that a PR adding <code>renovate.json</code> will be opened (naming the preset it extends, §7.5); the result links to the PR</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-alert-6.json">p-alert-6</a> warning</td><td>A repository that resolves to no ticket project: its update PRs get no tickets</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-empty-1.json">p-empty-1</a></td><td>No repositories → the App has no repository installed (admin: link to the installation on GitHub)</td></tr>
   </table>
 
-  <h4>/repos</h4>
+  <h4>/jobs</h4>
   <table>
     <tr><th>Particle</th><th>Usage</th></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-table-3.json">p-table-3</a></td><td>Repo list (bulk enable/disable — post-MVP)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-dialog-1.json">p-dialog-1</a> form</td><td>Add / Edit Repo</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-alert-dialog-1.json">p-alert-dialog-1</a></td><td>Delete confirmation</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td>Source kind, source integration (Add: preselects the source kind's default integration, initially and when the kind changes; <em>None</em> stays selectable for optional kinds; Edit never applies the default), <strong>ticket project</strong></td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-checkbox-group-1.json">p-checkbox-group-1</a></td><td>Optional: notification targets per repo</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-switch-1.json">p-switch-1</a></td><td>Enabled toggle; <strong>Include pre-releases</strong> toggle (default off)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-badge-1.json">p-badge-1</a></td><td>source_kind + ticket project name in tables</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-tabs-1.json">p-tabs-1</a></td><td><strong>Jobs</strong> and <strong>Problems</strong> views</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a> pagination</td><td>Jobs: repository, state badge, priority, trigger (a checkbox tick shows the matched markers, §2.9), attempts, created, started, finished, and the webhook-to-start latency</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-badge-5.json">p-badge-5</a> (semantic)</td><td>Job state and problem kind</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-dialog-5.json">p-dialog-5</a></td><td>Per-job detail (wide dialog, scrollable body: attempts with outcome, exit code and error, the redacted <strong>log excerpt</strong> as read-only text, and the events). Opened from the table; deep link <code>/jobs?job=&lt;id&gt;</code></td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-4.json">p-table-4</a></td><td>Problems (<code>GET /api/v1/problems</code>): <strong>job errors</strong>, <strong>ticket creation errors</strong>, <strong>rate limits</strong> and <strong>lost App permissions</strong> (§7.7), each with its repository (none for the last two), since, message and a link to the job or update PR; a viewer's ticket creation errors show the repository, since and the link but no message (§3.10, §7.7)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-empty-1.json">p-empty-1</a></td><td>No jobs yet; no problems</td></tr>
   </table>
 
   <h4>/ticket-projects</h4>
@@ -1353,23 +1591,13 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><th>Particle</th><th>Usage</th></tr>
     <tr><td><a href="https://coss.com/ui/r/p-table-3.json">p-table-3</a></td><td>Project list grouped by integration</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-drawer-10.json">p-drawer-10</a></td><td>Create/Edit Ticket Project</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td>Integration (ticket kinds only); Kaneo workspace; external project/team; <code>on_open_ticket_policy</code>; create_config fields; status mapping superseded</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>Display name</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-checkbox-group-1.json">p-checkbox-group-1</a></td><td>Status mapping: open / done / cancelled (multi-select from provider statuses)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-tabs-1.json">p-tabs-1</a></td><td>create_config subform per provider kind (selects populated from metadata endpoints); <strong>Content templates</strong> tab (<code>title</code>, <code>description</code>, <code>supersedeComment</code> text areas)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td>Integration (ticket kinds only); Kaneo workspace; external project/team; create_config fields; status mapping superseded</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>Display name; <strong>labels</strong> of the ticket filter (comma-separated)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-checkbox-group-1.json">p-checkbox-group-1</a></td><td>Status mapping: open / done / cancelled (multi-select from provider statuses); <strong>ticket filter update types</strong> (major, minor, patch, digest, lockfile; none ticked = all)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-switch-1.json">p-switch-1</a></td><td>Ticket filter: <strong>skip automerged PRs</strong> (default on)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-tabs-1.json">p-tabs-1</a></td><td>create_config subform per provider kind (selects populated from metadata endpoints); <strong>Filter</strong> tab; <strong>Content templates</strong> tab (<code>title</code>, <code>description</code>, <code>updateComment</code>, <code>supersedeComment</code> text areas)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-textarea-1.json">p-textarea-1</a></td><td>Template fields — monospace; while a field is empty its placeholder shows the integration-kind default template from §5.4 (plain-text description for Jira, markdown for Kaneo/Linear)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-alert-5.json">p-alert-5</a></td><td>Note: mapping is <strong>different per project</strong>; empty template key → integration default; full-width variable reference table below the three fields lists the MVP variables (§5.4) as insertable syntax (<code>{{ .Repo.SourceKind }}</code>) with a “Works in” column (Title, Description, Supersede comment; <code>.Supersede.*</code> are supersede comment only) and a copy button per row that copies the syntax including braces</td></tr>
-  </table>
-
-  <h4>/notifications</h4>
-  <table>
-    <tr><th>Particle</th><th>Usage</th></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-table-2.json">p-table-2</a></td><td>Target list (name, events, enabled)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-drawer-10.json">p-drawer-10</a></td><td>Create/Edit Target</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-input-1.json">p-input-1</a></td><td>Shoutrrr URL (password-style, never re-display)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-checkbox-group-1.json">p-checkbox-group-1</a></td><td>Events: create, error, supersede</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>"Test notification"</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-toast-5.json">p-toast-5</a></td><td>Test async feedback</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-alert-5.json">p-alert-5</a></td><td>Note: mapping is <strong>different per project</strong>; empty template key → integration default; full-width variable reference table below the four fields lists the variables of §5.4 as insertable syntax (<code>{{ .PullRequest.URL }}</code>, <code>{{ range .Dependencies }}…{{ end }}</code>) with a “Works in” column (Title, Description, Update note, Supersede comment; <code>.Supersede.*</code> are supersede comment only) and a copy button per row that copies the syntax including braces</td></tr>
   </table>
 
   <h4>/integrations</h4>
@@ -1377,28 +1605,36 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><th>Particle</th><th>Usage</th></tr>
     <tr><td><a href="https://coss.com/ui/r/p-table-2.json">p-table-2</a> card-style</td><td>Integration list</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-drawer-10.json">p-drawer-10</a> edit form</td><td>Create/Edit Integration (mobile-friendly)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>Name; Base URL (gitlab, gitea, forgejo, kaneo, jira)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-field-1.json">p-field-1</a></td><td>Name; Base URL (kaneo, jira)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-field-2.json">p-field-2</a></td><td>Jira: email field</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-switch-1.json">p-switch-1</a></td><td>"Default for this source type" (source kinds only); the list row shows a "Default" badge. Deleting the default leaves the kind without one; the first integration of a kind is not made default automatically</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-input-1.json">p-input-1</a> type password</td><td>Token / API Key (never re-display)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>"Test connection"</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-toast-5.json">p-toast-5</a> promise</td><td>Test connection async feedback</td></tr>
   </table>
 
   <h4>/settings</h4>
+  <p>Admin only.</p>
   <table>
     <tr><th>Particle</th><th>Usage</th></tr>
-    <tr><td><code>SettingsSection</code></td><td>Engine, global config and GitHub App panels (<code>max-w-4xl</code> layout)</td></tr>
+    <tr><td><code>SettingsSection</code></td><td>Engine, installation, global config and GitHub App panels (<code>max-w-4xl</code> layout)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-number-field-1.json">p-number-field-1</a></td><td>Concurrency cap (jobs, min 1; §2.8)</td></tr>
-    <tr><td><code>SettingsSection</code></td><td>Global Renovate config: the raw file as the worker last used it, plain text, read-only, never parsed (§2.4); a notice when the instance runs in polling mode (§2.11)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-select-1.json">p-select-1</a></td><td>The installation's <strong>default ticket project</strong> (§5.2)</td></tr>
+    <tr><td><code>SettingsSection</code></td><td>Global Renovate config: the raw file as the worker last used it, plain text, read-only, never parsed (§2.4), with its source (repository and ref, or mounted) and capture time; a notice when the instance runs in polling mode (§2.11)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-textarea-1.json">p-textarea-1</a></td><td>Private key rotation: PEM input, never re-displayed (§3.4)</td></tr>
-    <tr><td><a href="https://coss.com/ui/r/p-table-2.json">p-table-2</a></td><td>Read-only role mapping and App/installation metadata (§3.7)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-table-2.json">p-table-2</a></td><td>Read-only <strong>App and installation info</strong> (App id, slug, owner, account, repository selection, permissions and any missing one, rate-limit budget) and the read-only <strong>role mapping</strong> (§3.7)</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-button-1.json">p-button-1</a></td><td>Save; Rotate key</td></tr>
     <tr><td><a href="https://coss.com/ui/r/p-alert-5.json">p-alert-5</a> success</td><td>Settings saved, key rotated</td></tr>
   </table>
 
+  <h4>/about</h4>
+  <table>
+    <tr><th>Particle</th><th>Usage</th></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-card-1.json">p-card-1</a> Basic card</td><td>Release Ops version and licence (AGPL-3.0-only, with a link to the project's licence and source)</td></tr>
+    <tr><td><a href="https://coss.com/ui/r/p-card-1.json">p-card-1</a> Basic card</td><td>The <strong>pinned Renovate version</strong> that updates run with, its <strong>AGPL-3.0</strong> licence notice and a link to that version's source (<code>GET /api/v1/about</code>, §7.8). The same notice ships in the images (#195)</td></tr>
+  </table>
+
   <h3>8.4 API client (frontend)</h3>
-  <p>All API calls to <code>/api/go/api/v1/...</code> (Next proxy — same origin, session cookie forwarded automatically). Sign-in is a browser navigation to <code>/api/go/api/v1/auth/github/login</code>; the session is read with <code>GET /api/go/api/v1/auth/session</code>. React Query hooks: <code>useSession</code>, <code>useStatus</code>, <code>useRepos</code>, <code>useIntegrations</code>, <code>useTicketProjects</code>, <code>useNotificationTargets</code>, <code>useSettings</code>, <code>usePollRuns</code>, <code>usePollRun</code>, <code>useTriggerPoll</code>.</p>
+  <p>All API calls to <code>/api/go/api/v1/...</code> (Next proxy — same origin, session cookie forwarded automatically). Sign-in is a browser navigation to <code>/api/go/api/v1/auth/github/login</code>; the session is read with <code>GET /api/go/api/v1/auth/session</code>. React Query hooks: <code>useSession</code>, <code>useStatus</code>, <code>useDashboard</code>, <code>useUpdatePrs</code>, <code>useRepositories</code>, <code>useJobs</code>, <code>useJob</code>, <code>useProblems</code>, <code>useIntegrations</code>, <code>useTicketProjects</code>, <code>useInstallations</code>, <code>useSettings</code>, <code>useGlobalConfig</code>, <code>useAbout</code>, and the mutations <code>useUpdateRepository</code>, <code>useRunRepository</code> and <code>useEnableRenovate</code>.</p>
 
   <h3 id="i18n">8.5 Internationalization (i18n)</h3>
   <p><strong>Zero hardcoded UI strings.</strong> All user-facing copy (labels, buttons, headings, errors, toasts, empty states, table headers, <code>aria-label</code>, placeholders) uses <strong>next-intl</strong>.</p>
@@ -1407,14 +1643,14 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td>Library</td><td><code>next-intl</code> with App Router provider in root layout</td></tr>
     <tr><td>Messages</td><td><code>apps/web/messages/en.json</code> (MVP default locale <code>en</code>)</td></tr>
     <tr><td>Components</td><td><code>useTranslations('namespace')</code> / server <code>getTranslations</code></td></tr>
-    <tr><td>Keys</td><td>Dotted namespaces: <code>dashboard.runPoll</code>, <code>repos.add</code></td></tr>
+    <tr><td>Keys</td><td>Dotted namespaces: <code>dashboard.openUpdatePrs</code>, <code>repositories.pause</code></td></tr>
     <tr><td>CI</td><td><code>eslint-plugin-i18next</code> — <code>i18next/no-literal-string</code> fails on JSX literals</td></tr>
   </table>
   <p>Allowed without i18n keys: route paths, API enum values, CSS classes, test IDs. Forbidden: <code>&lt;Button&gt;Save&lt;/Button&gt;</code>, <code>toast('Error')</code>.</p>
   <p><strong>Display timezone:</strong> All UI timestamps use the IANA timezone from <code>APP_TIMEZONE</code> (default <code>UTC</code>) via next-intl <code>timeZone</code> in <code>i18n/request.ts</code> and <code>NextIntlClientProvider</code>. Storage and API remain UTC ISO8601 (§4.7).</p>
   <p><strong>24-hour clock:</strong> All displayed times use 24-hour format (<code>hour12: false</code>) — no AM/PM.</p>
-  <p><strong>Poll diagnostics:</strong> Poll run history and dashboard poll health show started/finished timestamps (and poll run event times) with millisecond precision (<code>fractionalSecondDigits: 3</code>). Other screens use medium date + short time without fractional seconds.</p>
-  <p>Shared formatters: <code>apps/web/lib/format/datetime.ts</code> (<code>formatAppDateTime</code>, <code>formatPollDiagnosticDateTime</code>).</p>
+  <p><strong>Job diagnostics:</strong> The Jobs page and the job detail show created/started/finished timestamps (and job event times) with millisecond precision (<code>fractionalSecondDigits: 3</code>). Other screens use medium date + short time without fractional seconds.</p>
+  <p>Shared formatters: <code>apps/web/lib/format/datetime.ts</code> (<code>formatAppDateTime</code> and the millisecond-precision diagnostic formatter).</p>
   <p>Agents: <code>.claude/rules/10-i18n.md</code>.</p>
 
   <h2 id="env">9. Environment variables</h2>
@@ -1433,6 +1669,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
     <tr><td><code>GLOBAL_CONFIG_REPO</code></td><td>no</td><td>—</td><td><code>owner/repo</code> holding the global Renovate config file and the tools directory, fetched by the worker at job start with the job token (§2.4). Unset: the file and tools are mounted into the worker instead</td></tr>
     <tr><td><code>GLOBAL_CONFIG_REF</code></td><td>with <code>GLOBAL_CONFIG_REPO</code></td><td>—</td><td>Branch, tag or commit of that repository to fetch (§2.4)</td></tr>
     <tr><td><code>PRESET_REPOSITORIES</code></td><td>no</td><td>—</td><td>Comma-separated <code>owner/repo</code> list of preset repositories (e.g. a shared presets repository). Each job's token covers the target repository, these, and the global config repository when one is configured (§2.2). The App must be installed on them</td></tr>
+    <tr><td><code>METRICS_ADDR</code></td><td>no</td><td><code>127.0.0.1:9100</code></td><td>Bind address of the app's <code>/metrics</code> listener (§7.8). Loopback by default; set <code>:9100</code> to let a scraper on the Compose network reach it. Never published to the host, never proxied, no authentication</td></tr>
     <tr><td><code>GO_API_URL</code></td><td>no</td><td><code>http://127.0.0.1:8080</code></td><td>Next proxy target in the same container</td></tr>
     <tr><td><code>GO_INTERNAL_PORT</code></td><td>no</td><td><code>8080</code></td><td>Go binds only <code>127.0.0.1</code></td></tr>
     <tr><td><code>APP_DB_PATH</code></td><td>no</td><td><code>/data/app.db</code></td><td>SQLite (app data + auth)</td></tr>
@@ -1446,6 +1683,7 @@ func ClassifyStatus(mapping StatusMapping, rawStatus string) string</code></pre>
   <table>
     <tr><th>Variable</th><th>Required</th><th>Description</th></tr>
     <tr><td><code>INTERNAL_URL</code></td><td>yes</td><td>URL of the app's internal listener on the Compose network (e.g. <code>http://release-ops:9090</code>, matching <code>INTERNAL_ADDR</code>)</td></tr>
+    <tr><td><code>METRICS_ADDR</code></td><td>no</td><td>Bind address of the worker's own <code>/metrics</code> listener (default <code>127.0.0.1:9100</code>; same rules as the app's, §7.8). It serves nothing else</td></tr>
     <tr><td><code>WORKER_SECRET</code></td><td>yes</td><td>Same value as the app's. Held by the worker process only; Renovate runs as another Unix user and cannot read it (§2.3)</td></tr>
   </table>
   <p><strong>Not environment variables:</strong> the concurrency cap is an instance setting on the settings page (§4.1, §7.2); the number of slots is that cap (§2.5); the hourly safety net and the other timings are fixed (§5.7). The worker accepts no other Renovate override.</p>
@@ -1659,36 +1897,87 @@ jobs:
   </ul>
 
   <h2 id="mvp">12. MVP Acceptance Criteria</h2>
-  <p class="note">Criteria 1, 14 and 16–18 are v2. Criteria 2–13 are v1 acceptance criteria and are replaced by the v2 ticket and dashboard criteria (tracked as #187). Criterion 15 carries over.</p>
+  <p class="note">Criterion 1 is the primary requirement of v2: the reason the product exists.</p>
   <ol>
-    <li>After first-start setup (§3.2–§3.4), an admin can sign in with GitHub (§3.5); a viewer sees only their repositories (§3.9).</li>
-    <li>Admin can create integrations for all eight <code>kind</code> values; secrets never in API responses.</li>
-    <li>Admin can create multiple <strong>ticket projects</strong> per ticket integration (Kaneo projects, Jira keys, Linear teams) with their own <code>status_mapping</code> and <code>on_open_ticket_policy</code>.</li>
-    <li>Admin can create monitored repo with any source/ticket-project combination (e.g. Codeberg+Kaneo, Forgejo+Jira, Gitea+Linear).</li>
-    <li>Integration test per provider returns success/failure in UI.</li>
-    <li>First poll: <strong>baseline</strong> — no ticket, <code>last_known_tag</code> set.</li>
-    <li>Poll without release change: <strong>skip</strong>.</li>
-    <li>New release, no open ticket (or done/cancelled): <strong>create</strong> — ticket visible in target system.</li>
-    <li>New release, open ticket, policy <code>supersede</code>: old ticket → superseded status + comment; new ticket created; <code>tickets_superseded</code> incremented.</li>
-    <li>Policies <code>merge</code> and <code>skip_if_open</code> work as in §5.2.1.</li>
-    <li>Status mapping is applied <strong>per ticket project</strong> (different open/done values per Kaneo project, Jira key, Linear team).</li>
-    <li>Admin can create and test Shoutrrr notification targets; events on create/error/supersede.</li>
-    <li>At least one end-to-end test per MVP source (GitHub, GitLab, Gitea, Forgejo, Codeberg) and per ticket provider (Kaneo, Jira, Linear) in CI (mock or sandbox).</li>
-    <li><code>docker compose up</code> starts <strong>two</strong> services, the app and the worker; the worker has no database access, no data volume and no Docker socket (§2, §10).</li>
-    <li>Go + web tests green in CI; workflow layout per <a href="#ci">§11 CI/CD</a>.</li>
     <li>Ticking a Renovate checkbox in a bot PR or in the Dependency Dashboard starts a job for that repository at most 10 seconds after the webhook arrives, measured across the app and worker; the PR or dashboard updates when Renovate finishes. Edits by the App's own bot and edits without an unchecked-to-checked transition start nothing (§2.9).</li>
+    <li>After first-start setup (§3.2–§3.4), an admin can sign in with GitHub (§3.5); a viewer sees only their repositories (§3.9) in every list and detail of §7.5–§7.7, and 404 for any other.</li>
     <li>The webhook endpoint verifies the HMAC over the raw body, caps the body, deduplicates <code>X-GitHub-Delivery</code> and answers 202 (§2.10); failed deliveries are redelivered at startup and every 15 minutes; with <code>WEBHOOK_URL</code> unset the instance polls and is documented as degraded (§2.11).</li>
     <li>The queue runs one job per repository, honours the concurrency cap and its reserved high-priority slot, coalesces triggers with <code>rerun_requested</code>, reclaims expired leases and backs off with <code>Retry-After</code> (§2.8).</li>
+    <li><code>docker compose up</code> starts <strong>two</strong> services, the app and the worker; the worker has no database access, no data volume and no Docker socket (§2, §10).</li>
+    <li>Update PR state comes from GitHub: <code>pull_request</code> webhooks and a reconcile that lists the open PRs authored by the App's bot user. A PR is a bot PR by author plus Renovate's body markers, never by branch prefix or title; a merge, a close and a supersede are recorded correctly, including after a missed webhook (§5.1).</li>
+    <li>The dependencies of a PR are stored as a child list, enriched from the Renovate report with nullable columns and falling back to the PR body; a missing or unreadable report fails no job (§5.1, §4.5).</li>
+    <li>An eligible update PR gets <strong>exactly one ticket</strong> listing all its dependencies, rendered from the project's templates. The ticket filter (update types, labels, skip automerged; default every non-automerged PR) is applied, and the ticket project is the repository's override or the installation's default (§5.2). Renovate's config-migration PR, onboarding PRs and PRs without dependencies get no ticket.</li>
+    <li>The lifecycle follows the <code>status_mapping</code> of the ticket project: a new version of the same PR updates the ticket and adds a note; a PR replaced by a new PR supersedes the old ticket and links the new one; a merged PR moves its ticket to done; a PR closed unmerged moves it to won't do, and a replacement found later still supersedes that ticket. A ticket whose status was changed by hand is left alone (§5.2.1).</li>
+    <li>Ticket creation is at-most-once: a pending marker is set before the create call and cleared by the write that stores the link, and a marker left by a timeout or 5xx is resolved by a lookup by external key, never by an endless error loop (§5.2.2).</li>
+    <li>The ticket link is one bot comment on the PR, edited and not re-posted, and nothing is written into the PR body (§5.2.3).</li>
+    <li>Admin can create integrations for the three ticket kinds (<code>kaneo</code>, <code>jira</code>, <code>linear</code>); secrets never in API responses; the connection test per provider returns success or failure in the UI (§4.2, §6.2).</li>
+    <li>Admin can create multiple <strong>ticket projects</strong> per ticket integration (Kaneo projects, Jira keys, Linear teams) with their own <code>status_mapping</code>, ticket filter and content templates (§4.3, §5.3, §5.4); the template variables of §5.4 render, <code>.ReleaseNotes</code> is truncated to 4,000 characters, and PR, dependency and release-note text is never executed as a template.</li>
+    <li>Admin can pause and enable a repository, run a job now, set a repository's ticket project, and use "Enable repo" to open a <code>renovate.json</code> PR extending the configured preset; a viewer can do none of these (§7.5).</li>
+    <li>The dashboard lists open and recently merged update PRs with repository, age, update type, ticket link and status, and a link to the repository's Dependency Dashboard; the Jobs page shows jobs with log excerpts and a Problems view with job errors, ticket creation errors, rate limits and lost App permissions. A viewer sees that a ticket operation is failing (<code>ticket.hasError</code>, a <code>ticket_failed</code> problem) but never its error text, which only an admin sees (§3.10, §7.6, §7.7, §8.3).</li>
+    <li>The settings page shows the global Renovate config raw and read-only, the App and installation info and the role mapping; the About page names the pinned Renovate version with its AGPL-3.0 notice (§8.3).</li>
+    <li>Job history is pruned 30 days after a job finished (§4.6).</li>
+    <li><code>/metrics</code> serves the metrics of §7.8 on <code>METRICS_ADDR</code> from the app and the worker, and answers 404 through the <code>/api/go</code> proxy.</li>
+    <li>No v1 behaviour remains: no release polling, no baseline/skip/create decision, no source providers, no Shoutrrr and no notification targets, no poll endpoints or pages (§1, §5.5).</li>
+    <li>At least one end-to-end test per ticket provider (Kaneo, Jira, Linear) in CI (fake or sandbox), and the update flow against a fake GitHub; no test contacts a live provider.</li>
+    <li>Go + web tests green in CI; workflow layout per <a href="#ci">§11 CI/CD</a>.</li>
   </ol>
 
   <h2 id="future">13. Post-MVP</h2>
   <ul>
     <li>Bitbucket, Azure DevOps, more Git hosts.</li>
-    <li>Release filters (regex on tags). Pre-releases: per-repo <code>include_prereleases</code> (§4.4).</li>
-    <li>Bulk enable/disable on <code>/repos</code> table.</li>
-    <li>Linear <code>openTypes</code>/<code>doneTypes</code> status mapping (MVP uses <code>stateId</code> only).</li>
     <li>GitLab and GitHub Enterprise Server as platforms, private-registry <code>hostRules</code>, and a hosted offering (§1).</li>
+    <li>Bulk pause and enable on the <code>/repositories</code> table.</li>
+    <li>Linear <code>openTypes</code>/<code>doneTypes</code> status mapping (MVP uses <code>stateId</code> only).</li>
+    <li>A check run or commit status on the update PR for the ticket; ticket-to-PR updates; ticket-first mode (injecting <code>prBodyNotes</code> or a ticket key into Renovate's config) (§5.2.3).</li>
+    <li>A generic error webhook for operators without Prometheus (§5.5).</li>
+    <li>An "updates pending approval" view built on Renovate's Dependency Dashboard approvals.</li>
   </ul>
+
+  <h2 id="v1-templates">Appendix A. v1 template contract (transitional)</h2>
+  <p>
+    <strong>This appendix is not the v2 contract.</strong> It records the ticket template contract that the code still
+    implements today (<code>internal/tickettemplate/</code> and <code>apps/web/lib/ticket-projects/content-templates.ts</code>):
+    release-based templates with <code>.Repo</code>, <code>.Release</code>, <code>.Previous</code> and <code>.Supersede</code> variables.
+    The v2 ticket content is specified in <a href="#ticket-content">§5.4</a>. The template code moves to the v2 contract in
+    #213, which removes this appendix and points the template tests at §5.4.
+  </p>
+
+  <h4><code>content_templates</code> JSON shape</h4>
+  <pre><code>{
+  "title": "Release: {{ .Repo.SourceKind }} {{ .Repo.ProjectPath }} {{ .Release.Tag }}",
+  "description": "**Source:** {{ .Repo.SourceKind }}\n**Repository:** {{ .Repo.ProjectPath }} ({{ .Repo.URL }})\n\n**Release:** {{ .Release.Tag }} — {{ .Release.Name }}\n**URL:** {{ .Release.URL }}\n**Published:** {{ .Release.PublishedAt }}\n**Pre-release:** {{ yesNo .Release.IsPrerelease }}\n\n**Previous tag:** {{ .Previous.Tag }}\n\n**Release notes:**\n{{ .Release.Notes }}",
+  "supersedeComment": "Superseded: {{ .Supersede.OldTag }} → {{ .Supersede.NewTag }}\n{{ .Release.URL }}\n\nNew ticket: {{ .Supersede.NewTicketURL }}"
+}</code></pre>
+  <table>
+    <tr><th>Key</th><th>Used on</th><th>Description</th></tr>
+    <tr><td><code>title</code></td><td><code>create</code>, <code>merge</code>, <code>supersede</code> (new ticket)</td><td>Ticket title sent to provider</td></tr>
+    <tr><td><code>description</code></td><td><code>create</code>, <code>merge</code>, <code>supersede</code> (new ticket)</td><td>Ticket body (markdown for Kaneo/Linear; plain text for Jira)</td></tr>
+    <tr><td><code>supersedeComment</code></td><td><code>supersede</code> (comment on old ticket)</td><td>Comment body after new ticket exists</td></tr>
+  </table>
+  <p>
+    Empty string for a key → use integration-kind default template (Go constants — not DB seed).
+    Kaneo and Linear defaults use markdown; Jira defaults use plain text (existing ADF path).
+    Invalid template syntax at render time → poll <code>error</code> for that repo; no silent fallback.
+  </p>
+
+  <h4>MVP template variables</h4>
+  <table>
+    <tr><th>Template path</th><th>Description</th><th>Available on</th></tr>
+    <tr><td><code>.Repo.SourceKind</code></td><td><code>monitored_repos.source_kind</code></td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Repo.ProjectPath</code></td><td><code>monitored_repos.project_path</code></td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Repo.URL</code></td><td>Repository web URL (derived from source kind + integration base URL + path)</td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Release.Tag</code></td><td>Latest release tag</td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Release.Name</code></td><td>Release name/title from source API</td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Release.URL</code></td><td>Release page URL</td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Release.Notes</code></td><td>Release body/changelog text from source API</td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Release.PublishedAt</code></td><td>Release timestamp (RFC3339 UTC string in templates)</td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Release.IsPrerelease</code></td><td>Whether the release is a pre-release (<code>true</code>/<code>false</code>)</td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Previous.Tag</code></td><td><code>last_known_tag</code> before this poll action</td><td>create, merge, supersede</td></tr>
+    <tr><td><code>.Supersede.OldTag</code></td><td>Tag on the open ticket being superseded</td><td>supersede comment; also populated on supersede new-ticket render (use <code>.Previous.Tag</code> for create/merge)</td></tr>
+    <tr><td><code>.Supersede.NewTag</code></td><td>New release tag</td><td>supersede comment only</td></tr>
+    <tr><td><code>.Supersede.NewTicketURL</code></td><td>Provider web URL for the ticket created during supersede</td><td>supersede comment only (after the new ticket is created)</td></tr>
+  </table>
+  <p>Template helper functions (MVP): <code>formatRFC3339</code>, <code>formatDate</code>, <code>yesNo</code> (for booleans in plain text).</p>
 
   <p class="docnav"><a href="index.html">Docs</a> · <a href="specs.html">Spec</a> · <a href="stack.html">Stack</a> · <a href="schema.html">Schema</a></p>
 </div>
