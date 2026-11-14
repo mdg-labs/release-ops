@@ -36,7 +36,7 @@ const linearIssueURLCacheMax = 4096
 
 // linearIssueURLs caches Linear-provided issue urls (https://linear.app/<workspace>/issue/<KEY>)
 // by issue id. Issue ids are global UUIDs, so one process-wide cache serves every provider
-// instance (the poll engine and the status API each build their own provider).
+// instance, however many providers are built.
 var linearIssueURLs = struct {
 	sync.Mutex
 	byID map[string]string

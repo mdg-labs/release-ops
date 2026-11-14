@@ -1,2 +1,3 @@
-// Package providers implements release source APIs (GitHub, GitLab, Gitea, Forgejo, Codeberg).
+// Package providers groups the ticket providers (ticket, ticket/metadata) and the
+// integration connection tester (integrationtester).
 package providers

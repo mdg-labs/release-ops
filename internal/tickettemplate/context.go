@@ -10,7 +10,7 @@ type Context struct {
 	Supersede SupersedeContext
 }
 
-// RepoContext holds monitored repository fields available in templates.
+// RepoContext holds the source repository fields available in templates.
 type RepoContext struct {
 	SourceKind  string
 	ProjectPath string
