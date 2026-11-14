@@ -11,6 +11,8 @@ Release Ops is a self-hosted dependency-update bot with a web UI. One **GitHub A
 
 It runs as two services in one Docker Compose project: the app (Go API and Next.js UI) and the worker (Renovate).
 
+> **Status:** v2 is in development on this branch and is not released; this README describes v2.0.0. Running Renovate in the worker, GitHub sign-in and the admin and viewer roles are not implemented yet and land before the v2.0.0 release. Until then, sign-in is by email and password.
+
 ## Why
 
 Renovate is the best engine for keeping dependencies current, but its pull requests are easy to lose track of: they pile up in repositories, and nobody plans work around them. Release Ops keeps Renovate as the engine and adds what teams are missing around it: each update PR gets exactly one ticket in the tracker where your team already plans work, the ticket follows the PR (updated, superseded, done on merge), and one dashboard shows what is open across your repositories. There is no per-repository bot setup: one GitHub App, created for you from a first-start setup page.
