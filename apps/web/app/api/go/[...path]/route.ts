@@ -14,6 +14,9 @@ const FORWARD_REQUEST_HEADERS = [
   "x-forwarded-for",
 ];
 
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const GITHUB_ORIGIN = "https://github.com";
+
 function getGoApiUrl(): string {
   return process.env.GO_API_URL ?? DEFAULT_GO_API_URL;
 }
@@ -36,8 +39,40 @@ function buildUpstreamHeaders(request: NextRequest): Headers {
   return headers;
 }
 
+function allowedRedirectOrigins(): Set<string> {
+  const origins = new Set([GITHUB_ORIGIN]);
+  const configured = process.env.GITHUB_BASE_URL;
+  if (configured) {
+    try {
+      origins.add(new URL(configured).origin);
+    } catch {
+      // An unparsable GITHUB_BASE_URL adds no allowed origin.
+    }
+  }
+  return origins;
+}
+
+// A same-origin path (one slash, not protocol-relative) or an absolute URL on an allowed
+// GitHub origin; anything else is not forwarded, so the proxy is not an open redirect.
+function isAllowedRedirectLocation(location: string): boolean {
+  if (location.startsWith("/")) {
+    return !location.startsWith("//") && !location.includes("\\");
+  }
+  try {
+    return allowedRedirectOrigins().has(new URL(location).origin);
+  } catch {
+    return false;
+  }
+}
+
 function buildResponseHeaders(upstream: Response): Headers {
   const headers = new Headers();
+  if (REDIRECT_STATUSES.has(upstream.status)) {
+    const location = upstream.headers.get("location");
+    if (location) {
+      headers.set("location", location);
+    }
+  }
   const contentType = upstream.headers.get("content-type");
   if (contentType) {
     headers.set("content-type", contentType);
@@ -88,7 +123,16 @@ async function proxyRequest(
       headers: buildUpstreamHeaders(request),
       body: hasPayload ? body : undefined,
       duplex: hasPayload ? "half" : undefined,
+      redirect: "manual",
     } as RequestInit);
+
+    if (REDIRECT_STATUSES.has(upstream.status)) {
+      const location = upstream.headers.get("location");
+      if (location && !isAllowedRedirectLocation(location)) {
+        await upstream.body?.cancel();
+        return upstreamErrorResponse();
+      }
+    }
 
     return new Response(upstream.body, {
       status: upstream.status,

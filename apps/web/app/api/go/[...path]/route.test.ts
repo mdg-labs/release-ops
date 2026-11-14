@@ -214,4 +214,127 @@ describe("Go API proxy route", () => {
     const body = await response.json();
     expect(body.error.code).toBe("UPSTREAM_ERROR");
   });
+
+  describe("upstream redirects", () => {
+    function replyRedirect(
+      location: string,
+      status = 302,
+      extra: Record<string, string | string[]> = {},
+    ) {
+      mockAgent
+        .get(GO_ORIGIN)
+        .intercept({ path: "/api/v1/setup/callback", method: "GET" })
+        .reply(status, "", { headers: { location, ...extra } });
+    }
+
+    function callRedirecting() {
+      return GET(
+        makeRequest("http://localhost:3000/api/go/api/v1/setup/callback"),
+        routeContext(["api", "v1", "setup", "callback"]),
+      );
+    }
+
+    it.each([301, 302, 303, 307, 308])(
+      "returns an upstream %i to the browser with its Location",
+      async (status) => {
+        replyRedirect("/login", status);
+
+        const response = await callRedirecting();
+
+        expect(response.status).toBe(status);
+        expect(response.headers.get("location")).toBe("/login");
+      },
+    );
+
+    it("does not fetch the redirect target itself", async () => {
+      replyRedirect("/login");
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+      await callRedirecting();
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchSpy.mock.calls[0][1]).toMatchObject({ redirect: "manual" });
+      fetchSpy.mockRestore();
+    });
+
+    it("passes a redirect to the GitHub App installation page", async () => {
+      replyRedirect("https://github.com/apps/x/installations/new");
+
+      const response = await callRedirecting();
+
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toBe(
+        "https://github.com/apps/x/installations/new",
+      );
+    });
+
+    it("passes a redirect to the host of GITHUB_BASE_URL", async () => {
+      vi.stubEnv("GITHUB_BASE_URL", "https://ghe.example.com");
+      replyRedirect("https://ghe.example.com/apps/x/installations/new");
+
+      const response = await callRedirecting();
+
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toBe(
+        "https://ghe.example.com/apps/x/installations/new",
+      );
+    });
+
+    it.each([
+      "https://evil.example.com/phish",
+      "https://ghe.example.com/apps/x",
+      "http://github.com/apps/x",
+      "https://github.com@evil.example.com/",
+      "//evil.example.com/",
+      "/\\evil.example.com/",
+      "login",
+    ])("refuses a redirect to %s with a 502 and no Location", async (loc) => {
+      replyRedirect(loc);
+
+      const response = await callRedirecting();
+
+      expect(response.status).toBe(502);
+      expect(response.headers.get("location")).toBeNull();
+    });
+
+    it("still forwards Set-Cookie on a redirect response", async () => {
+      replyRedirect("/login", 302, {
+        "set-cookie": ["a=1; Path=/; HttpOnly", "b=2; Path=/"],
+      });
+
+      const response = await callRedirecting();
+
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toBe("/login");
+      expect(response.headers.getSetCookie()).toEqual([
+        "a=1; Path=/; HttpOnly",
+        "b=2; Path=/",
+      ]);
+    });
+
+    it("leaves a non-redirect 200 unchanged and drops a stray Location", async () => {
+      mockAgent
+        .get(GO_ORIGIN)
+        .intercept({ path: "/api/v1/status", method: "GET" })
+        .reply(
+          200,
+          { ok: true },
+          {
+            headers: {
+              "content-type": "application/json",
+              location: "https://evil.example.com/",
+            },
+          },
+        );
+
+      const response = await GET(
+        makeRequest("http://localhost:3000/api/go/api/v1/status"),
+        routeContext(["api", "v1", "status"]),
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true });
+      expect(response.headers.get("location")).toBeNull();
+    });
+  });
 });
