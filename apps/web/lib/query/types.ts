@@ -18,6 +18,8 @@ export type LoginResponse = {
 
 export type SetupStatusResponse = {
   setupRequired: boolean;
+  /** The App's installation page, while an App exists and has no installation. */
+  installUrl?: string;
 };
 
 export type SetupSessionResponse = {
@@ -26,6 +28,18 @@ export type SetupSessionResponse = {
 
 export type SetupTokenInput = {
   token: string;
+};
+
+export type SetupOwnerType = "user" | "organization";
+
+export type SetupManifestInput = {
+  owner: { type: SetupOwnerType; login?: string };
+  name?: string;
+};
+
+export type SetupManifestResponse = {
+  url: string;
+  manifest: Record<string, unknown>;
 };
 
 export type StatusResponse = {

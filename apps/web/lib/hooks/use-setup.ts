@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, apiClient } from "@/lib/api/client";
 import { queryKeys } from "@/lib/query/keys";
 import type {
+  SetupManifestInput,
+  SetupManifestResponse,
   SetupSessionResponse,
   SetupStatusResponse,
   SetupTokenInput,
@@ -53,5 +55,12 @@ export function useRedeemSetupToken() {
         queryKey: queryKeys.setupSession(),
       });
     },
+  });
+}
+
+export function useCreateSetupManifest() {
+  return useMutation({
+    mutationFn: (input: SetupManifestInput) =>
+      apiClient.post<SetupManifestResponse>("/setup/manifest", input),
   });
 }

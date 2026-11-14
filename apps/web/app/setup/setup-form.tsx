@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useFormatter, useTranslations } from "next-intl";
 import { useEffect, useId, useRef, useState } from "react";
 import {
@@ -15,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { ApiError } from "@/lib/api/client";
 import { formatAppDateTime } from "@/lib/format/datetime";
+import { CreateAppForm } from "./create-app-form";
 import {
   useRedeemSetupToken,
   useSetupSession,
@@ -54,6 +56,7 @@ export function SetupForm(): React.ReactElement {
   const t = useTranslations("setup");
   const format = useFormatter();
   const status = useSetupStatus();
+  const callbackError = useSearchParams().get("error");
   const setupRequired = status.data?.setupRequired === true;
   const session = useSetupSession(setupRequired);
   const redeem = useRedeemSetupToken();
@@ -111,7 +114,17 @@ export function SetupForm(): React.ReactElement {
           description={t("alreadyDescription")}
           title={t("alreadyTitle")}
         />
-        <Button render={<Link href="/login" />}>{t("goToLogin")}</Button>
+        {status.data.installUrl ? (
+          <Button render={<a href={status.data.installUrl} />}>
+            {t("installApp")}
+          </Button>
+        ) : null}
+        <Button
+          render={<Link href="/login" />}
+          variant={status.data.installUrl ? "outline" : "default"}
+        >
+          {t("goToLogin")}
+        </Button>
       </AuthLayout>
     );
   }
@@ -147,6 +160,13 @@ export function SetupForm(): React.ReactElement {
             ),
           })}
           title={t("sessionOpenTitle")}
+        />
+        <CreateAppForm
+          callbackError={callbackError}
+          onSessionLost={() => {
+            void status.refetch();
+            void session.refetch();
+          }}
         />
       </AuthLayout>
     );

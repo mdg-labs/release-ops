@@ -13,6 +13,17 @@ import { SetupForm } from "./setup-form";
 const ORIGIN = "http://localhost:3000";
 const STATUS_PATH = "/api/go/api/v1/setup/status";
 const SESSION_PATH = "/api/go/api/v1/setup/session";
+const MANIFEST_PATH = "/api/go/api/v1/setup/manifest";
+
+const submitManifestForm = vi.fn();
+vi.mock("@/lib/setup/submit-manifest", () => ({
+  submitManifestForm: (...args: unknown[]) => submitManifestForm(...args),
+}));
+
+let searchParams = new URLSearchParams();
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => searchParams,
+}));
 
 vi.mock("next-intl", () => ({
   useTranslations: (namespace: string) => (key: string) =>
@@ -64,7 +75,16 @@ describe("SetupForm", () => {
       .reply(401, { error: { code: "UNAUTHORIZED", message: "no session" } });
   }
 
+  function openSession() {
+    statusIs(true);
+    pool()
+      .intercept({ path: SESSION_PATH, method: "GET" })
+      .reply(200, { expiresAt: "2026-11-14T12:15:00.000Z" });
+  }
+
   beforeEach(() => {
+    submitManifestForm.mockReset();
+    searchParams = new URLSearchParams();
     originalFetch = globalThis.fetch;
     mockAgent = new MockAgent();
     setGlobalDispatcher(mockAgent);
@@ -252,5 +272,170 @@ describe("SetupForm", () => {
     expect(
       await screen.findByText("setup.sessionOpenTitle"),
     ).toBeInTheDocument();
+  });
+
+  it.each([
+    ["invalid_state", "setup.callbackInvalidState"],
+    ["conversion_rejected", "setup.callbackRejected"],
+    ["conversion_failed", "setup.callbackFailed"],
+    ["something_else", "setup.requestFailed"],
+  ])(
+    "shows an inline error and the form again when GitHub's callback ends in %s",
+    async (code, message) => {
+      searchParams = new URLSearchParams({ error: code });
+      openSession();
+
+      renderSetupForm();
+
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "setup.createApp" }),
+      ).toBeEnabled();
+    },
+  );
+
+  it("posts the manifest to GitHub for a personal App", async () => {
+    openSession();
+    pool()
+      .intercept({
+        path: MANIFEST_PATH,
+        method: "POST",
+        body: JSON.stringify({ owner: { type: "user" } }),
+      })
+      .reply(200, {
+        url: "https://github.com/settings/apps/new?state=s1",
+        manifest: { name: "Release Ops", public: false },
+      });
+
+    renderSetupForm();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "setup.createApp" }),
+    );
+
+    await waitFor(() =>
+      expect(submitManifestForm).toHaveBeenCalledWith(
+        "https://github.com/settings/apps/new?state=s1",
+        { name: "Release Ops", public: false },
+      ),
+    );
+    expect(
+      screen.getByRole("button", { name: /setup\.createApp/ }),
+    ).toBeDisabled();
+  });
+
+  it("asks for the organization name and sends it with the App name", async () => {
+    openSession();
+    pool()
+      .intercept({
+        path: MANIFEST_PATH,
+        method: "POST",
+        body: JSON.stringify({
+          owner: { type: "organization", login: "acme" },
+          name: "Acme Releases",
+        }),
+      })
+      .reply(200, {
+        url: "https://github.com/organizations/acme/settings/apps/new?state=s2",
+        manifest: { name: "Acme Releases" },
+      });
+
+    renderSetupForm();
+    expect(screen.queryByLabelText(/setup\.organizationLabel/)).toBeNull();
+    fireEvent.click(await screen.findByRole("combobox"));
+    await waitFor(() => {
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+    });
+    const option = screen.getByRole("option", {
+      name: "setup.ownerOrganization",
+    });
+    fireEvent.pointerDown(option, {
+      pointerId: 1,
+      pointerType: "mouse",
+      buttons: 1,
+    });
+    fireEvent.pointerUp(option, { pointerId: 1, pointerType: "mouse" });
+    fireEvent.click(option);
+    fireEvent.change(await screen.findByLabelText(/setup\.organizationLabel/), {
+      target: { value: " acme " },
+    });
+    fireEvent.change(screen.getByLabelText("setup.nameLabel"), {
+      target: { value: "Acme Releases" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "setup.createApp" }));
+
+    await waitFor(() =>
+      expect(submitManifestForm).toHaveBeenCalledWith(
+        "https://github.com/organizations/acme/settings/apps/new?state=s2",
+        { name: "Acme Releases" },
+      ),
+    );
+  });
+
+  it("shows an inline error and does not leave for GitHub when the manifest request fails", async () => {
+    openSession();
+    pool()
+      .intercept({ path: MANIFEST_PATH, method: "POST" })
+      .reply(400, {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Enter the organization's GitHub name.",
+        },
+      });
+
+    renderSetupForm();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "setup.createApp" }),
+    );
+
+    expect(
+      await screen.findByText("setup.invalidOwnerOrName"),
+    ).toBeInTheDocument();
+    expect(submitManifestForm).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "setup.createApp" }),
+    ).toBeEnabled();
+  });
+
+  it("returns to the token form when the setup session has ended", async () => {
+    openSession();
+    pool()
+      .intercept({ path: MANIFEST_PATH, method: "POST" })
+      .reply(401, {
+        error: {
+          code: "UNAUTHORIZED",
+          message: "A setup session is required.",
+        },
+      });
+    statusIs(true);
+    noSession();
+
+    renderSetupForm();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "setup.createApp" }),
+    );
+
+    expect(
+      await screen.findByLabelText(/setup\.tokenLabel/),
+    ).toBeInTheDocument();
+    expect(submitManifestForm).not.toHaveBeenCalled();
+  });
+
+  it("points to the App's installation page when the App exists but is not installed", async () => {
+    pool().intercept({ path: STATUS_PATH, method: "GET" }).reply(200, {
+      setupRequired: false,
+      installUrl: "https://github.com/apps/release-ops/installations/new",
+    });
+
+    renderSetupForm();
+
+    expect(
+      await screen.findByRole("link", { name: "setup.installApp" }),
+    ).toHaveAttribute(
+      "href",
+      "https://github.com/apps/release-ops/installations/new",
+    );
+    expect(
+      screen.getByRole("link", { name: "setup.goToLogin" }),
+    ).toHaveAttribute("href", "/login");
   });
 });

@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/mdg-labs/release-ops/internal/api/handlers"
+	"github.com/mdg-labs/release-ops/internal/github"
 	"github.com/mdg-labs/release-ops/internal/mail"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
@@ -32,6 +33,11 @@ type ServerDeps struct {
 	// AppURL is the browser-facing URL of the instance (APP_URL), used in the links of
 	// outgoing mail.
 	AppURL string
+	// WebhookURL is the configured WEBHOOK_URL, empty when unset, and GitHubBaseURL the
+	// configured GITHUB_BASE_URL; with GitHub they serve the manifest flow on /setup.
+	WebhookURL    string
+	GitHubBaseURL string
+	GitHub        *github.Client
 }
 
 // NewRouter builds the root HTTP handler with health and API routes.

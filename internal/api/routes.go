@@ -13,8 +13,9 @@ import (
 // Route order:
 //  1. Session LoadAndSave middleware (all /api/v1/*)
 //  2. Public auth: POST /auth/login, GET /auth/session
-//  3. Setup: GET /setup/status and POST /setup/session are public; GET /setup/session
-//     requires a setup session, which opens only the setup routes
+//  3. Setup: GET /setup/status and POST /setup/session are public; GET /setup/session,
+//     POST /setup/manifest and GET /setup/callback require a setup session, which opens
+//     only the setup routes; GET /setup/installed is public
 //  4. Protected group (RequireSession): logout, status, settings, integrations,
 //     ticket-projects, users
 func RegisterAll(api chi.Router, deps *ServerDeps) {
@@ -49,10 +50,24 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 	api.With(rateLimiter.ForgotPassword).Post("/auth/forgot-password", passwordResetHandlers.ForgotPassword)
 	api.With(rateLimiter.ResetPassword).Post("/auth/reset-password", passwordResetHandlers.ResetPassword)
 
-	setupHandlers := &setup.Handlers{Sessions: deps.Session, Queries: deps.Queries}
+	setupHandlers := &setup.Handlers{
+		Sessions:      deps.Session,
+		Queries:       deps.Queries,
+		AppURL:        appURL,
+		WebhookURL:    deps.WebhookURL,
+		GitHubBaseURL: deps.GitHubBaseURL,
+	}
 	api.With(rateLimiter.SetupStatus).Get("/setup/status", setupHandlers.Status)
 	api.With(rateLimiter.SetupSession).Post("/setup/session", setupHandlers.CreateSession)
 	api.With(setupHandlers.RequireSession).Get("/setup/session", setupHandlers.GetSession)
+	if deps.Store != nil && deps.GitHub != nil {
+		setupHandlers.Apps = deps.Store.GitHubApp()
+		setupHandlers.Converter = deps.GitHub
+		// Each manifest-flow route is limited on its own, 10 a minute per client address.
+		api.With(apimw.NewRateLimiter().SetupSession, setupHandlers.RequireSession).Post("/setup/manifest", setupHandlers.Manifest)
+		api.With(apimw.NewRateLimiter().SetupSession, setupHandlers.RequireSession).Get("/setup/callback", setupHandlers.Callback)
+	}
+	api.With(apimw.NewRateLimiter().SetupSession).Get("/setup/installed", setupHandlers.Installed)
 
 	api.Group(func(protected chi.Router) {
 		protected.Use(apimw.RequireSession(deps.Session))

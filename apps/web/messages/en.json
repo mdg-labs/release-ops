@@ -62,7 +62,22 @@
     "alreadyDescription": "This instance is already set up. Sign in instead.",
     "goToLogin": "Go to sign in",
     "sessionOpenTitle": "Setup session open",
-    "sessionOpenDescription": "The setup token was accepted. This setup session ends at {time}. Creating the GitHub App is the next step."
+    "sessionOpenDescription": "The setup token was accepted. This setup session ends at {time}. Choose who owns the GitHub App to create it.",
+    "ownerLabel": "App owner",
+    "ownerUser": "My personal account",
+    "ownerOrganization": "An organization",
+    "organizationLabel": "Organization name",
+    "nameLabel": "App name",
+    "namePlaceholder": "Release Ops",
+    "nameDescription": "Optional. GitHub lets you change it before the App is created.",
+    "createApp": "Create GitHub App",
+    "createFailedTitle": "Could not start the GitHub App setup",
+    "invalidOwnerOrName": "Check the organization name and the App name: the organization must be a valid GitHub name and the App name at most 34 characters.",
+    "sessionExpired": "The setup session has ended. Enter the setup token again.",
+    "installApp": "Install the GitHub App",
+    "callbackInvalidState": "This setup attempt is no longer valid. Create the GitHub App again.",
+    "callbackRejected": "GitHub did not accept the code. It may have expired or been used already. Create the GitHub App again.",
+    "callbackFailed": "GitHub could not be reached or did not answer in time, so the App was not created. Create the GitHub App again."
   },
   "dashboard": {
     "title": "Dashboard",

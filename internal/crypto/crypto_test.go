@@ -192,3 +192,18 @@ func TestDecryptErrorsDoNotLeakPlaintext(t *testing.T) {
 		t.Fatalf("error leaks plaintext: %v", err)
 	}
 }
+
+func TestKeyIDIdentifiesTheKeyWithoutRevealingIt(t *testing.T) {
+	c := mustCipher(t, testKeyHex)
+	other := mustCipher(t, strings.Repeat("a", keyHexLen))
+
+	if c.KeyID() == "" || c.KeyID() != mustCipher(t, testKeyHex).KeyID() {
+		t.Fatalf("KeyID() = %q, want a stable non-empty id for one key", c.KeyID())
+	}
+	if c.KeyID() == other.KeyID() {
+		t.Fatalf("two keys share the id %q", c.KeyID())
+	}
+	if len(c.KeyID()) != 2*keyIDBytes || strings.Contains(testKeyHex, c.KeyID()) {
+		t.Fatalf("KeyID() = %q, want %d hex characters that are not part of the key", c.KeyID(), 2*keyIDBytes)
+	}
+}

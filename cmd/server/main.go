@@ -16,6 +16,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/api/setup"
 	"github.com/mdg-labs/release-ops/internal/config"
 	"github.com/mdg-labs/release-ops/internal/crypto"
+	"github.com/mdg-labs/release-ops/internal/github"
 	"github.com/mdg-labs/release-ops/internal/mail"
 	"github.com/mdg-labs/release-ops/internal/providers/integrationtester"
 	"github.com/mdg-labs/release-ops/internal/queue"
@@ -104,6 +105,9 @@ func run(ctx context.Context, cfg *config.Config) error {
 		IntegrationTester: integrationtester.New(nil),
 		Mailer:            mailer,
 		AppURL:            cfg.AppURL,
+		WebhookURL:        cfg.WebhookURL,
+		GitHubBaseURL:     cfg.GitHubBaseURL,
+		GitHub:            github.NewClient(github.APIBaseURL(cfg.GitHubBaseURL), 0),
 	})
 
 	appCtx, cancel := context.WithCancel(ctx)

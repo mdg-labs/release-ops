@@ -27,6 +27,15 @@ const (
 type Handlers struct {
 	Sessions *scs.SessionManager
 	Queries  *storedb.Queries
+	// Apps stores the GitHub App and Converter exchanges the manifest code for it; both are
+	// needed by Manifest and Callback only.
+	Apps      AppStore
+	Converter ManifestConverter
+	// AppURL, WebhookURL and GitHubBaseURL are the configured APP_URL, WEBHOOK_URL (empty when
+	// unset) and GITHUB_BASE_URL; every URL of the manifest and of the redirects comes from them.
+	AppURL        string
+	WebhookURL    string
+	GitHubBaseURL string
 	// TTL is the lifetime of a setup session; zero means SessionTTL.
 	TTL time.Duration
 	// Now is the clock; nil means time.Now.
@@ -49,17 +58,37 @@ func (h *Handlers) ttl() time.Duration {
 
 type statusResponse struct {
 	SetupRequired bool `json:"setupRequired"`
+	// InstallURL is the App's installation page, present while an App is stored and has no
+	// installation, so the operator can finish when the redirect after creation was missed.
+	InstallURL string `json:"installUrl,omitempty"`
 }
 
 // Status answers GET /setup/status: whether the instance still needs setup. It stays
 // available once an App exists so the sign-in page can tell the two states apart.
 func (h *Handlers) Status(w http.ResponseWriter, r *http.Request) {
-	required, err := Required(r.Context(), h.Queries)
+	ctx := r.Context()
+	required, err := Required(ctx, h.Queries)
 	if err != nil {
 		writeInternalError(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, statusResponse{SetupRequired: required})
+	resp := statusResponse{SetupRequired: required}
+	if !required {
+		installs, err := h.Queries.CountLiveInstallations(ctx)
+		if err != nil {
+			writeInternalError(w)
+			return
+		}
+		if installs == 0 {
+			slug, err := h.Queries.GetGitHubAppSlug(ctx)
+			if err != nil {
+				writeInternalError(w)
+				return
+			}
+			resp.InstallURL = InstallURL(h.GitHubBaseURL, slug)
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 type createSessionRequest struct {
