@@ -1,7 +1,7 @@
 {
   "source": "mdg-labs/skills",
   "ref": "main",
-  "commit": "f74d1d56c2933aa8ff4a97a9860ab1e505966648",
+  "commit": "98d138df5b3eff1d253b55b37c9802c8db84f596",
   "profile": "full",
   "exclude": [],
   "files": [
@@ -43,7 +43,7 @@
     },
     {
       "path": ".claude/scripts/act-run.sh",
-      "sha256": "914b6ad84081e30654a46b81f9c8653160c7597d75efa078d62df0c44dc385fb"
+      "sha256": "59d1175b0f56aa7e579dd16ff41e45b7433bf7b1e1fba63b8229f587e3384574"
     },
     {
       "path": ".claude/scripts/audit-report.sh",
@@ -75,7 +75,7 @@
     },
     {
       "path": ".claude/scripts/issue-readiness.sh",
-      "sha256": "2c90b2907c8a6ce3a4f78ee57ddb6e972a55620d2a92a7b7ba34ff06b6af242c"
+      "sha256": "0d22a3ac8210eedc34a4423783c5a32e9d0beabb657fdd13bb2decd6e38578e7"
     },
     {
       "path": ".claude/scripts/issue-status.sh",
@@ -219,7 +219,7 @@
     },
     {
       "path": ".claude/trackers/github.md",
-      "sha256": "b0013adbca336f0c7ff85a8623cc31a2b57508495272a211ffa697de631f907a"
+      "sha256": "490d4b0490333ba61c488a4a357c0e75d3d5b50091330f542bb7e0912fd22ee1"
     },
     {
       "path": ".claude/trackers/kaneo.md",

@@ -91,8 +91,11 @@ cd "$tmp"
 # act's log records, one JSON object per line; anything else passes through.
 records() { grep '^{' || true; }
 
-# The dry run plans the job graph without creating a container. Its debug
-# log names every planned stage ("Stages Runs: [a b]"), skipped jobs too.
+# The dry run plans the job graph without creating a container. It walks
+# every planned job, skipped ones too, and each logs records carrying its
+# `jobID` ("Set up job", or "Skipping job …"). The "Stages Runs: [...]" lines
+# list the same jobs by display `name:`, which may contain spaces, so they
+# are only counted, never matched.
 if ! graph=$(timeout 120 "${act_cmd[@]}" -n -v </dev/null 2>&1); then
   [[ $graph != *"Could not find any stages to run"* ]] || die "no job '$job' runs on '$event' in $wf"
   say "FAIL: dry run did not validate"
@@ -102,10 +105,13 @@ if ! graph=$(timeout 120 "${act_cmd[@]}" -n -v </dev/null 2>&1); then
   exit 1
 fi
 mapfile -t jobs < <(printf '%s\n' "$graph" | records \
-  | jq -r '.msg // "" | select(startswith("Stages Runs: [")) | ltrimstr("Stages Runs: [") | rtrimstr("]") | split(" ")[]' \
-    2>/dev/null | { grep -v '^$' || true; } | sort -u)
-# No plan means this act logs it differently: fail closed, never run blind.
-[[ ${#jobs[@]} -gt 0 ]] || unavailable "act did not report its job plan; cannot check neverRun"
+  | jq -r '.jobID // empty | select(. != "")' 2>/dev/null | sort -u)
+stages=$(printf '%s\n' "$graph" | records \
+  | jq -r '.msg // "" | select(startswith("Stages Runs: ["))' 2>/dev/null | wc -l)
+# No plan, or a stage none of whose jobs logged an id, means this act logs it
+# differently: fail closed, never run blind.
+[[ ${#jobs[@]} -gt 0 && $stages -gt 0 ]] || unavailable "act did not report its job plan; cannot check neverRun"
+((${#jobs[@]} >= stages)) || unavailable "act planned $stages stages but logged ${#jobs[@]} job ids; cannot check neverRun"
 [[ " ${jobs[*]} " == *" $job "* ]] || die "no job '$job' runs on '$event' in $wf"
 for j in "${jobs[@]}"; do
   for g in "${never[@]}"; do
