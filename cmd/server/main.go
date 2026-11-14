@@ -1,4 +1,4 @@
-// Package main is the Release Ops HTTP API and poll scheduler entrypoint.
+// Package main is the Release Ops HTTP API entrypoint.
 package main
 
 import (
@@ -12,7 +12,6 @@ import (
 	"github.com/mdg-labs/release-ops/internal/config"
 	"github.com/mdg-labs/release-ops/internal/crypto"
 	"github.com/mdg-labs/release-ops/internal/mail"
-	"github.com/mdg-labs/release-ops/internal/poll"
 	"github.com/mdg-labs/release-ops/internal/providers/integrationtester"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
@@ -24,13 +23,13 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
-	run(cfg)
-}
-
-func run(cfg *config.Config) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	run(ctx, cfg)
+}
+
+func run(ctx context.Context, cfg *config.Config) {
 	applied, err := store.Migrate(ctx, cfg.AppDBPath)
 	if err != nil {
 		log.Fatalf("migrations: %v", err)
@@ -65,28 +64,6 @@ func run(cfg *config.Config) {
 		log.Fatalf("app settings: %v", err)
 	}
 
-	if err := reconcilePollRuns(ctx, appStore.Poll()); err != nil {
-		log.Fatalf("poll runs: %v", err)
-	}
-
-	notifier := poll.NewNotifier(appStore.Notifications(), nil)
-	engine := poll.NewEngine(appStore.Poll())
-	scheduler, err := poll.NewScheduler(poll.SchedulerConfig{
-		Engine:         engine,
-		Settings:       appStore.Settings(),
-		Repos:          appStore.Repos(),
-		TicketProjects: appStore.TicketProjects(),
-		Integrations:   appStore.Integrations(),
-		Poll:           appStore.Poll(),
-		Notifier:       notifier,
-	})
-	if err != nil {
-		log.Fatalf("poll scheduler: %v", err)
-	}
-	if err := scheduler.Start(ctx); err != nil {
-		log.Fatalf("poll scheduler start: %v", err)
-	}
-
 	mailer, err := mail.NewFromEnv()
 	if err != nil {
 		log.Fatalf("mail: %v", err)
@@ -94,49 +71,17 @@ func run(cfg *config.Config) {
 
 	sessionManager := auth.NewSessionManager(db.Writer, cfg.SessionSecret, cfg.SecureCookies())
 	handler := api.NewServerRouter(&api.ServerDeps{
-		DB:                 db.Writer,
-		Session:            sessionManager,
-		Queries:            queries,
-		Store:              appStore,
-		PollRunner:         scheduler,
-		IntegrationTester:  integrationtester.New(nil),
-		NotificationTester: notifier,
-		Mailer:             mailer,
+		DB:                db.Writer,
+		Session:           sessionManager,
+		Queries:           queries,
+		Store:             appStore,
+		IntegrationTester: integrationtester.New(nil),
+		Mailer:            mailer,
 	})
 	addr := cfg.GoListenAddr()
 	log.Printf("release-ops server listening on %s", addr)
 
-	serveErr := api.Serve(ctx, addr, handler)
-
-	// Cancel first so a failed Serve also stops the scheduler, then let an in-flight
-	// poll run write its finish before the deferred db.Close.
-	stop()
-	shutdownScheduler(scheduler)
-
-	if serveErr != nil {
-		log.Fatalf("server: %v", serveErr)
+	if err := api.Serve(ctx, addr, handler); err != nil {
+		log.Fatalf("server: %v", err)
 	}
-}
-
-// shutdownScheduler waits for in-flight poll runs to write their finish. A run that
-// does not finish in time is left for reconcilePollRuns at the next start.
-func shutdownScheduler(scheduler *poll.Scheduler) {
-	waitCtx, cancel := context.WithTimeout(context.Background(), poll.ShutdownWaitTimeout)
-	defer cancel()
-	if err := scheduler.Shutdown(waitCtx); err != nil {
-		log.Printf("poll scheduler shutdown: in-flight run did not finish within %s: %v", poll.ShutdownWaitTimeout, err)
-	}
-}
-
-// reconcilePollRuns finishes the runs a previous process left running. It must run
-// before the scheduler starts, so it can never touch a run of this process.
-func reconcilePollRuns(ctx context.Context, polls store.PollRepository) error {
-	n, err := poll.ReconcileInterruptedRuns(ctx, polls)
-	if err != nil {
-		return err
-	}
-	if n > 0 {
-		log.Printf("poll runs: marked %d interrupted run(s) as failed", n)
-	}
-	return nil
 }

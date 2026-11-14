@@ -5,20 +5,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mdg-labs/release-ops/internal/providers/source"
-	"github.com/mdg-labs/release-ops/internal/store"
 	"github.com/mdg-labs/release-ops/internal/tickettemplate"
 )
 
 func testContext() tickettemplate.Context {
 	published := time.Date(2026, 8, 7, 10, 30, 0, 0, time.UTC)
-	repo := store.MonitoredRepo{
-		SourceKind:  source.KindGitHub,
+	repo := tickettemplate.RepoInput{
+		SourceKind:  "github",
 		ProjectPath: "org/repo",
 	}
 	lastKnown := "v1.0.0"
 	repo.LastKnownTag = &lastKnown
-	release := &source.Release{
+	release := &tickettemplate.ReleaseInput{
 		Tag:          "v2.0.0",
 		Name:         "Summer Release",
 		URL:          "https://github.com/org/repo/releases/tag/v2.0.0",

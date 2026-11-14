@@ -5,14 +5,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mdg-labs/release-ops/internal/providers/source"
 	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 )
 
 func TestBuildTitle(t *testing.T) {
 	t.Parallel()
 
-	got := ticket.BuildTitle(source.KindGitHub, "org/repo", "v1.2.3")
+	got := ticket.BuildTitle("github", "org/repo", "v1.2.3")
 	want := "Release: github org/repo v1.2.3"
 	if got != want {
 		t.Fatalf("BuildTitle() = %q, want %q", got, want)
@@ -23,8 +22,7 @@ func TestBuildDescriptionIncludesURLAndPublishedAt(t *testing.T) {
 	t.Parallel()
 
 	published := time.Date(2026, 8, 7, 10, 30, 0, 0, time.UTC)
-	release := source.Release{
-		Tag:         "v1.2.3",
+	release := ticket.Release{
 		Name:        "Summer Release",
 		URL:         "https://github.com/org/repo/releases/tag/v1.2.3",
 		PublishedAt: published,
@@ -46,7 +44,7 @@ func TestBuildDescriptionIncludesURLAndPublishedAt(t *testing.T) {
 func TestBuildDescriptionOmitsEmptyName(t *testing.T) {
 	t.Parallel()
 
-	release := source.Release{
+	release := ticket.Release{
 		URL:         "https://example.com/release",
 		PublishedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 	}

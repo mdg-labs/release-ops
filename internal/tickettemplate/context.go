@@ -1,11 +1,6 @@
 package tickettemplate
 
-import (
-	"time"
-
-	"github.com/mdg-labs/release-ops/internal/providers/source"
-	"github.com/mdg-labs/release-ops/internal/store"
-)
+import "time"
 
 // Context is the root template data object (specs §5.4).
 type Context struct {
@@ -44,10 +39,27 @@ type SupersedeContext struct {
 	NewTicketURL string
 }
 
+// RepoInput holds the repository fields BuildContext reads.
+type RepoInput struct {
+	SourceKind   string
+	ProjectPath  string
+	LastKnownTag *string
+}
+
+// ReleaseInput holds the release fields BuildContext reads.
+type ReleaseInput struct {
+	Tag          string
+	Name         string
+	URL          string
+	Notes        string
+	PublishedAt  time.Time
+	IsPrerelease bool
+}
+
 // BuildContext assembles template context for create, merge, or supersede (new ticket).
 func BuildContext(
-	repo store.MonitoredRepo,
-	release *source.Release,
+	repo RepoInput,
+	release *ReleaseInput,
 	repoWebURL string,
 	supersede *SupersedeContext,
 ) Context {
@@ -73,7 +85,7 @@ func BuildContext(
 	return ctx
 }
 
-func releaseContextFromRelease(release source.Release) ReleaseContext {
+func releaseContextFromRelease(release ReleaseInput) ReleaseContext {
 	publishedAt := ""
 	if !release.PublishedAt.IsZero() {
 		publishedAt = release.PublishedAt.UTC().Format(time.RFC3339)

@@ -48,7 +48,6 @@ type TicketProjectRepository interface {
 	ListByIntegration(ctx context.Context, integrationID string) ([]TicketProject, error)
 	Update(ctx context.Context, id string, input UpdateTicketProjectInput) (*TicketProject, error)
 	Delete(ctx context.Context, id string) error
-	CountMonitoredRepos(ctx context.Context, id string) (int64, error)
 }
 
 type ticketProjectRepo struct {
@@ -130,12 +129,10 @@ func (r ticketProjectRepo) Update(ctx context.Context, id string, input UpdateTi
 	return ticketProjectFromRow(row), nil
 }
 
+// Delete removes a ticket project. It returns ErrInUse when a row of a table still being
+// retired references it.
 func (r ticketProjectRepo) Delete(ctx context.Context, id string) error {
-	return r.store.writes.DeleteTicketProject(ctx, id)
-}
-
-func (r ticketProjectRepo) CountMonitoredRepos(ctx context.Context, id string) (int64, error) {
-	return r.store.reads.CountMonitoredReposByTicketProject(ctx, id)
+	return mapForeignKeyError(r.store.writes.DeleteTicketProject(ctx, id))
 }
 
 const defaultContentTemplatesJSON = `{"title":"","description":"","supersedeComment":""}`

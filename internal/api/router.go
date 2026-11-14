@@ -23,14 +23,12 @@ const apiV1Prefix = "/api/v1"
 
 // ServerDeps holds dependencies for the production HTTP router.
 type ServerDeps struct {
-	DB                 *sql.DB
-	Session            *scs.SessionManager
-	Queries            *storedb.Queries
-	Store              *store.Store
-	PollRunner         handlers.PollRunner
-	IntegrationTester  handlers.IntegrationTester
-	NotificationTester handlers.NotificationTester
-	Mailer             mail.Mailer
+	DB                *sql.DB
+	Session           *scs.SessionManager
+	Queries           *storedb.Queries
+	Store             *store.Store
+	IntegrationTester handlers.IntegrationTester
+	Mailer            mail.Mailer
 }
 
 // NewRouter builds the root HTTP handler with health and API routes.

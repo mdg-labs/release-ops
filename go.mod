@@ -5,21 +5,16 @@ go 1.26
 require (
 	github.com/alexedwards/scs/sqlite3store v0.0.0-20251002162104-209de6e426de
 	github.com/alexedwards/scs/v2 v2.9.0
-	github.com/containrrr/shoutrrr v0.8.0
 	github.com/go-chi/chi/v5 v5.4.0
 	github.com/google/uuid v1.6.0
 	github.com/mdg-labs/sqlite-migrate v0.1.3
-	github.com/robfig/cron/v3 v3.0.1
 	golang.org/x/crypto v0.55.0
 	modernc.org/sqlite v1.59.0
 )
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/fatih/color v1.15.0 // indirect
-	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
-	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-sqlite3 v1.14.22 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect

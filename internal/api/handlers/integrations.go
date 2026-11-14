@@ -10,40 +10,17 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
-	"github.com/mdg-labs/release-ops/internal/providers/source"
 	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 	"github.com/mdg-labs/release-ops/internal/store"
 )
 
 var validIntegrationKinds = map[string]struct{}{
-	"github":   {},
-	"gitlab":   {},
-	"gitea":    {},
-	"forgejo":  {},
-	"codeberg": {},
-	"kaneo":    {},
-	"jira":     {},
-	"linear":   {},
+	"kaneo":  {},
+	"jira":   {},
+	"linear": {},
 }
 
-// sourceIntegrationKinds are the kinds that can be marked as a default credential.
-var sourceIntegrationKinds = map[string]struct{}{
-	"github":   {},
-	"gitlab":   {},
-	"gitea":    {},
-	"forgejo":  {},
-	"codeberg": {},
-}
-
-// optionalTokenKinds may be created without a token (unauthenticated access, specs §4.2).
-var optionalTokenKinds = map[string]struct{}{
-	"github":   {},
-	"gitea":    {},
-	"forgejo":  {},
-	"codeberg": {},
-}
-
-var errDefaultSourceKindOnly = errors.New("isDefault can only be set on source integrations")
+var errDefaultNotSupported = errors.New("isDefault is not supported")
 
 // IntegrationTester validates stored integration credentials.
 type IntegrationTester interface {
@@ -72,7 +49,7 @@ type createIntegrationRequest struct {
 	Name    string  `json:"name"`
 	BaseURL *string `json:"baseUrl"`
 	Secret  string  `json:"secret"`
-	// IsDefault marks the integration as the default for its source kind.
+	// IsDefault is accepted so a request that sets it is rejected explicitly.
 	IsDefault bool `json:"isDefault"`
 }
 
@@ -80,7 +57,7 @@ type patchIntegrationRequest struct {
 	Name    string  `json:"name"`
 	BaseURL *string `json:"baseUrl"`
 	Secret  *string `json:"secret"`
-	// IsDefault nil leaves the flag unchanged.
+	// IsDefault is accepted so a request that sets it to true is rejected explicitly.
 	IsDefault *bool `json:"isDefault"`
 }
 
@@ -122,12 +99,8 @@ func (h *IntegrationHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Secret == "" {
-		// An optional-token kind created without a token stores an empty payload, which
-		// reads as "no secret" and as an unauthenticated source.
-		if _, optional := optionalTokenKinds[req.Kind]; !optional {
-			auth.WriteError(w, "VALIDATION_ERROR", "secret is required", http.StatusBadRequest)
-			return
-		}
+		auth.WriteError(w, "VALIDATION_ERROR", "secret is required", http.StatusBadRequest)
+		return
 	}
 	if err := validateBaseURL(req.Kind, req.BaseURL); err != nil {
 		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
@@ -138,17 +111,16 @@ func (h *IntegrationHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := validateDefaultFlag(req.Kind, req.IsDefault); err != nil {
-		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
+	if req.IsDefault {
+		auth.WriteError(w, "VALIDATION_ERROR", errDefaultNotSupported.Error(), http.StatusBadRequest)
 		return
 	}
 
 	created, err := h.Integrations.Create(r.Context(), store.CreateIntegrationInput{
-		Kind:      req.Kind,
-		Name:      req.Name,
-		BaseURL:   req.BaseURL,
-		Secret:    []byte(secret),
-		IsDefault: req.IsDefault,
+		Kind:    req.Kind,
+		Name:    req.Name,
+		BaseURL: req.BaseURL,
+		Secret:  []byte(secret),
 	})
 	if err != nil {
 		auth.WriteError(w, "INTERNAL_ERROR", "failed to create integration", http.StatusInternalServerError)
@@ -186,6 +158,11 @@ func (h *IntegrationHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := validateIntegrationKind(existing.Kind); err != nil {
+		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	baseURL := req.BaseURL
 	if baseURL == nil {
 		baseURL = existing.BaseURL
@@ -195,11 +172,9 @@ func (h *IntegrationHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.IsDefault != nil {
-		if err := validateDefaultFlag(existing.Kind, *req.IsDefault); err != nil {
-			auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
-			return
-		}
+	if req.IsDefault != nil && *req.IsDefault {
+		auth.WriteError(w, "VALIDATION_ERROR", errDefaultNotSupported.Error(), http.StatusBadRequest)
+		return
 	}
 
 	// The stored secret may only be sent to the host it was entered for: moving an
@@ -210,9 +185,8 @@ func (h *IntegrationHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := store.UpdateIntegrationInput{
-		Name:      req.Name,
-		BaseURL:   baseURL,
-		IsDefault: req.IsDefault,
+		Name:    req.Name,
+		BaseURL: baseURL,
 	}
 	if req.Secret != nil {
 		if *req.Secret == "" {
@@ -222,12 +196,6 @@ func (h *IntegrationHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 		secret, err := validateIntegrationSecret(existing.Kind, *req.Secret)
 		if err != nil {
 			auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
-			return
-		}
-		if secret == "" {
-			// A source secret without a token is the tokenless form. A replacement must carry
-			// a credential; omitting the secret keeps the stored one.
-			auth.WriteError(w, "VALIDATION_ERROR", "secret must contain a token; omit secret to keep the stored one", http.StatusBadRequest)
 			return
 		}
 		input.Secret = []byte(secret)
@@ -276,11 +244,15 @@ func (h *IntegrationHandlers) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if refs > 0 {
-		auth.WriteError(w, "CONFLICT", "integration is referenced by repos or ticket projects", http.StatusConflict)
+		auth.WriteError(w, "CONFLICT", "integration is referenced by ticket projects", http.StatusConflict)
 		return
 	}
 
 	if err := h.Integrations.Delete(r.Context(), id); err != nil {
+		if errors.Is(err, store.ErrInUse) {
+			auth.WriteError(w, "CONFLICT", "integration is still referenced", http.StatusConflict)
+			return
+		}
 		auth.WriteError(w, "INTERNAL_ERROR", "failed to delete integration", http.StatusInternalServerError)
 		return
 	}
@@ -334,7 +306,7 @@ func integrationFromStore(item *store.Integration) integrationResponse {
 		Name:      item.Name,
 		BaseURL:   item.BaseURL,
 		HasSecret: item.HasSecret,
-		IsDefault: item.IsDefault,
+		IsDefault: false,
 		CreatedAt: item.CreatedAt,
 		UpdatedAt: item.UpdatedAt,
 	}
@@ -342,19 +314,14 @@ func integrationFromStore(item *store.Integration) integrationResponse {
 
 func validateIntegrationKind(kind string) error {
 	if _, ok := validIntegrationKinds[kind]; !ok {
-		return errors.New("kind must be one of: github, gitlab, gitea, forgejo, codeberg, kaneo, jira, linear")
+		return errors.New("kind must be one of: kaneo, jira, linear")
 	}
 	return nil
 }
 
 // validateIntegrationSecret rejects a secret the provider could never use, so a
-// broken credential is refused at save time instead of failing every later call. It
-// returns the secret to store: a source secret without a token comes back empty, the
-// tokenless form that reports no secret.
+// broken credential is refused at save time instead of failing every later call.
 func validateIntegrationSecret(kind, secret string) (string, error) {
-	if _, ok := sourceIntegrationKinds[kind]; ok {
-		return validateSourceSecret(kind, secret)
-	}
 	var err error
 	var shape string
 	switch kind {
@@ -382,36 +349,8 @@ func validateIntegrationSecret(kind, secret string) (string, error) {
 	return "", err
 }
 
-// validateSourceSecret checks a source secret with the parser the poller uses. GitLab
-// requires a token (specs §4.2); the other source kinds treat an empty token as
-// unauthenticated access and store no payload for it.
-func validateSourceSecret(kind, secret string) (string, error) {
-	token, err := source.ParseTokenSecret([]byte(secret))
-	if err != nil {
-		// A JSON error can quote part of the submitted secret; never echo it back.
-		return "", errors.New("secret must be a JSON object with a token field")
-	}
-	if token != "" {
-		return secret, nil
-	}
-	if _, optional := optionalTokenKinds[kind]; !optional {
-		return "", errors.New("token is required")
-	}
-	return "", nil
-}
-
-func validateDefaultFlag(kind string, isDefault bool) error {
-	if !isDefault {
-		return nil
-	}
-	if _, ok := sourceIntegrationKinds[kind]; !ok {
-		return errDefaultSourceKindOnly
-	}
-	return nil
-}
-
 func validateBaseURL(kind string, baseURL *string) error {
-	requiresURL := kind == "gitlab" || kind == "gitea" || kind == "forgejo" || kind == "kaneo" || kind == "jira"
+	requiresURL := kind == "kaneo" || kind == "jira"
 	hasURL := baseURL != nil && *baseURL != ""
 	switch {
 	case requiresURL && !hasURL:

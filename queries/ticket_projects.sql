@@ -149,8 +149,3 @@ RETURNING
 -- name: DeleteTicketProject :exec
 DELETE FROM ticket_projects
 WHERE id = ?;
-
--- name: CountMonitoredReposByTicketProject :one
-SELECT COUNT(*) AS count
-FROM monitored_repos
-WHERE ticket_project_id = ?;

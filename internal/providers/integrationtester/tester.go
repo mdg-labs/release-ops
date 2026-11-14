@@ -14,13 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mdg-labs/release-ops/internal/providers/source"
 	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 )
 
 const (
-	githubAPIBase    = "https://api.github.com"
-	codebergBaseURL  = "https://codeberg.org"
 	linearGraphQLURL = "https://api.linear.app/graphql"
 	userAgent        = "release-ops"
 )
@@ -45,14 +42,6 @@ func (t *Tester) TestConnection(ctx context.Context, kind string, baseURL *strin
 	}
 
 	switch kind {
-	case "github":
-		return t.testGitHub(ctx, secret)
-	case "gitlab":
-		return t.testGitLab(ctx, baseURL, secret)
-	case "gitea", "forgejo":
-		return t.testGiteaCompatible(ctx, baseURL, secret)
-	case "codeberg":
-		return t.testCodeberg(ctx, secret)
 	case "kaneo":
 		return t.testKaneo(ctx, baseURL, secret)
 	case "jira":
@@ -62,72 +51,6 @@ func (t *Tester) TestConnection(ctx context.Context, kind string, baseURL *strin
 	default:
 		return fmt.Errorf("unsupported integration kind %q", kind)
 	}
-}
-
-func (t *Tester) testGitHub(ctx context.Context, secret []byte) error {
-	token, err := parseTokenPayload(secret)
-	if err != nil {
-		return err
-	}
-
-	headers := map[string]string{
-		"Accept":               "application/vnd.github+json",
-		"X-GitHub-Api-Version": "2022-11-28",
-	}
-	if token == "" {
-		// /user answers 401 without a token; /rate_limit is public and sends no credential.
-		return t.doGET(ctx, githubAPIBase+"/rate_limit", headers)
-	}
-	headers["Authorization"] = "Bearer " + token
-	return t.doGET(ctx, githubAPIBase+"/user", headers)
-}
-
-func (t *Tester) testGitLab(ctx context.Context, baseURL *string, secret []byte) error {
-	root, err := requireBaseURL(baseURL, "gitlab")
-	if err != nil {
-		return err
-	}
-	token, err := parseTokenPayload(secret)
-	if err != nil {
-		return err
-	}
-
-	headers := map[string]string{}
-	if token != "" {
-		headers["PRIVATE-TOKEN"] = token
-	}
-	return t.doGET(ctx, root+"/api/v4/user", headers)
-}
-
-func (t *Tester) testGiteaCompatible(ctx context.Context, baseURL *string, secret []byte) error {
-	root, err := requireBaseURL(baseURL, "gitea")
-	if err != nil {
-		return err
-	}
-	token, err := parseTokenPayload(secret)
-	if err != nil {
-		return err
-	}
-
-	return t.doGiteaCompatibleGET(ctx, root, token)
-}
-
-func (t *Tester) testCodeberg(ctx context.Context, secret []byte) error {
-	token, err := parseTokenPayload(secret)
-	if err != nil {
-		return err
-	}
-
-	return t.doGiteaCompatibleGET(ctx, codebergBaseURL, token)
-}
-
-// doGiteaCompatibleGET probes the authenticated /api/v1/user with a token and the public
-// /api/v1/version without one (/user answers 401 to an anonymous caller).
-func (t *Tester) doGiteaCompatibleGET(ctx context.Context, root, token string) error {
-	if token == "" {
-		return t.doGET(ctx, root+"/api/v1/version", map[string]string{})
-	}
-	return t.doGET(ctx, root+"/api/v1/user", map[string]string{"Authorization": "token " + token})
 }
 
 func (t *Tester) testKaneo(ctx context.Context, baseURL *string, secret []byte) error {
@@ -235,10 +158,6 @@ func (t *Tester) doGET(ctx context.Context, endpoint string, headers map[string]
 		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return nil
-}
-
-func parseTokenPayload(secret []byte) (string, error) {
-	return source.ParseTokenSecret(secret)
 }
 
 func parseKaneoPayload(secret []byte) (string, error) {

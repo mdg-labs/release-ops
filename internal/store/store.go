@@ -3,18 +3,34 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/mdg-labs/release-ops/internal/crypto"
 	"github.com/mdg-labs/release-ops/internal/store/db"
+	"modernc.org/sqlite"
 )
 
-// ErrInvalidJSON is returned when a JSON column fails validation.
-var ErrInvalidJSON = errors.New("invalid JSON")
+// ErrInUse is returned when a delete is refused because another row still references it.
+var ErrInUse = errors.New("row is referenced by another row")
 
-// DefaultNotificationEvents is the default events_json value per specs §4.5.
-var DefaultNotificationEvents = []string{"create", "error", "supersede"}
+// sqliteConstraint is the primary result code of every constraint failure. A broken
+// foreign key reports an extended code under it: SQLITE_CONSTRAINT_FOREIGNKEY for a plain
+// reference and SQLITE_CONSTRAINT_TRIGGER for ON DELETE RESTRICT, so the message decides.
+const sqliteConstraint = 19
+
+// mapForeignKeyError turns a foreign key failure into ErrInUse and passes any other
+// error through.
+func mapForeignKeyError(err error) error {
+	var sqliteErr *sqlite.Error
+	if errors.As(err, &sqliteErr) &&
+		sqliteErr.Code()&0xff == sqliteConstraint &&
+		strings.Contains(sqliteErr.Error(), "FOREIGN KEY constraint failed") {
+		return ErrInUse
+	}
+	return err
+}
 
 // Store wraps sqlc queries with domain repositories and credential encryption.
 // Its repositories send every write and transaction through the writer connection
@@ -56,21 +72,6 @@ func (s *Store) TicketProjects() TicketProjectRepository {
 	return ticketProjectRepo{store: s}
 }
 
-// Repos returns the monitored repos repository.
-func (s *Store) Repos() MonitoredRepoRepository {
-	return monitoredRepoRepo{store: s}
-}
-
-// Notifications returns the notification targets repository.
-func (s *Store) Notifications() NotificationTargetRepository {
-	return notificationTargetRepo{store: s}
-}
-
-// Poll returns poll-state and poll-run repository methods.
-func (s *Store) Poll() PollRepository {
-	return pollRepo{store: s}
-}
-
 func newID() string {
 	return uuid.NewString()
 }
@@ -92,15 +93,4 @@ func stringPtrToNull(s *string) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: *s, Valid: true}
-}
-
-func boolToInt64(b bool) int64 {
-	if b {
-		return 1
-	}
-	return 0
-}
-
-func int64ToBool(v int64) bool {
-	return v != 0
 }

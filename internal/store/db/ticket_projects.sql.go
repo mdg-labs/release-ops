@@ -9,19 +9,6 @@ import (
 	"context"
 )
 
-const countMonitoredReposByTicketProject = `-- name: CountMonitoredReposByTicketProject :one
-SELECT COUNT(*) AS count
-FROM monitored_repos
-WHERE ticket_project_id = ?
-`
-
-func (q *Queries) CountMonitoredReposByTicketProject(ctx context.Context, ticketProjectID string) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countMonitoredReposByTicketProject, ticketProjectID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createTicketProject = `-- name: CreateTicketProject :one
 INSERT INTO ticket_projects (
   id,

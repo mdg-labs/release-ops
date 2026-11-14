@@ -250,17 +250,11 @@ func (h *TicketProjectHandlers) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refs, err := h.TicketProjects.CountMonitoredRepos(r.Context(), id)
-	if err != nil {
-		auth.WriteError(w, "INTERNAL_ERROR", "failed to check ticket project references", http.StatusInternalServerError)
-		return
-	}
-	if refs > 0 {
-		auth.WriteError(w, "CONFLICT", "ticket project is referenced by monitored repos", http.StatusConflict)
-		return
-	}
-
 	if err := h.TicketProjects.Delete(r.Context(), id); err != nil {
+		if errors.Is(err, store.ErrInUse) {
+			auth.WriteError(w, "CONFLICT", "ticket project is still referenced", http.StatusConflict)
+			return
+		}
 		auth.WriteError(w, "INTERNAL_ERROR", "failed to delete ticket project", http.StatusInternalServerError)
 		return
 	}
