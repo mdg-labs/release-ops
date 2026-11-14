@@ -170,9 +170,12 @@ func (rl *RateLimiter) Len() int {
 	return len(rl.store)
 }
 
-// clientIP returns the first X-Forwarded-For hop (specs §7.0) when the request comes from
-// a loopback peer — the bundled Next.js proxy, which forwards the browser's address —
-// and the RemoteAddr host otherwise, so a direct caller cannot pick its own bucket.
+// clientIP returns the address the bundled Next.js proxy supplies when the request comes
+// from a loopback peer, and the RemoteAddr host otherwise, so a direct caller cannot pick
+// its own bucket (specs §7.0). The proxy's server preload overwrites X-Forwarded-For with
+// the connection's address, so the header holds the proxy's own hop as its last entry; any
+// hops before it were sent by the client and are never used. A last hop that is not an IP
+// address falls back to the peer.
 func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -180,11 +183,10 @@ func clientIP(r *http.Request) string {
 	}
 
 	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			first, _, _ := strings.Cut(xff, ",")
-			if first = strings.TrimSpace(first); first != "" {
-				return first
-			}
+		xff := r.Header.Get("X-Forwarded-For")
+		last := xff[strings.LastIndexByte(xff, ',')+1:]
+		if forwarded := net.ParseIP(strings.TrimSpace(last)); forwarded != nil {
+			return forwarded.String()
 		}
 	}
 	return host

@@ -2,8 +2,10 @@ import { NextRequest } from "next/server";
 
 const DEFAULT_GO_API_URL = "http://127.0.0.1:8080";
 
-// x-forwarded-for carries the browser's address (Next.js fills it from the socket when the
-// client sent none) so the Go per-IP rate limits don't put every user in one bucket.
+// x-forwarded-for is forwarded as the server preload (preload/preload.cjs, loaded by
+// docker/entrypoint.sh) set it: the connection's address, or the right hop behind a trusted
+// proxy. A value the client sent never reaches this handler, and Go keys its per-IP rate
+// limits on it.
 const FORWARD_REQUEST_HEADERS = [
   "accept",
   "content-type",

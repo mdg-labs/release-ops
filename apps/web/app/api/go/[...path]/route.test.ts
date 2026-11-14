@@ -63,7 +63,7 @@ describe("Go API proxy route", () => {
     expect(await response.json()).toEqual({ user: null });
   });
 
-  it("forwards X-Forwarded-For to upstream for per-IP rate limits", async () => {
+  it("forwards the preload-set X-Forwarded-For to upstream for per-IP rate limits", async () => {
     const pool = mockAgent.get(GO_ORIGIN);
     pool
       .intercept({

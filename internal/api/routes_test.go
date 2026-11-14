@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -320,6 +321,38 @@ func TestPublicAuthRoutesAccessibleWithoutSession(t *testing.T) {
 	_ = acceptResp.Body.Close()
 	if acceptResp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("accept-invitation status = %d, want %d", acceptResp.StatusCode, http.StatusBadRequest)
+	}
+}
+
+func TestLoginRateLimitIgnoresClientSuppliedForwardedForHops(t *testing.T) {
+	t.Parallel()
+
+	handler := NewServerRouter(newRoutesTestDeps(t))
+
+	// The proxy's own hop is 203.0.113.9; the hop in front of it is whatever the client
+	// sent, and rotating it must not open a fresh bucket.
+	var last int
+	for i := 0; i < 11; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"email":"wrong@example.com","password":"bad"}`))
+		req.RemoteAddr = "127.0.0.1:40000"
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", "198.51.100."+strconv.Itoa(i)+", 203.0.113.9")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		last = rec.Code
+	}
+	if last != http.StatusTooManyRequests {
+		t.Fatalf("11th login status = %d, want %d", last, http.StatusTooManyRequests)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"email":"wrong@example.com","password":"bad"}`))
+	req.RemoteAddr = "127.0.0.1:40000"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code == http.StatusTooManyRequests {
+		t.Fatalf("a different proxy-supplied address shares the exhausted bucket")
 	}
 }
 

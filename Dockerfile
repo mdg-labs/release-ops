@@ -42,6 +42,7 @@ RUN chmod +x /app/entrypoint.sh /app/server /app/seed-admin
 
 COPY --from=web-build /app/apps/web/.next/standalone ./
 COPY --from=web-build /app/apps/web/.next/static ./apps/web/.next/static
+COPY apps/web/preload/client-ip.cjs apps/web/preload/preload.cjs /app/preload/
 
 RUN mkdir -p /data && chown -R node:node /app /data
 

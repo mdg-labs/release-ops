@@ -50,7 +50,9 @@ export PORT="${PORT:-3000}"
 export GO_API_URL="${GO_API_URL:-http://127.0.0.1:8080}"
 
 cd /app
-node apps/web/server.js &
+# The preload sets X-Forwarded-For from the connection's address before Next.js handles a
+# request; a malformed TRUSTED_PROXIES stops this process, and with it the container.
+node --require /app/preload/preload.cjs apps/web/server.js &
 next_pid=$!
 
 # Exit as soon as either process dies so the container stops and the restart policy
