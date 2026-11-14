@@ -18,6 +18,9 @@ services:
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      PRESET_REPOSITORIES: ${PRESET_REPOSITORIES:-}
+      GLOBAL_CONFIG_REPO: ${GLOBAL_CONFIG_REPO:-}
+      METRICS_ADDR: ${METRICS_ADDR:-127.0.0.1:9100}
       # The internal listener the worker connects to: reachable on the compose network only,
       # so it has no ports entry and Next.js never proxies it.
       INTERNAL_ADDR: ${INTERNAL_ADDR:-:9090}
@@ -46,6 +49,7 @@ services:
         condition: service_healthy
     environment:
       INTERNAL_URL: ${INTERNAL_URL:-http://app:9090}
+      METRICS_ADDR: ${METRICS_ADDR:-127.0.0.1:9100}
       WORKER_SECRET: ${WORKER_SECRET:?set WORKER_SECRET in .env — see .env.example}
     volumes:
       # One subdirectory per slot for Renovate's cacheDir, repositoryCache and persistRepoData.
