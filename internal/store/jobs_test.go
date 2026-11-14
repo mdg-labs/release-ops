@@ -940,3 +940,69 @@ func TestHeartbeatAbortsAJobOfAPausedOrRemovedRepository(t *testing.T) {
 		})
 	}
 }
+
+func TestFirstHeartbeatReportsTheLagFromTheWebhookArrival(t *testing.T) {
+	ctx := context.Background()
+	e := newJobEnv(t, 2)
+	e.setCap(t, 2)
+
+	var lags []time.Duration
+	q := store.NewJobQueue(e.db, store.JobQueueOptions{
+		Now:          e.clock.Now,
+		Rand:         func() float64 { return 0.5 },
+		OnJobStarted: func(lag time.Duration) { lags = append(lags, lag) },
+	})
+	arrived := e.clock.Now()
+	if _, err := q.Enqueue(ctx, queue.EnqueueParams{
+		RepositoryID: e.repos[0], Priority: queue.PriorityHigh, Trigger: queue.TriggerPush, WebhookReceivedAt: &arrived,
+	}); err != nil {
+		t.Fatalf("Enqueue webhook job: %v", err)
+	}
+	if _, err := q.Enqueue(ctx, queue.EnqueueParams{
+		RepositoryID: e.repos[1], Priority: queue.PriorityHigh, Trigger: queue.TriggerPush,
+	}); err != nil {
+		t.Fatalf("Enqueue scheduled job: %v", err)
+	}
+	// Both jobs share priority and created_at, and ids are random, so claim
+	// order is not fixed: tell the jobs apart by repository.
+	webhookJob, err := q.Claim(ctx)
+	if err != nil || webhookJob == nil {
+		t.Fatalf("first Claim = %v, %v", webhookJob, err)
+	}
+	scheduledJob, err := q.Claim(ctx)
+	if err != nil || scheduledJob == nil {
+		t.Fatalf("second Claim = %v, %v", scheduledJob, err)
+	}
+	if webhookJob.RepositoryID != e.repos[0] {
+		webhookJob, scheduledJob = scheduledJob, webhookJob
+	}
+
+	e.clock.Advance(40 * time.Second)
+	if len(lags) != 0 {
+		t.Fatalf("lags %v before any heartbeat, want none: a claim is not a start", lags)
+	}
+	if _, err := q.Heartbeat(ctx, webhookJob.ID, "0.not-the-owner"); err != nil {
+		t.Fatalf("Heartbeat with a foreign owner: %v", err)
+	}
+	if len(lags) != 0 {
+		t.Fatalf("lags %v after a refused heartbeat, want none", lags)
+	}
+
+	if _, err := q.Heartbeat(ctx, webhookJob.ID, webhookJob.LeaseOwner); err != nil {
+		t.Fatalf("first Heartbeat: %v", err)
+	}
+	if len(lags) != 1 || lags[0] != 40*time.Second {
+		t.Fatalf("lags after the first heartbeat = %v, want [40s]", lags)
+	}
+
+	e.clock.Advance(30 * time.Second)
+	if _, err := q.Heartbeat(ctx, webhookJob.ID, webhookJob.LeaseOwner); err != nil {
+		t.Fatalf("second Heartbeat: %v", err)
+	}
+	if _, err := q.Heartbeat(ctx, scheduledJob.ID, scheduledJob.LeaseOwner); err != nil {
+		t.Fatalf("scheduled job Heartbeat: %v", err)
+	}
+	if len(lags) != 1 {
+		t.Errorf("lags = %v, want one: only the first heartbeat of a webhook-triggered job counts", lags)
+	}
+}

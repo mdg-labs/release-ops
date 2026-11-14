@@ -87,11 +87,13 @@ export async function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
+// /hooks/github is GitHub's webhook delivery, authenticated in Go by its HMAC signature
+// rather than a session; no other path under /hooks is exempt.
 export const MIDDLEWARE_MATCHER_PATTERN =
-  "/((?!api|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)";
+  "/((?!api|hooks/github$|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)";
 
 export const config = {
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!api|hooks/github$|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

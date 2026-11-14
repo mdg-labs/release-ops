@@ -119,3 +119,14 @@ func (q *Queries) GetGitHubAppSlug(ctx context.Context) (string, error) {
 	err := row.Scan(&slug)
 	return slug, err
 }
+
+const getGitHubAppWebhookSecret = `-- name: GetGitHubAppWebhookSecret :one
+SELECT encrypted_webhook_secret FROM github_app WHERE id = 1
+`
+
+func (q *Queries) GetGitHubAppWebhookSecret(ctx context.Context) (string, error) {
+	row := q.db.QueryRowContext(ctx, getGitHubAppWebhookSecret)
+	var encrypted_webhook_secret string
+	err := row.Scan(&encrypted_webhook_secret)
+	return encrypted_webhook_secret, err
+}

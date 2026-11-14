@@ -14,6 +14,7 @@ import (
 
 	"github.com/mdg-labs/release-ops/internal/api"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
+	"github.com/mdg-labs/release-ops/internal/api/hooks"
 	"github.com/mdg-labs/release-ops/internal/api/setup"
 	"github.com/mdg-labs/release-ops/internal/config"
 	"github.com/mdg-labs/release-ops/internal/crypto"
@@ -105,12 +106,13 @@ func run(ctx context.Context, cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("metrics: %w", err)
 	}
-	// The webhook receiver observes the lag histogram; it is registered here so the name is served.
-	if _, err := metrics.NewWebhookLag(registry); err != nil {
+	webhookLag, err := metrics.NewWebhookLag(registry)
+	if err != nil {
 		return fmt.Errorf("metrics: %w", err)
 	}
 	jobs := store.NewJobQueue(db, store.JobQueueOptions{
 		OnLeaseExpired: func(repository string) { jobMetrics.Ended(repository, metrics.OutcomeLeaseExpired) },
+		OnJobStarted:   func(lag time.Duration) { webhookLag.Observe(lag.Seconds()) },
 	})
 	if err := metrics.RegisterQueue(registry, jobs); err != nil {
 		return fmt.Errorf("metrics: %w", err)
@@ -128,6 +130,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		WebhookURL:        cfg.WebhookURL,
 		GitHubBaseURL:     cfg.GitHubBaseURL,
 		GitHub:            githubClient,
+		WebhookRoutes:     hooks.NewRoutes(),
 		Queue:             jobs,
 	})
 

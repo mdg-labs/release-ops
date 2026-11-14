@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MIDDLEWARE_MATCHER_PATTERN,
   PUBLIC_AUTH_PATHS,
+  config,
   getSessionUser,
   isLoginPath,
   isPublicAuthPath,
@@ -229,6 +230,20 @@ describe("auth middleware", () => {
       expect(regex.test("/confirm-email-change")).toBe(true);
       expect(regex.test("/repos")).toBe(true);
       expect(regex.test("/settings")).toBe(true);
+    });
+
+    it("excludes exactly the GitHub webhook path from the login redirect", () => {
+      expect(regex.test("/hooks/github")).toBe(false);
+      expect(regex.test("/hooks/github/")).toBe(true);
+      expect(regex.test("/hooks/github/other")).toBe(true);
+      expect(regex.test("/hooks/githubx")).toBe(true);
+      expect(regex.test("/hooks")).toBe(true);
+      expect(regex.test("/hooks/other")).toBe(true);
+      expect(regex.test("/x/hooks/github")).toBe(true);
+    });
+
+    it("keeps the literal matcher in config in step with the exported pattern", () => {
+      expect(config.matcher).toEqual([MIDDLEWARE_MATCHER_PATTERN]);
     });
 
     it("excludes api routes and static assets", () => {

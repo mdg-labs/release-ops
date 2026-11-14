@@ -357,4 +357,187 @@ describe("Go API proxy route", () => {
       expect(response.headers.get("location")).toBeNull();
     });
   });
+
+  describe("GitHub webhook path", () => {
+    const WEBHOOK_URL = "http://localhost:3000/api/go/hooks/github";
+    const SIGNATURE = `sha256=${"ab".repeat(32)}`;
+    const MAX_BODY = 1024 * 1024;
+
+    type Upstream = {
+      headers: Record<string, string | string[] | undefined>;
+      body: string;
+    };
+
+    function interceptUpstream(path: string, status = 202) {
+      const seen: Upstream[] = [];
+      mockAgent
+        .get(GO_ORIGIN)
+        .intercept({ path, method: "POST" })
+        .reply(status, (opts) => {
+          seen.push({
+            headers: opts.headers as Upstream["headers"],
+            body:
+              opts.body instanceof Uint8Array
+                ? new TextDecoder().decode(opts.body)
+                : String(opts.body ?? ""),
+          });
+          return "";
+        });
+      return seen;
+    }
+
+    function hookHeaders(extra: Record<string, string> = {}) {
+      return {
+        "content-type": "application/json",
+        "x-hub-signature-256": SIGNATURE,
+        "x-github-event": "installation",
+        "x-github-delivery": "72d3162e-cc78-11e3-81ab-4c9367dc0958",
+        ...extra,
+      };
+    }
+
+    it("forwards the signature, event and delivery headers and the exact body bytes", async () => {
+      const seen = interceptUpstream("/hooks/github");
+      const body = '{"action":"created",  "installation":{"id":1000}}\n';
+
+      const response = await POST(
+        makeRequest(WEBHOOK_URL, {
+          method: "POST",
+          headers: hookHeaders(),
+          body,
+        }),
+        routeContext(["hooks", "github"]),
+      );
+
+      expect(response.status).toBe(202);
+      expect(seen).toHaveLength(1);
+      expect(seen[0].headers["x-hub-signature-256"]).toBe(SIGNATURE);
+      expect(seen[0].headers["x-github-event"]).toBe("installation");
+      expect(seen[0].headers["x-github-delivery"]).toBe(
+        "72d3162e-cc78-11e3-81ab-4c9367dc0958",
+      );
+      expect(seen[0].body).toBe(body);
+    });
+
+    it("does not forward a session cookie or authorization header on the webhook path", async () => {
+      const seen = interceptUpstream("/hooks/github");
+
+      await POST(
+        makeRequest(WEBHOOK_URL, {
+          method: "POST",
+          headers: hookHeaders({
+            cookie: "release_ops_session=test-token",
+            authorization: "Bearer x",
+          }),
+          body: "{}",
+        }),
+        routeContext(["hooks", "github"]),
+      );
+
+      expect(seen[0].headers["cookie"]).toBeUndefined();
+      expect(seen[0].headers["authorization"]).toBeUndefined();
+    });
+
+    it("forwards the webhook headers on no other path", async () => {
+      const seen = interceptUpstream("/api/v1/auth/login", 200);
+
+      await POST(
+        makeRequest("http://localhost:3000/api/go/api/v1/auth/login", {
+          method: "POST",
+          headers: hookHeaders(),
+          body: "{}",
+        }),
+        routeContext(["api", "v1", "auth", "login"]),
+      );
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0].headers["x-hub-signature-256"]).toBeUndefined();
+      expect(seen[0].headers["x-github-event"]).toBeUndefined();
+      expect(seen[0].headers["x-github-delivery"]).toBeUndefined();
+    });
+
+    it("rejects a Content-Length over the cap with 413 before reading the body or calling Go", async () => {
+      const seen = interceptUpstream("/hooks/github");
+      let bodyRead = false;
+      const request = makeRequest(WEBHOOK_URL, {
+        method: "POST",
+        headers: hookHeaders({ "content-length": String(MAX_BODY + 1) }),
+        body: "{}",
+      });
+      Object.defineProperty(request, "arrayBuffer", {
+        value: () => {
+          bodyRead = true;
+          return Promise.resolve(new ArrayBuffer(0));
+        },
+      });
+      Object.defineProperty(request, "body", {
+        get: () => {
+          bodyRead = true;
+          return null;
+        },
+      });
+
+      const response = await POST(request, routeContext(["hooks", "github"]));
+
+      expect(response.status).toBe(413);
+      expect(bodyRead).toBe(false);
+      expect(seen).toHaveLength(0);
+    });
+
+    it("cuts off a body over the cap that declares no length", async () => {
+      const seen = interceptUpstream("/hooks/github");
+      const oversized = new Uint8Array(MAX_BODY + 1).fill(97);
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(oversized.slice(0, MAX_BODY / 2));
+          controller.enqueue(oversized.slice(MAX_BODY / 2));
+          controller.close();
+        },
+      });
+      const request = new NextRequest(
+        new Request(WEBHOOK_URL, {
+          method: "POST",
+          headers: hookHeaders(),
+          body: stream,
+          duplex: "half",
+        } as RequestInit),
+      );
+
+      const response = await POST(request, routeContext(["hooks", "github"]));
+
+      expect(response.status).toBe(413);
+      expect(seen).toHaveLength(0);
+    });
+
+    it("forwards a body exactly at the cap", async () => {
+      const seen = interceptUpstream("/hooks/github");
+
+      const response = await POST(
+        makeRequest(WEBHOOK_URL, {
+          method: "POST",
+          headers: hookHeaders(),
+          body: "a".repeat(MAX_BODY),
+        }),
+        routeContext(["hooks", "github"]),
+      );
+
+      expect(response.status).toBe(202);
+      expect(seen[0].body).toHaveLength(MAX_BODY);
+    });
+
+    it("passes Go's refusal of a bad signature through", async () => {
+      interceptUpstream("/hooks/github", 401);
+
+      const response = await POST(
+        makeRequest(WEBHOOK_URL, {
+          method: "POST",
+          headers: hookHeaders(),
+          body: "{}",
+        }),
+        routeContext(["hooks", "github"]),
+      );
+
+      expect(response.status).toBe(401);
+    });
+  });
 });

@@ -40,6 +40,10 @@ type GitHubAppRepository interface {
 	// App's JWTs. The caller keeps the key in memory only, for as long as it signs, and
 	// clears it afterwards. It returns ErrGitHubAppNotFound before an App is stored.
 	SigningKey(ctx context.Context) (appID int64, privateKeyPEM []byte, err error)
+	// WebhookSecret returns the decrypted webhook secret that signs the App's deliveries.
+	// The caller uses it only to verify a signature and never logs or stores it. It returns
+	// ErrGitHubAppNotFound before an App is stored.
+	WebhookSecret(ctx context.Context) ([]byte, error)
 }
 
 // GitHubApp returns the GitHub App repository.
@@ -121,4 +125,19 @@ func (r githubAppRepo) SigningKey(ctx context.Context) (int64, []byte, error) {
 		return 0, nil, errors.New("decrypt github app private key: the stored key does not match APP_ENCRYPTION_KEY")
 	}
 	return row.AppID, pem, nil
+}
+
+func (r githubAppRepo) WebhookSecret(ctx context.Context) ([]byte, error) {
+	encrypted, err := r.store.reads.GetGitHubAppWebhookSecret(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrGitHubAppNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read github app webhook secret: %w", err)
+	}
+	secret, err := r.store.cipher.Decrypt(encrypted)
+	if err != nil {
+		return nil, errors.New("decrypt github app webhook secret: the stored secret does not match APP_ENCRYPTION_KEY")
+	}
+	return secret, nil
 }

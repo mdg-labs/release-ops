@@ -161,6 +161,19 @@ CREATE TABLE installation_settings (
   updated_at TEXT NOT NULL
 ) STRICT;
 
+-- GitHub's delivery GUIDs the webhook endpoint has accepted (specs.html § 2.10): a GUID seen again does
+-- nothing. A row is written in the transaction of the work the delivery caused, and rows are pruned after
+-- the retention of internal/store/webhook_deliveries.go. installation_id is NULL while the delivery's
+-- installation is not recorded.
+CREATE TABLE webhook_deliveries (
+  guid TEXT PRIMARY KEY,
+  event TEXT NOT NULL,
+  installation_id TEXT REFERENCES installations(id) ON DELETE SET NULL,
+  received_at TEXT NOT NULL
+) STRICT;
+
+CREATE INDEX idx_webhook_deliveries_received_at ON webhook_deliveries (received_at);
+
 -- The installed repositories. A repository that leaves the installation keeps its row and history
 -- (removed_at set).
 CREATE TABLE repositories (

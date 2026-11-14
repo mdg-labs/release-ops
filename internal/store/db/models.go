@@ -237,3 +237,10 @@ type User struct {
 	CreatedAt    string `json:"created_at"`
 	UpdatedAt    string `json:"updated_at"`
 }
+
+type WebhookDelivery struct {
+	Guid           string         `json:"guid"`
+	Event          string         `json:"event"`
+	InstallationID sql.NullString `json:"installation_id"`
+	ReceivedAt     string         `json:"received_at"`
+}

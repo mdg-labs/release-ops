@@ -40,3 +40,6 @@ SELECT COUNT(*) FROM installations WHERE status <> 'removed';
 
 -- name: GetGitHubAppSigningKey :one
 SELECT app_id, encrypted_private_key FROM github_app WHERE id = 1;
+
+-- name: GetGitHubAppWebhookSecret :one
+SELECT encrypted_webhook_secret FROM github_app WHERE id = 1;

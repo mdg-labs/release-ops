@@ -34,6 +34,9 @@ type JobQueueOptions struct {
 	// OnLeaseExpired is called after Reap ends an attempt whose lease expired, with the full
 	// name of the job's repository. The attempt ended without a result from the worker.
 	OnLeaseExpired func(repository string)
+	// OnJobStarted is called after a job's first heartbeat of an attempt, when the job was
+	// triggered by a webhook, with the time from the webhook's arrival to that heartbeat.
+	OnJobStarted func(lag time.Duration)
 }
 
 // JobQueue is the SQLite implementation of queue.Queue over the jobs table. Every write
@@ -47,6 +50,8 @@ type JobQueue struct {
 	notifier queue.Notifier
 	// onLeaseExpired is nil when nobody counts expired attempts.
 	onLeaseExpired func(repository string)
+	// onJobStarted is nil when nobody records the webhook lag.
+	onJobStarted func(lag time.Duration)
 	// lastContact is the unix-nanosecond time of the last worker contact; 0 before the first.
 	lastContact atomic.Int64
 }
@@ -55,7 +60,7 @@ var _ queue.Queue = (*JobQueue)(nil)
 
 // NewJobQueue returns the queue over d's writer connection.
 func NewJobQueue(d *DB, opts JobQueueOptions) *JobQueue {
-	q := &JobQueue{db: d, cfg: opts.Config, now: opts.Now, rand: opts.Rand, onLeaseExpired: opts.OnLeaseExpired}
+	q := &JobQueue{db: d, cfg: opts.Config, now: opts.Now, rand: opts.Rand, onLeaseExpired: opts.OnLeaseExpired, onJobStarted: opts.OnJobStarted}
 	if q.cfg == (queue.Config{}) {
 		q.cfg = queue.DefaultConfig()
 	}
@@ -395,17 +400,35 @@ func (q *JobQueue) HeldJob(ctx context.Context, jobID, leaseOwner string) (*queu
 func (q *JobQueue) Heartbeat(ctx context.Context, jobID, leaseOwner string) (queue.HeartbeatResult, error) {
 	q.touch()
 	now := q.now().UTC()
-	_, err := db.New(q.db.Writer).HeartbeatJob(ctx, db.HeartbeatJobParams{
-		ID:             jobID,
-		LeaseOwner:     nullString(leaseOwner),
-		Now:            nullString(formatTime(now)),
-		LeaseExpiresAt: formatTime(now.Add(q.cfg.LeaseDuration)),
+	var firstOfAttempt bool
+	var webhookReceivedAt sql.NullString
+	err := q.inTx(ctx, func(qtx *db.Queries) error {
+		job, err := qtx.GetJob(ctx, jobID)
+		if err != nil {
+			return err
+		}
+		firstOfAttempt = !job.StartedAt.Valid
+		webhookReceivedAt = job.WebhookReceivedAt
+		_, err = qtx.HeartbeatJob(ctx, db.HeartbeatJobParams{
+			ID:             jobID,
+			LeaseOwner:     nullString(leaseOwner),
+			Now:            nullString(formatTime(now)),
+			LeaseExpiresAt: formatTime(now.Add(q.cfg.LeaseDuration)),
+		})
+		return err
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return queue.HeartbeatResult{Abort: true, Reason: queue.AbortLeaseLost}, nil
 	}
 	if err != nil {
 		return queue.HeartbeatResult{}, fmt.Errorf("heartbeat: %w", err)
+	}
+	if firstOfAttempt && webhookReceivedAt.Valid && q.onJobStarted != nil {
+		arrived, err := time.Parse(timeLayout, webhookReceivedAt.String)
+		if err != nil {
+			return queue.HeartbeatResult{}, fmt.Errorf("heartbeat: webhook_received_at %q: %w", webhookReceivedAt.String, err)
+		}
+		q.onJobStarted(now.Sub(arrived))
 	}
 	return queue.HeartbeatResult{}, nil
 }
