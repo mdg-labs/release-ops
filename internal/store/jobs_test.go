@@ -837,3 +837,76 @@ func TestReapReportsEachExpiredAttemptByRepository(t *testing.T) {
 		t.Errorf("expired attempts reported for %v, want both repositories", expired)
 	}
 }
+
+// pause marks a repository paused (enabled = 0); remove marks it removed from its installation.
+func (e *jobEnv) pause(t *testing.T, repo string) {
+	t.Helper()
+
+	if _, err := e.db.Writer.Exec(`UPDATE repositories SET enabled = 0 WHERE id = ?`, repo); err != nil {
+		t.Fatalf("pause %s: %v", repo, err)
+	}
+}
+
+func (e *jobEnv) remove(t *testing.T, repo string) {
+	t.Helper()
+
+	if _, err := e.db.Writer.Exec(
+		`UPDATE repositories SET removed_at = '2026-11-14T11:00:00.000Z' WHERE id = ?`, repo,
+	); err != nil {
+		t.Fatalf("remove %s: %v", repo, err)
+	}
+}
+
+func TestClaimSkipsAQueuedJobOfAPausedOrRemovedRepository(t *testing.T) {
+	e := newJobEnv(t, 3)
+
+	// The paused and the removed repository's jobs are older and high priority, so they
+	// would be claimed first if the claim did not look at the repository.
+	paused := e.enqueue(t, e.repos[0], queue.PriorityHigh)
+	removed := e.enqueue(t, e.repos[1], queue.PriorityHigh)
+	e.clock.Advance(time.Second)
+	eligible := e.enqueue(t, e.repos[2], queue.PriorityNormal)
+	e.pause(t, e.repos[0])
+	e.remove(t, e.repos[1])
+
+	if got := e.claim(t).ID; got != eligible.JobID {
+		t.Fatalf("claim = %s, want the eligible repository's job %s", got, eligible.JobID)
+	}
+	e.wantNoClaim(t)
+
+	// The jobs stay queued: nothing deletes or fails them.
+	for name, id := range map[string]string{"paused": paused.JobID, "removed": removed.JobID} {
+		if row := e.row(t, id); row.State != "queued" || row.Attempts != 0 {
+			t.Errorf("job of the %s repository = %+v, want it left queued", name, row)
+		}
+	}
+
+	// Resuming the repository makes its job claimable again.
+	if _, err := e.db.Writer.Exec(`UPDATE repositories SET enabled = 1 WHERE id = ?`, e.repos[0]); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.claim(t).ID; got != paused.JobID {
+		t.Fatalf("claim after resuming = %s, want %s", got, paused.JobID)
+	}
+}
+
+func TestHeldJobRefusesAJobOfAPausedOrRemovedRepository(t *testing.T) {
+	for name, change := range map[string]func(*jobEnv, *testing.T, string){
+		"paused":  (*jobEnv).pause,
+		"removed": (*jobEnv).remove,
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newJobEnv(t, 1)
+			e.enqueue(t, e.repos[0], queue.PriorityHigh)
+			job := e.claim(t)
+			if _, err := e.q.HeldJob(context.Background(), job.ID, job.LeaseOwner); err != nil {
+				t.Fatalf("HeldJob before the change: %v", err)
+			}
+
+			change(e, t, e.repos[0])
+			if h, err := e.q.HeldJob(context.Background(), job.ID, job.LeaseOwner); !errors.Is(err, queue.ErrLeaseLost) || h != nil {
+				t.Errorf("HeldJob = %+v, %v, want ErrLeaseLost and no job", h, err)
+			}
+		})
+	}
+}

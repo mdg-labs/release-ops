@@ -19,8 +19,11 @@ SET state = 'running',
 WHERE id = (
   SELECT j.id
   FROM jobs j
+  JOIN repositories repo ON repo.id = j.repository_id
   WHERE j.state = 'queued'
     AND j.run_after <= ?3
+    AND repo.enabled = 1
+    AND repo.removed_at IS NULL
     AND NOT EXISTS (
       SELECT 1 FROM jobs r
       WHERE r.repository_id = j.repository_id AND r.state = 'running'
@@ -41,9 +44,10 @@ type ClaimNextJobParams struct {
 	NormalLimit    int64  `json:"normal_limit"`
 }
 
-// A queued job is claimable when its run_after has passed, its repository has no running
-// job and the number of running jobs is below the limit for its priority. The limit of a
-// normal job leaves one slot free for high-priority jobs when the cap is 2 or more.
+// A queued job is claimable when its run_after has passed, its repository is enabled and not
+// removed, the repository has no running job and the number of running jobs is below the limit
+// for its priority. The limit of a normal job leaves one slot free for high-priority jobs when
+// the cap is 2 or more. A job of a paused or removed repository stays queued.
 func (q *Queries) ClaimNextJob(ctx context.Context, arg ClaimNextJobParams) (Job, error) {
 	row := q.db.QueryRowContext(ctx, claimNextJob,
 		arg.LeaseOwner,
@@ -225,6 +229,8 @@ WHERE j.id = ?1
   AND j.state = 'running'
   AND j.lease_owner = CAST(?2 AS TEXT)
   AND j.lease_expires_at > CAST(?3 AS TEXT)
+  AND r.enabled = 1
+  AND r.removed_at IS NULL
   AND i.status = 'active'
 `
 
@@ -242,7 +248,7 @@ type GetLeasedJobRow struct {
 }
 
 // The job a lease owner holds right now: running, leased to that owner, lease not yet expired,
-// and its repository's installation active.
+// its repository enabled and not removed, and that repository's installation active.
 func (q *Queries) GetLeasedJob(ctx context.Context, arg GetLeasedJobParams) (GetLeasedJobRow, error) {
 	row := q.db.QueryRowContext(ctx, getLeasedJob, arg.ID, arg.LeaseOwner, arg.Now)
 	var i GetLeasedJobRow

@@ -9,9 +9,10 @@ FROM jobs
 WHERE state = 'running'
   AND lease_owner IS NOT NULL;
 
--- A queued job is claimable when its run_after has passed, its repository has no running
--- job and the number of running jobs is below the limit for its priority. The limit of a
--- normal job leaves one slot free for high-priority jobs when the cap is 2 or more.
+-- A queued job is claimable when its run_after has passed, its repository is enabled and not
+-- removed, the repository has no running job and the number of running jobs is below the limit
+-- for its priority. The limit of a normal job leaves one slot free for high-priority jobs when
+-- the cap is 2 or more. A job of a paused or removed repository stays queued.
 -- name: ClaimNextJob :one
 UPDATE jobs
 SET state = 'running',
@@ -21,8 +22,11 @@ SET state = 'running',
 WHERE id = (
   SELECT j.id
   FROM jobs j
+  JOIN repositories repo ON repo.id = j.repository_id
   WHERE j.state = 'queued'
     AND j.run_after <= sqlc.arg(now)
+    AND repo.enabled = 1
+    AND repo.removed_at IS NULL
     AND NOT EXISTS (
       SELECT 1 FROM jobs r
       WHERE r.repository_id = j.repository_id AND r.state = 'running'
@@ -119,7 +123,7 @@ WHERE id = sqlc.arg(id)
   AND state = 'running';
 
 -- The job a lease owner holds right now: running, leased to that owner, lease not yet expired,
--- and its repository's installation active.
+-- its repository enabled and not removed, and that repository's installation active.
 -- name: GetLeasedJob :one
 SELECT j.id, j.repository_id, r.full_name AS repository_full_name, i.github_installation_id
 FROM jobs j
@@ -129,6 +133,8 @@ WHERE j.id = sqlc.arg(id)
   AND j.state = 'running'
   AND j.lease_owner = CAST(sqlc.arg(lease_owner) AS TEXT)
   AND j.lease_expires_at > CAST(sqlc.arg(now) AS TEXT)
+  AND r.enabled = 1
+  AND r.removed_at IS NULL
   AND i.status = 'active';
 
 -- The eligible queue per priority: queued jobs whose run_after has passed. oldest_eligible_at
