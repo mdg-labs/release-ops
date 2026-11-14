@@ -395,6 +395,11 @@ func TestServerServesReadinessAndMetricsOnTheirListeners(t *testing.T) {
 	internal := fmt.Sprintf("http://127.0.0.1:%d", internalPort)
 	metricsURL := fmt.Sprintf("http://127.0.0.1:%d", metricsPort)
 	waitForStatus(t, public+"/healthz", http.StatusOK, false)
+	// The listeners start in their own goroutines. A GET on the internal heartbeat path is a
+	// 405 from the router before any queue method runs, so the probe is not a worker contact
+	// and /readyz stays 503 below.
+	waitForStatus(t, internal+"/internal/v1/jobs/x/heartbeat", http.StatusMethodNotAllowed, true)
+	waitForStatus(t, metricsURL+"/metrics", http.StatusOK, false)
 
 	if body := getBody(t, public+"/readyz", http.StatusServiceUnavailable); !strings.Contains(body, "no worker has contacted the app") {
 		t.Errorf("readyz before any worker = %s", body)
