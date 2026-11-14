@@ -29,6 +29,7 @@ import {
 import { toastManager } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api/client";
 import { useIntegrations } from "@/lib/hooks/use-integrations";
+import { kindIsTicket } from "@/lib/integrations/kinds";
 import type { Integration } from "@/lib/query/types";
 
 type DrawerState =
@@ -39,7 +40,7 @@ type DrawerState =
 export function IntegrationsView(): React.ReactElement {
   const t = useTranslations("integrations");
   const {
-    data: integrations,
+    data,
     isLoading,
     isError,
     createIntegration,
@@ -55,6 +56,9 @@ export function IntegrationsView(): React.ReactElement {
   // its dialog was dismissed cannot touch the dialog opened next.
   const deleteAttempt = useRef(0);
 
+  const integrations = data?.filter((integration) =>
+    kindIsTicket(integration.kind),
+  );
   const drawerOpen = drawer.mode !== "closed";
   const isEmpty = !isLoading && integrations?.length === 0;
 
@@ -158,12 +162,7 @@ export function IntegrationsView(): React.ReactElement {
                 {integrations?.map((integration) => (
                   <TableRow key={integration.id}>
                     <TableCell className="font-medium">
-                      <span className="flex items-center gap-2">
-                        {integration.name}
-                        {integration.isDefault ? (
-                          <Badge variant="info">{t("defaultBadge")}</Badge>
-                        ) : null}
-                      </span>
+                      {integration.name}
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">

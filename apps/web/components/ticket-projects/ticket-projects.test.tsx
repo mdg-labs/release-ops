@@ -384,7 +384,7 @@ describe("TicketProjectsView", () => {
       .reply(409, {
         error: {
           code: "CONFLICT",
-          message: "ticket project is referenced by monitored repos",
+          message: "ticket project is in use",
         },
       });
 

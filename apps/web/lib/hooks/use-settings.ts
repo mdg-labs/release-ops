@@ -18,7 +18,6 @@ export function useSettings() {
       apiClient.patch<Settings>("/settings", input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.settings() });
-      queryClient.invalidateQueries({ queryKey: queryKeys.status() });
     },
   });
 

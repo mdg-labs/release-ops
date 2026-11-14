@@ -19,11 +19,11 @@ const ORIGIN = "http://localhost:3000";
 const sampleIntegrations = [
   {
     id: "int-1",
-    kind: "github",
-    name: "GitHub Org",
-    baseUrl: null,
+    kind: "kaneo",
+    name: "Team Kaneo",
+    baseUrl: "https://cloud.kaneo.app",
     hasSecret: true,
-    isDefault: true,
+    isDefault: false,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   },
@@ -104,11 +104,53 @@ describe("IntegrationsView", () => {
 
     expect(await screen.findByText("No integrations yet")).toBeInTheDocument();
     expect(
-      screen.getByText("Connect a source or ticket provider to get started."),
+      screen.getByText("Connect a ticket provider to get started."),
     ).toBeInTheDocument();
     expect(
       screen.getAllByRole("button", { name: "Add integration" }),
     ).toHaveLength(2);
+  });
+
+  it("does not list integrations of removed source kinds", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, [
+        ...sampleIntegrations,
+        {
+          ...sampleIntegrations[0],
+          id: "int-9",
+          kind: "github",
+          name: "Legacy GitHub",
+        },
+      ]);
+
+    renderIntegrationsPage();
+
+    expect(await screen.findByText("Team Kaneo")).toBeInTheDocument();
+    expect(screen.queryByText("Legacy GitHub")).toBeNull();
+  });
+
+  it("offers only the ticket provider kinds when adding", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, []);
+
+    renderIntegrationsPage();
+    await screen.findByText("No integrations yet");
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Add integration" })[0],
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("combobox"));
+
+    const options = await screen.findAllByRole("option");
+    expect(options.map((option) => option.textContent)).toEqual([
+      "Kaneo",
+      "Jira",
+      "Linear",
+    ]);
   });
 
   it("lists integrations from the API", async () => {
@@ -122,12 +164,12 @@ describe("IntegrationsView", () => {
 
     renderIntegrationsPage();
 
-    expect(await screen.findByText("GitHub Org")).toBeInTheDocument();
+    expect(await screen.findByText("Team Kaneo")).toBeInTheDocument();
     expect(screen.getByText("Company Jira")).toBeInTheDocument();
     expect(screen.getAllByText("Configured")).toHaveLength(2);
   });
 
-  it("shows base URL when editing gitlab integration", async () => {
+  it("shows base URL when editing a Kaneo integration", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool
       .intercept({
@@ -137,9 +179,9 @@ describe("IntegrationsView", () => {
       .reply(200, [
         {
           id: "int-3",
-          kind: "gitlab",
-          name: "GitLab CE",
-          baseUrl: "https://gitlab.example.com",
+          kind: "kaneo",
+          name: "Kaneo Self-hosted",
+          baseUrl: "https://kaneo.example.com",
           hasSecret: true,
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
@@ -149,12 +191,12 @@ describe("IntegrationsView", () => {
     renderIntegrationsPage();
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Edit GitLab CE" }),
+      await screen.findByRole("button", { name: "Edit Kaneo Self-hosted" }),
     );
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByLabelText(/Base URL/)).toHaveValue(
-      "https://gitlab.example.com",
+      "https://kaneo.example.com",
     );
   });
 
@@ -276,12 +318,12 @@ describe("IntegrationsView", () => {
     renderIntegrationsPage();
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Edit GitHub Org" }),
+      await screen.findByRole("button", { name: "Edit Team Kaneo" }),
     );
 
     const dialog = await screen.findByRole("dialog");
     const secretInput = within(dialog).getByLabelText(
-      /Token/,
+      /API key/,
     ) as HTMLInputElement;
     expect(secretInput.value).toBe("");
     expect(secretInput.type).toBe("password");
@@ -300,11 +342,11 @@ describe("IntegrationsView", () => {
     renderIntegrationsPage();
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Delete GitHub Org" }),
+      await screen.findByRole("button", { name: "Delete Team Kaneo" }),
     );
 
     expect(
-      await screen.findByText("Delete “GitHub Org”? This cannot be undone."),
+      await screen.findByText("Delete “Team Kaneo”? This cannot be undone."),
     ).toBeInTheDocument();
   });
 
@@ -321,14 +363,14 @@ describe("IntegrationsView", () => {
       .reply(409, {
         error: {
           code: "CONFLICT",
-          message: "integration is referenced by repos or ticket projects",
+          message: "integration is referenced by ticket projects",
         },
       });
 
     renderIntegrationsPage();
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Delete GitHub Org" }),
+      await screen.findByRole("button", { name: "Delete Team Kaneo" }),
     );
     const dialog = await screen.findByRole("alertdialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
@@ -367,7 +409,7 @@ describe("IntegrationsView", () => {
     renderIntegrationsPage();
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Delete GitHub Org" }),
+      await screen.findByRole("button", { name: "Delete Team Kaneo" }),
     );
     const dialog = await screen.findByRole("alertdialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
@@ -402,7 +444,7 @@ describe("IntegrationsView", () => {
     renderIntegrationsPage();
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "Delete GitHub Org" }),
+      await screen.findByRole("button", { name: "Delete Team Kaneo" }),
     );
     const first = await screen.findByRole("alertdialog");
     fireEvent.click(within(first).getByRole("button", { name: "Delete" }));
@@ -445,7 +487,7 @@ describe("IntegrationsView", () => {
 
     fireEvent.click(
       await screen.findByRole("button", {
-        name: "Test connection for GitHub Org",
+        name: "Test connection for Team Kaneo",
       }),
     );
 
@@ -455,99 +497,6 @@ describe("IntegrationsView", () => {
     );
   });
 
-  it("marks the default integration with a badge", async () => {
-    const pool = mockAgent.get(ORIGIN);
-    pool
-      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
-      .reply(200, sampleIntegrations);
-
-    renderIntegrationsPage();
-
-    const githubRow = (await screen.findByText("GitHub Org")).closest("tr");
-    const jiraRow = screen.getByText("Company Jira").closest("tr");
-    expect(githubRow).not.toBeNull();
-    expect(jiraRow).not.toBeNull();
-    expect(within(githubRow as HTMLElement).getByText("Default")).toBeVisible();
-    expect(within(jiraRow as HTMLElement).queryByText("Default")).toBeNull();
-  });
-
-  it("offers the default switch for source kinds only", async () => {
-    const pool = mockAgent.get(ORIGIN);
-    pool
-      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
-      .reply(200, sampleIntegrations);
-
-    renderIntegrationsPage();
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Edit GitHub Org" }),
-    );
-    let dialog = await screen.findByRole("dialog");
-    expect(
-      within(dialog).getByRole("switch", {
-        name: "Default for this source type",
-      }),
-    ).toHaveAttribute("aria-checked", "true");
-
-    cleanup();
-    pool
-      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
-      .reply(200, sampleIntegrations);
-    renderIntegrationsPage();
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Edit Company Jira" }),
-    );
-    dialog = await screen.findByRole("dialog");
-    expect(
-      within(dialog).queryByRole("switch", {
-        name: "Default for this source type",
-      }),
-    ).toBeNull();
-  });
-
-  it("sends isDefault when saving a source integration", async () => {
-    vi.stubGlobal("PointerEvent", MouseEvent);
-    const pool = mockAgent.get(ORIGIN);
-    pool
-      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
-      .reply(200, [{ ...sampleIntegrations[0], isDefault: false }]);
-
-    let patchBody: string | undefined;
-    pool
-      .intercept({ path: "/api/go/api/v1/integrations/int-1", method: "PATCH" })
-      .reply((opts) => {
-        patchBody = opts.body?.toString();
-        return {
-          statusCode: 200,
-          data: JSON.stringify({ ...sampleIntegrations[0], isDefault: true }),
-          responseOptions: { headers: { "content-type": "application/json" } },
-        };
-      });
-    pool
-      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
-      .reply(200, sampleIntegrations);
-
-    renderIntegrationsPage();
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Edit GitHub Org" }),
-    );
-    const dialog = await screen.findByRole("dialog");
-    const toggle = within(dialog).getByRole("switch", {
-      name: "Default for this source type",
-    });
-    expect(toggle).toHaveAttribute("aria-checked", "false");
-    fireEvent.click(toggle);
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      expect(patchBody).toBeDefined();
-    });
-    expect(JSON.parse(patchBody ?? "{}")).toMatchObject({
-      name: "GitHub Org",
-      isDefault: true,
-    });
-  });
   describe("token on Add", () => {
     async function openAddDrawer() {
       const pool = mockAgent.get(ORIGIN);
@@ -577,56 +526,6 @@ describe("IntegrationsView", () => {
       fireEvent.click(option);
     }
 
-    it("creates a GitHub integration without a token", async () => {
-      const { pool, dialog } = await openAddDrawer();
-      let postBody: string | undefined;
-      pool
-        .intercept({ path: "/api/go/api/v1/integrations", method: "POST" })
-        .reply((opts) => {
-          postBody = opts.body?.toString();
-          return {
-            statusCode: 201,
-            data: JSON.stringify({
-              ...sampleIntegrations[0],
-              hasSecret: false,
-            }),
-            responseOptions: {
-              headers: { "content-type": "application/json" },
-            },
-          };
-        });
-      pool
-        .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
-        .reply(200, [{ ...sampleIntegrations[0], hasSecret: false }]);
-
-      const token = within(dialog).getByLabelText(/Token/);
-      expect(token).not.toBeRequired();
-      expect(
-        within(dialog)
-          .getByText(/^Token/)
-          .querySelector("span"),
-      ).toBeNull();
-
-      fireEvent.change(within(dialog).getByLabelText(/^Name/), {
-        target: { value: "Public GitHub" },
-      });
-      fireEvent.submit(
-        within(dialog).getByRole("button", { name: "Save" }).closest("form")!,
-      );
-
-      await waitFor(() => {
-        expect(postBody).toBeDefined();
-      });
-      expect(JSON.parse(postBody ?? "{}")).toMatchObject({
-        kind: "github",
-        name: "Public GitHub",
-        secret: "",
-      });
-      const row = (await screen.findByText("GitHub Org")).closest("tr")!;
-      expect(within(row).getByText("Missing")).toBeInTheDocument();
-      expect(within(row).queryByText("Configured")).toBeNull();
-    });
-
     it("refuses Linear without an API key", async () => {
       const { pool, dialog } = await openAddDrawer();
       let postSent = false;
@@ -652,80 +551,16 @@ describe("IntegrationsView", () => {
       );
       expect(postSent).toBe(false);
     });
-
-    it("refuses GitLab without a token", async () => {
-      const { dialog } = await openAddDrawer();
-
-      await pickKind(dialog, "GitLab");
-      expect(await within(dialog).findByLabelText(/Token/)).toBeRequired();
-    });
   });
 
-  it("lets a tokenless GitHub integration be renamed without a token", async () => {
+  it("still requires a new secret when a base URL changes", async () => {
     const pool = mockAgent.get(ORIGIN);
-    pool
-      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
-      .reply(200, [{ ...sampleIntegrations[0], hasSecret: false }]);
-    let patchBody: string | undefined;
-    pool
-      .intercept({ path: "/api/go/api/v1/integrations/int-1", method: "PATCH" })
-      .reply((opts) => {
-        patchBody = opts.body?.toString();
-        return {
-          statusCode: 200,
-          data: JSON.stringify(sampleIntegrations[0]),
-          responseOptions: { headers: { "content-type": "application/json" } },
-        };
-      });
     pool
       .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
       .reply(200, sampleIntegrations);
-
-    renderIntegrationsPage();
-    const row = (await screen.findByText("GitHub Org")).closest("tr")!;
-    expect(within(row).getByText("Missing")).toBeInTheDocument();
-    expect(within(row).queryByText("Configured")).toBeNull();
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Edit GitHub Org" }),
-    );
-    const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).queryByText("Configured")).toBeNull();
-    expect(within(dialog).getByLabelText(/Token/)).not.toBeRequired();
-    fireEvent.change(within(dialog).getByLabelText(/^Name/), {
-      target: { value: "Renamed" },
-    });
-    fireEvent.submit(
-      within(dialog).getByRole("button", { name: "Save" }).closest("form")!,
-    );
-
-    await waitFor(() => {
-      expect(patchBody).toBeDefined();
-    });
-    expect(JSON.parse(patchBody ?? "{}")).toMatchObject({
-      name: "Renamed",
-      secret: null,
-    });
-  });
-
-  it("still requires a token when a tokenless Gitea base URL changes", async () => {
-    const pool = mockAgent.get(ORIGIN);
-    pool
-      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
-      .reply(200, [
-        {
-          id: "int-4",
-          kind: "gitea",
-          name: "Gitea Lab",
-          baseUrl: "https://gitea.example.com",
-          hasSecret: false,
-          isDefault: false,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-        },
-      ]);
     let patchSent = false;
     pool
-      .intercept({ path: "/api/go/api/v1/integrations/int-4", method: "PATCH" })
+      .intercept({ path: "/api/go/api/v1/integrations/int-1", method: "PATCH" })
       .reply(() => {
         patchSent = true;
         return { statusCode: 200, data: "{}" };
@@ -733,7 +568,7 @@ describe("IntegrationsView", () => {
 
     renderIntegrationsPage();
     fireEvent.click(
-      await screen.findByRole("button", { name: "Edit Gitea Lab" }),
+      await screen.findByRole("button", { name: "Edit Team Kaneo" }),
     );
     const dialog = await screen.findByRole("dialog");
     fireEvent.change(within(dialog).getByLabelText(/Base URL/), {
