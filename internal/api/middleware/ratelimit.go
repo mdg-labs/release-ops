@@ -30,6 +30,8 @@ const (
 	SetupSessionWindow       = time.Minute
 	SetupStatusLimit         = 10
 	SetupStatusWindow        = time.Minute
+	SetupCallbackLimit       = 10
+	SetupCallbackWindow      = time.Minute
 	GitHubLoginLimit         = 10
 	GitHubLoginWindow        = time.Minute
 	GitHubCallbackLimit      = 10
@@ -114,6 +116,13 @@ func (rl *RateLimiter) SetupStatus(next http.Handler) http.Handler {
 	return rl.limit("setup-status", SetupStatusLimit, SetupStatusWindow, next)
 }
 
+// SetupCallback limits GET /api/v1/setup/callback to 10 requests per minute per IP. The
+// browser arrives from GitHub, so a limited request is redirected (302) to
+// /setup?error=rate_limited instead of getting JSON.
+func (rl *RateLimiter) SetupCallback(next http.Handler) http.Handler {
+	return rl.limitWith("setup-callback", SetupCallbackLimit, SetupCallbackWindow, next, redirectTo(setupRateLimitedPath))
+}
+
 // GitHubLogin limits GET /api/v1/auth/github/login to 10 requests per minute per IP. The
 // browser navigates to it, so a limited request is redirected (302) to
 // /login?error=rate_limited instead of getting JSON.
@@ -140,12 +149,22 @@ func (rl *RateLimiter) limit(endpoint string, max int, window time.Duration, nex
 	})
 }
 
-// limitNavigation is limit for a route a browser navigates to: a limited request is
+// limitNavigation is limit for a sign-in route a browser navigates to: a limited request is
 // redirected to /login with the rate_limited error code.
 func (rl *RateLimiter) limitNavigation(endpoint string, max int, window time.Duration, next http.Handler) http.Handler {
-	return rl.limitWith(endpoint, max, window, next, func(w http.ResponseWriter, r *http.Request) {
-		auth.RedirectToLogin(w, r, auth.LoginErrorRateLimited)
-	})
+	return rl.limitWith(endpoint, max, window, next, redirectTo(loginRateLimitedPath))
+}
+
+// Where a limited navigation is sent: fixed same-origin paths, never built from the request.
+const (
+	loginRateLimitedPath = "/login?error=" + auth.LoginErrorRateLimited
+	setupRateLimitedPath = "/setup?error=rate_limited"
+)
+
+func redirectTo(path string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, path, http.StatusFound)
+	}
 }
 
 func (rl *RateLimiter) limitWith(endpoint string, max int, window time.Duration, next http.Handler, refuse http.HandlerFunc) http.Handler {

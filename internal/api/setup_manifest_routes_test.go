@@ -474,8 +474,9 @@ func TestSetupManifestFlowRoutesAreRateLimitedEach(t *testing.T) {
 			t.Fatalf("callback %d = %d to %q, want 302", i+1, code, location)
 		}
 	}
-	if code, _, header := doSetupRequest(t, f.client, http.MethodGet, f.srv.URL+"/api/v1/setup/callback?code=abc123&state=wrong", ""); code != http.StatusTooManyRequests || header.Get("Retry-After") == "" {
-		t.Fatalf("callback 11 = %d, want 429 with Retry-After", code)
+	code, _, header = doSetupRequest(t, f.client, http.MethodGet, f.srv.URL+"/api/v1/setup/callback?code=abc123&state=wrong", "")
+	if code != http.StatusFound || header.Get("Location") != setupErrorRedirect("rate_limited") || header.Get("Retry-After") == "" {
+		t.Fatalf("callback 11 = %d to %q (Retry-After %q), want 302 to the rate_limited error with Retry-After", code, header.Get("Location"), header.Get("Retry-After"))
 	}
 
 	// So does the public installed route, which needs no session; with no App stored it answers 404.

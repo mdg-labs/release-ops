@@ -69,9 +69,10 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 	if deps.Store != nil && deps.GitHub != nil {
 		setupHandlers.Apps = deps.Store.GitHubApp()
 		setupHandlers.Converter = deps.GitHub
-		// Each manifest-flow route is limited on its own, 10 a minute per client address.
+		// Each manifest-flow route is limited on its own, 10 a minute per client address; the
+		// callback, a browser navigation, redirects to /setup instead of answering 429 JSON.
 		api.With(apimw.NewRateLimiter().SetupSession, setupHandlers.RequireSession).Post("/setup/manifest", setupHandlers.Manifest)
-		api.With(apimw.NewRateLimiter().SetupSession, setupHandlers.RequireCallbackSession).Get("/setup/callback", setupHandlers.Callback)
+		api.With(apimw.NewRateLimiter().SetupCallback, setupHandlers.RequireCallbackSession).Get("/setup/callback", setupHandlers.Callback)
 		setupHandlers.Installations = deps.Store.Installations()
 		setupHandlers.Installer = github.NewAppClient(deps.GitHub, deps.Store.GitHubApp(), github.AppClientOptions{})
 		api.With(apimw.NewRateLimiter().SetupSession).Get("/setup/installed", setupHandlers.Installed)
