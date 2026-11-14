@@ -849,13 +849,16 @@ func TestIntegrationsRequireSession(t *testing.T) {
 func TestCreateIntegrationRejectsDefaultFlag(t *testing.T) {
 	t.Parallel()
 
+	// Each secret is valid for its kind and each baseUrl is accepted, so the only
+	// reason left to refuse the request is the isDefault flag.
 	for _, tc := range []struct {
 		kind    string
 		baseURL string
+		secret  string
 	}{
-		{kind: "kaneo", baseURL: `,"baseUrl":"https://kaneo.example"`},
-		{kind: "jira", baseURL: `,"baseUrl":"https://jira.example"`},
-		{kind: "linear"},
+		{kind: "kaneo", baseURL: "https://kaneo.example", secret: `{"api_key":"kaneo_test_key"}`},
+		{kind: "jira", baseURL: "https://jira.example", secret: `{"email":"bot@example.com","api_token":"jira_test_token"}`},
+		{kind: "linear", secret: `{"api_key":"lin_test_key"}`},
 	} {
 		t.Run(tc.kind, func(t *testing.T) {
 			t.Parallel()
@@ -864,14 +867,24 @@ func TestCreateIntegrationRejectsDefaultFlag(t *testing.T) {
 			router, sm := newIntegrationsTestRouter(t, repo, &mockIntegrationTester{})
 			cookie := seedSession(t, sm)
 
-			body := fmt.Sprintf(`{"kind":%q,"name":"Ticket","secret":"token","isDefault":true%s}`, tc.kind, tc.baseURL)
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/integrations", strings.NewReader(body))
+			payload := map[string]any{"kind": tc.kind, "name": "Ticket", "secret": tc.secret, "isDefault": true}
+			if tc.baseURL != "" {
+				payload["baseUrl"] = tc.baseURL
+			}
+			body, err := json.Marshal(payload)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/integrations", strings.NewReader(string(body)))
 			req.AddCookie(cookie)
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+			if got, want := errorMessage(t, rec.Body.Bytes()), "isDefault is not supported"; got != want {
+				t.Errorf("error message = %q, want %q", got, want)
 			}
 			if repo.createInput != nil {
 				t.Fatalf("Create called despite rejected default flag: %+v", repo.createInput)
