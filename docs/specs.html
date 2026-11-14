@@ -472,7 +472,7 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
   <p>Sign-in is GitHub OAuth through the App (user authorization), with <code>state</code> and PKCE, as documented in <a href="https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app">generating a user access token for a GitHub App</a>.</p>
   <ol>
     <li><strong>Start.</strong> <code>GET /api/v1/auth/github/login</code>: Go generates a random <code>state</code> and a random PKCE <code>code_verifier</code>, stores both in the server-side pre-login session (bound to the browser's session cookie), and redirects to <code>https://github.com/login/oauth/authorize</code> with the App's <code>client_id</code>, <code>redirect_uri</code> (the registered callback, §3.3), <code>state</code>, <code>code_challenge</code> (S256 of the verifier) and <code>code_challenge_method=S256</code>. An optional post-sign-in path is kept in that session (§3.1).</li>
-    <li><strong>Callback.</strong> <code>GET /api/v1/auth/github/callback?code&amp;state</code>: the returned <code>state</code> must match the session's (constant-time) and is deleted on first use; a mismatch or a missing pre-login session is refused (400) before any call to GitHub. Go then exchanges the <code>code</code> at <code>POST https://github.com/login/oauth/access_token</code> with <code>client_id</code>, <code>client_secret</code>, <code>code</code>, <code>redirect_uri</code> and the <code>code_verifier</code>.</li>
+    <li><strong>Callback.</strong> <code>GET /api/v1/auth/github/callback?code&amp;state</code>: the returned <code>state</code> must match the session's (constant-time) and is deleted on first use; a mismatch, a missing pre-login session, an expired attempt (older than 10 minutes) or a replay is refused before any call to GitHub. The browser arrives here from GitHub and would otherwise land on raw JSON, so this refusal and every other failure of the callback is a same-origin redirect (302) to <code>/login?error=&lt;code&gt;</code>, here <code>invalid_state</code>; a rate-limited start or callback redirects (302) to <code>/login?error=rate_limited</code> (§7.0). <code>/login</code> shows a fixed message per code. Go then exchanges the <code>code</code> at <code>POST https://github.com/login/oauth/access_token</code> with <code>client_id</code>, <code>client_secret</code>, <code>code</code>, <code>redirect_uri</code> and the <code>code_verifier</code>.</li>
     <li><strong>Identify.</strong> With the user token Go calls <code>GET /user</code> and takes the <strong>numeric GitHub user id</strong> and the current login. When <code>BOOTSTRAP_ADMIN_GITHUB_LOGIN</code> matches and no bootstrap admin is stored yet, the id is stored now (§3.6).</li>
     <li><strong>Evaluate.</strong> The role is evaluated with the <em>installation</em> token (§3.8). With no role, sign-in is refused (403) and no session is created.</li>
     <li><strong>Scope.</strong> For a viewer, Go calls <code>GET /user/installations/{installation_id}/repositories</code> with the user token (§3.9).</li>
@@ -1188,8 +1188,8 @@ func CreateDefinitelyNotStored(err error) bool</code></pre>
   <h4>Sign-in endpoints (public)</h4>
   <table>
     <tr><th>Method</th><th>Path</th><th>Description</th></tr>
-    <tr><td>GET</td><td><code>/api/v1/auth/github/login</code></td><td>Optional <code>redirect</code> (same-origin path). Stores <code>state</code> and the PKCE verifier in the pre-login session and redirects (302) to GitHub's authorize URL (§3.5). 503 when no App is configured</td></tr>
-    <tr><td>GET</td><td><code>/api/v1/auth/github/callback</code></td><td><code>code</code>, <code>state</code>. Validates <code>state</code>, exchanges the code, evaluates the role, creates the session and redirects (302) to the requested path or <code>/</code>; on failure redirects to <code>/login</code> with a fixed error code (400 for a bad <code>state</code>)</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/auth/github/login</code></td><td>Optional <code>redirect</code> (same-origin path). Stores <code>state</code> and the PKCE verifier in the pre-login session and redirects (302) to GitHub's authorize URL (§3.5). 503 when no App is configured; when rate limited, redirects (302) to <code>/login?error=rate_limited</code> (§7.0)</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/auth/github/callback</code></td><td><code>code</code>, <code>state</code>. Validates <code>state</code>, exchanges the code, evaluates the role, creates the session and redirects (302) to the requested path or <code>/</code>; on failure redirects (302) to <code>/login?error=&lt;code&gt;</code> with a fixed error code, <code>invalid_state</code> for a missing, mismatched, expired or replayed <code>state</code> (§3.5); when rate limited, redirects (302) to <code>/login?error=rate_limited</code> (§7.0)</td></tr>
     <tr><td>POST</td><td><code>/api/v1/auth/login-link</code></td><td><code>{ "token" }</code> — redeems a break-glass link (§3.6), sets the session; 400 invalid, expired or used token</td></tr>
   </table>
   <h4>Setup endpoints (public)</h4>
@@ -1207,6 +1207,7 @@ func CreateDefinitelyNotStored(err error) bool</code></pre>
   <p>Per-client IP sliding window (in-memory). The client address is one the client cannot set. A Node preload in the Next.js process (<code>apps/web/preload/</code>, loaded by <code>docker/entrypoint.sh</code> with <code>node --require</code>) overwrites <code>X-Forwarded-For</code> on every inbound request with the TCP peer's address before Next.js handles it, never appending to or passing through the client's value. With <code>TRUSTED_PROXIES</code> set and the peer in that list, it uses the right-most <code>X-Forwarded-For</code> hop not in the list instead; a hop that is not an IP address, or a chain of only trusted hops, resolves to the peer. A malformed <code>TRUSTED_PROXIES</code> stops the Next.js process at startup. The <code>/api/go</code> proxy forwards that value, and Go honors it only from a loopback peer (the bundled proxy) and keys on its last hop; a direct caller cannot choose its bucket. On exceed:</p>
   <ul>
     <li>HTTP <strong>429</strong> with standard error envelope (§7) and <code>Retry-After</code> header (seconds until window allows retry).</li>
+    <li>Except <code>GET /api/v1/auth/github/login</code> and <code>GET /api/v1/auth/github/callback</code>: the browser navigates to those, so a limited request is redirected (302) to <code>/login?error=rate_limited</code>, which shows the rate-limited state, with the same <code>Retry-After</code> header. <code>POST /api/v1/auth/login-link</code> is called with <code>fetch</code> and keeps the 429 JSON.</li>
   </ul>
   <table>
     <tr><th>Endpoint</th><th>Limit (per IP)</th></tr>
@@ -1227,7 +1228,7 @@ func CreateDefinitelyNotStored(err error) bool</code></pre>
 // 403 — role insufficient
 { "error": { "code": "FORBIDDEN", "message": "Admin role required." } }
 
-// 429 — rate limited (all public auth and setup endpoints above)
+// 429 — rate limited (the public auth and setup endpoints above, except the two GitHub sign-in navigations)
 { "error": { "code": "RATE_LIMITED", "message": "Too many requests. Try again later." } }
 // Header: Retry-After: &lt;seconds&gt;</code></pre>
 

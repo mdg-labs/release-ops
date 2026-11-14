@@ -69,8 +69,8 @@ func TestGetUserByEmailReturnsUserRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetUserByEmail: %v", err)
 	}
-	if got.ID != created.ID || got.Email != created.Email || got.PasswordHash != created.PasswordHash {
-		t.Fatalf("GetUserByEmail = %+v, want %+v", got, created)
+	if got.ID != created.ID || got.Email != "admin@example.com" || got.PasswordHash != hash {
+		t.Fatalf("GetUserByEmail = %+v, want id %s and the stored email and hash", got, created.ID)
 	}
 }
 

@@ -88,6 +88,10 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 
 // Session handles GET /api/v1/auth/session.
 func (h *Handlers) Session(w http.ResponseWriter, r *http.Request) {
+	if user, ok := githubSessionUser(r.Context(), h.SessionManager); ok {
+		writeJSON(w, http.StatusOK, githubSessionResponse{User: user})
+		return
+	}
 	userID := h.SessionManager.GetString(r.Context(), SessionUserIDKey)
 	email := h.SessionManager.GetString(r.Context(), SessionUserEmailKey)
 	if userID == "" || email == "" {
@@ -167,13 +171,13 @@ func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := StartUserSession(r.Context(), h.SessionManager, user.ID, user.Email); err != nil {
+	if err := StartUserSession(r.Context(), h.SessionManager, user.ID, tokenRow.Email); err != nil {
 		WriteError(w, "INTERNAL_ERROR", "failed to start session", http.StatusInternalServerError)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, sessionResponse{
-		User: &userResponse{ID: user.ID, Email: user.Email},
+		User: &userResponse{ID: user.ID, Email: tokenRow.Email},
 	})
 }
 
@@ -258,13 +262,13 @@ func (h *Handlers) ConfirmEmailChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := StartUserSession(r.Context(), h.SessionManager, updated.ID, updated.Email); err != nil {
+	if err := StartUserSession(r.Context(), h.SessionManager, updated.ID, tokenRow.NewEmail.String); err != nil {
 		WriteError(w, "INTERNAL_ERROR", "failed to start session", http.StatusInternalServerError)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, sessionResponse{
-		User: &userResponse{ID: updated.ID, Email: updated.Email},
+		User: &userResponse{ID: updated.ID, Email: tokenRow.NewEmail.String},
 	})
 }
 

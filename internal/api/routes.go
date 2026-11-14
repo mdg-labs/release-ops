@@ -13,7 +13,8 @@ import (
 //
 // Route order:
 //  1. Session LoadAndSave middleware (all /api/v1/*)
-//  2. Public auth: POST /auth/login, GET /auth/session
+//  2. Public auth: POST /auth/login, GET /auth/session, and the GitHub sign-in: GET
+//     /auth/github/login, GET /auth/github/callback and POST /auth/login-link
 //  3. Setup: GET /setup/status and POST /setup/session are public; GET /setup/session,
 //     POST /setup/manifest and GET /setup/callback require a setup session, which opens
 //     only the setup routes; GET /setup/installed is public
@@ -50,6 +51,10 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 	}
 	api.With(rateLimiter.ForgotPassword).Post("/auth/forgot-password", passwordResetHandlers.ForgotPassword)
 	api.With(rateLimiter.ResetPassword).Post("/auth/reset-password", passwordResetHandlers.ResetPassword)
+
+	if deps.Store != nil {
+		registerGitHubSignIn(api, deps, rateLimiter)
+	}
 
 	setupHandlers := &setup.Handlers{
 		Sessions:      deps.Session,
@@ -143,4 +148,33 @@ func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appURL s
 	protected.Post("/users/invitations", invitationHandlers.Create)
 	protected.Delete("/users/invitations/{id}", invitationHandlers.Delete)
 	protected.Post("/users/invitations/{id}/send-email", invitationHandlers.SendEmail)
+}
+
+// registerGitHubSignIn mounts the GitHub OAuth sign-in and the break-glass redemption. The
+// OAuth routes need a GitHub client; without one they are not mounted.
+func registerGitHubSignIn(api chi.Router, deps *ServerDeps, rateLimiter *apimw.RateLimiter) {
+	users := deps.Store.SignIn()
+
+	api.With(rateLimiter.LoginLink).Post("/auth/login-link", (&auth.LoginLinkHandlers{
+		Sessions: deps.Session,
+		Users:    users,
+	}).Redeem)
+
+	provider := deps.GitHubOAuth
+	if provider == nil && deps.GitHub != nil {
+		provider = github.NewOAuthClient(deps.GitHub, deps.GitHubBaseURL)
+	}
+	if provider == nil {
+		return
+	}
+	signIn := &auth.GitHubSignInHandlers{
+		Sessions:            deps.Session,
+		Apps:                deps.Store.GitHubApp(),
+		Users:               users,
+		GitHub:              provider,
+		AppURL:              deps.AppURL,
+		BootstrapAdminLogin: deps.BootstrapAdminGitHubLogin,
+	}
+	api.With(rateLimiter.GitHubLogin).Get("/auth/github/login", signIn.Login)
+	api.With(rateLimiter.GitHubCallback).Get("/auth/github/callback", signIn.Callback)
 }

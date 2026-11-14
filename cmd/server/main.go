@@ -33,10 +33,16 @@ const reapInterval = 15 * time.Second
 
 func main() {
 	if len(os.Args) > 1 {
-		if os.Args[1] != "worker" {
-			log.Fatalf("unknown command %q: the only command is worker", os.Args[1])
+		var err error
+		switch os.Args[1] {
+		case "worker":
+			err = runWorkerCommand()
+		case "admin":
+			err = runAdminCommand(context.Background(), os.Args[2:], os.Stdout)
+		default:
+			err = fmt.Errorf("unknown command %q: the commands are worker and admin", os.Args[1])
 		}
-		if err := runWorkerCommand(); err != nil {
+		if err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -120,18 +126,19 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 	sessionManager := auth.NewSessionManager(db.Writer, cfg.SessionSecret, cfg.SecureCookies())
 	handler := api.NewServerRouter(&api.ServerDeps{
-		DB:                db.Writer,
-		Session:           sessionManager,
-		Queries:           queries,
-		Store:             appStore,
-		IntegrationTester: integrationtester.New(nil),
-		Mailer:            mailer,
-		AppURL:            cfg.AppURL,
-		WebhookURL:        cfg.WebhookURL,
-		GitHubBaseURL:     cfg.GitHubBaseURL,
-		GitHub:            githubClient,
-		WebhookRoutes:     hooks.NewRoutes(),
-		Queue:             jobs,
+		DB:                        db.Writer,
+		Session:                   sessionManager,
+		Queries:                   queries,
+		Store:                     appStore,
+		IntegrationTester:         integrationtester.New(nil),
+		Mailer:                    mailer,
+		AppURL:                    cfg.AppURL,
+		WebhookURL:                cfg.WebhookURL,
+		GitHubBaseURL:             cfg.GitHubBaseURL,
+		GitHub:                    githubClient,
+		BootstrapAdminGitHubLogin: cfg.BootstrapAdminGitHubLogin,
+		WebhookRoutes:             hooks.NewRoutes(),
+		Queue:                     jobs,
 	})
 
 	appCtx, cancel := context.WithCancel(ctx)

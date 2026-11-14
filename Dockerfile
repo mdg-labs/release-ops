@@ -70,6 +70,8 @@ COPY --from=go-build /out/server /app/server
 COPY --from=go-build /out/seed-admin /app/seed-admin
 COPY docker/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh /app/server /app/seed-admin
+# `release-ops admin login-link` (specs.html § 3.6) runs from a shell in this container.
+RUN ln -s /app/server /usr/local/bin/release-ops
 
 COPY --from=web-build /app/apps/web/.next/standalone ./
 COPY --from=web-build /app/apps/web/.next/static ./apps/web/.next/static

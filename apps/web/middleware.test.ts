@@ -50,6 +50,13 @@ describe("auth middleware", () => {
       expect(isPublicAuthPath("/accept-invitation/extra")).toBe(true);
     });
 
+    it("lists the break-glass sign-in page and keeps its siblings protected", () => {
+      expect(PUBLIC_AUTH_PATHS).toContain("/login/link");
+      expect(isPublicAuthPath("/login/link")).toBe(true);
+      expect(isPublicAuthPath("/loginlink")).toBe(false);
+      expect(isPublicAuthPath("/login-link")).toBe(false);
+    });
+
     it("does not match protected routes", () => {
       expect(isPublicAuthPath("/repos")).toBe(false);
       expect(isPublicAuthPath("/settings")).toBe(false);
@@ -133,6 +140,29 @@ describe("auth middleware", () => {
   });
 
   describe("middleware", () => {
+    it("allows the break-glass page without a session and sends a signed-in GitHub user home", async () => {
+      mockNoSession();
+      const anonymous = await middleware(makeRequest("/login/link?token=abc"));
+      expect(anonymous.status).toBe(200);
+
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            user: { id: 583231, login: "octocat", role: "admin" },
+          }),
+        }),
+      );
+      const signedIn = await middleware(makeRequest("/login/link?token=abc"));
+      expect(signedIn.status).toBe(307);
+      expect(new URL(signedIn.headers.get("location") ?? "").pathname).toBe(
+        "/",
+      );
+      const page = await middleware(makeRequest("/repos"));
+      expect(page.status).toBe(200);
+    });
+
     it("allows /login without a session", async () => {
       mockNoSession();
 

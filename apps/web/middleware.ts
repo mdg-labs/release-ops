@@ -9,6 +9,7 @@ const LOGIN_PATH = "/login";
 
 export const PUBLIC_AUTH_PATHS = [
   "/login",
+  "/login/link",
   "/accept-invitation",
   "/forgot-password",
   "/reset-password",
@@ -24,8 +25,10 @@ function getSessionCheckUrl(): string {
   return `${base}${GO_SESSION_PATH}`;
 }
 
+// A GitHub sign-in answers { id (numeric GitHub id), login, role }; a local account, which
+// goes away with the local accounts, answers { id, email }.
 type SessionResponse = {
-  user: { id: string; email: string } | null;
+  user: { id: string | number; login?: string; email?: string } | null;
 };
 
 export function isPublicAuthPath(pathname: string): boolean {

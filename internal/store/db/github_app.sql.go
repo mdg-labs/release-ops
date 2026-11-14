@@ -93,6 +93,29 @@ func (q *Queries) CreateGitHubApp(ctx context.Context, arg CreateGitHubAppParams
 	return result.RowsAffected()
 }
 
+const getGitHubAppSignIn = `-- name: GetGitHubAppSignIn :one
+SELECT client_id, encrypted_client_secret, owner_login, owner_type FROM github_app WHERE id = 1
+`
+
+type GetGitHubAppSignInRow struct {
+	ClientID              string `json:"client_id"`
+	EncryptedClientSecret string `json:"encrypted_client_secret"`
+	OwnerLogin            string `json:"owner_login"`
+	OwnerType             string `json:"owner_type"`
+}
+
+func (q *Queries) GetGitHubAppSignIn(ctx context.Context) (GetGitHubAppSignInRow, error) {
+	row := q.db.QueryRowContext(ctx, getGitHubAppSignIn)
+	var i GetGitHubAppSignInRow
+	err := row.Scan(
+		&i.ClientID,
+		&i.EncryptedClientSecret,
+		&i.OwnerLogin,
+		&i.OwnerType,
+	)
+	return i, err
+}
+
 const getGitHubAppSigningKey = `-- name: GetGitHubAppSigningKey :one
 SELECT app_id, encrypted_private_key FROM github_app WHERE id = 1
 `

@@ -65,10 +65,12 @@ pre code { background: none; border: none; padding: 0; color: var(--text); font-
 
 PRAGMA foreign_keys = ON;
 
+-- email and password_hash are NULL for a user who signs in with GitHub only (auth_identities);
+-- they go with the local accounts.
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
-  email TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
+  email TEXT UNIQUE,
+  password_hash TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 ) STRICT;
@@ -116,6 +118,16 @@ CREATE TABLE auth_identities (
 ) STRICT;
 
 CREATE INDEX idx_auth_identities_user_id ON auth_identities (user_id);
+
+-- Break-glass login links (specs.html § 3.6): the SHA-256 of the token, never the token. A link
+-- is redeemed once, by a guarded write that matches only an unconsumed, unexpired row.
+CREATE TABLE login_link_tokens (
+  id TEXT PRIMARY KEY,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  consumed_at TEXT,
+  created_at TEXT NOT NULL
+) STRICT;
 
 -- One-time tokens for invitations, password reset, email change and the first-start setup
 -- token (raw token never stored)

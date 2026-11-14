@@ -140,6 +140,14 @@ type JobRun struct {
 	LogExcerpt   sql.NullString `json:"log_excerpt"`
 }
 
+type LoginLinkToken struct {
+	ID         string         `json:"id"`
+	TokenHash  string         `json:"token_hash"`
+	ExpiresAt  string         `json:"expires_at"`
+	ConsumedAt sql.NullString `json:"consumed_at"`
+	CreatedAt  string         `json:"created_at"`
+}
+
 type Repository struct {
 	ID                   string         `json:"id"`
 	InstallationID       string         `json:"installation_id"`
@@ -231,11 +239,11 @@ type UpdateTicket struct {
 }
 
 type User struct {
-	ID           string `json:"id"`
-	Email        string `json:"email"`
-	PasswordHash string `json:"password_hash"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
+	ID           string         `json:"id"`
+	Email        sql.NullString `json:"email"`
+	PasswordHash sql.NullString `json:"password_hash"`
+	CreatedAt    string         `json:"created_at"`
+	UpdatedAt    string         `json:"updated_at"`
 }
 
 type WebhookDelivery struct {

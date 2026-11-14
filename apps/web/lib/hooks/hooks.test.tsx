@@ -3,7 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MockAgent, setGlobalDispatcher } from "undici";
 import { useIntegrations } from "./use-integrations";
-import { useLogin } from "./use-login";
+import { useRedeemLoginLink } from "./use-login";
 import { useSession } from "./use-session";
 import { useSettings } from "./use-settings";
 import { useStatus } from "./use-status";
@@ -57,32 +57,24 @@ describe("React Query hooks", () => {
     await mockAgent.close();
   });
 
-  it("useLogin POST /api/v1/auth/login", async () => {
+  it("useRedeemLoginLink POSTs the token to /api/v1/auth/login-link", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool
       .intercept({
-        path: "/api/go/api/v1/auth/login",
+        path: "/api/go/api/v1/auth/login-link",
         method: "POST",
-        body: JSON.stringify({
-          email: "admin@example.com",
-          password: "secret",
-        }),
+        body: JSON.stringify({ token: "abc" }),
       })
-      .reply(200, {
-        user: { id: "u1", email: "admin@example.com" },
-      });
+      .reply(200, { user: { id: 583231, login: "octocat", role: "admin" } });
 
     const queryClient = createTestQueryClient();
-    const { result } = renderHook(() => useLogin(), {
+    const { result } = renderHook(() => useRedeemLoginLink(), {
       wrapper: createWrapper(queryClient),
     });
 
-    const loginResult = await result.current.mutateAsync({
-      email: "admin@example.com",
-      password: "secret",
-    });
-    expect(loginResult).toEqual({
-      user: { id: "u1", email: "admin@example.com" },
+    const redeemed = await result.current.mutateAsync({ token: "abc" });
+    expect(redeemed).toEqual({
+      user: { id: 583231, login: "octocat", role: "admin" },
     });
   });
 

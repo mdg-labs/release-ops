@@ -44,9 +44,13 @@ type Config struct {
 	GitHubBaseURL string
 	// SetupToken is the operator-supplied first-start setup token (SETUP_TOKEN); empty means
 	// the server generates one.
-	SetupToken             string
-	BootstrapAdminEmail    string
-	BootstrapAdminPassword string
+	SetupToken string
+	// BootstrapAdminGitHubLogin is the GitHub login of the pinned first admin
+	// (BOOTSTRAP_ADMIN_GITHUB_LOGIN); empty means the App's owner is the first admin. It is
+	// resolved to a numeric id at the first matching sign-in and ignored afterwards.
+	BootstrapAdminGitHubLogin string
+	BootstrapAdminEmail       string
+	BootstrapAdminPassword    string
 	// InternalAddr is where the internal listener for the worker binds (INTERNAL_ADDR); empty
 	// means no internal listener. WorkerSecret authenticates the worker to it and is set
 	// together with it.
@@ -64,20 +68,21 @@ type Config struct {
 // Load reads and validates configuration from the process environment.
 func Load() (*Config, error) {
 	cfg := &Config{
-		SessionSecret:          strings.TrimSpace(os.Getenv("SESSION_SECRET")),
-		AppEncryptionKey:       strings.TrimSpace(os.Getenv("APP_ENCRYPTION_KEY")),
-		AppDBPath:              envOrDefault("APP_DB_PATH", defaultAppDBPath),
-		GoAPIURL:               envOrDefault("GO_API_URL", defaultGoAPIURL),
-		AppURL:                 strings.TrimRight(strings.TrimSpace(os.Getenv("APP_URL")), "/"),
-		WebhookURL:             strings.TrimSpace(os.Getenv("WEBHOOK_URL")),
-		GitHubBaseURL:          strings.TrimRight(envOrDefault("GITHUB_BASE_URL", defaultGitHubURL), "/"),
-		SetupToken:             strings.TrimSpace(os.Getenv("SETUP_TOKEN")),
-		BootstrapAdminEmail:    strings.TrimSpace(os.Getenv("BOOTSTRAP_ADMIN_EMAIL")),
-		BootstrapAdminPassword: os.Getenv("BOOTSTRAP_ADMIN_PASSWORD"),
-		InternalAddr:           strings.TrimSpace(os.Getenv("INTERNAL_ADDR")),
-		WorkerSecret:           strings.TrimSpace(os.Getenv("WORKER_SECRET")),
-		GlobalConfigRepo:       strings.TrimSpace(os.Getenv("GLOBAL_CONFIG_REPO")),
-		MetricsAddr:            envOrDefault("METRICS_ADDR", defaultMetricsAddr),
+		SessionSecret:             strings.TrimSpace(os.Getenv("SESSION_SECRET")),
+		AppEncryptionKey:          strings.TrimSpace(os.Getenv("APP_ENCRYPTION_KEY")),
+		AppDBPath:                 envOrDefault("APP_DB_PATH", defaultAppDBPath),
+		GoAPIURL:                  envOrDefault("GO_API_URL", defaultGoAPIURL),
+		AppURL:                    strings.TrimRight(strings.TrimSpace(os.Getenv("APP_URL")), "/"),
+		WebhookURL:                strings.TrimSpace(os.Getenv("WEBHOOK_URL")),
+		GitHubBaseURL:             strings.TrimRight(envOrDefault("GITHUB_BASE_URL", defaultGitHubURL), "/"),
+		SetupToken:                strings.TrimSpace(os.Getenv("SETUP_TOKEN")),
+		BootstrapAdminGitHubLogin: strings.TrimSpace(os.Getenv("BOOTSTRAP_ADMIN_GITHUB_LOGIN")),
+		BootstrapAdminEmail:       strings.TrimSpace(os.Getenv("BOOTSTRAP_ADMIN_EMAIL")),
+		BootstrapAdminPassword:    os.Getenv("BOOTSTRAP_ADMIN_PASSWORD"),
+		InternalAddr:              strings.TrimSpace(os.Getenv("INTERNAL_ADDR")),
+		WorkerSecret:              strings.TrimSpace(os.Getenv("WORKER_SECRET")),
+		GlobalConfigRepo:          strings.TrimSpace(os.Getenv("GLOBAL_CONFIG_REPO")),
+		MetricsAddr:               envOrDefault("METRICS_ADDR", defaultMetricsAddr),
 	}
 
 	var err error
@@ -171,6 +176,9 @@ func (c *Config) validate() error {
 	if c.SetupToken != "" && len(c.SetupToken) < minSetupTokenLen {
 		return fmt.Errorf("SETUP_TOKEN must be at least %d characters; generate one with: openssl rand -hex 32", minSetupTokenLen)
 	}
+	if c.BootstrapAdminGitHubLogin != "" && (len(c.BootstrapAdminGitHubLogin) > 39 || !githubLoginPattern.MatchString(c.BootstrapAdminGitHubLogin)) {
+		return fmt.Errorf("BOOTSTRAP_ADMIN_GITHUB_LOGIN must be a GitHub login: up to 39 letters, digits and single hyphens")
+	}
 	if c.BootstrapAdminEmail != "" && c.BootstrapAdminPassword == "" {
 		return fmt.Errorf("BOOTSTRAP_ADMIN_PASSWORD is required when BOOTSTRAP_ADMIN_EMAIL is set")
 	}
@@ -199,6 +207,10 @@ func (c *Config) JobTokenRepositories() []string {
 // repositoryPattern is owner/repo as GitHub names them: an account name and a repository
 // name made of letters, digits, dots, hyphens and underscores.
 var repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$`)
+
+// githubLoginPattern is GitHub's account name syntax: up to 39 letters, digits and single
+// hyphens, neither starting nor ending with a hyphen.
+var githubLoginPattern = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$`)
 
 func validRepository(s string) bool {
 	return repositoryPattern.MatchString(s) && !strings.HasSuffix(s, "/.") && !strings.HasSuffix(s, "/..")

@@ -44,6 +44,19 @@ type GitHubAppRepository interface {
 	// The caller uses it only to verify a signature and never logs or stores it. It returns
 	// ErrGitHubAppNotFound before an App is stored.
 	WebhookSecret(ctx context.Context) ([]byte, error)
+	// SignIn returns what the OAuth sign-in needs: the App's client id and owner, and the
+	// decrypted client secret. The caller sends the secret to GitHub's token endpoint and
+	// never logs or stores it. It returns ErrGitHubAppNotFound before an App is stored.
+	SignIn(ctx context.Context) (GitHubAppSignIn, error)
+}
+
+// GitHubAppSignIn is the part of the stored App the OAuth sign-in uses.
+type GitHubAppSignIn struct {
+	ClientID     string
+	ClientSecret []byte
+	OwnerLogin   string
+	// OwnerType is User or Organization.
+	OwnerType string
 }
 
 // GitHubApp returns the GitHub App repository.
@@ -140,4 +153,24 @@ func (r githubAppRepo) WebhookSecret(ctx context.Context) ([]byte, error) {
 		return nil, errors.New("decrypt github app webhook secret: the stored secret does not match APP_ENCRYPTION_KEY")
 	}
 	return secret, nil
+}
+
+func (r githubAppRepo) SignIn(ctx context.Context) (GitHubAppSignIn, error) {
+	row, err := r.store.reads.GetGitHubAppSignIn(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return GitHubAppSignIn{}, ErrGitHubAppNotFound
+	}
+	if err != nil {
+		return GitHubAppSignIn{}, fmt.Errorf("read github app sign-in: %w", err)
+	}
+	secret, err := r.store.cipher.Decrypt(row.EncryptedClientSecret)
+	if err != nil {
+		return GitHubAppSignIn{}, errors.New("decrypt github app client secret: the stored secret does not match APP_ENCRYPTION_KEY")
+	}
+	return GitHubAppSignIn{
+		ClientID:     row.ClientID,
+		ClientSecret: secret,
+		OwnerLogin:   row.OwnerLogin,
+		OwnerType:    row.OwnerType,
+	}, nil
 }

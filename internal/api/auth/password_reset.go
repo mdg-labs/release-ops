@@ -169,13 +169,13 @@ func (h *PasswordResetHandlers) ResetPassword(w http.ResponseWriter, r *http.Req
 		WriteError(w, "INTERNAL_ERROR", "failed to revoke sessions", http.StatusInternalServerError)
 		return
 	}
-	if err := StartUserSession(r.Context(), h.SessionManager, updated.ID, updated.Email); err != nil {
+	if err := StartUserSession(r.Context(), h.SessionManager, updated.ID, user.Email); err != nil {
 		WriteError(w, "INTERNAL_ERROR", "failed to start session", http.StatusInternalServerError)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, sessionResponse{
-		User: &userResponse{ID: updated.ID, Email: updated.Email},
+		User: &userResponse{ID: updated.ID, Email: user.Email},
 	})
 }
 

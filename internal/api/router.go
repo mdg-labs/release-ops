@@ -13,6 +13,7 @@ import (
 	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/api/handlers"
 	"github.com/mdg-labs/release-ops/internal/api/hooks"
 	"github.com/mdg-labs/release-ops/internal/github"
@@ -41,6 +42,11 @@ type ServerDeps struct {
 	WebhookURL    string
 	GitHubBaseURL string
 	GitHub        *github.Client
+	// GitHubOAuth runs the OAuth sign-in. When nil it is built from GitHub and GitHubBaseURL;
+	// tests set it to a fake.
+	GitHubOAuth auth.OAuthProvider
+	// BootstrapAdminGitHubLogin is BOOTSTRAP_ADMIN_GITHUB_LOGIN.
+	BootstrapAdminGitHubLogin string
 	// WebhookRoutes holds the handlers of the webhook events. When nil, the route serves
 	// the default table, which acknowledges the installation events and ignores the rest.
 	WebhookRoutes *hooks.Routes

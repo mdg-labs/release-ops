@@ -319,3 +319,30 @@ func TestLoadMetricsAddr(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadBootstrapAdminGitHubLogin(t *testing.T) {
+	validEnv(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.BootstrapAdminGitHubLogin != "" {
+		t.Errorf("BootstrapAdminGitHubLogin = %q, want empty by default", cfg.BootstrapAdminGitHubLogin)
+	}
+
+	t.Setenv("BOOTSTRAP_ADMIN_GITHUB_LOGIN", " octo-cat ")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.BootstrapAdminGitHubLogin != "octo-cat" {
+		t.Errorf("BootstrapAdminGitHubLogin = %q, want the trimmed login", cfg.BootstrapAdminGitHubLogin)
+	}
+
+	for _, bad := range []string{"-octo", "octo-", "oc--to", "octo cat", "octo/cat", "@octocat", strings.Repeat("a", 40)} {
+		t.Setenv("BOOTSTRAP_ADMIN_GITHUB_LOGIN", bad)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "BOOTSTRAP_ADMIN_GITHUB_LOGIN") {
+			t.Errorf("Load() with login %q error = %v, want a BOOTSTRAP_ADMIN_GITHUB_LOGIN error", bad, err)
+		}
+	}
+}
