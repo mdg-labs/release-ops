@@ -19,7 +19,7 @@ Mark a check `n/a` only when it does not apply to the touched paths. On failure 
 
 ## Before a push
 
-Every commit that reaches `origin/dev` has passed the checks above for everything it touches, including `npm run typecheck`. Under `/orchestrate` the `task-verifier` runs them in the scratch clone before the landing; `/cr-review` runs the full set below on the real repo before its push; a manual push the user asks for runs:
+Every commit that reaches `origin/dev` has passed the checks above for everything it touches, including `npm run typecheck`. Under `/orchestrate` the `task-verifier` runs them in the scratch clone before the landing; `/pr-review` runs the full set below on the real repo before its push; a manual push the user asks for runs:
 
 ```bash
 npm test && npm run lint && npm run typecheck && npm run db:check

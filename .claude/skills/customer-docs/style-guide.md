@@ -1,18 +1,18 @@
-# Customer docs style guide — Release Ops
+# Customer docs style guide
 
-Voice, structure and terminology rules for the Release Ops docs site (`apps/docs`, Starlight). Referenced by [SKILL.md](SKILL.md) on every write pass; release-ops paths and the glossary are in [docs-config.md](docs-config.md).
+Single source of truth for voice, structure, and terminology. Referenced by [SKILL.md](SKILL.md) on every write pass.
 
 ## Voice and tone
 
 | Rule | Detail |
 | ---- | ------ |
-| Audience | Small self-hosting dev/ops teams and individuals who configure Release Ops in the web UI: technical, but not Release Ops developers. Assume Docker and API tokens are familiar; do not explain Go, Next.js or the database. |
+| Audience | As `docs-config.md` § Product describes — end users, not developers of the product, unless it says otherwise |
 | Person | Second person ("you") |
 | Tense | Present tense |
 | Steps | Imperative ("Click **Save**", not "The user should click") |
 | Sentences | Short; one idea per sentence |
 | Fluff | No marketing hype or empty superlatives |
-| Deployment model | Self-hosting only. Never mention a hosted, cloud or managed version |
+| Deployment model | Describe only the ways the product is offered that `docs-config.md` § Product names — never hint at a hosted, managed or other edition it does not have |
 | Language | English only (baseline) |
 
 ## Task orientation
@@ -21,18 +21,18 @@ Every **page doc** answers: **What can I do here, and how?**
 
 | Do | Don't |
 | -- | ----- |
-| Describe user goals and actions | Describe React components, Go packages, or SQLite tables |
+| Describe user goals and actions | Describe React components, services, or DB tables |
 | Lead with outcomes | Lead with architecture |
 | Link to related tasks | Duplicate full procedures from other pages |
 
 ## Page doc structure
 
-Use [page-doc-template.md](page-doc-template.md). Starlight renders the frontmatter `title` as the H1, so the body starts with the purpose sentence. Required sections:
+Use [page-doc-template.md](page-doc-template.md). Required sections:
 
-1. **One-sentence purpose** — first line of the body
+1. **One-sentence purpose** — immediately under the H1
 2. **Prerequisites** — what must be true before starting (or "None")
 3. **Step-by-step sections** — one `##` heading per key action on the page
-4. **Field reference** — table of labels users see in the UI (from `apps/web/messages/en.json`)
+4. **Field and option reference** — table of labels users see in the UI
 5. **Troubleshooting** — common problems for this page only
 6. **Related pages** — links to adjacent docs
 
@@ -40,8 +40,7 @@ Use [page-doc-template.md](page-doc-template.md). Starlight renders the frontmat
 
 Use [getting-started-template.md](getting-started-template.md).
 
-- Saved as `guide/first-steps.md`; installation stays in the synced Getting started page (`docs/getting-started.md`) — link, do not repeat
-- Happy path from first sign-in to the **first ticket created from a release** (there is no public sign-up)
+- Happy path from signup/login (or equivalent) to **first success moment**
 - **≤ 10 numbered steps** — link to page docs instead of duplicating detail
 - End with **Next steps** table and FAQ link
 
@@ -49,55 +48,51 @@ Use [getting-started-template.md](getting-started-template.md).
 
 | Rule | Detail |
 | ---- | ------ |
-| Glossary | [docs-config.md](docs-config.md) § Glossary — internal term → customer-facing term |
+| Glossary | `docs-config.md` § Glossary — internal term → customer-facing term |
 | Consistency | One term per concept across all pages |
-| Unknown mapping | **Ask the user** — never guess (`00-project.md`: ask before guessing) |
-| Providers | Release sources: GitHub, GitLab, Gitea, Forgejo, Codeberg. Ticket integrations: Kaneo, Jira, Linear. Use these exact product names. |
-| Forbidden in customer docs | Table/column names (`monitored_repos`, `on_open_ticket_policy`), code identifiers, `/api/...` routes, env var names (except in the install guide `docs/getting-started.md`) |
+| Unknown mapping | **Ask the user** — never guess |
+| Forbidden in customer docs | Internal entity names, DB column names, code identifiers, env var names, API route paths meant for integrators only |
 
 ## Accuracy
 
 | Rule | Detail |
 | ---- | ------ |
-| Source of truth | `docs/specs.html`, then app code in `apps/web` (read-only) and labels in `apps/web/messages/en.json` |
+| Source of truth | The spec docs `docs-config.md` § Product names (CLAUDE.md `### Design docs`), then app code (read-only) and its UI label files |
 | Unverified flows | List under **Open questions** in the proposal — do not publish |
 | Fabrication | Never invent features, buttons, fields, or behaviour |
 | UI text | Quote visible labels from the app when known; do not invent label copy |
-| Screenshots | Never fabricate images; use `<!-- SCREENSHOT: description -->` placeholders |
+| Screenshots | Never fabricate images; use the placeholder format `docs-config.md` § Screenshots names, only when its policy allows |
 
 ## Security and privacy
 
 Never include in customer docs:
 
-- Secrets, API keys, tokens, or credentials
+- Secrets, API keys, tokens, or credentials — and token-shaped example strings (write `<your API token>`)
 - Internal-only URLs (staging, admin panels, VPN endpoints)
 - Admin-only or operator-only endpoints
-- Real API tokens or token-shaped strings (write `<your API token>`)
-- Personal data examples (use placeholders like `you@example.com`, `https://kaneo.example.com`)
+- Personal data examples (use placeholders like `you@example.com`)
 
 ## Screenshots
 
-Insert `<!-- SCREENSHOT: short description -->` where a visual helps (HTML comment, so nothing renders until a real image replaces it). This skill **never** captures screenshots.
+| Policy (from config) | Action |
+| -------------------- | ------ |
+| PLACEHOLDERS | Insert the configured placeholder (e.g. `<!-- SCREENSHOT: short description -->`, which never renders) where a visual helps |
+| NONE | No image placeholders |
+
+This skill **never** captures screenshots.
 
 ## Navigation and naming
 
 - File names: **kebab-case**
 - Doc titles: Title Case for H1; sentence case for descriptions
-- Cross-links: relative paths within the docs site (`../integrations/`) so they work under the `/release-ops` base
-- Sidebar (`apps/docs/astro.config.mjs`) groups, in order: "Start here" (Getting started, FAQ), "User guide", "Concepts". The landing page (`index.mdx`) is the site root and has no entry.
-- "User guide" order — First steps, Dashboard, Integrations, Ticket projects, Repos, Poll runs, Notifications, Settings, Users, Profile, Signing in
-- "Concepts" starts with Product overview
-- Never link hand-written customer pages to the internal spec, stack, schema, MVP checklist or roadmap; they are repo-only. The synced `getting-started.md` links them as GitHub URLs only (the sync script rewrites them); keep those links
-
-## Landing page and product overview
-
-Use [landing-page-template.md](landing-page-template.md). The landing page (`index.mdx`) and `concepts/product-overview.md` say what Release Ops is, what it is not, and who it is for, in customer voice. Every claim must trace to `docs/specs.html` §1 or to behaviour in the app.
+- Cross-links: relative paths within the docs site
+- Sidebar order: Getting started first, then high-traffic flows, then settings/admin (if user-facing)
 
 ## FAQ and concept pages
 
-**Concept pages** (`concepts/`) explain one product idea without walking through a single screen — e.g. how release detection works, status mapping, open-ticket policies (supersede, merge, skip if open).
+**Concept pages** explain one product idea (e.g. "Workspaces", "Roles") without walking through a single screen.
 
-**FAQ** (`faq.md`) answers recurring questions in Q&A format — link to page docs for procedural detail; do not duplicate full step lists.
+**FAQ** answers recurring questions in Q&A format — link to page docs for procedural detail; do not duplicate full step lists.
 
 ## Review checklist (before marking coverage `current`)
 
@@ -105,6 +100,6 @@ Use [landing-page-template.md](landing-page-template.md). The landing page (`ind
 - [ ] Every documented action exists in code or spec
 - [ ] Field table matches visible UI labels
 - [ ] No internal jargon (glossary applied)
-- [ ] Related links resolve (`npm run docs:build` passes)
+- [ ] Related links resolve
 - [ ] English only; short sentences
 - [ ] No secrets or internal URLs
