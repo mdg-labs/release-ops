@@ -18,6 +18,7 @@
       { "name": "ci", "description": "GitHub Actions, Docker, GHCR" },
       { "name": "docs", "description": "Spec docs and customer docs site" }
     ],
+    "maintainerOnly": { "name": "maintainer", "description": "Maintainer-only work (deploys, live checks, merges, releases); never dispatched to an agent" },
     "risk": { "name": "risk", "description": "Can lose data or break upgrades: schema, migrations, credential crypto" }
   },
   "checks": [

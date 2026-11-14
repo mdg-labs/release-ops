@@ -57,13 +57,20 @@ if [[ $(wf_get '.readiness.requireReachableVia') != false ]] && ! has_label depe
 fi
 
 stale=$(wf_get_json '.readiness.stale' '[]') || die "issue-readiness: could not read readiness.stale from $WF_CONFIG"
-while IFS=$'\t' read -r pattern reason exempt; do
+# Each field is read with its own `jq -r`, so the ERE reaches grep byte for
+# byte as workflow.json holds it (@tsv would double every backslash) and a
+# tab or an absent field cannot shift the others.
+count=$(jq 'length' <<<"$stale")
+for ((i = 0; i < count; i++)); do
+  pattern=$(jq -r --argjson i "$i" '.[$i].pattern // ""' <<<"$stale")
   [[ -n $pattern ]] || continue
+  reason=$(jq -r --argjson i "$i" '.[$i].reason // ""' <<<"$stale")
+  exempt=$(jq -r --argjson i "$i" '.[$i].exempt // ""' <<<"$stale")
   exempt=${exempt:-'\bno\b|\bnot\b|never|retired|removed'}
   if grep -iE -- "$pattern" <<<"$body" | grep -qviE -- "$exempt"; then
     reasons+=("stale: $reason")
   fi
-done < <(jq -r '.[] | [.pattern, .reason, (.exempt // "")] | @tsv' <<<"$stale")
+done
 
 root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 # Any backticked token that looks like a repo-relative path: no spaces, at

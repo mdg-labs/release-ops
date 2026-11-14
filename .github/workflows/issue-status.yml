@@ -6,10 +6,23 @@ name: Issue status
 # filed, and an issue being closed — and status:blocked, which follows the
 # native blocked-by links.
 #
+# Closed and cancelled follow the live issue, not the event: a run decides
+# from a fresh read, so a delayed `closed` run that starts after the issue was
+# reopened writes nothing, and a delayed `reopened` run on an issue closed
+# again since leaves its terminal status alone.
+#
 # It also closes a milestone once no open issue or pull request is left in it
 # (on close, and when the last open one is removed from it), reopens it when an
 # issue in it is reopened, and assigns the maintainer to any issue that has no
-# assignee. An issue that already has an assignee is never touched.
+# assignee. An issue that already has an assignee is never touched. Pull
+# requests count too: closing, reopening or demilestoning one settles its
+# milestone the same way, and nothing else is done for a pull request (no
+# status, no assignee, no blocked-by). That trigger is pull_request_target, not
+# pull_request, because a pull request from a fork gets a read-only
+# GITHUB_TOKEN under pull_request and could not close the milestone.
+# pull_request_target runs this file as it is on the default branch, with the
+# permissions below, and never checks out or runs the pull request's code; it
+# reads only the pull request's number, state and milestone.
 #
 # Blocked. An issue is blocked while any of its blocked-by issues is open and
 # not at status:implemented (that one has landed on the integration branch,
@@ -19,8 +32,12 @@ name: Issue status
 # or to status:new when it was never triaged (no "## Original report"). The
 # dependents are recomputed when:
 #   - the issue itself is opened or reopened;
-#   - a blocker is closed;
+#   - a blocker is closed or reopened;
 #   - a blocker enters or leaves status:implemented (labeled / unlabeled below).
+# Runs for different blockers of one dependent are not serialized (each is
+# grouped by its own issue), so after moving a dependent the run re-reads its
+# blockers and corrects the move if one changed meanwhile: two blockers
+# changing at once cannot leave it ready while one of them still blocks it.
 # A new blocked-by edge is not a trigger here: GitHub sends an issue_dependencies
 # webhook event, but its docs do not list it among the events an Actions
 # workflow can use, so it is not relied on. .claude/scripts/gh-helpers.sh
@@ -36,21 +53,34 @@ name: Issue status
 # normalises what it finds whenever it does run, which covers a hand edit at
 # the next open/close. Writes made with the workflow's GITHUB_TOKEN start no
 # new runs, so its own label swaps cannot loop. The concurrency group is on the
-# job, so a run the `if` skips does not queue behind a running one.
+# job, so a run the `if` skips does not queue behind a running one. It is
+# `queue: max`: by default GitHub keeps one pending run per group and a newer
+# one cancels it, which would drop, say, a demilestoned run (the only one that
+# knows the milestone the issue left) for a later label run. With a queue up
+# to 100 runs wait their turn instead. They start in roughly the order they
+# began waiting, not guaranteed, which is why each run decides from the live
+# issue rather than from its event.
 
 on:
   issues:
     types: [opened, closed, reopened, demilestoned, labeled, unlabeled]
+  pull_request_target:
+    types: [closed, reopened, demilestoned]
 
+# Milestones are written with the issues permission; a pull request is read
+# with pull-requests: read. Under pull_request_target the same holds for a
+# pull request from a fork.
 permissions:
   issues: write
+  pull-requests: read
 
 jobs:
   set-status:
     if: ${{ (github.event.action != 'labeled' && github.event.action != 'unlabeled') || github.event.label.name == 'status:implemented' }}
     concurrency:
-      group: issue-status-${{ github.event.issue.number }}
+      group: issue-status-${{ github.event.issue.number || github.event.pull_request.number }}
       cancel-in-progress: false
+      queue: max
     # A short job: on the self-hosted runners it runs on runners01-light.
     runs-on: ubuntu-latest
     steps:
@@ -65,7 +95,6 @@ jobs:
             // by setup from scripts/status-labels.txt, the one place they are
             // defined.
             const STATUS_LABELS = [{"name":"status:new","color":"ededed","description":"Filed, not yet triaged"},{"name":"status:ready","color":"bfd4f2","description":"Triaged and ready to be picked up"},{"name":"status:blocked","color":"d93f0b","description":"Waiting on an open blocker (a native blocked-by link)"},{"name":"status:in-progress","color":"fbca04","description":"An executor is implementing this"},{"name":"status:in-review","color":"d4c5f9","description":"Implementation committed, awaiting verification"},{"name":"status:implemented","color":"c2e0c6","description":"Verification passed, landed on the integration branch"},{"name":"status:closed","color":"586069","description":"Closed as completed"},{"name":"status:cancelled","color":"8b4513","description":"Closed as not planned, or as a duplicate"}];
-            const issue_number = context.payload.issue.number;
 
             const TERMINAL = ['status:closed', 'status:cancelled'];
             // The statuses a blocker can move an issue between. Any other one
@@ -125,6 +154,9 @@ jobs:
             // to leave it alone.
             const decide = (issue, statuses) => {
               if (action === 'closed') {
+                // A delayed run for a close the issue has since undone: the
+                // reopened run owns its status.
+                if (issue.state !== 'closed') return null;
                 // GitHub sends 'completed', 'not_planned' or 'duplicate'; anything
                 // else (including null) is an ordinary close, i.e. completed.
                 return ['not_planned', 'duplicate'].includes(issue.state_reason)
@@ -132,6 +164,9 @@ jobs:
                   : 'status:closed';
               }
               if (action === 'reopened') {
+                // A delayed run for a reopen the issue has since undone: its
+                // terminal status stands.
+                if (issue.state !== 'open') return null;
                 // A reopen leaves status:closed or status:cancelled behind. Any
                 // other status was set since, by an agent that already claimed
                 // the issue, so it is kept rather than reset to status:new.
@@ -204,15 +239,21 @@ jobs:
             // status:implemented blocks. Moves only new/ready to blocked, and
             // only blocked back to ready (or new when untriaged: the body has
             // no "## Original report", the marker issue-readiness.sh uses).
-            const reconcile = async n => {
+            //
+            // Another blocker of n can change while this runs, and its run is
+            // not serialized with this one: it may have read n before our
+            // write and found nothing to do. So after a write the blockers are
+            // read again, and n is reconciled once more if the answer moved.
+            const reconcile = async (n, attempts = 3) => {
               const it = await read(n);
               if (it.state !== 'open') return;
               const statuses = statusesOf(it);
               if (statuses.length !== 1) return;
               const [current] = statuses;
               if (![...BLOCKABLE, 'status:blocked'].includes(current)) return;
-              const blockers = (await dependencies(n, 'blocked_by'))
+              const openBlockers = async () => (await dependencies(n, 'blocked_by'))
                 .filter(b => b.state === 'open' && !namesOf(b).includes('status:implemented'));
+              const blockers = await openBlockers();
               let want = current;
               if (blockers.length) {
                 want = 'status:blocked';
@@ -222,6 +263,15 @@ jobs:
               if (want === current) return;
               core.info(`#${n}: ${blockers.length} open blocker(s)`);
               await writeStatus(n, want, statuses, true);
+              const blockedNow = (await openBlockers()).length > 0;
+              if (blockedNow !== (want === 'status:blocked')) {
+                if (attempts > 1) {
+                  core.info(`#${n}: blockers changed during the write, reconciling again`);
+                  await reconcile(n, attempts - 1);
+                } else {
+                  throw new Error(`#${n}: blockers kept changing, status may be stale`);
+                }
+              }
             };
             // The 'blocking' list can include issues of other repositories,
             // whose numbers mean nothing here: skip them. (A blocker of another
@@ -264,6 +314,21 @@ jobs:
               });
               core.info(`milestone "${m.title}": ${m.state} → ${state}`);
             };
+
+            if (context.eventName === 'pull_request_target') {
+              // A pull request only settles its milestone. On demilestoned the
+              // payload's milestone is the one it left; otherwise the pull
+              // request is read fresh for its milestone and state.
+              const pr = context.payload.pull_request.number;
+              const { data: live } = await github.rest.pulls.get({ ...context.repo, pull_number: pr });
+              if (action === 'demilestoned') {
+                await settleMilestone((context.payload.milestone || {}).number, false);
+              } else {
+                await settleMilestone((live.milestone || {}).number, live.state === 'open');
+              }
+              return;
+            }
+            const issue_number = context.payload.issue.number;
 
             if (action === 'labeled' || action === 'unlabeled') {
               // The job `if` lets only status:implemented through. Entering it
@@ -312,7 +377,7 @@ jobs:
             // Best-effort by design. addAssignees silently ignores a login
             // without push access, and any failure here must not fail the job
             // whose real purpose, the status write, already succeeded.
-            if (action !== 'closed' && (live.assignees || []).length === 0) {
+            if (action !== 'closed' && live.state === 'open' && (live.assignees || []).length === 0) {
               try {
                 await github.rest.issues.addAssignees({
                   ...context.repo,
@@ -325,12 +390,17 @@ jobs:
               }
             }
 
-            // What the new state means for other issues and the milestone.
-            if (action === 'closed') {
+            // What the issue's live state means for itself, the milestone and
+            // the issues it blocks. A close or reopen goes by the live state, so
+            // a delayed run settles both the same way the latest event would.
+            if (action === 'closed' || action === 'reopened') {
+              const open = live.state === 'open';
               // The milestone first: a failing dependent must not skip it.
-              await settleMilestone((live.milestone || {}).number, false);
+              await settleMilestone((live.milestone || {}).number, open);
+              if (open) await reconcile(issue_number);
+              // Closing a blocker can unblock its dependents; reopening it
+              // blocks them again.
               await reconcileBlockedBy(issue_number);
             } else {
               await reconcile(issue_number);
-              if (action === 'reopened') await settleMilestone((live.milestone || {}).number, true);
             }
