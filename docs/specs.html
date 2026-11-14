@@ -1654,7 +1654,7 @@ func CreateDefinitelyNotStored(err error) bool</code></pre>
   <p>Agents: <code>.claude/rules/10-i18n.md</code>.</p>
 
   <h2 id="env">9. Environment variables</h2>
-  <p>Variables of the app container (<code>release-ops</code>). The update-engine variables (<code>INTERNAL_ADDR</code> and below) are specified in §2; the worker container has its own table below.</p>
+  <p>Variables of the app container (service <code>app</code>). The update-engine variables (<code>INTERNAL_ADDR</code> and below) are specified in §2; the worker container has its own table below.</p>
   <table>
     <tr><th>Variable</th><th>Required</th><th>Default</th><th>Description</th></tr>
     <tr><td><code>SESSION_SECRET</code></td><td>yes</td><td>—</td><td>Session cookie signing (32+ random bytes)</td></tr>
@@ -1680,10 +1680,10 @@ func CreateDefinitelyNotStored(err error) bool</code></pre>
   </table>
   <p><strong>Removed</strong> compared to prior specs: <code>APP_PUBLIC_URL</code> (replaced by <code>APP_URL</code> and <code>WEBHOOK_URL</code>), <code>BOOTSTRAP_ADMIN_EMAIL</code>, <code>BOOTSTRAP_ADMIN_PASSWORD</code>, <code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>, <code>SMTP_PASSWORD</code>, <code>SMTP_FROM</code>, <code>SMTP_TLS</code>, <code>BETTER_AUTH_*</code>, <code>DATABASE_URL</code> (auth.db), <code>JWKS_URL</code>, <code>CONFIG_PATH</code>, <code>GITHUB_TOKEN</code>, <code>PHASICAL_API_KEY</code>, <code>PHASICAL_BASE_URL</code>, <code>POLL_INTERVAL_MINUTES</code> (all in DB/UI or Go auth).</p>
   <h4>Worker container</h4>
-  <p>Variables of the worker container (<code>release-ops worker</code>). It reads no app secret: no <code>APP_ENCRYPTION_KEY</code>, no <code>SESSION_SECRET</code>, no App credential (§2.2).</p>
+  <p>Variables of the worker container (service <code>worker</code>, command <code>release-ops worker</code>). It reads no app secret: no <code>APP_ENCRYPTION_KEY</code>, no <code>SESSION_SECRET</code>, no App credential (§2.2).</p>
   <table>
     <tr><th>Variable</th><th>Required</th><th>Description</th></tr>
-    <tr><td><code>INTERNAL_URL</code></td><td>yes</td><td>URL of the app's internal listener on the Compose network (e.g. <code>http://release-ops:9090</code>, matching <code>INTERNAL_ADDR</code>)</td></tr>
+    <tr><td><code>INTERNAL_URL</code></td><td>yes</td><td>URL of the app's internal listener on the Compose network (e.g. <code>http://app:9090</code>, matching <code>INTERNAL_ADDR</code>)</td></tr>
     <tr><td><code>METRICS_ADDR</code></td><td>no</td><td>Bind address of the worker's own <code>/metrics</code> listener (default <code>127.0.0.1:9100</code>; same rules as the app's, §7.8). It serves nothing else</td></tr>
     <tr><td><code>WORKER_SECRET</code></td><td>yes</td><td>Same value as the app's. Held by the worker process only; Renovate runs as another Unix user and cannot read it (§2.3)</td></tr>
   </table>
@@ -1694,7 +1694,7 @@ func CreateDefinitelyNotStored(err error) bool</code></pre>
   <h2 id="deployment">10. Deployment</h2>
   <ul>
     <li><strong>Two services, two images.</strong> The <strong>app</strong> image <code>ghcr.io/{owner}/release-ops</code> (Next.js + Go) and the <strong>worker</strong> image <code>ghcr.io/{owner}/release-ops-worker</code> (the pinned Renovate image plus the <code>release-ops</code> binary, §2.3). Both are released with the same tag, and upgraded together.</li>
-    <li><code>docker-compose.yml</code>: service <code>release-ops</code> (the app) and service <code>release-ops-worker</code>. Only the app publishes a port (<code>3000:3000</code>); the internal listener (§2.1) and the worker publish none.</li>
+    <li><code>docker-compose.yml</code>: service <code>app</code> and service <code>worker</code>. Only the app publishes a port (<code>3000:3000</code>); the internal listener (§2.1) and the worker publish none.</li>
     <li><strong>Volumes.</strong> The app has <code>release-ops-data:/data</code> (<code>app.db</code>, <code>snapshots/</code>). The worker has only a cache volume (the per-slot Renovate caches, §2.5) and no <code>/data</code>. <strong>No Docker socket is mounted anywhere.</strong></li>
     <li>App entrypoint: <code>docker/entrypoint.sh</code> — Go on <code>127.0.0.1:8080</code> plus the internal listener (pending migrations are applied to <code>app.db</code> before either listens) → Next on <code>:3000</code>. Worker entrypoint: <code>release-ops worker</code>.</li>
     <li>Health probe of the app: <code>GET /api/go/healthz</code> or a dedicated Next route that proxies Go <code>/healthz</code>. The worker starts after the app and keeps asking for jobs until the app answers.</li>
@@ -1703,7 +1703,7 @@ func CreateDefinitelyNotStored(err error) bool</code></pre>
   </ul>
   <pre><code># docker-compose.yml (reference)
 services:
-  release-ops:
+  app:
     image: ghcr.io/mdg-labs/release-ops:latest
     ports:
       - "3000:3000"
@@ -1720,12 +1720,12 @@ services:
       GLOBAL_CONFIG_REF: main
       PRESET_REPOSITORIES: your-org/renovate
 
-  release-ops-worker:
+  worker:
     image: ghcr.io/mdg-labs/release-ops-worker:latest
     depends_on:
-      - release-ops
+      - app
     environment:
-      INTERNAL_URL: http://release-ops:9090
+      INTERNAL_URL: http://app:9090
       WORKER_SECRET: ...
     volumes:
       - worker-cache:/cache              # per-slot Renovate caches
