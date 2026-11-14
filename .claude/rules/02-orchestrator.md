@@ -20,8 +20,8 @@ Follow `.claude/skills/orchestrate/SKILL.md`. Do not improvise.
 - The orchestrator lands a commit on local `dev` (cherry-pick) **only after a PASS**, then pushes `origin/dev` immediately.
 - A thin or stale task goes through an `issue-refiner` (readiness gate) before any executor sees it.
 - Prompts are filled from `.claude/skills/orchestrate/templates/` and passed **inline, in full**. Never a pointer to a file, never shorthand.
-- `.claude/known-escapes.md` lists defect patterns CodeRabbit caught after a PASS; executors and verifiers read it, `/cr-review` appends to it.
-- `main` moves only through the `dev → main` PR: `/open-pr`, then `/cr-review <PR>`. `/dev-diff` reports the CodeRabbit-reviewable size; the orchestrator keeps it under 100 files.
+- `.claude/known-escapes.md` lists defect patterns CodeRabbit caught after a PASS; executors and verifiers read it, `/pr-review` appends to it.
+- `main` moves only through the `dev → main` PR: `/open-pr`, then `/pr-review <PR>`. `/dev-diff` reports the CodeRabbit-reviewable size; the orchestrator keeps it under 300 files.
 
 ## Sub-agents (any Agent dispatch)
 

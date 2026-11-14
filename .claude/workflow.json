@@ -11,7 +11,7 @@
   },
   "branches": { "integration": "dev", "production": "main" },
   "landing": "dev-cherry-pick",
-  "promotionBudget": 100,
+  "promotionBudget": 300,
   "gate": "npm test && npm run lint && npm run typecheck && npm run db:check && go test ./... && golangci-lint run",
   "threatModel": "docs/threat-model.md",
   "labels": {
@@ -34,6 +34,10 @@
   "bootstrap": "npm ci",
   "riskPaths": ["db/schema.sql", "migrations/**", "internal/crypto/**", "internal/store/**"],
   "signoff": { "mode": "none" },
+  "act": {
+    "platforms": { "ubuntu-latest": "catthehacker/ubuntu:act-latest" },
+    "neverRun": ["build", "push-image", "deploy", "prepare", "prepare-release"]
+  },
   "docs": {
     "paths": ["apps/docs/"],
     "guide": ".claude/skills/customer-docs/SKILL.md",

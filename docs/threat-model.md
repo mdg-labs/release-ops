@@ -2,7 +2,7 @@
 
 **Status: DRAFT.** Written from `docs/specs.html` (Spec v2.8), `db/schema.sql` and the code on `dev` on 2026-10-07. It needs maintainer review before anything relies on it. Statements marked "(proposed — confirm)" are inferences, not things the spec says.
 
-This doc is the yardstick for every security judgement in the project: the `security-audit` skill, the task-verifier's security layer and `cr-review`'s security triage. A finding is measured against the assets (§1), attackers (§2), entry points (§3), invariants (§4), accepted residuals (§5) and severity rubric (§6), and recorded per §7. Code anchors are checked against `dev`; when code moves, the anchor moves in the same change.
+This doc is the yardstick for every security judgement in the project: the `security-audit` skill, the task-verifier's security layer and `pr-review`'s security triage. A finding is measured against the assets (§1), attackers (§2), entry points (§3), invariants (§4), accepted residuals (§5) and severity rubric (§6), and recorded per §7. Code anchors are checked against `dev`; when code moves, the anchor moves in the same change.
 
 ---
 

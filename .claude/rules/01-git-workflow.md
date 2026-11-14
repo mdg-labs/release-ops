@@ -37,6 +37,6 @@ Stage explicit paths only. Never `git add .` or `git add -A`.
 ## Push policy
 
 - **`/orchestrate`** pushes `origin/dev` right after each landed commit — the independent verifier's PASS, which includes the full gate, is the gate. It holds a commit back only when a fresh blocking dependency was added to its task during the run, or when unpushed commits it did not land sit underneath.
-- **`/cr-review`** pushes `origin/dev` after its round's fixes pass the full gate; **`/open-pr`** pushes only the content-free back-merge of `main` into `dev`.
+- **`/pr-review`** pushes `origin/dev` after its round's fixes pass the full gate; **`/open-pr`** pushes only the content-free back-merge of `main` into `dev`.
 - Invoking one of those skills is the authorization for its pushes. Everywhere else, agents commit locally and push only when the user explicitly asks — after the full gate (`06-local-ci-before-commit.md`).
 - Before any push: `git log origin/dev..dev --oneline` must list only commits you mean to push. Never amend pushed commits (`13-no-amend-pushed.md`).

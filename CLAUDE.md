@@ -7,7 +7,7 @@ Self-hosted release monitor: polls GitHub, GitLab, Gitea, Forgejo and Codeberg f
 | What | Path |
 | ---- | ---- |
 | Project rules (auto-loaded; `paths:` frontmatter = file-scoped) | `.claude/rules/*.md` |
-| Skills (`/orchestrate`, `/dev-diff`, `/open-pr`, `/cr-review`, `/security-audit`, `/triage`, `/customer-docs`, `/coss`) | `.claude/skills/` — vendored from `mdg-labs/skills` by `/mdg-setup:setup` (locked in `.claude/mdg-workflow.lock.json`; update through setup, not by hand). Only `coss` and `coss-particles` are third-party (`cosscom/coss`, pinned in `skills-lock.json`); don't edit those |
+| Skills (`/orchestrate`, `/dev-diff`, `/open-pr`, `/pr-review`, `/security-audit`, `/triage`, `/customer-docs`, `/coss`) | `.claude/skills/` — vendored from `mdg-labs/skills` by `/mdg-setup:setup` (locked in `.claude/mdg-workflow.lock.json`; update through setup, not by hand). Only `coss` and `coss-particles` are third-party (`cosscom/coss`, pinned in `skills-lock.json`); don't edit those |
 | Project sub-agents | `.claude/agents/*.md` |
 | Orchestrate prompt templates + known escapes | `.claude/skills/orchestrate/templates/` |
 | Project constants (tracker ids, branches, gate, checks) / area → paths, hazards, security units | `.claude/workflow.json` / `## Agent workflow` below |
@@ -24,7 +24,7 @@ Start with `.claude/rules/00-project.md` (identity, doc precedence, hard rules) 
 npm test && npm run lint && npm run typecheck  # web / root JS — before every commit that touches them
 npm run db:check                               # db/schema.sql, migrations/ (sqlite-migrate check; needs Go only)
 go test ./... && golangci-lint run             # Go
-.claude/skills/dev-diff/dev-diff.sh            # dev→main size as CodeRabbit counts it (cap 100)
+.claude/skills/dev-diff/dev-diff.sh            # dev→main size as CodeRabbit counts it (cap 300)
 make db-migration name=<change>                # schema change — edit db/schema.sql first; never hand-write migrations/
 ```
 
@@ -33,15 +33,15 @@ make db-migration name=<change>                # schema change — edit db/schem
 The harness expects these Claude Code MCP server names (tool prefix `mcp__<name>__`):
 
 - `Kaneo` — Kaneo board, project Release Ops (`RO-<n>`); source of truth for tasks and status. Through the claude.ai connector the same tools appear as `mcp__claude_ai_Kaneo__<tool>`; skills and agents use whichever the session lists. Agents never set `done`: it comes from the Kaneo ↔ GitHub sync when a `fixes #N` commit lands on `main` (or the user sets it).
-- `github` — read-only for issues (resolve the `#N` for commit subjects); without it, `.claude/scripts/gh-rest.sh issue-view` / `issue-search` do the same reads. Agents never comment on, label, close or create GitHub issues via API. Task commits carry `[#N]` in the subject and a mandatory `fixes #N` trailer in the body — the only way an issue closes (`07-commit-linking.md`).
+- `github` — read-only for issues (resolve the `#N` for commit subjects); without it, `gh issue view <n> -R mdg-labs/release-ops` / `gh issue list -R mdg-labs/release-ops --state all --search "<title> in:title"` do the same reads. Agents never comment on, label, close or create GitHub issues via API. Task commits carry `[#N]` in the subject and a mandatory `fixes #N` trailer in the body — the only way an issue closes (`07-commit-linking.md`).
 
 ## Workflow
 
-Task → `/triage` (RO-<n>, a problem statement, or a Dependabot alert; stops at `ready`) → `/orchestrate RO-<n>` (scratch-clone executor, independent verifier, land on `dev` after PASS, push `dev`) → `/open-pr` (dev→main PR) → `/cr-review <PR>` → the maintainer merges; the `fixes #N` trailers close the issues and the Kaneo ↔ GitHub sync moves tasks to `done`. `/security-audit` reviews the code against `docs/threat-model.md`.
+Task → `/triage` (RO-<n>, a problem statement, or a Dependabot alert; stops at `ready`) → `/orchestrate RO-<n>` (scratch-clone executor, independent verifier, land on `dev` after PASS, push `dev`) → `/open-pr` (dev→main PR) → `/pr-review <PR>` → the maintainer merges; the `fixes #N` trailers close the issues and the Kaneo ↔ GitHub sync moves tasks to `done`. `/security-audit` reviews the code against `docs/threat-model.md`.
 
 ## Agent workflow
 
-<!-- Read by the vendored skills (orchestrate, triage, cr-review, security-audit).
+<!-- Read by the vendored skills (orchestrate, triage, pr-review, security-audit).
      Machine-read settings live in .claude/workflow.json. -->
 
 ### Project
@@ -74,7 +74,7 @@ Precedence on conflict: `docs/specs.html` (MVP contract, APIs, UI, domain logic)
 ### Hazards
 
 - No `sudo`, package-manager install or write under `/etc`; no system service touched. Work that needs root is reported `blocked`.
-- Docker is root-equivalent: agents never run, stop, remove or prune a container, image or volume. A task whose acceptance needs `docker build` is verified by CI after the push.
+- Docker is root-equivalent: agents never run, stop, remove or prune a container, image or volume themselves. The one exception is `.claude/scripts/act-run.sh`, which runs changed GitHub Actions jobs locally under `workflow.json` `act` (jobs in `act.neverRun` never run). A task whose acceptance needs `docker build` is verified by CI after the push.
 - Kill by PID only (`cmd & PID=$!`) — never `pkill`/`killall`.
 - Every command is bounded: explicit timeout on anything not obviously fast, no scan rooted at `/` or `$HOME`, nothing left running when a dispatch ends.
 - No agent connects to a live provider or ticket system (GitHub, GitLab, Gitea, Jira, Linear, Kaneo as a product integration, SMTP). Provider code is tested against fakes and recorded fixtures.

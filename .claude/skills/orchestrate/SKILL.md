@@ -34,7 +34,7 @@ memory of another repo:
 - **`.claude/workflow.json`** (schema: `.claude/workflow.schema.json`):
   - `repo`, `tracker`, `branches.integration` / `.production`, `landing`
   - `promotionBudget`, `gate`, `checks`, `bootstrap`, `signoff`
-  - `models`, `limits`, `largeDiff`, `ci`, `pr`
+  - `models`, `limits`, `largeDiff`, `act`, `pr`
   - `labels.risk`, `riskPaths`, `labels.maintainerOnly`
   - `landingRepos`, `unitEnvironment`, `docs`, `threatModel`, `readiness`
 
@@ -56,15 +56,18 @@ memory of another repo:
 The tracker is reached only as `.claude/trackers/README.md` and the mapping
 for `tracker.type` (`github.md` or `kaneo.md`) describe. Read both now. Every
 "resolve", "set status", "comment", "create" below means the operation done the
-way that mapping says. Scripts live in `.claude/scripts/`. Templates live
+way that mapping says. Every `gh` call names its repository (`-R <repo>`, or
+a `repos/<repo>/…` path for `gh api`), where `<repo>` is `workflow.json`
+`repo` of the repository the call is about; agents run from scratch clones,
+where `gh` would infer a local path. Scripts live in `.claude/scripts/`. Templates live
 next to this file in `templates/`: `TEMPLATES_DIR` in a dispatch is that
 directory's absolute path in the **workspace** the agent works in (every
 clone carries the vendored `.claude/`), or in `TOOLS_ROOT` for a cross-repo
 landing.
 
 **Only suggest skills this repo has.** A repo vendors a profile, and a light
-repo has no `open-pr`, `cr-review`, `dev-diff` or `security-audit`. Before
-naming any skill to the maintainer (`/open-pr`, `/cr-review`, …), check that
+repo has no `open-pr`, `pr-review`, `dev-diff` or `security-audit`. Before
+naming any skill to the maintainer (`/open-pr`, `/pr-review`, …), check that
 `.claude/skills/<name>/` exists. When it doesn't, describe the step itself
 instead, e.g. "open the `INT` → `PROD` pull request when you're happy with
 what landed".
@@ -95,7 +98,11 @@ say what is wrong. Never stash, reset or switch the maintainer's work.
 
 **Machine check.** One Bash call: `command -v` for every tool named in
 `checks[].requires`, plus every command under `### Machine check`, if the repo
-has one. Also run the `unitEnvironment.leftoverCheck`, if any, to report
+has one. When `act` is set, add `command -v act flock` and
+`timeout 20 docker info --format '{{.ServerVersion}}'`. When
+`review.localCli` is `true`, add `command -v coderabbit` and
+`timeout 30 coderabbit auth status`. Also run the
+`unitEnvironment.leftoverCheck`, if any, to report
 leftovers from an earlier run. Report leftovers to the user; never remove
 them. Keep the output verbatim as `MACHINE_STATE`. A tool missing here is
 named in every dispatch and never installed.
@@ -126,7 +133,7 @@ epic.
 For each `--advisory <GHSA-id>`:
 
 ```
-.claude/scripts/gh-rest.sh advisory-get <GHSA-id> --jq '{ghsa_id,summary,description,severity,state}'
+.claude/scripts/gh-helpers.sh advisory-get <GHSA-id> --jq '{ghsa_id,summary,description,severity,state}'
 ```
 
 If the call fails, stop and say so; never guess an id. The advisory's
@@ -137,7 +144,7 @@ id's three groups joined with `-` (`adv-abcd-efgh-ijkl`).
 An advisory unit differs from an item in exactly these ways:
 
 - **Nothing is written to the tracker or any public GitHub surface.** That
-  rules out an issue, comment, label, status call, epic rollup, `ci/` branch,
+  rules out an issue, comment, label, status call, epic rollup, pushed branch,
   pull request, or any text naming it, beyond the `Refs:` trailer of its
   landing commit. Verdicts and the run log stay in this session and the
   report.
@@ -145,7 +152,7 @@ An advisory unit differs from an item in exactly these ways:
   repo.
 - **The readiness gate is read by hand** from the description. It needs
   acceptance criteria and an out-of-scope section. A description without them
-  is reported and left out of T. The maintainer fixes it with `gh-rest.sh
+  is reported and left out of T. The maintainer fixes it with `gh-helpers.sh
   advisory-update`; a refiner never touches an advisory.
 - **Its file scope** comes from the paths the description names. If it names
   none, the scope is the whole repo.
@@ -351,9 +358,9 @@ at most `limits.lanes` at once (default 3); units within a lane run serially.
 ### Promotion-diff budget — a hard rule
 
 Only when `promotionBudget` is set. **The `INT → PROD` reviewable diff never
-grows past the cap.** CodeRabbit (Essentials plan) reviews at most 150 files
+grows past the cap.** CodeRabbit (Advanced plan) reviews at most 300 files
 per pull request, counted after `.coderabbit.yaml`'s `path_filters`. `INT`
-only reaches `PROD` through one promotion PR (`open-pr`, then `cr-review`). A diff past the cap
+only reaches `PROD` through one promotion PR (`open-pr`, then `pr-review`). A diff past the cap
 forces a split promotion, and that leaves the two branches with duplicate
 history. Items landing in another repository (step 1a) are not counted.
 
@@ -609,6 +616,15 @@ Read `TEMPLATES_DIR/verifier-prompt.md` and fill it.
 **On a fix round,** fill the `FIX_ROUND` block: the rejected SHA, where it can
 be read, and the previous round's **blocking** findings verbatim.
 
+**A local CodeRabbit review, when the repo opts in.** Fill `CODERABBIT_CLI`
+only when `review.localCli` is `true`, the machine check found `coderabbit`
+installed and authenticated, and this is the unit's **first attempt**. A fix
+round never re-runs it: each run draws on the maintainer's CLI allowance (10
+per hour), and lanes run in parallel. `CR_BASE` is the full SHA the unit's
+clone started from (`git -C <clone> rev-parse origin/<base>`, step 5). When
+the repo opts in but the CLI is missing or signed out, fill nothing and say
+so once in the report; never install it or sign it in.
+
 ```
 Agent({
   subagent_type: "task-verifier",
@@ -631,29 +647,19 @@ Agent({
   Above `largeDiff.lines` (default 2000), the diff is large. Name every such
   item in the report, and any item that landed far above its estimate.
 
-**Acceptance only a real GitHub Actions run can show** covers a changed
-workflow, a release or Pages job, a nightly step. It applies only when `ci`
-is set, and never to an advisory unit, because pushing its commit would
-publish the fix. Before dispatching the verifier, run it for real without
-touching `INT`:
+**A unit that changes GitHub Actions workflows proves them locally.** When
+`act` is set and the unit's scope can touch `.github/workflows/**` or
+`.github/actions/**`, fill `ACT` in both dispatches. The executor runs each
+changed job with `.claude/scripts/act-run.sh` before committing, and the
+verifier runs it again itself under layer 1. You never run a workflow
+yourself, and never push a branch to make one run. This holds for an
+advisory unit too, since act runs nothing outside the machine.
 
-```
-git -C <workspace> push <origin URL> HEAD:refs/heads/<ci.branchPrefix><unit-id>
-gh workflow run <workflow file> --repo <repo> --ref <ci.branchPrefix><unit-id>
-gh run list --repo <repo> --branch <ci.branchPrefix><unit-id> --limit 1 --json databaseId,url
-```
-
-- Fill the template's `CI_RUN` block with the run's URL and id.
-- Wait with `timeout <ci.watchTimeout> gh run watch <id> --repo <repo>
-  --exit-status`, as a **background** Bash command, then end your turn. Its
-  exit re-invokes you; this is the one sanctioned wait outside the harness.
-- When the unit is resolved, delete the branch:
-  `git push <origin URL> --delete <ci.branchPrefix><unit-id>`.
-
-A workflow without `workflow_dispatch` on `PROD` cannot be run this way. Fill
-`CI_NOT_RUNNABLE` instead, so the verifier judges it by reading it plus
-`actionlint`. An advisory unit or a disabled `ci` whose acceptance genuinely
-needs a real run is left out of T and reported.
+What act cannot show — a deploy, a release, a step that needs a secret, a
+`schedule`, anything only true once it lands on `PROD` — never holds a unit
+back. The verdict lists it under **Proves after landing**, and you carry
+each entry into the report (step 12). With `act` null, fill nothing: the
+verifier judges a workflow by reading it, plus `actionlint`.
 
 **One verifier per unit per attempt; verdicts are per item.** All seven layers
 run against each commit separately, with one comment and one status move per
@@ -784,7 +790,8 @@ never squashed.
    `git -C <clone> push <origin URL of REAL> HEAD:refs/heads/<branch>`.
    The clone's own `origin` is a local path.
 5. **Open the PR:**
-   `.claude/scripts/gh-rest.sh pr-create --base <base> --head <branch> --title <title> --body-file <file>`.
+   `gh pr create -R <repo> --base <base> --head <branch> --title <title> --body-file <file>`,
+   from `REAL`, with `<repo>` the landing repository's `workflow.json` `repo`.
    - **Title:** the commit subject for a single item, or a summary naming
      every item for a bundle.
    - **Body:** a summary, each item with its `Fixes #<n>`, the checks run,
@@ -920,8 +927,11 @@ Then the report:
 - **Advisory targets**, each by its GHSA id. Give the landed commit or local
   branch and whether it reached `origin/INT`, or why it did not. For every
   one that landed: once the fix reaches `PROD`, the maintainer publishes the
-  advisory (`gh-rest.sh advisory-publish <id>`). Write "none this run" when
+  advisory (`gh-helpers.sh advisory-publish <id>`). Write "none this run" when
   there were none.
+- **Proves after landing:** every entry the verdicts listed, each as the
+  workflow, the job, the branch it runs on once landed, and what to watch
+  for. Write "none this run" when there were none.
 - **What's blocked and why:** prepared maintainer-only items, external
   dependencies, escalations, items left out at readiness.
 - **Bundles and why.**
@@ -1000,9 +1010,8 @@ Then give the user the step-12 report as your final message.
   executor's report, the verifier's comment.
 - **Every dispatch prompt is passed inline in full**, never as a pointer to a
   file holding it.
-- **Never poll or self-schedule while agents run.** The one sanctioned wait
-  is a bounded background `gh run watch` for a CI-dependent unit. Never take
-  over a running agent's work; stop it with `TaskStop` first.
+- **Never poll or self-schedule while agents run.** Never take over a
+  running agent's work; stop it with `TaskStop` first.
 - **A clone is deleted only at the end of a successful landing chain,** with
   a guarded command on its literal path.
 - **An advisory unit writes nothing to the tracker or a public GitHub

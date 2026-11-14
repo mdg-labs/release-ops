@@ -5,6 +5,15 @@
 # draft private security advisory for each one that is (the threat model's
 # disclosure split).
 #
+# A report whose front matter says `disclosure: issues` was written for a
+# repo that files every finding as an issue (security-route.sh prints
+# `issues`: the repository is private, and GitHub offers it no advisories).
+# Its findings are all `withhold: false`, Critical and High included. `file`
+# asks security-route.sh before writing and refuses when the answer no longer
+# matches the report, so a repository made public since the audit never gets
+# a Critical finding filed in public. Without the key a report is
+# `disclosure: advisories`.
+#
 # Usage: audit-report.sh <subcommand> <report> [args...]
 #   check <report>        validate the report; prints "ok: …" or names the
 #                         finding, front matter or section at fault
@@ -28,8 +37,9 @@
 #
 # The report is parsed here, deterministically, not by model judgement: a
 # report that does not follow the format exactly is refused before anything
-# is read from or written to GitHub. Every GitHub call goes through
-# gh-rest.sh or issue-status.sh. What differs per repo — the repository, the
+# is read from or written to GitHub. Every GitHub call names workflow.json's
+# repository: plain `gh` with `-R`, gh-helpers.sh for the advisories, and
+# issue-status.sh for the status label. What differs per repo — the repository, the
 # area labels, the risk label, the tracker, the default epic, the threat
 # model's path — comes from .claude/workflow.json.
 #
@@ -43,7 +53,7 @@ set -euo pipefail
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=workflow-config.sh
 source "$HERE/workflow-config.sh"
-GH_REST="$HERE/gh-rest.sh"
+GH_HELPERS="$HERE/gh-helpers.sh"
 ISSUE_STATUS="$HERE/issue-status.sh"
 
 die() { printf 'audit-report: %s\n' "$*" >&2; exit 1; }
@@ -74,6 +84,8 @@ TICKET_KEY = os.environ.get("AR_TICKET_KEY") or ""
 THREAT_MODEL = os.environ.get("AR_THREAT_MODEL") or ""
 SEVERITIES = ["critical", "high", "medium", "low", "info"]
 FRONT_KEYS = ["run_id", "branch", "sha", "scope", "units", "date"]
+FRONT_OPTIONAL = ["disclosure"]
+DISCLOSURES = ["advisories", "issues"]
 FINDING_KEYS = ["id", "title", "severity", "type", "area", "risk",
                 "withhold", "verdict", "files", "related", "invariant"]
 OPTIONAL_KEYS = ["cwe", "filed"]
@@ -201,7 +213,7 @@ def parse_front(lines):
     except ValueError:
         raise Refuse("front matter", "no closing --- line")
     w = "front matter"
-    raw = parse_block(lines[1:end], FRONT_KEYS, [], w)
+    raw = parse_block(lines[1:end], FRONT_KEYS, FRONT_OPTIONAL, w)
     run_id = scalar(raw["run_id"], w, "run_id")
     if not re.match(r"^\d{8}-[0-9a-f]{7}(-\d+)?$", run_id):
         raise Refuse(w, f"run_id: '{run_id}' is not <yyyymmdd>-<sha7>[-<n>]")
@@ -221,8 +233,9 @@ def parse_front(lines):
         datetime.date.fromisoformat(date)
     except ValueError:
         raise Refuse(w, f"date: '{date}' is not an ISO date")
+    disclosure = one_of(raw.get("disclosure", "advisories"), w, "disclosure", DISCLOSURES)
     return end, {"run_id": run_id, "branch": branch, "sha": sha, "scope": scope,
-                 "units": units, "date": date}
+                 "units": units, "date": date, "disclosure": disclosure}
 
 
 def split_sections(lines, flags, start, stop, where, names):
@@ -354,7 +367,10 @@ def parse_report(text):
         meta[f["id"]] = hdr
     by_id = {f["id"]: f for f in findings}
     for f in findings:
-        if f["severity"] in ("critical", "high") and not f["withhold"]:
+        if front["disclosure"] == "issues":
+            if f["withhold"]:
+                raise Refuse(f["id"], "disclosure: issues files every finding as an issue, so withhold must be false")
+        elif f["severity"] in ("critical", "high") and not f["withhold"]:
             raise Refuse(f["id"], f"a {f['severity']} finding must be withheld")
         for r in f["related"]:
             if r == f["id"] or r not in by_id:
@@ -435,7 +451,9 @@ def item_body(report, f):
     s = f["sections"]
     fr = report["front"]
     model = f"`{THREAT_MODEL}`" if THREAT_MODEL else "The threat model"
-    refs = [f"- {model} — severity rubric (§6): rated **{f['severity']}**; disclosure split (§7): public."]
+    split = ("tracked as an issue while the repository is private" if fr["disclosure"] == "issues"
+             else "public")
+    refs = [f"- {model} — severity rubric (§6): rated **{f['severity']}**; disclosure split (§7): {split}."]
     if f["invariant"] != "none":
         refs.append(f"- Invariant {f['invariant']} (§4).")
     files = ", ".join(f"`{p}`" for p in f["files"])
@@ -616,15 +634,17 @@ cmd_mark() {
 # never read as "not filed yet".
 find_issue() {
   local id=$1 out
-  out=$("$GH_REST" issue-search "Audit-finding: $id" --state all) || return 1
+  # Every issue, not a search: the search index lags behind a just-created
+  # issue, and a re-run right after an interrupted one must still find it.
+  out=$(gh api --paginate --slurp "repos/$REPO/issues?state=all&per_page=100") || return 1
   jq -r --arg id "$id" '
-    [ .[] | select((.body // "") | split("\n") | map(rtrimstr("\r")) | any(. == "Audit-finding: " + $id)) | .number ]
+    [ add // [] | .[] | select(has("pull_request") | not) | select((.body // "") | split("\n") | map(rtrimstr("\r")) | any(. == "Audit-finding: " + $id)) | .number ]
     | sort | .[0] // empty' <<<"$out"
 }
 
 find_advisory() {
   local id=$1 out
-  out=$("$GH_REST" advisory-list) || return 1
+  out=$("$GH_HELPERS" advisory-list) || return 1
   jq -r --arg id "$id" '
     [ .[] | select((.description // "") | split("\n") | map(rtrimstr("\r")) | any(. == "Audit-finding: " + $id)) | .ghsa_id ]
     | sort | .[0] // empty' <<<"$out"
@@ -636,7 +656,7 @@ find_advisory() {
 # started on.
 finish_issue() {
   local num=$1 epic=$2 info parent state statuses other
-  info=$("$GH_REST" issue-view "$num" --jq '.state, (.labels[].name)') \
+  info=$(gh api "repos/$REPO/issues/$num" --jq '.state, (.labels[].name)') \
     || { say "audit-report: could not read #$num" >&2; return 1; }
   state=$(head -n1 <<<"$info")
   if [[ $state != open ]]; then
@@ -644,10 +664,10 @@ finish_issue() {
     return 0
   fi
   if [[ -n $epic ]]; then
-    parent=$("$GH_REST" parent "$num" --jq '.number') \
+    parent=$(gh issue view "$num" -R "$REPO" --json parent --jq '.parent.number // empty') \
       || { say "audit-report: could not read the parent of #$num" >&2; return 1; }
     if [[ -z $parent ]]; then
-      "$GH_REST" add-sub-issue "$epic" "$num" >/dev/null || return 1
+      gh issue edit "$epic" -R "$REPO" --add-sub-issue "$num" >/dev/null || return 1
       say "  #$num added under epic #$epic"
     elif [[ $parent != "$epic" ]]; then
       say "  #$num is under #$parent, not #$epic; left as it is"
@@ -699,9 +719,10 @@ file_public() {
       local args=(--title "$title" --body-file "$TMP/body.md") label out
       [[ -n $milestone ]] && args+=(--milestone "$milestone")
       for label in "${labels[@]}"; do args+=(--label "$label"); done
-      out=$("$GH_REST" issue-create "${args[@]}") || { say "audit-report: $id: issue-create failed" >&2; return 1; }
-      num=$(jq -r '.number // empty' <<<"$out")
-      [[ $num =~ ^[0-9]+$ ]] || { say "audit-report: $id: issue-create gave no issue number; look for the marker 'Audit-finding: $id' before re-running" >&2; return 1; }
+      # gh prints the new issue's URL, which ends in its number.
+      out=$(gh issue create -R "$REPO" "${args[@]}") || { say "audit-report: $id: creating the issue failed" >&2; return 1; }
+      num=${out##*/issues/}
+      [[ $num =~ ^[0-9]+$ ]] || { say "audit-report: $id: creating the issue gave no issue URL; look for the marker 'Audit-finding: $id' before re-running" >&2; return 1; }
       say "$id: created #$num"
       py record "$REPORT" "$id" "#$num" || return 1
     fi
@@ -735,12 +756,12 @@ file_withheld() {
   py advisory-body "$REPORT" "$id" >"$TMP/advisory.md" || return 1
   args+=(--summary "$summary" --description-file "$TMP/advisory.md")
   if (( dry )); then
-    "$GH_REST" advisory-create "${args[@]}" --dry-run >/dev/null || return 1
+    "$GH_HELPERS" advisory-create "${args[@]}" --dry-run >/dev/null || return 1
     say "$id: would create a draft advisory, severity $sev"
     return 0
   fi
   local out
-  out=$("$GH_REST" advisory-create "${args[@]}") || { say "audit-report: $id: advisory-create failed" >&2; return 1; }
+  out=$("$GH_HELPERS" advisory-create "${args[@]}") || { say "audit-report: $id: advisory-create failed" >&2; return 1; }
   ghsa=$(jq -r '.ghsa_id // empty' <<<"$out")
   [[ $ghsa =~ ^GHSA- ]] || { say "audit-report: $id: advisory-create gave no GHSA id; look for the marker 'Audit-finding: $id' before re-running" >&2; return 1; }
   say "$id: created draft advisory $ghsa"
@@ -759,15 +780,29 @@ cmd_file() {
     esac
   done
   resolve_report "$arg" file
-  local repo
-  repo=$(wf_repo) || exit 1
-  PACKAGE=${repo#*/}
+  REPO=$(wf_repo) || exit 1
+  PACKAGE=${REPO#*/}
   json=$(py parse "$REPORT") || exit 1
 
   printf 'id\tseverity\tkind\tfiled\ttitle\n'
   print_list "$json"
   if (( ! dry && ! confirmed )); then
     die "file: refusing to write: show the list above to the maintainer and re-run with --confirmed once they say to file it (or with --dry-run to see what would happen)"
+  fi
+
+  # The route is read live, so it follows the repository as it is now, not as
+  # it was when the audit ran. Only asked when the answer changes what is
+  # filed: an issues report, or an advisories report with an advisory still
+  # to create.
+  local disclosure route
+  disclosure=$(jq -r '.front.disclosure' <<<"$json")
+  if [[ $disclosure == issues ]] || jq -e 'any(.findings[]; .withhold and (.filed // "") == "")' <<<"$json" >/dev/null; then
+    route=$("$HERE/security-route.sh") || die "file: could not tell where security findings go (security-route.sh failed)"
+    if [[ $disclosure == issues && $route != issues ]]; then
+      die "file: the report says disclosure: issues, but security-route.sh now says $route (the repository is public, or security.privateRepoIssues is false); filing it would put Critical and High findings in public. Re-run the audit"
+    elif [[ $disclosure == advisories && $route == issues ]]; then
+      die "file: the report withholds findings as advisories, but this repository files every finding as an issue (security-route.sh: issues) and has no advisories. Re-run the audit, so the report says disclosure: issues"
+    fi
   fi
 
   local rows
@@ -785,7 +820,7 @@ cmd_file() {
     fi
     if [[ -n $epic ]] && jq -e 'any(.findings[]; .withhold | not)' <<<"$json" >/dev/null; then
       local epic_json
-      epic_json=$("$GH_REST" issue-view "$epic") || die "file: could not read epic #$epic"
+      epic_json=$(gh api "repos/$REPO/issues/$epic") || die "file: could not read epic #$epic"
       jq -e '.state == "open" and any(.labels[]; .name == "epic")' <<<"$epic_json" >/dev/null \
         || die "file: #$epic is not an open issue labelled epic"
       milestone=$(jq -r '.milestone.title // empty' <<<"$epic_json")

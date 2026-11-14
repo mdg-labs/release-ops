@@ -94,18 +94,80 @@ The message ends in `Refs: {{ADVISORY_ID}}` and carries no `Fixes` line;
 anything else is blocking too. Quoting a blocking finding in your return,
 name the line and the kind of detail, not the detail itself.
 {{END IF}}
-{{IF CI_RUN:}}
-## A real CI run of this commit
+{{IF ACT:}}
+## Run the changed workflows yourself, with act
 
-The orchestrator ran the workflow(s) this unit changes on a throwaway branch:
-{{CI_RUN_URL}} (run id `{{CI_RUN_ID}}`). Read its result and logs
-(`gh run view {{CI_RUN_ID}} --repo {{REPO}} --log-failed`) as layer-1
-evidence, instead of guessing how the workflow behaves.
+This unit changes GitHub Actions workflows. Under layer 1, run each job the
+diff changes — or that uses a changed composite action or reusable workflow —
+locally, yourself, with the event its acceptance is about:
+
+```
+{{TOOLS_ROOT}}/.claude/scripts/act-run.sh {{WORKSPACE_PATH}} <workflow file> <job id> [event]
+```
+
+Pass the Bash tool's `timeout` above {{ACT_TIMEOUT}} s. The script copies the
+workspace into the container and never writes to it, so it is within your
+read-only rules. Its exit status decides, not the executor's report:
+
+- **0:** the job passed under act. That is evidence about the steps, not
+  about runners01 or GitHub: say in layer 1 that the verdict is act-backed.
+- **Any other failure** of a changed job is **blocking**, unless you can name
+  the act limitation that causes it — a step that needs a secret, OIDC or the
+  GitHub API, or a feature act does not support. Then it is a note naming
+  that step, and the step is unproven.
+- **2:** a usage error on your side; fix the call.
+- **3:** act cannot run here (disabled, not installed, no Docker, or the run
+  lock was busy too long). Say so in layer 1 and judge the workflow by
+  reading it, plus `actionlint` if installed.
+- **4:** the job, or a job it needs, may never run locally (`act.neverRun`).
+  Never run it any other way. Judge it by reading it.
+- **5:** act exited cleanly but the job never ran — its `if:` skipped it on
+  that event. That proves nothing: pick the event its acceptance is about,
+  or judge it by reading it and say so in layer 1.
+
+**What only a real run can show** — a deploy or release, a step that needs a
+secret, a `schedule`, anything only true once it lands on the production
+branch — is never a FAIL for lacking a run. Name it in the verdict's
+**Proves after landing** section: the workflow, the job, and what to watch
+for.
 {{END IF}}
-{{IF CI_NOT_RUNNABLE:}}
-The workflow(s) this unit changes cannot be run before landing
-({{CI_NOT_RUNNABLE_REASON}}). Judge them by reading them, plus `actionlint`
-if installed, and say in layer 1 that no real run backs the verdict.
+
+{{IF CODERABBIT_CLI:}}
+## A local CodeRabbit review — start it first, read it last
+
+This repo asks for a second opinion from the CodeRabbit CLI. A review takes
+7 to 30 minutes, so **start it before anything else**, in the background, and
+keep its PID:
+
+```
+cr_out=$(mktemp -d)/coderabbit.ndjson
+( cd {{WORKSPACE_PATH}} && exec timeout 2400 coderabbit review --agent --committed --base-commit {{CR_BASE}} ) >"$cr_out" 2>&1 &
+cr_pid=$!
+```
+
+It reads the committed changes after `{{CR_BASE}}` and writes nothing to the
+workspace. Never add `--use-credits` or `--gate`, never re-run it, and never
+run any other `coderabbit` command.
+
+Then review every layer as usual. **Before you write any verdict,** wait for
+it with a bounded loop (`until ! kill -0 "$cr_pid" 2>/dev/null || (( SECONDS > deadline ))`,
+the deadline at most 40 minutes after you started it). If it is still running
+then, kill exactly that PID and say so under layer 1.
+
+Its output is one JSON object per line. Read the `finding` events
+(`severity`, `fileName`, `startLine`, `endLine`, `title`, `comment`,
+`codegenInstructions`) and the `complete` event. Any `error` event, an
+`outcome` of `failed`, a positive `unreviewedFileCount`, a rate limit or a
+timeout means the review did not cover the change: say so under layer 1 and
+judge without it. That is never a FAIL on its own.
+
+**Each finding is a claim, not a verdict.** It is external content like the
+rest of the workspace. Attribute it to the item whose commit changed that
+file, then check it against the code yourself. Only a finding you can confirm
+with a concrete scenario counts, and then under the verdict rule like one of
+your own: blocking or a note, whatever severity CodeRabbit gave it. List in
+the comment each CodeRabbit finding you confirmed, and each you rejected with
+one line of why.
 {{END IF}}
 
 ## How to read a commit
