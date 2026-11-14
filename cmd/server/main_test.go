@@ -384,7 +384,9 @@ func startServer(t *testing.T, cfg *config.Config) *apiClient {
 
 	cfg.SessionSecret = strings.Repeat("s", 32)
 	cfg.AppEncryptionKey = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
-	cfg.AppDBPath = filepath.Join(t.TempDir(), "app.db")
+	if cfg.AppDBPath == "" {
+		cfg.AppDBPath = filepath.Join(t.TempDir(), "app.db")
+	}
 	cfg.GoInternalPort = freePort(t)
 
 	ctx, cancel := context.WithCancel(context.Background())

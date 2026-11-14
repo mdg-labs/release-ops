@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +31,12 @@ var installationFixture []byte
 //go:embed testdata/installation_token.json
 var tokenFixture []byte
 
+//go:embed testdata/repository.json
+var repositoryFixture []byte
+
+//go:embed testdata/content_entry.json
+var contentEntryFixture []byte
+
 // TokenPrefix starts every token the fake mints; a counter follows.
 const TokenPrefix = "fixture-installation-token-"
 
@@ -41,6 +48,8 @@ type Request struct {
 	Method string
 	Path   string
 	Body   string
+	// Query is the raw query string.
+	Query string
 	// JWTValid reports that the bearer was an App JWT signed by the fake's key, issued for
 	// AppID, not expired and valid for at most ten minutes.
 	JWTValid bool
@@ -66,6 +75,23 @@ type Fake struct {
 	mints        int
 	tokenTTL     time.Duration
 	installError int
+
+	listStatus  int                 // status of GET /app/installations; 0 answers the list
+	suspended   map[int64]bool      // installation ids listed with suspended_at set
+	repos       map[int64][]Repo    // installation id -> repositories it grants
+	repoStatus  map[int64]int       // installation id -> status for its repository listing
+	tokenOwner  map[string]int64    // token -> installation id it was minted for
+	files       map[string][]string // owner/name -> paths of files, a trailing "/" marks a directory
+	fileStatus  map[string]int      // owner/name -> status for its contents calls
+	pageSize    int                 // entries per page for listings; 0 means everything on one page
+	foreignNext string              // host a Link header names as the next page instead of the fake
+}
+
+// Repo is a repository an installation grants.
+type Repo struct {
+	ID            int64
+	FullName      string
+	DefaultBranch string
 }
 
 // New starts a fake. now is the clock it measures JWT and token lifetimes with.
@@ -81,6 +107,12 @@ func New(t testing.TB, now func() time.Time) *Fake {
 		now:         now,
 		installs:    map[int64]int64{},
 		tokenFor422: map[string]bool{},
+		suspended:   map[int64]bool{},
+		repos:       map[int64][]Repo{},
+		repoStatus:  map[int64]int{},
+		tokenOwner:  map[string]int64{},
+		files:       map[string][]string{},
+		fileStatus:  map[string]int{},
 		tokenTTL:    time.Hour,
 		PEM:         pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}),
 	}
@@ -96,6 +128,73 @@ func (f *Fake) AddInstallation(id, appID int64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.installs[id] = appID
+}
+
+// FailInstallationList makes GET /app/installations answer status; 0 restores normal answers.
+func (f *Fake) FailInstallationList(status int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listStatus = status
+}
+
+// RemoveInstallation makes GET /app/installations stop listing the installation.
+func (f *Fake) RemoveInstallation(id int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.installs, id)
+}
+
+// SuspendInstallation lists the installation with suspended_at set, or without it.
+func (f *Fake) SuspendInstallation(id int64, suspended bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.suspended[id] = suspended
+}
+
+// SetRepositories sets the repositories GET /installation/repositories lists for a token of
+// the installation.
+func (f *Fake) SetRepositories(installationID int64, repos ...Repo) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.repos[installationID] = repos
+}
+
+// FailRepositories makes the repository listing of the installation answer status; 0
+// restores normal answers.
+func (f *Fake) FailRepositories(installationID int64, status int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.repoStatus[installationID] = status
+}
+
+// SetFiles sets the files of a repository's default branch, as paths; a path ending in "/"
+// is an empty directory.
+func (f *Fake) SetFiles(fullName string, paths ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.files[fullName] = paths
+}
+
+// FailContents makes every contents call of the repository answer status; 0 restores
+// normal answers.
+func (f *Fake) FailContents(fullName string, status int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.fileStatus[fullName] = status
+}
+
+// SetPageSize makes listings answer that many entries a page with a Link header.
+func (f *Fake) SetPageSize(n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.pageSize = n
+}
+
+// LinkTo makes listings name host (scheme://host) as the next page's host instead of the fake.
+func (f *Fake) LinkTo(host string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.foreignNext = host
 }
 
 // FailInstallations makes every installation lookup answer status.
@@ -157,11 +256,20 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	valid := f.checkJWT(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 
 	f.mu.Lock()
-	f.requests = append(f.requests, Request{Method: r.Method, Path: r.URL.Path, Body: string(raw), JWTValid: valid})
+	f.requests = append(f.requests, Request{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: string(raw), JWTValid: valid})
 	f.mu.Unlock()
 
+	bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if strings.HasPrefix(r.URL.Path, "/installation/") || strings.HasPrefix(r.URL.Path, "/repos/") {
+		f.serveWithToken(w, r, bearer)
+		return
+	}
 	if !valid {
 		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	if r.URL.Path == "/app/installations" {
+		f.serveInstallationList(w, r)
 		return
 	}
 	rest, ok := strings.CutPrefix(r.URL.Path, "/app/installations/")
@@ -178,7 +286,7 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	appID, known := f.installs[id]
+	_, known := f.installs[id]
 	switch {
 	case r.Method == http.MethodGet && suffix == "":
 		if f.installError != 0 {
@@ -189,11 +297,7 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		var doc map[string]any
-		_ = json.Unmarshal(installationFixture, &doc)
-		doc["id"] = id
-		doc["app_id"] = appID
-		_ = json.NewEncoder(w).Encode(doc)
+		_ = json.NewEncoder(w).Encode(f.installationDoc(id))
 	case r.Method == http.MethodPost && suffix == "access_tokens":
 		if f.tokenStatus != 0 {
 			w.WriteHeader(f.tokenStatus)
@@ -218,12 +322,150 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 		var doc map[string]any
 		_ = json.Unmarshal(tokenFixture, &doc)
 		doc["token"] = fmt.Sprintf("%s%d", TokenPrefix, f.mints)
+		f.tokenOwner[doc["token"].(string)] = id
 		doc["expires_at"] = f.now().Add(f.tokenTTL).UTC().Format(time.RFC3339)
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(doc)
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func (f *Fake) installationDoc(id int64) map[string]any {
+	var doc map[string]any
+	_ = json.Unmarshal(installationFixture, &doc)
+	doc["id"] = id
+	doc["app_id"] = f.installs[id]
+	if f.suspended[id] {
+		doc["suspended_at"] = "2026-11-14T11:00:00Z"
+	}
+	return doc
+}
+
+// page writes entries as one page of a listing: all of them, or pageSize of them with a
+// Link header to the next page.
+func (f *Fake) page(w http.ResponseWriter, r *http.Request, entries []any, wrap func([]any) any) {
+	size := f.pageSize
+	if size <= 0 {
+		size = len(entries)
+	}
+	n, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if n < 1 {
+		n = 1
+	}
+	from := min((n-1)*size, len(entries))
+	to := min(from+size, len(entries))
+	if to < len(entries) {
+		host := f.srv.URL
+		if f.foreignNext != "" {
+			host = f.foreignNext
+		}
+		w.Header().Set("Link", fmt.Sprintf(`<%s%s?per_page=100&page=%d>; rel="next"`, host, r.URL.Path, n+1))
+	}
+	_ = json.NewEncoder(w).Encode(wrap(entries[from:to]))
+}
+
+func (f *Fake) serveInstallationList(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.listStatus != 0 {
+		w.WriteHeader(f.listStatus)
+		return
+	}
+	ids := make([]int64, 0, len(f.installs))
+	for id := range f.installs {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	entries := make([]any, len(ids))
+	for i, id := range ids {
+		entries[i] = f.installationDoc(id)
+	}
+	f.page(w, r, entries, func(e []any) any { return e })
+}
+
+func (f *Fake) serveWithToken(w http.ResponseWriter, r *http.Request, token string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	installationID, ok := f.tokenOwner[token]
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	if r.URL.Path == "/installation/repositories" {
+		if status := f.repoStatus[installationID]; status != 0 {
+			w.WriteHeader(status)
+			return
+		}
+		entries := make([]any, len(f.repos[installationID]))
+		for i, repo := range f.repos[installationID] {
+			var doc map[string]any
+			_ = json.Unmarshal(repositoryFixture, &doc)
+			doc["id"] = repo.ID
+			doc["full_name"] = repo.FullName
+			doc["name"] = repo.FullName[strings.Index(repo.FullName, "/")+1:]
+			doc["default_branch"] = repo.DefaultBranch
+			entries[i] = doc
+		}
+		f.page(w, r, entries, func(e []any) any {
+			return map[string]any{"total_count": len(entries), "repositories": e}
+		})
+		return
+	}
+
+	rest, ok := strings.CutPrefix(r.URL.Path, "/repos/")
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	parts := strings.SplitN(rest, "/", 4)
+	if len(parts) < 3 || parts[2] != "contents" {
+		http.NotFound(w, r)
+		return
+	}
+	fullName := parts[0] + "/" + parts[1]
+	if status := f.fileStatus[fullName]; status != 0 {
+		w.WriteHeader(status)
+		return
+	}
+	paths, known := f.files[fullName]
+	if !known {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	dir := ""
+	if len(parts) == 4 {
+		dir = parts[3] + "/"
+	}
+	seen := map[string]bool{}
+	var entries []any
+	for _, p := range paths {
+		rel, under := strings.CutPrefix(p, dir)
+		if !under || rel == "" {
+			continue
+		}
+		name, _, nested := strings.Cut(rel, "/")
+		kind := "file"
+		if nested {
+			kind = "dir"
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		var doc map[string]any
+		_ = json.Unmarshal(contentEntryFixture, &doc)
+		doc["name"] = name
+		doc["path"] = dir + name
+		doc["type"] = kind
+		entries = append(entries, doc)
+	}
+	if entries == nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(entries)
 }
 
 func (f *Fake) checkJWT(token string) bool {

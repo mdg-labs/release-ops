@@ -28,8 +28,14 @@ import (
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
 
-// reapInterval is how often the app requeues jobs whose lease has expired.
-const reapInterval = 15 * time.Second
+const (
+	// reapInterval is how often the app requeues jobs whose lease has expired.
+	reapInterval = 15 * time.Second
+	// installationSyncInterval is how often the app reconciles the installation and its
+	// repositories with GitHub, after the sync at startup: hourly, as docs/specs.html
+	// §3.4 fixes it. A pass over an unchanged installation is a handful of list calls.
+	installationSyncInterval = time.Hour
+)
 
 func main() {
 	if len(os.Args) > 1 {
@@ -106,6 +112,10 @@ func run(ctx context.Context, cfg *config.Config) error {
 	}
 
 	githubClient := github.NewClient(github.APIBaseURL(cfg.GitHubBaseURL), 0)
+	appClient := github.NewAppClient(githubClient, appStore.GitHubApp(), github.AppClientOptions{})
+	syncer := github.NewSyncer(appClient, appStore.InstallationSync())
+	webhookRoutes := hooks.NewRoutes()
+	hooks.RegisterInstallationHandlers(webhookRoutes, appStore.InstallationSync(), syncer.Trigger)
 
 	registry := metrics.NewRegistry()
 	jobMetrics, err := metrics.NewJobs(registry)
@@ -137,7 +147,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		GitHubBaseURL:             cfg.GitHubBaseURL,
 		GitHub:                    githubClient,
 		BootstrapAdminGitHubLogin: cfg.BootstrapAdminGitHubLogin,
-		WebhookRoutes:             hooks.NewRoutes(),
+		WebhookRoutes:             webhookRoutes,
 		Queue:                     jobs,
 	})
 
@@ -146,6 +156,15 @@ func run(ctx context.Context, cfg *config.Config) error {
 	var background sync.WaitGroup
 	background.Go(func() {
 		queue.RunReaper(appCtx, jobs, reapInterval, func(err error) { log.Printf("job reaper: %v", err) })
+	})
+	background.Go(func() {
+		ticker := time.NewTicker(installationSyncInterval)
+		defer ticker.Stop()
+		syncer.Run(appCtx, ticker.C, func(err error) {
+			if err != nil {
+				log.Printf("github sync: %v", err)
+			}
+		})
 	})
 	var internalErr, metricsErr error
 	if cfg.MetricsAddr != "" {
@@ -160,7 +179,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	if cfg.InternalAddr != "" {
 		background.Go(func() {
 			log.Printf("release-ops internal listener on %s", cfg.InternalAddr)
-			if err := serveInternal(appCtx, cfg, jobs, github.NewAppClient(githubClient, appStore.GitHubApp(), github.AppClientOptions{})); err != nil {
+			if err := serveInternal(appCtx, cfg, jobs, appClient); err != nil {
 				internalErr = fmt.Errorf("internal listener: %w", err)
 				cancel()
 			}

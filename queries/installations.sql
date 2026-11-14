@@ -25,3 +25,31 @@ ON CONFLICT (github_installation_id) DO UPDATE SET
   permissions = excluded.permissions,
   updated_at = excluded.updated_at
 WHERE installations.status = 'removed';
+
+-- name: GetInstallationByGitHubID :one
+SELECT id, status FROM installations WHERE github_installation_id = ?;
+
+-- Writes only when something differs, so a replayed event or an unchanged sync leaves
+-- updated_at alone. A removed installation is never revived here; UpsertInstallation does that.
+-- name: UpdateInstallation :execrows
+UPDATE installations
+SET account_id = sqlc.arg(account_id),
+    account_login = sqlc.arg(account_login),
+    account_type = sqlc.arg(account_type),
+    status = sqlc.arg(status),
+    repository_selection = sqlc.arg(repository_selection),
+    permissions = sqlc.arg(permissions),
+    updated_at = sqlc.arg(updated_at)
+WHERE github_installation_id = sqlc.arg(github_installation_id)
+  AND status <> 'removed'
+  AND (account_id <> sqlc.arg(account_id)
+    OR account_login <> sqlc.arg(account_login)
+    OR account_type <> sqlc.arg(account_type)
+    OR status <> sqlc.arg(status)
+    OR repository_selection <> sqlc.arg(repository_selection)
+    OR permissions <> sqlc.arg(permissions));
+
+-- name: MarkInstallationRemoved :execrows
+UPDATE installations
+SET status = 'removed', updated_at = ?
+WHERE github_installation_id = ? AND status <> 'removed';

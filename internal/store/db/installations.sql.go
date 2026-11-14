@@ -9,6 +9,22 @@ import (
 	"context"
 )
 
+const getInstallationByGitHubID = `-- name: GetInstallationByGitHubID :one
+SELECT id, status FROM installations WHERE github_installation_id = ?
+`
+
+type GetInstallationByGitHubIDRow struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
+func (q *Queries) GetInstallationByGitHubID(ctx context.Context, githubInstallationID int64) (GetInstallationByGitHubIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getInstallationByGitHubID, githubInstallationID)
+	var i GetInstallationByGitHubIDRow
+	err := row.Scan(&i.ID, &i.Status)
+	return i, err
+}
+
 const listLiveInstallationIDs = `-- name: ListLiveInstallationIDs :many
 SELECT github_installation_id FROM installations WHERE status <> 'removed' ORDER BY github_installation_id
 `
@@ -34,6 +50,74 @@ func (q *Queries) ListLiveInstallationIDs(ctx context.Context) ([]int64, error) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const markInstallationRemoved = `-- name: MarkInstallationRemoved :execrows
+UPDATE installations
+SET status = 'removed', updated_at = ?
+WHERE github_installation_id = ? AND status <> 'removed'
+`
+
+type MarkInstallationRemovedParams struct {
+	UpdatedAt            string `json:"updated_at"`
+	GithubInstallationID int64  `json:"github_installation_id"`
+}
+
+func (q *Queries) MarkInstallationRemoved(ctx context.Context, arg MarkInstallationRemovedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markInstallationRemoved, arg.UpdatedAt, arg.GithubInstallationID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const updateInstallation = `-- name: UpdateInstallation :execrows
+UPDATE installations
+SET account_id = ?1,
+    account_login = ?2,
+    account_type = ?3,
+    status = ?4,
+    repository_selection = ?5,
+    permissions = ?6,
+    updated_at = ?7
+WHERE github_installation_id = ?8
+  AND status <> 'removed'
+  AND (account_id <> ?1
+    OR account_login <> ?2
+    OR account_type <> ?3
+    OR status <> ?4
+    OR repository_selection <> ?5
+    OR permissions <> ?6)
+`
+
+type UpdateInstallationParams struct {
+	AccountID            int64  `json:"account_id"`
+	AccountLogin         string `json:"account_login"`
+	AccountType          string `json:"account_type"`
+	Status               string `json:"status"`
+	RepositorySelection  string `json:"repository_selection"`
+	Permissions          string `json:"permissions"`
+	UpdatedAt            string `json:"updated_at"`
+	GithubInstallationID int64  `json:"github_installation_id"`
+}
+
+// Writes only when something differs, so a replayed event or an unchanged sync leaves
+// updated_at alone. A removed installation is never revived here; UpsertInstallation does that.
+func (q *Queries) UpdateInstallation(ctx context.Context, arg UpdateInstallationParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateInstallation,
+		arg.AccountID,
+		arg.AccountLogin,
+		arg.AccountType,
+		arg.Status,
+		arg.RepositorySelection,
+		arg.Permissions,
+		arg.UpdatedAt,
+		arg.GithubInstallationID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const upsertInstallation = `-- name: UpsertInstallation :exec
