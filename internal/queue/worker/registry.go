@@ -31,6 +31,3 @@ func (f HandlerFunc) Run(ctx context.Context, job queue.ClaimedJob) Result {
 
 // Registry maps a job kind to its handler.
 type Registry map[queue.Kind]Handler
-
-// NoopHandler succeeds at once. It stands in for the kinds whose real handler is not wired.
-var NoopHandler Handler = HandlerFunc(func(context.Context, queue.ClaimedJob) Result { return Result{} })

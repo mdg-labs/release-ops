@@ -10,7 +10,6 @@ import (
 
 	"github.com/mdg-labs/release-ops/internal/config"
 	"github.com/mdg-labs/release-ops/internal/metrics"
-	"github.com/mdg-labs/release-ops/internal/queue"
 	"github.com/mdg-labs/release-ops/internal/queue/worker"
 )
 
@@ -25,10 +24,16 @@ func runWorkerCommand() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// The Renovate handler replaces the no-op for this kind when it exists.
-	registry := worker.Registry{queue.KindRenovateRun: worker.NoopHandler}
+	registry := workerRegistry()
 	log.Printf("release-ops worker claiming jobs from %s", cfg.InternalURL)
 	return runWorker(ctx, cfg, registry, worker.Options{})
+}
+
+// workerRegistry is the production handler registry. The Renovate handler for
+// queue.KindRenovateRun is registered here once it exists; until then a claimed job of that
+// kind fails with "no handler" instead of reporting a Renovate run that never happened.
+func workerRegistry() worker.Registry {
+	return worker.Registry{}
 }
 
 // runWorker claims and runs jobs until ctx ends, then shuts down gracefully. With a

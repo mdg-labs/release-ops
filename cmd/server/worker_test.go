@@ -100,10 +100,19 @@ func (a *appSide) waitState(t *testing.T, id, want string) {
 	t.Fatalf("job %s is %s (attempts %d), want %s", id, state, attempts, want)
 }
 
+// The production registry has no handler for renovate_run yet, so a claimed job of that kind
+// fails with "no handler" (runner.invoke) instead of reporting a Renovate run that never
+// happened.
+func TestWorkerRegistryHasNoHandlerForRenovateRun(t *testing.T) {
+	if h, ok := workerRegistry()[queue.KindRenovateRun]; ok {
+		t.Fatalf("workerRegistry registers %T for %s; only the real Renovate handler may", h, queue.KindRenovateRun)
+	}
+}
+
 // `release-ops worker` starts with no app secret and no database path in its environment,
-// long-polls the internal listener, claims the queued job, runs the handler registered for
-// its kind and reports the result. The command registers the no-op handler for renovate_run.
-func TestWorkerCommandClaimsAndCompletesAJob(t *testing.T) {
+// long-polls the internal listener, claims the queued job and reports the result. With no
+// handler registered for renovate_run the attempt is reported failed, never succeeded.
+func TestWorkerCommandReportsAClaimedRenovateRunFailed(t *testing.T) {
 	app := newAppSide(t)
 	id := app.enqueue(t)
 
@@ -118,20 +127,38 @@ func TestWorkerCommandClaimsAndCompletesAJob(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- runWorkerCommand() }()
 
-	app.waitState(t, id, "succeeded")
-
-	// The worker serves its own /metrics on METRICS_ADDR, with the job it just ran counted,
-	// and nothing else.
-	metricsURL := "http://" + metricsAddr
+	// The failed attempt is requeued with backoff; the fake clock does not advance, so no
+	// second claim follows.
 	deadline := time.Now().Add(15 * time.Second)
 	for {
-		body := getBody(t, metricsURL+"/metrics", http.StatusOK)
-		if strings.Contains(body, `release_ops_job_runs_total{outcome="succeeded",repository="acme/repo-1"} 1`) &&
-			strings.Contains(body, `release_ops_job_duration_seconds_count{repository="acme/repo-1"} 1`) {
+		if state, attempts := app.jobState(t, id); attempts > 0 && state != queue.StateRunning {
+			if state != queue.StateQueued || attempts != 1 {
+				t.Fatalf("job = %s after %d attempts, want queued after 1 failed attempt", state, attempts)
+			}
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("the worker's metrics lack the succeeded job:\n%s", body)
+			t.Fatal("the worker did not report the claimed job")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// The worker serves its own /metrics on METRICS_ADDR, with the failed job counted and no
+	// succeeded one, and nothing else.
+	metricsURL := "http://" + metricsAddr
+	waitForStatus(t, metricsURL+"/metrics", http.StatusOK, false)
+	deadline = time.Now().Add(15 * time.Second)
+	for {
+		body := getBody(t, metricsURL+"/metrics", http.StatusOK)
+		if strings.Contains(body, `release_ops_job_runs_total{outcome="failed",repository="acme/repo-1"} 1`) &&
+			strings.Contains(body, `release_ops_job_duration_seconds_count{repository="acme/repo-1"} 1`) {
+			if strings.Contains(body, `outcome="succeeded"`) {
+				t.Fatalf("the worker counted a succeeded run:\n%s", body)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the worker's metrics lack the failed job:\n%s", body)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
