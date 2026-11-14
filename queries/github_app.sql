@@ -37,3 +37,6 @@ SELECT slug FROM github_app WHERE id = 1;
 
 -- name: CountLiveInstallations :one
 SELECT COUNT(*) FROM installations WHERE status <> 'removed';
+
+-- name: GetGitHubAppSigningKey :one
+SELECT app_id, encrypted_private_key FROM github_app WHERE id = 1;

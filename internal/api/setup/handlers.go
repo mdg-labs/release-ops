@@ -31,6 +31,10 @@ type Handlers struct {
 	// needed by Manifest and Callback only.
 	Apps      AppStore
 	Converter ManifestConverter
+	// Installations and Installer record and confirm the App's installation; both are needed
+	// by Installed only.
+	Installations InstallationStore
+	Installer     InstallationFetcher
 	// AppURL, WebhookURL and GitHubBaseURL are the configured APP_URL, WEBHOOK_URL (empty when
 	// unset) and GITHUB_BASE_URL; every URL of the manifest and of the redirects comes from them.
 	AppURL        string

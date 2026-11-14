@@ -93,6 +93,22 @@ func (q *Queries) CreateGitHubApp(ctx context.Context, arg CreateGitHubAppParams
 	return result.RowsAffected()
 }
 
+const getGitHubAppSigningKey = `-- name: GetGitHubAppSigningKey :one
+SELECT app_id, encrypted_private_key FROM github_app WHERE id = 1
+`
+
+type GetGitHubAppSigningKeyRow struct {
+	AppID               int64  `json:"app_id"`
+	EncryptedPrivateKey string `json:"encrypted_private_key"`
+}
+
+func (q *Queries) GetGitHubAppSigningKey(ctx context.Context) (GetGitHubAppSigningKeyRow, error) {
+	row := q.db.QueryRowContext(ctx, getGitHubAppSigningKey)
+	var i GetGitHubAppSigningKeyRow
+	err := row.Scan(&i.AppID, &i.EncryptedPrivateKey)
+	return i, err
+}
+
 const getGitHubAppSlug = `-- name: GetGitHubAppSlug :one
 SELECT slug FROM github_app WHERE id = 1
 `

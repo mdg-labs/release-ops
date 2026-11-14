@@ -21,6 +21,8 @@ func validEnv(t *testing.T) {
 	t.Setenv("BOOTSTRAP_ADMIN_PASSWORD", "")
 	t.Setenv("INTERNAL_ADDR", "")
 	t.Setenv("WORKER_SECRET", "")
+	t.Setenv("PRESET_REPOSITORIES", "")
+	t.Setenv("GLOBAL_CONFIG_REPO", "")
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -235,5 +237,55 @@ func TestLoadRejectsEnvExamplePlaceholders(t *testing.T) {
 	t.Setenv("SESSION_SECRET", exampleSessionSecret)
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "SESSION_SECRET") {
 		t.Fatalf("Load() error = %v, want placeholder SESSION_SECRET rejected", err)
+	}
+}
+
+func TestLoadPresetRepositories(t *testing.T) {
+	validEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(cfg.PresetRepositories) != 0 || len(cfg.JobTokenRepositories()) != 0 {
+		t.Errorf("unset presets = %v, want none", cfg.PresetRepositories)
+	}
+
+	t.Setenv("PRESET_REPOSITORIES", " acme/renovate-presets, ,Acme/RENOVATE-PRESETS,acme/other.repo_1 ")
+	t.Setenv("GLOBAL_CONFIG_REPO", "acme/renovate-global")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := strings.Join(cfg.PresetRepositories, ","); got != "acme/renovate-presets,acme/other.repo_1" {
+		t.Errorf("PresetRepositories = %q, want the trimmed list without blanks and repeats", got)
+	}
+	if got := strings.Join(cfg.JobTokenRepositories(), ","); got != "acme/renovate-presets,acme/other.repo_1,acme/renovate-global" {
+		t.Errorf("JobTokenRepositories() = %q, want the presets and then the global config repository", got)
+	}
+
+	t.Setenv("GLOBAL_CONFIG_REPO", "ACME/renovate-presets")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := strings.Join(cfg.JobTokenRepositories(), ","); got != "acme/renovate-presets,acme/other.repo_1" {
+		t.Errorf("JobTokenRepositories() = %q, want the global config repository listed once", got)
+	}
+}
+
+func TestLoadRejectsMalformedRepositoryLists(t *testing.T) {
+	for _, bad := range []string{"acme", "acme/", "/repo", "acme/repo/extra", "acme/re po", "https://github.com/acme/repo", "-acme/repo", "acme/.."} {
+		validEnv(t)
+		t.Setenv("PRESET_REPOSITORIES", "acme/ok,"+bad)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "PRESET_REPOSITORIES") {
+			t.Errorf("PRESET_REPOSITORIES with %q: error = %v, want a PRESET_REPOSITORIES error", bad, err)
+		}
+
+		validEnv(t)
+		t.Setenv("GLOBAL_CONFIG_REPO", bad)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "GLOBAL_CONFIG_REPO") {
+			t.Errorf("GLOBAL_CONFIG_REPO %q: error = %v, want a GLOBAL_CONFIG_REPO error", bad, err)
+		}
 	}
 }

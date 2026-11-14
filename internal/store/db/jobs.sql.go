@@ -177,6 +177,45 @@ func (q *Queries) GetJob(ctx context.Context, id string) (Job, error) {
 	return i, err
 }
 
+const getLeasedJob = `-- name: GetLeasedJob :one
+SELECT j.id, j.repository_id, r.full_name AS repository_full_name, i.github_installation_id
+FROM jobs j
+JOIN repositories r ON r.id = j.repository_id
+JOIN installations i ON i.id = r.installation_id
+WHERE j.id = ?1
+  AND j.state = 'running'
+  AND j.lease_owner = CAST(?2 AS TEXT)
+  AND j.lease_expires_at > CAST(?3 AS TEXT)
+  AND i.status = 'active'
+`
+
+type GetLeasedJobParams struct {
+	ID         string `json:"id"`
+	LeaseOwner string `json:"lease_owner"`
+	Now        string `json:"now"`
+}
+
+type GetLeasedJobRow struct {
+	ID                   string `json:"id"`
+	RepositoryID         string `json:"repository_id"`
+	RepositoryFullName   string `json:"repository_full_name"`
+	GithubInstallationID int64  `json:"github_installation_id"`
+}
+
+// The job a lease owner holds right now: running, leased to that owner, lease not yet expired,
+// and its repository's installation active.
+func (q *Queries) GetLeasedJob(ctx context.Context, arg GetLeasedJobParams) (GetLeasedJobRow, error) {
+	row := q.db.QueryRowContext(ctx, getLeasedJob, arg.ID, arg.LeaseOwner, arg.Now)
+	var i GetLeasedJobRow
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.RepositoryFullName,
+		&i.GithubInstallationID,
+	)
+	return i, err
+}
+
 const getQueuedJobForRepository = `-- name: GetQueuedJobForRepository :one
 SELECT id, kind, repository_id, priority, state, run_after, attempts, lease_owner, lease_expires_at, last_heartbeat_at, rerun_requested, "trigger", matched_markers, webhook_received_at, started_at, created_at, finished_at
 FROM jobs

@@ -96,6 +96,8 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("mail: %w", err)
 	}
 
+	githubClient := github.NewClient(github.APIBaseURL(cfg.GitHubBaseURL), 0)
+
 	sessionManager := auth.NewSessionManager(db.Writer, cfg.SessionSecret, cfg.SecureCookies())
 	handler := api.NewServerRouter(&api.ServerDeps{
 		DB:                db.Writer,
@@ -107,7 +109,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		AppURL:            cfg.AppURL,
 		WebhookURL:        cfg.WebhookURL,
 		GitHubBaseURL:     cfg.GitHubBaseURL,
-		GitHub:            github.NewClient(github.APIBaseURL(cfg.GitHubBaseURL), 0),
+		GitHub:            githubClient,
 	})
 
 	appCtx, cancel := context.WithCancel(ctx)
@@ -121,7 +123,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	if cfg.InternalAddr != "" {
 		background.Go(func() {
 			log.Printf("release-ops internal listener on %s", cfg.InternalAddr)
-			if err := serveInternal(appCtx, cfg, jobs); err != nil {
+			if err := serveInternal(appCtx, cfg, jobs, github.NewAppClient(githubClient, appStore.GitHubApp(), github.AppClientOptions{})); err != nil {
 				internalErr = fmt.Errorf("internal listener: %w", err)
 				cancel()
 			}
@@ -141,7 +143,12 @@ func run(ctx context.Context, cfg *config.Config) error {
 }
 
 // serveInternal serves the worker routes on INTERNAL_ADDR until ctx ends.
-func serveInternal(ctx context.Context, cfg *config.Config, q queue.Queue) error {
-	h := internalapi.NewHandler(q, internalapi.Options{Secret: cfg.WorkerSecret})
+// Its token route mints job tokens with the App's key, which stays in this process.
+func serveInternal(ctx context.Context, cfg *config.Config, q queue.Queue, tokens internalapi.TokenIssuer) error {
+	h := internalapi.NewHandler(q, internalapi.Options{
+		Secret:            cfg.WorkerSecret,
+		Tokens:            tokens,
+		TokenRepositories: cfg.JobTokenRepositories(),
+	})
 	return internalapi.Serve(ctx, cfg.InternalAddr, h, internalapi.DefaultClaimWait+30*time.Second)
 }

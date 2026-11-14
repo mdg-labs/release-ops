@@ -7,8 +7,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,6 +38,12 @@ const (
 // AppStore stores the instance's GitHub App.
 type AppStore interface {
 	Create(ctx context.Context, app store.NewGitHubApp) error
+}
+
+// InstallationStore records the instance's one installation.
+type InstallationStore interface {
+	LiveIDs(ctx context.Context) ([]int64, error)
+	Record(ctx context.Context, in store.NewInstallation) (store.InstallationOutcome, error)
 }
 
 // ManifestConverter exchanges a manifest code for the App GitHub created.
@@ -157,9 +166,95 @@ func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, InstallURL(h.GitHubBaseURL, conversion.Slug), http.StatusFound)
 }
 
-// Installed answers GET /setup/installed, GitHub's setup_url redirect after an installation. It
-// is public and stays available after setup; for now it sends the browser to /login.
+// InstallationFetcher confirms an installation with GitHub, authenticated as the App.
+type InstallationFetcher interface {
+	Installation(ctx context.Context, installationID int64) (*github.Installation, error)
+}
+
+var installationIDPattern = regexp.MustCompile(`^[0-9]{1,18}$`)
+
+// Installed answers GET /setup/installed, GitHub's setup_url redirect after an installation,
+// with installation_id and setup_action in the query. It is public and stays available after
+// setup. The installation_id is untrusted: it is fetched from GitHub with the App JWT, and only
+// what GitHub answers is stored. An id that is malformed, unknown to GitHub or of another App
+// writes nothing and is answered with an error. The instance has one installation: the repeat
+// of the recorded one, or any other installation while one is recorded, writes nothing and,
+// like a recorded one, redirects (302) to /login; the other is logged as a warning.
 func (h *Handlers) Installed(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	raw := r.URL.Query().Get("installation_id")
+	if !installationIDPattern.MatchString(raw) {
+		writeValidationError(w, "installation_id must be the numeric id GitHub sent.")
+		return
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id <= 0 {
+		writeValidationError(w, "installation_id must be the numeric id GitHub sent.")
+		return
+	}
+
+	required, err := Required(ctx, h.Queries)
+	if err != nil {
+		writeInternalError(w)
+		return
+	}
+	if required {
+		writeNotFound(w)
+		return
+	}
+
+	live, err := h.Installations.LiveIDs(ctx)
+	if err != nil {
+		slog.Error("setup installed: list installations failed", "err", err)
+		writeInternalError(w)
+		return
+	}
+	if len(live) > 0 {
+		h.finishInstalled(w, r, id, live[0] == id)
+		return
+	}
+
+	inst, err := h.Installer.Installation(ctx, id)
+	switch {
+	case errors.Is(err, github.ErrInstallationNotFound):
+		auth.WriteError(w, "NOT_FOUND", "GitHub does not know this installation.", http.StatusNotFound)
+		return
+	case err != nil:
+		slog.Error("setup installed: confirming the installation failed", "err", err)
+		auth.WriteError(w, "GITHUB_UNAVAILABLE", "GitHub could not confirm the installation.", http.StatusBadGateway)
+		return
+	}
+
+	status := "active"
+	if inst.SuspendedAt != nil {
+		status = "suspended"
+	}
+	permissions := ""
+	if raw, err := json.Marshal(inst.Permissions); err == nil && inst.Permissions != nil {
+		permissions = string(raw)
+	}
+	outcome, err := h.Installations.Record(ctx, store.NewInstallation{
+		GitHubInstallationID: inst.ID,
+		AccountID:            inst.Account.ID,
+		AccountLogin:         inst.Account.Login,
+		AccountType:          inst.Account.Type,
+		Status:               status,
+		RepositorySelection:  inst.RepositorySelection,
+		Permissions:          permissions,
+	})
+	if err != nil {
+		slog.Error("setup installed: recording the installation failed", "err", err)
+		writeInternalError(w)
+		return
+	}
+	h.finishInstalled(w, r, id, outcome != store.InstallationRefused)
+}
+
+// finishInstalled redirects to /login; an installation the instance did not take is logged.
+func (h *Handlers) finishInstalled(w http.ResponseWriter, r *http.Request, id int64, accepted bool) {
+	if !accepted {
+		slog.Warn("setup installed: another installation is already recorded; ignoring", "installation_id", id)
+	}
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
 

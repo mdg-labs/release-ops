@@ -117,3 +117,16 @@ SET state = 'queued',
     started_at = NULL
 WHERE id = sqlc.arg(id)
   AND state = 'running';
+
+-- The job a lease owner holds right now: running, leased to that owner, lease not yet expired,
+-- and its repository's installation active.
+-- name: GetLeasedJob :one
+SELECT j.id, j.repository_id, r.full_name AS repository_full_name, i.github_installation_id
+FROM jobs j
+JOIN repositories r ON r.id = j.repository_id
+JOIN installations i ON i.id = r.installation_id
+WHERE j.id = sqlc.arg(id)
+  AND j.state = 'running'
+  AND j.lease_owner = CAST(sqlc.arg(lease_owner) AS TEXT)
+  AND j.lease_expires_at > CAST(sqlc.arg(now) AS TEXT)
+  AND i.status = 'active';

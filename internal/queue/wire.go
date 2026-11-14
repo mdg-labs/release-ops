@@ -1,8 +1,11 @@
 package queue
 
+import "time"
+
 // Paths of the worker routes on the internal listener (specs.html § 2.1).
 const (
 	PathClaim     = "/internal/v1/jobs/claim"
+	PathToken     = "/internal/v1/jobs/{id}/token"
 	PathHeartbeat = "/internal/v1/jobs/{id}/heartbeat"
 	PathResult    = "/internal/v1/jobs/{id}/result"
 	PathRelease   = "/internal/v1/jobs/{id}/release"
@@ -25,4 +28,11 @@ type ResultRequest struct {
 	Outcome    string `json:"outcome"`
 	// RetryAfterSeconds is the delay an upstream asked for with a failed outcome.
 	RetryAfterSeconds int64 `json:"retry_after_seconds,omitempty"`
+}
+
+// TokenResponse is the body of a successful token request: the installation access token for
+// the job's repository and the preset repositories, and when GitHub expires it.
+type TokenResponse struct {
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
 }

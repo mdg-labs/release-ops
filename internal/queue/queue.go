@@ -104,6 +104,16 @@ type ClaimedJob struct {
 	LeaseExpiresAt     time.Time `json:"lease_expires_at"`
 }
 
+// HeldJob is a job as its lease owner holds it: running, leased to that owner, with the lease
+// not yet expired.
+type HeldJob struct {
+	ID                 string
+	RepositoryID       string
+	RepositoryFullName string
+	// InstallationID is the GitHub installation id of the repository's installation.
+	InstallationID int64
+}
+
 // HeartbeatResult answers a heartbeat. Abort tells the worker to stop the job.
 type HeartbeatResult struct {
 	Abort  bool   `json:"abort"`
@@ -155,6 +165,10 @@ type Queue interface {
 	Fail(ctx context.Context, jobID, leaseOwner string, p FailParams) (FailOutcome, error)
 	// Release gives the lease back without using an attempt.
 	Release(ctx context.Context, jobID, leaseOwner string) error
+	// HeldJob returns the job the lease owner holds under a live lease, or ErrLeaseLost when
+	// the job is unknown, not running, leased to another owner, past its lease expiry, or of
+	// an installation that is not active. It changes nothing.
+	HeldJob(ctx context.Context, jobID, leaseOwner string) (*HeldJob, error)
 	// Reap requeues, or fails, every running job whose lease has expired.
 	Reap(ctx context.Context) (ReapResult, error)
 	// Changed returns a channel that is closed when the queue next changes in a way that

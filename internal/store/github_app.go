@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 
@@ -10,6 +11,9 @@ import (
 
 // ErrGitHubAppExists is returned when the instance already has its GitHub App.
 var ErrGitHubAppExists = errors.New("github app is already configured")
+
+// ErrGitHubAppNotFound is returned when the instance has no GitHub App yet.
+var ErrGitHubAppNotFound = errors.New("github app is not configured")
 
 // NewGitHubApp is the GitHub App an instance stores at the end of the manifest flow. The
 // three secrets are plaintext here and encrypted before they reach the database.
@@ -32,6 +36,10 @@ type GitHubAppRepository interface {
 	// the same transaction. It returns ErrGitHubAppExists, changing nothing, once an App
 	// is stored.
 	Create(ctx context.Context, app NewGitHubApp) error
+	// SigningKey returns the App id and the decrypted private key (PEM), which signs the
+	// App's JWTs. The caller keeps the key in memory only, for as long as it signs, and
+	// clears it afterwards. It returns ErrGitHubAppNotFound before an App is stored.
+	SigningKey(ctx context.Context) (appID int64, privateKeyPEM []byte, err error)
 }
 
 // GitHubApp returns the GitHub App repository.
@@ -98,4 +106,19 @@ func (r githubAppRepo) Create(ctx context.Context, app NewGitHubApp) error {
 		return fmt.Errorf("commit github app: %w", err)
 	}
 	return nil
+}
+
+func (r githubAppRepo) SigningKey(ctx context.Context) (int64, []byte, error) {
+	row, err := r.store.reads.GetGitHubAppSigningKey(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil, ErrGitHubAppNotFound
+	}
+	if err != nil {
+		return 0, nil, fmt.Errorf("read github app key: %w", err)
+	}
+	pem, err := r.store.cipher.Decrypt(row.EncryptedPrivateKey)
+	if err != nil {
+		return 0, nil, errors.New("decrypt github app private key: the stored key does not match APP_ENCRYPTION_KEY")
+	}
+	return row.AppID, pem, nil
 }

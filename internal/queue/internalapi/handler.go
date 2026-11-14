@@ -8,9 +8,11 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/mdg-labs/release-ops/internal/github"
 	"github.com/mdg-labs/release-ops/internal/queue"
 )
 
@@ -21,30 +23,50 @@ const (
 	maxBodyBytes = 64 << 10
 )
 
+// TokenIssuer mints the installation access token of a job.
+type TokenIssuer interface {
+	// JobToken returns a token for a job, scoped to the target repository (owner/name) plus the
+	// extra repositories.
+	JobToken(ctx context.Context, installationID int64, target string, extra []string) (github.InstallationToken, error)
+}
+
 // Options configures the handler.
 type Options struct {
 	// Secret is the shared worker secret every request must carry as a bearer credential.
 	Secret string
 	// ClaimWait bounds a claim's long-poll; it must stay below the server's write timeout.
 	ClaimWait time.Duration
+	// Tokens mints the job tokens of the token route; without it the route is not served.
+	Tokens TokenIssuer
+	// TokenRepositories are the repositories a job's token covers besides the job's own, from
+	// instance configuration: a request never names repositories.
+	TokenRepositories []string
 }
 
 type handler struct {
-	q         queue.Queue
-	secretSum [sha256.Size]byte
-	claimWait time.Duration
+	q                 queue.Queue
+	secretSum         [sha256.Size]byte
+	claimWait         time.Duration
+	tokens            TokenIssuer
+	tokenRepositories []string
 }
 
 // NewHandler returns the worker routes over q. Every request, including one for a path no
 // route serves, is authenticated first; a path outside the table then answers 404.
 func NewHandler(q queue.Queue, opts Options) http.Handler {
-	h := &handler{q: q, secretSum: sha256.Sum256([]byte(opts.Secret)), claimWait: opts.ClaimWait}
+	h := &handler{
+		q: q, secretSum: sha256.Sum256([]byte(opts.Secret)), claimWait: opts.ClaimWait,
+		tokens: opts.Tokens, tokenRepositories: slices.Clone(opts.TokenRepositories),
+	}
 	if h.claimWait <= 0 {
 		h.claimWait = DefaultClaimWait
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST "+queue.PathClaim, h.claim)
+	if h.tokens != nil {
+		mux.HandleFunc("POST "+queue.PathToken, h.token)
+	}
 	mux.HandleFunc("POST "+queue.PathHeartbeat, h.heartbeat)
 	mux.HandleFunc("POST "+queue.PathResult, h.result)
 	mux.HandleFunc("POST "+queue.PathRelease, h.release)
@@ -109,6 +131,38 @@ func (h *handler) releaseUnsent(job *queue.ClaimedJob) {
 	if err := h.q.Release(ctx, job.ID, job.LeaseOwner); err != nil {
 		slog.Error("internal api: release of an unsent claim failed", "job", job.ID, "err", err)
 	}
+}
+
+// token issues the installation token of a job the caller holds under a live lease. The
+// repositories come from the job and from instance configuration; the request carries only
+// the lease. Any job the caller does not hold gets 409 and no call to GitHub.
+func (h *handler) token(w http.ResponseWriter, r *http.Request) {
+	var req queue.LeaseRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	ctx := r.Context()
+	id := r.PathValue("id")
+	job, err := h.q.HeldJob(ctx, id, req.LeaseOwner)
+	switch {
+	case errors.Is(err, queue.ErrLeaseLost):
+		writeError(w, http.StatusConflict, "lease is not held for this job")
+		return
+	case err != nil:
+		serverError(w, r, "token", err)
+		return
+	}
+
+	tok, err := h.tokens.JobToken(ctx, job.InstallationID, job.RepositoryFullName, h.tokenRepositories)
+	if err != nil {
+		if ctx.Err() == nil {
+			slog.Error("internal api: token request failed", "job", id, "err", err)
+			writeError(w, http.StatusBadGateway, "token could not be issued")
+		}
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, queue.TokenResponse{Token: tok.Value(), ExpiresAt: tok.ExpiresAt})
 }
 
 func (h *handler) heartbeat(w http.ResponseWriter, r *http.Request) {

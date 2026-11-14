@@ -6,6 +6,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/api/handlers"
 	apimw "github.com/mdg-labs/release-ops/internal/api/middleware"
 	"github.com/mdg-labs/release-ops/internal/api/setup"
+	"github.com/mdg-labs/release-ops/internal/github"
 )
 
 // RegisterAll wires §7 REST endpoints on the /api/v1 subrouter.
@@ -66,8 +67,10 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 		// Each manifest-flow route is limited on its own, 10 a minute per client address.
 		api.With(apimw.NewRateLimiter().SetupSession, setupHandlers.RequireSession).Post("/setup/manifest", setupHandlers.Manifest)
 		api.With(apimw.NewRateLimiter().SetupSession, setupHandlers.RequireSession).Get("/setup/callback", setupHandlers.Callback)
+		setupHandlers.Installations = deps.Store.Installations()
+		setupHandlers.Installer = github.NewAppClient(deps.GitHub, deps.Store.GitHubApp(), github.AppClientOptions{})
+		api.With(apimw.NewRateLimiter().SetupSession).Get("/setup/installed", setupHandlers.Installed)
 	}
-	api.With(apimw.NewRateLimiter().SetupSession).Get("/setup/installed", setupHandlers.Installed)
 
 	api.Group(func(protected chi.Router) {
 		protected.Use(apimw.RequireSession(deps.Session))

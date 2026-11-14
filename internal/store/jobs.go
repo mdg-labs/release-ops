@@ -320,6 +320,30 @@ func slotOf(leaseOwner string) (int, bool) {
 	return slot, err == nil
 }
 
+// HeldJob implements queue.Queue.
+func (q *JobQueue) HeldJob(ctx context.Context, jobID, leaseOwner string) (*queue.HeldJob, error) {
+	if leaseOwner == "" {
+		return nil, queue.ErrLeaseLost
+	}
+	row, err := db.New(q.db.Reader).GetLeasedJob(ctx, db.GetLeasedJobParams{
+		ID:         jobID,
+		LeaseOwner: leaseOwner,
+		Now:        formatTime(q.now()),
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, queue.ErrLeaseLost
+	}
+	if err != nil {
+		return nil, fmt.Errorf("held job: %w", err)
+	}
+	return &queue.HeldJob{
+		ID:                 row.ID,
+		RepositoryID:       row.RepositoryID,
+		RepositoryFullName: row.RepositoryFullName,
+		InstallationID:     row.GithubInstallationID,
+	}, nil
+}
+
 // Heartbeat implements queue.Queue.
 func (q *JobQueue) Heartbeat(ctx context.Context, jobID, leaseOwner string) (queue.HeartbeatResult, error) {
 	now := q.now().UTC()

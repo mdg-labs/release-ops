@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -46,6 +48,11 @@ type Config struct {
 	// together with it.
 	InternalAddr string
 	WorkerSecret string
+	// PresetRepositories are the owner/repo entries of PRESET_REPOSITORIES, e.g. a shared
+	// presets repository, and GlobalConfigRepo is GLOBAL_CONFIG_REPO. Each job's installation
+	// token covers the job's repository and these, so Renovate can resolve presets from them.
+	PresetRepositories []string
+	GlobalConfigRepo   string
 }
 
 // Load reads and validates configuration from the process environment.
@@ -63,9 +70,13 @@ func Load() (*Config, error) {
 		BootstrapAdminPassword: os.Getenv("BOOTSTRAP_ADMIN_PASSWORD"),
 		InternalAddr:           strings.TrimSpace(os.Getenv("INTERNAL_ADDR")),
 		WorkerSecret:           strings.TrimSpace(os.Getenv("WORKER_SECRET")),
+		GlobalConfigRepo:       strings.TrimSpace(os.Getenv("GLOBAL_CONFIG_REPO")),
 	}
 
 	var err error
+	if cfg.PresetRepositories, err = parseRepositoryList(os.Getenv("PRESET_REPOSITORIES")); err != nil {
+		return nil, fmt.Errorf("PRESET_REPOSITORIES: %w", err)
+	}
 	if cfg.GoInternalPort, err = envIntOrDefault("GO_INTERNAL_PORT", defaultGoInternalPort); err != nil {
 		return nil, fmt.Errorf("GO_INTERNAL_PORT: %w", err)
 	}
@@ -156,7 +167,50 @@ func (c *Config) validate() error {
 	if c.BootstrapAdminPassword != "" && c.BootstrapAdminEmail == "" {
 		return fmt.Errorf("BOOTSTRAP_ADMIN_EMAIL is required when BOOTSTRAP_ADMIN_PASSWORD is set")
 	}
+	if c.GlobalConfigRepo != "" && !validRepository(c.GlobalConfigRepo) {
+		return fmt.Errorf("GLOBAL_CONFIG_REPO must be owner/repo")
+	}
 	return c.validateInternalListener()
+}
+
+// JobTokenRepositories returns the repositories besides the job's own that a job's token
+// covers: the preset repositories, then the global config repository when one is set,
+// without repeats.
+func (c *Config) JobTokenRepositories() []string {
+	repos := slices.Clone(c.PresetRepositories)
+	if c.GlobalConfigRepo != "" && !slices.ContainsFunc(repos, func(r string) bool {
+		return strings.EqualFold(r, c.GlobalConfigRepo)
+	}) {
+		repos = append(repos, c.GlobalConfigRepo)
+	}
+	return repos
+}
+
+// repositoryPattern is owner/repo as GitHub names them: an account name and a repository
+// name made of letters, digits, dots, hyphens and underscores.
+var repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$`)
+
+func validRepository(s string) bool {
+	return repositoryPattern.MatchString(s) && !strings.HasSuffix(s, "/.") && !strings.HasSuffix(s, "/..")
+}
+
+// parseRepositoryList parses a comma-separated owner/repo list, ignoring blank entries and
+// repeats. A malformed entry is an error, so a typo does not silently narrow a job's token.
+func parseRepositoryList(raw string) ([]string, error) {
+	var repos []string
+	for entry := range strings.SplitSeq(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if !validRepository(entry) {
+			return nil, fmt.Errorf("%q is not owner/repo", entry)
+		}
+		if !slices.ContainsFunc(repos, func(r string) bool { return strings.EqualFold(r, entry) }) {
+			repos = append(repos, entry)
+		}
+	}
+	return repos, nil
 }
 
 // validateInternalListener requires INTERNAL_ADDR and WORKER_SECRET together: a listener

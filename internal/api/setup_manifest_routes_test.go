@@ -252,16 +252,21 @@ func TestSetupManifestFlowCreatesTheApp(t *testing.T) {
 		t.Errorf("github_app rows = %d, want 1", f.githubAppRows(t))
 	}
 
-	// GitHub's setup_url redirect arrives after the App is stored, so it stays public.
-	if code, _, header := doSetupRequest(t, f.client, http.MethodGet, f.srv.URL+"/api/v1/setup/installed?installation_id=1&setup_action=install", ""); code != http.StatusFound || header.Get("Location") != "/login" {
-		t.Errorf("GET /setup/installed after setup = %d to %q, want 302 to /login", code, header.Get("Location"))
-	}
-
 	// With no installation yet, the status points the operator at the App's installation page.
 	code, body := f.do(t, http.MethodGet, "/status", "")
 	if code != http.StatusOK || !strings.Contains(body, `"setupRequired":false`) ||
 		!strings.Contains(body, `"installUrl":"https://github.com/apps/release-ops-acme/installations/new"`) {
 		t.Errorf("status after setup = %d %q", code, body)
+	}
+
+	// GitHub's setup_url redirect arrives after the App is stored, so it stays public. The
+	// installation it names is already recorded here, so the redirect is answered without GitHub.
+	if _, err := f.deps.DB.Exec(`INSERT INTO installations (id, github_installation_id, account_id, account_login, account_type, status, repository_selection, created_at, updated_at)
+		VALUES ('inst-1', 1, 1, 'acme', 'Organization', 'active', 'all', '2026-11-14T12:00:00.000Z', '2026-11-14T12:00:00.000Z')`); err != nil {
+		t.Fatalf("seed installation: %v", err)
+	}
+	if code, _, header := doSetupRequest(t, f.client, http.MethodGet, f.srv.URL+"/api/v1/setup/installed?installation_id=1&setup_action=install", ""); code != http.StatusFound || header.Get("Location") != "/login" {
+		t.Errorf("GET /setup/installed after setup = %d to %q, want 302 to /login", code, header.Get("Location"))
 	}
 
 	for _, s := range manifestSecrets {
@@ -471,10 +476,10 @@ func TestSetupManifestFlowRoutesAreRateLimitedEach(t *testing.T) {
 		t.Fatalf("callback 11 = %d, want 429 with Retry-After", code)
 	}
 
-	// So does the public installed route, which needs no session.
+	// So does the public installed route, which needs no session; with no App stored it answers 404.
 	for i := range 10 {
-		if code, _, header := doSetupRequest(t, f.client, http.MethodGet, f.srv.URL+"/api/v1/setup/installed?installation_id=1&setup_action=install", ""); code != http.StatusFound || header.Get("Location") != "/login" {
-			t.Fatalf("installed %d = %d to %q, want 302 to /login", i+1, code, header.Get("Location"))
+		if code, _, _ := doSetupRequest(t, f.client, http.MethodGet, f.srv.URL+"/api/v1/setup/installed?installation_id=1&setup_action=install", ""); code != http.StatusNotFound {
+			t.Fatalf("installed %d = %d, want 404", i+1, code)
 		}
 	}
 	if code, _, header := doSetupRequest(t, f.client, http.MethodGet, f.srv.URL+"/api/v1/setup/installed", ""); code != http.StatusTooManyRequests || header.Get("Retry-After") == "" {
