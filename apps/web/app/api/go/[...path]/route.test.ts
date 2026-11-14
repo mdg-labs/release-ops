@@ -63,6 +63,26 @@ describe("Go API proxy route", () => {
     expect(await response.json()).toEqual({ user: null });
   });
 
+  // Metrics are served on METRICS_ADDR by their own listener; the Go API router has no
+  // /metrics route (internal/api TestRouterServesReadyzAndNoMetrics), so the proxy returns
+  // the 404 it gets and a scraper path is never reachable through /api/go.
+  it("answers 404 for /api/go/metrics because the Go API serves no metrics route", async () => {
+    const pool = mockAgent.get(GO_ORIGIN);
+    pool
+      .intercept({ path: "/metrics", method: "GET" })
+      .reply(404, "404 page not found\n", {
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
+
+    const response = await GET(
+      makeRequest("http://localhost:3000/api/go/metrics"),
+      routeContext(["metrics"]),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).not.toContain("release_ops_");
+  });
+
   it("forwards the preload-set X-Forwarded-For to upstream for per-IP rate limits", async () => {
     const pool = mockAgent.get(GO_ORIGIN);
     pool

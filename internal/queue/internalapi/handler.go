@@ -19,6 +19,9 @@ import (
 const (
 	// DefaultClaimWait is how long a claim waits for a job before it answers 204.
 	DefaultClaimWait = 25 * time.Second
+	// WriteTimeout is the write timeout the internal listener runs with: it outlasts the
+	// longest claim wait with room to write the response, so a long-poll is never cut off.
+	WriteTimeout = DefaultClaimWait + 30*time.Second
 	// maxBodyBytes bounds every request body.
 	maxBodyBytes = 64 << 10
 )

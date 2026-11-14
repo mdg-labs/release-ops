@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -110,11 +112,32 @@ func TestWorkerCommandClaimsAndCompletesAJob(t *testing.T) {
 	}
 	t.Setenv("INTERNAL_URL", app.url)
 	t.Setenv("WORKER_SECRET", testWorkerSecret)
+	metricsAddr := fmt.Sprintf("127.0.0.1:%d", freePort(t))
+	t.Setenv("METRICS_ADDR", metricsAddr)
 
 	done := make(chan error, 1)
 	go func() { done <- runWorkerCommand() }()
 
 	app.waitState(t, id, "succeeded")
+
+	// The worker serves its own /metrics on METRICS_ADDR, with the job it just ran counted,
+	// and nothing else.
+	metricsURL := "http://" + metricsAddr
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		body := getBody(t, metricsURL+"/metrics", http.StatusOK)
+		if strings.Contains(body, `release_ops_job_runs_total{outcome="succeeded",repository="acme/repo-1"} 1`) &&
+			strings.Contains(body, `release_ops_job_duration_seconds_count{repository="acme/repo-1"} 1`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the worker's metrics lack the succeeded job:\n%s", body)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	for _, path := range []string{"/", "/healthz", "/readyz", "/internal/v1/jobs/claim"} {
+		getBody(t, metricsURL+path, http.StatusNotFound)
+	}
 
 	// SIGTERM is what stops a worker container; the command's signal context catches it.
 	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
@@ -169,7 +192,7 @@ func TestKilledWorkerJobIsReapedAndRunOnceBySecondWorker(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runWorker(workerCtx, &config.WorkerConfig{InternalURL: app.url, WorkerSecret: testWorkerSecret}, worker.Registry{
+		_ = runWorker(workerCtx, &config.WorkerConfig{InternalURL: app.url, WorkerSecret: testWorkerSecret}, worker.Registry{
 			queue.KindRenovateRun: worker.HandlerFunc(func(_ context.Context, job queue.ClaimedJob) worker.Result {
 				runs.Add(1)
 				if job.Attempt != 2 {
@@ -289,4 +312,130 @@ func waitForStatus(t *testing.T, url string, want int, bearer bool) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("%s did not answer %d: %v", url, want, last)
+}
+
+func getBody(t *testing.T, url string, wantStatus int) string {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read %s: %v", url, err)
+	}
+	if resp.StatusCode != wantStatus {
+		t.Fatalf("GET %s = %d, want %d: %s", url, resp.StatusCode, wantStatus, body)
+	}
+	return string(body)
+}
+
+// The app serves /healthz as liveness, /readyz as readiness (503 until a worker has made
+// contact on the internal listener) and /metrics on METRICS_ADDR only: the public Go listener
+// answers 404 for it, as the /api/go proxy forwards to it, and the metrics listener serves
+// nothing else.
+func TestServerServesReadinessAndMetricsOnTheirListeners(t *testing.T) {
+	publicPort, internalPort, metricsPort := freePort(t), freePort(t), freePort(t)
+	cfg := &config.Config{
+		SessionSecret:          strings.Repeat("s", 32),
+		AppEncryptionKey:       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+		AppDBPath:              filepath.Join(t.TempDir(), "app.db"),
+		GoInternalPort:         publicPort,
+		BootstrapAdminEmail:    "admin@example.com",
+		BootstrapAdminPassword: "correct-horse-battery",
+		InternalAddr:           fmt.Sprintf("127.0.0.1:%d", internalPort),
+		WorkerSecret:           testWorkerSecret,
+		MetricsAddr:            fmt.Sprintf("127.0.0.1:%d", metricsPort),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, cfg) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("run: %v", err)
+			}
+		case <-time.After(20 * time.Second):
+			t.Error("server did not shut down")
+		}
+	})
+
+	public := fmt.Sprintf("http://127.0.0.1:%d", publicPort)
+	internal := fmt.Sprintf("http://127.0.0.1:%d", internalPort)
+	metricsURL := fmt.Sprintf("http://127.0.0.1:%d", metricsPort)
+	waitForStatus(t, public+"/healthz", http.StatusOK, false)
+
+	if body := getBody(t, public+"/readyz", http.StatusServiceUnavailable); !strings.Contains(body, "no worker has contacted the app") {
+		t.Errorf("readyz before any worker = %s", body)
+	}
+
+	// A worker's heartbeat on the internal listener is a contact.
+	req, _ := http.NewRequest(http.MethodPost, internal+"/internal/v1/jobs/x/heartbeat", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+testWorkerSecret)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+	_ = resp.Body.Close()
+	getBody(t, public+"/readyz", http.StatusOK)
+
+	body := getBody(t, metricsURL+"/metrics", http.StatusOK)
+	for _, want := range []string{
+		`release_ops_queue_depth{priority="high"} 0`,
+		`release_ops_queue_depth{priority="normal"} 0`,
+		"release_ops_queue_oldest_age_seconds 0",
+		"release_ops_webhook_lag_seconds_count 0",
+		"go_goroutines",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("app metrics lack %q", want)
+		}
+	}
+	if strings.Contains(body, cfg.WorkerSecret) || strings.Contains(body, cfg.SessionSecret) || strings.Contains(body, cfg.AppEncryptionKey) {
+		t.Error("the metrics output carries a secret")
+	}
+	for _, path := range []string{"/", "/healthz", "/readyz", "/api/v1/status"} {
+		getBody(t, metricsURL+path, http.StatusNotFound)
+	}
+	getBody(t, public+"/metrics", http.StatusNotFound)
+	// The internal listener authenticates every request first; with the secret, /metrics is
+	// still no route there.
+	req, _ = http.NewRequest(http.MethodGet, internal+"/metrics", nil)
+	req.Header.Set("Authorization", "Bearer "+testWorkerSecret)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET internal /metrics: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("internal listener GET /metrics with the secret = %d, want 404", resp.StatusCode)
+	}
+}
+
+// A METRICS_ADDR the app cannot bind stops it with an error, not silently without metrics.
+func TestServerFailsWhenTheMetricsListenerCannotBind(t *testing.T) {
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = busy.Close() }()
+
+	cfg := &config.Config{
+		SessionSecret:          strings.Repeat("s", 32),
+		AppEncryptionKey:       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+		AppDBPath:              filepath.Join(t.TempDir(), "app.db"),
+		GoInternalPort:         freePort(t),
+		BootstrapAdminEmail:    "admin@example.com",
+		BootstrapAdminPassword: "correct-horse-battery",
+		MetricsAddr:            busy.Addr().String(),
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := run(ctx, cfg); err == nil || !strings.Contains(err.Error(), "metrics listener") {
+		t.Fatalf("run = %v, want a metrics listener error", err)
+	}
 }

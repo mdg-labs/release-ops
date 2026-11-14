@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/crypto"
 	"github.com/mdg-labs/release-ops/internal/github"
 	"github.com/mdg-labs/release-ops/internal/mail"
+	"github.com/mdg-labs/release-ops/internal/metrics"
 	"github.com/mdg-labs/release-ops/internal/providers/integrationtester"
 	"github.com/mdg-labs/release-ops/internal/queue"
 	"github.com/mdg-labs/release-ops/internal/queue/internalapi"
@@ -98,6 +100,22 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 	githubClient := github.NewClient(github.APIBaseURL(cfg.GitHubBaseURL), 0)
 
+	registry := metrics.NewRegistry()
+	jobMetrics, err := metrics.NewJobs(registry)
+	if err != nil {
+		return fmt.Errorf("metrics: %w", err)
+	}
+	// The webhook receiver observes the lag histogram; it is registered here so the name is served.
+	if _, err := metrics.NewWebhookLag(registry); err != nil {
+		return fmt.Errorf("metrics: %w", err)
+	}
+	jobs := store.NewJobQueue(db, store.JobQueueOptions{
+		OnLeaseExpired: func(repository string) { jobMetrics.Ended(repository, metrics.OutcomeLeaseExpired) },
+	})
+	if err := metrics.RegisterQueue(registry, jobs); err != nil {
+		return fmt.Errorf("metrics: %w", err)
+	}
+
 	sessionManager := auth.NewSessionManager(db.Writer, cfg.SessionSecret, cfg.SecureCookies())
 	handler := api.NewServerRouter(&api.ServerDeps{
 		DB:                db.Writer,
@@ -110,16 +128,25 @@ func run(ctx context.Context, cfg *config.Config) error {
 		WebhookURL:        cfg.WebhookURL,
 		GitHubBaseURL:     cfg.GitHubBaseURL,
 		GitHub:            githubClient,
+		Queue:             jobs,
 	})
 
 	appCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	jobs := store.NewJobQueue(db, store.JobQueueOptions{})
 	var background sync.WaitGroup
 	background.Go(func() {
 		queue.RunReaper(appCtx, jobs, reapInterval, func(err error) { log.Printf("job reaper: %v", err) })
 	})
-	var internalErr error
+	var internalErr, metricsErr error
+	if cfg.MetricsAddr != "" {
+		background.Go(func() {
+			log.Printf("release-ops metrics listener on %s", cfg.MetricsAddr)
+			if err := metrics.Serve(appCtx, cfg.MetricsAddr, registry); err != nil {
+				metricsErr = fmt.Errorf("metrics listener: %w", err)
+				cancel()
+			}
+		})
+	}
 	if cfg.InternalAddr != "" {
 		background.Go(func() {
 			log.Printf("release-ops internal listener on %s", cfg.InternalAddr)
@@ -139,7 +166,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	if serveErr != nil {
 		return fmt.Errorf("server: %w", serveErr)
 	}
-	return internalErr
+	return errors.Join(internalErr, metricsErr)
 }
 
 // serveInternal serves the worker routes on INTERNAL_ADDR until ctx ends.
@@ -150,5 +177,5 @@ func serveInternal(ctx context.Context, cfg *config.Config, q queue.Queue, token
 		Tokens:            tokens,
 		TokenRepositories: cfg.JobTokenRepositories(),
 	})
-	return internalapi.Serve(ctx, cfg.InternalAddr, h, internalapi.DefaultClaimWait+30*time.Second)
+	return internalapi.Serve(ctx, cfg.InternalAddr, h, internalapi.WriteTimeout)
 }

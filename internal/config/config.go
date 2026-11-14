@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"regexp"
@@ -14,10 +15,13 @@ const (
 	defaultAppDBPath      = "/data/app.db"
 	defaultGoInternalPort = 8080
 	defaultPort           = 3000
-	defaultGoAPIURL       = "http://127.0.0.1:8080"
-	minSessionSecretLen   = 32
-	encryptionKeyHexLen   = 64
-	minWorkerSecretLen    = 32
+	// defaultMetricsAddr is loopback: an operator opens the metrics listener to a scraper by
+	// setting METRICS_ADDR, never by default.
+	defaultMetricsAddr  = "127.0.0.1:9100"
+	defaultGoAPIURL     = "http://127.0.0.1:8080"
+	minSessionSecretLen = 32
+	encryptionKeyHexLen = 64
+	minWorkerSecretLen  = 32
 	// minSetupTokenLen is the length of the token the server generates (32 random bytes as
 	// hex), so an operator-supplied SETUP_TOKEN is never easier to guess than a generated one.
 	minSetupTokenLen = 64
@@ -48,6 +52,8 @@ type Config struct {
 	// together with it.
 	InternalAddr string
 	WorkerSecret string
+	// MetricsAddr is where the /metrics listener binds (METRICS_ADDR); empty means no listener.
+	MetricsAddr string
 	// PresetRepositories are the owner/repo entries of PRESET_REPOSITORIES, e.g. a shared
 	// presets repository, and GlobalConfigRepo is GLOBAL_CONFIG_REPO. Each job's installation
 	// token covers the job's repository and these, so Renovate can resolve presets from them.
@@ -71,9 +77,13 @@ func Load() (*Config, error) {
 		InternalAddr:           strings.TrimSpace(os.Getenv("INTERNAL_ADDR")),
 		WorkerSecret:           strings.TrimSpace(os.Getenv("WORKER_SECRET")),
 		GlobalConfigRepo:       strings.TrimSpace(os.Getenv("GLOBAL_CONFIG_REPO")),
+		MetricsAddr:            envOrDefault("METRICS_ADDR", defaultMetricsAddr),
 	}
 
 	var err error
+	if err = validateListenAddr(cfg.MetricsAddr); err != nil {
+		return nil, fmt.Errorf("METRICS_ADDR: %w", err)
+	}
 	if cfg.PresetRepositories, err = parseRepositoryList(os.Getenv("PRESET_REPOSITORIES")); err != nil {
 		return nil, fmt.Errorf("PRESET_REPOSITORIES: %w", err)
 	}
@@ -248,6 +258,18 @@ func validateURL(name, raw string, required bool) error {
 func validateWorkerSecret(secret string) error {
 	if len(secret) < minWorkerSecretLen {
 		return fmt.Errorf("WORKER_SECRET must be at least %d bytes; generate one with: openssl rand -base64 32", minWorkerSecretLen)
+	}
+	return nil
+}
+
+// validateListenAddr checks that addr is a host:port with a numeric port, e.g. ":9100".
+func validateListenAddr(addr string) error {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("must be host:port, e.g. 127.0.0.1:9100")
+	}
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("port must be a number from 1 to 65535")
 	}
 	return nil
 }

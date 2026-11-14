@@ -11,6 +11,7 @@ import (
 	mathrand "math/rand/v2"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/mdg-labs/release-ops/internal/queue"
@@ -30,6 +31,9 @@ type JobQueueOptions struct {
 	Now func() time.Time
 	// Rand returns a value in [0, 1) for the backoff jitter.
 	Rand func() float64
+	// OnLeaseExpired is called after Reap ends an attempt whose lease expired, with the full
+	// name of the job's repository. The attempt ended without a result from the worker.
+	OnLeaseExpired func(repository string)
 }
 
 // JobQueue is the SQLite implementation of queue.Queue over the jobs table. Every write
@@ -41,13 +45,17 @@ type JobQueue struct {
 	now      func() time.Time
 	rand     func() float64
 	notifier queue.Notifier
+	// onLeaseExpired is nil when nobody counts expired attempts.
+	onLeaseExpired func(repository string)
+	// lastContact is the unix-nanosecond time of the last worker contact; 0 before the first.
+	lastContact atomic.Int64
 }
 
 var _ queue.Queue = (*JobQueue)(nil)
 
 // NewJobQueue returns the queue over d's writer connection.
 func NewJobQueue(d *DB, opts JobQueueOptions) *JobQueue {
-	q := &JobQueue{db: d, cfg: opts.Config, now: opts.Now, rand: opts.Rand}
+	q := &JobQueue{db: d, cfg: opts.Config, now: opts.Now, rand: opts.Rand, onLeaseExpired: opts.OnLeaseExpired}
 	if q.cfg == (queue.Config{}) {
 		q.cfg = queue.DefaultConfig()
 	}
@@ -63,6 +71,41 @@ func NewJobQueue(d *DB, opts JobQueueOptions) *JobQueue {
 // Changed implements queue.Queue.
 func (q *JobQueue) Changed() <-chan struct{} {
 	return q.notifier.Changed()
+}
+
+// touch records a worker contact. The internal listener authenticates a request before any
+// queue method runs, so every call here comes from a worker holding the secret.
+func (q *JobQueue) touch() {
+	q.lastContact.Store(q.now().UnixNano())
+}
+
+// LastWorkerContact implements queue.Queue. The contact is held in memory, as an idle worker
+// writes nothing: after the app restarts it reads "none" until the worker's next claim.
+func (q *JobQueue) LastWorkerContact(context.Context) (time.Time, bool, error) {
+	ns := q.lastContact.Load()
+	if ns == 0 {
+		return time.Time{}, false, nil
+	}
+	return time.Unix(0, ns).UTC(), true, nil
+}
+
+// Stats implements queue.Queue.
+func (q *JobQueue) Stats(ctx context.Context) (queue.Stats, error) {
+	now := q.now().UTC()
+	rows, err := db.New(q.db.Reader).CountEligibleQueuedJobs(ctx, formatTime(now))
+	if err != nil {
+		return queue.Stats{}, fmt.Errorf("queue stats: %w", err)
+	}
+	stats := queue.Stats{Depth: map[queue.Priority]int{queue.PriorityHigh: 0, queue.PriorityNormal: 0}}
+	for _, row := range rows {
+		eligibleAt, err := time.Parse(timeLayout, row.OldestEligibleAt)
+		if err != nil {
+			return queue.Stats{}, fmt.Errorf("queue stats: run_after %q: %w", row.OldestEligibleAt, err)
+		}
+		stats.Depth[queue.Priority(row.Priority)] = int(row.Depth)
+		stats.OldestAge = max(stats.OldestAge, now.Sub(eligibleAt))
+	}
+	return stats, nil
 }
 
 func (q *JobQueue) inTx(ctx context.Context, fn func(*db.Queries) error) error {
@@ -210,6 +253,7 @@ func unionMarkers(existing sql.NullString, added []string) []string {
 // Claim implements queue.Queue. The slot a claim names is the lowest one below the cap that
 // no running job holds; it is kept as the prefix of the lease owner, so it needs no column.
 func (q *JobQueue) Claim(ctx context.Context) (*queue.ClaimedJob, error) {
+	q.touch()
 	var claimed *queue.ClaimedJob
 	err := q.inTx(ctx, func(qtx *db.Queries) error {
 		limit, err := q.concurrencyCap(ctx, qtx)
@@ -322,6 +366,7 @@ func slotOf(leaseOwner string) (int, bool) {
 
 // HeldJob implements queue.Queue.
 func (q *JobQueue) HeldJob(ctx context.Context, jobID, leaseOwner string) (*queue.HeldJob, error) {
+	q.touch()
 	if leaseOwner == "" {
 		return nil, queue.ErrLeaseLost
 	}
@@ -346,6 +391,7 @@ func (q *JobQueue) HeldJob(ctx context.Context, jobID, leaseOwner string) (*queu
 
 // Heartbeat implements queue.Queue.
 func (q *JobQueue) Heartbeat(ctx context.Context, jobID, leaseOwner string) (queue.HeartbeatResult, error) {
+	q.touch()
 	now := q.now().UTC()
 	_, err := db.New(q.db.Writer).HeartbeatJob(ctx, db.HeartbeatJobParams{
 		ID:             jobID,
@@ -387,6 +433,7 @@ func heldJob(ctx context.Context, qtx *db.Queries, jobID, leaseOwner string) (jo
 
 // Complete implements queue.Queue.
 func (q *JobQueue) Complete(ctx context.Context, jobID, leaseOwner string) error {
+	q.touch()
 	err := q.inTx(ctx, func(qtx *db.Queries) error {
 		job, finished, err := heldJob(ctx, qtx, jobID, leaseOwner)
 		if err != nil {
@@ -410,6 +457,7 @@ func (q *JobQueue) Complete(ctx context.Context, jobID, leaseOwner string) error
 
 // Fail implements queue.Queue.
 func (q *JobQueue) Fail(ctx context.Context, jobID, leaseOwner string, p queue.FailParams) (queue.FailOutcome, error) {
+	q.touch()
 	var outcome queue.FailOutcome
 	err := q.inTx(ctx, func(qtx *db.Queries) error {
 		job, finished, err := heldJob(ctx, qtx, jobID, leaseOwner)
@@ -435,6 +483,7 @@ func (q *JobQueue) Fail(ctx context.Context, jobID, leaseOwner string, p queue.F
 
 // Release implements queue.Queue.
 func (q *JobQueue) Release(ctx context.Context, jobID, leaseOwner string) error {
+	q.touch()
 	err := q.inTx(ctx, func(qtx *db.Queries) error {
 		job, finished, err := heldJob(ctx, qtx, jobID, leaseOwner)
 		if err != nil {
@@ -455,12 +504,19 @@ func (q *JobQueue) Release(ctx context.Context, jobID, leaseOwner string) error 
 // Reap implements queue.Queue.
 func (q *JobQueue) Reap(ctx context.Context) (queue.ReapResult, error) {
 	var res queue.ReapResult
+	var expiredRepos []string
 	err := q.inTx(ctx, func(qtx *db.Queries) error {
 		expired, err := qtx.ListExpiredJobs(ctx, nullString(formatTime(q.now())))
 		if err != nil {
 			return err
 		}
+		expiredRepos = expiredRepos[:0]
 		for _, job := range expired {
+			fullName, err := qtx.GetRepositoryFullName(ctx, job.RepositoryID)
+			if err != nil {
+				return err
+			}
+			expiredRepos = append(expiredRepos, fullName)
 			outcome, err := q.endAttempt(ctx, qtx, job, attemptFailed, 0)
 			if err != nil {
 				return err
@@ -475,6 +531,11 @@ func (q *JobQueue) Reap(ctx context.Context) (queue.ReapResult, error) {
 	})
 	if err != nil {
 		return queue.ReapResult{}, fmt.Errorf("reap: %w", err)
+	}
+	if q.onLeaseExpired != nil {
+		for _, repository := range expiredRepos {
+			q.onLeaseExpired(repository)
+		}
 	}
 	if res.Requeued+res.Failed > 0 {
 		q.notifier.Notify()

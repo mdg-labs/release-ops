@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"os/exec"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mdg-labs/release-ops/internal/metrics"
 	"github.com/mdg-labs/release-ops/internal/queue"
 	"github.com/mdg-labs/release-ops/internal/queue/internalapi"
 	"github.com/mdg-labs/release-ops/internal/queue/worker"
@@ -192,6 +194,86 @@ func TestWorkerReportsAFailedAttemptAndHonoursRetryAfter(t *testing.T) {
 	e.waitAttempts(t, id, 2)
 	if n := runs.Load(); n != 2 {
 		t.Fatalf("handler ran %d times after the Retry-After window, want 2", n)
+	}
+}
+
+func scrapeMetrics(t *testing.T, reg *metrics.Registry) string {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	reg.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("scrape = %d: %s", rec.Code, rec.Body.String())
+	}
+	return rec.Body.String()
+}
+
+// The job lifecycle records every attempt by outcome and times it: a succeeded one, a failed
+// one, and one the worker lost the lease of (aborted).
+func TestWorkerRecordsJobRunsFailuresAndDuration(t *testing.T) {
+	e := newEnv(t)
+	reg := metrics.NewRegistry()
+	jobs, err := metrics.NewJobs(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := opts()
+	o.Jobs = jobs
+
+	ok := e.enqueue(t, e.repos[0])
+	failing := e.enqueue(t, e.repos[1])
+	e.enqueue(t, e.repos[2])
+
+	running := make(chan struct{})
+	start(t, e, worker.Registry{
+		queue.KindRenovateRun: worker.HandlerFunc(func(ctx context.Context, job queue.ClaimedJob) worker.Result {
+			switch job.RepositoryFullName {
+			case "acme/repo-2":
+				return worker.Result{Err: errors.New("renovate exited 1"), RetryAfter: time.Hour}
+			case "acme/repo-3":
+				close(running)
+				<-ctx.Done()
+				return worker.Result{Err: ctx.Err()}
+			}
+			return worker.Result{}
+		}),
+	}, o)
+
+	e.waitState(t, ok, "succeeded")
+	e.waitAttempts(t, failing, 1)
+	<-running
+	time.Sleep(50 * time.Millisecond)
+	// Past the lease of the running job, inside the failed job's Retry-After.
+	e.clock.Advance(3 * time.Minute)
+	if res, err := e.q.Reap(context.Background()); err != nil || res.Requeued != 1 {
+		t.Fatalf("Reap = %+v, %v", res, err)
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	var body string
+	for {
+		body = scrapeMetrics(t, reg)
+		if strings.Contains(body, `outcome="aborted",repository="acme/repo-3"} 1`) &&
+			strings.Contains(body, `outcome="succeeded",repository="acme/repo-1"} 1`) &&
+			strings.Contains(body, `outcome="failed",repository="acme/repo-2"} 1`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("metrics lack the three outcomes:\n%s", body)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for _, want := range []string{
+		`release_ops_job_failures_total{repository="acme/repo-2"} 1`,
+		`release_ops_job_duration_seconds_count{repository="acme/repo-1"} 1`,
+		`release_ops_job_duration_seconds_count{repository="acme/repo-2"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics lack %q", want)
+		}
+	}
+	if strings.Contains(body, `release_ops_job_failures_total{repository="acme/repo-1"}`) ||
+		strings.Contains(body, `release_ops_job_failures_total{repository="acme/repo-3"}`) {
+		t.Error("a succeeded or aborted attempt counted as a failure")
 	}
 }
 

@@ -23,6 +23,7 @@ func validEnv(t *testing.T) {
 	t.Setenv("WORKER_SECRET", "")
 	t.Setenv("PRESET_REPOSITORIES", "")
 	t.Setenv("GLOBAL_CONFIG_REPO", "")
+	t.Setenv("METRICS_ADDR", "")
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -287,5 +288,34 @@ func TestLoadRejectsMalformedRepositoryLists(t *testing.T) {
 		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "GLOBAL_CONFIG_REPO") {
 			t.Errorf("GLOBAL_CONFIG_REPO %q: error = %v, want a GLOBAL_CONFIG_REPO error", bad, err)
 		}
+	}
+}
+
+func TestLoadMetricsAddr(t *testing.T) {
+	for _, tc := range []struct {
+		name, env, want, wantErr string
+	}{
+		{"default is loopback", "", "127.0.0.1:9100", ""},
+		{"all interfaces on the compose network", ":9100", ":9100", ""},
+		{"explicit host", "10.0.0.5:9200", "10.0.0.5:9200", ""},
+		{"no port", "127.0.0.1", "", "METRICS_ADDR"},
+		{"non-numeric port", "127.0.0.1:metrics", "", "METRICS_ADDR"},
+		{"port out of range", ":70000", "", "METRICS_ADDR"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			validEnv(t)
+			t.Setenv("METRICS_ADDR", tc.env)
+
+			cfg, err := Load()
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("Load() = %v, want %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil || cfg.MetricsAddr != tc.want {
+				t.Fatalf("Load() = %+v, %v; want MetricsAddr %q", cfg, err, tc.want)
+			}
+		})
 	}
 }

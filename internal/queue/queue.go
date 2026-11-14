@@ -146,6 +146,20 @@ type ReapResult struct {
 	Failed   int
 }
 
+// WorkerContactWindow is how recent the last worker contact must be for the app to count a
+// worker as connected, and for /readyz to answer ready. A connected worker has a claim
+// long-poll open (up to DefaultClaimWait on the internal listener) or a job heartbeating
+// every 30 seconds, so a healthy one is heard from well inside it.
+const WorkerContactWindow = 90 * time.Second
+
+// Stats is a snapshot of the eligible queue: the queued jobs whose run_after has passed.
+type Stats struct {
+	// Depth counts the eligible queued jobs per priority; both priorities are always present.
+	Depth map[Priority]int
+	// OldestAge is how long the oldest eligible job has been eligible; zero when none is.
+	OldestAge time.Duration
+}
+
 // Queue is the job queue. The app owns the only implementation in v2.0 (SQLite); the
 // interface keeps a Postgres one possible. Every method that names a lease takes the
 // lease owner the claim returned and answers ErrLeaseLost when it no longer holds; a
@@ -171,6 +185,12 @@ type Queue interface {
 	HeldJob(ctx context.Context, jobID, leaseOwner string) (*HeldJob, error)
 	// Reap requeues, or fails, every running job whose lease has expired.
 	Reap(ctx context.Context) (ReapResult, error)
+	// LastWorkerContact returns when the app last heard from a worker: a claim, a token
+	// request, a heartbeat, a result or a release. ok is false before the first contact since
+	// the process started: idle workers send no heartbeats, so the claim poll counts.
+	LastWorkerContact(ctx context.Context) (at time.Time, ok bool, err error)
+	// Stats reads the eligible queue.
+	Stats(ctx context.Context) (Stats, error)
 	// Changed returns a channel that is closed when the queue next changes in a way that
 	// can make a job claimable. Take it before trying a claim, so no change is missed.
 	Changed() <-chan struct{}

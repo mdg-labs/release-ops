@@ -14,6 +14,9 @@ type WorkerConfig struct {
 	// InternalURL is where the app's internal listener is reachable (INTERNAL_URL).
 	InternalURL  string
 	WorkerSecret string
+	// MetricsAddr is where the worker's /metrics listener binds (METRICS_ADDR); empty means
+	// no listener.
+	MetricsAddr string
 }
 
 // LoadWorker reads and validates the worker's configuration from the process environment.
@@ -21,6 +24,10 @@ func LoadWorker() (*WorkerConfig, error) {
 	cfg := &WorkerConfig{
 		InternalURL:  strings.TrimSpace(os.Getenv("INTERNAL_URL")),
 		WorkerSecret: strings.TrimSpace(os.Getenv("WORKER_SECRET")),
+		MetricsAddr:  envOrDefault("METRICS_ADDR", defaultMetricsAddr),
+	}
+	if err := validateListenAddr(cfg.MetricsAddr); err != nil {
+		return nil, fmt.Errorf("METRICS_ADDR: %w", err)
 	}
 	if cfg.InternalURL == "" {
 		return nil, fmt.Errorf("INTERNAL_URL is required")

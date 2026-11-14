@@ -130,3 +130,12 @@ WHERE j.id = sqlc.arg(id)
   AND j.lease_owner = CAST(sqlc.arg(lease_owner) AS TEXT)
   AND j.lease_expires_at > CAST(sqlc.arg(now) AS TEXT)
   AND i.status = 'active';
+
+-- The eligible queue per priority: queued jobs whose run_after has passed. oldest_eligible_at
+-- is the time the oldest of them became eligible.
+-- name: CountEligibleQueuedJobs :many
+SELECT priority, COUNT(*) AS depth, CAST(MIN(run_after) AS TEXT) AS oldest_eligible_at
+FROM jobs
+WHERE state = 'queued'
+  AND run_after <= ?
+GROUP BY priority;

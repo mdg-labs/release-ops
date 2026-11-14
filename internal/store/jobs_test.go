@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -698,5 +699,141 @@ func TestEnqueueRejectsAnInvalidRequest(t *testing.T) {
 	}
 	if n := e.count(t, `1 = 1`); n != 0 {
 		t.Fatalf("%d jobs after refused enqueues, want 0", n)
+	}
+}
+
+func TestLastWorkerContactCoversEveryWorkerCall(t *testing.T) {
+	ctx := context.Background()
+	e := newJobEnv(t, 1)
+
+	if _, ok, err := e.q.LastWorkerContact(ctx); err != nil || ok {
+		t.Fatalf("LastWorkerContact before any call = ok %v, %v; want none", ok, err)
+	}
+
+	// An idle worker only polls: a claim that finds nothing is a contact.
+	e.wantNoClaim(t)
+	at, ok, err := e.q.LastWorkerContact(ctx)
+	if err != nil || !ok || !at.Equal(e.clock.Now()) {
+		t.Fatalf("after an empty claim = %v, ok %v, %v; want %v", at, ok, err, e.clock.Now())
+	}
+
+	e.enqueue(t, e.repos[0], queue.PriorityHigh)
+	job := e.claim(t)
+	for _, step := range []struct {
+		name string
+		call func() error
+	}{
+		{"heartbeat", func() error { _, err := e.q.Heartbeat(ctx, job.ID, job.LeaseOwner); return err }},
+		{"held job", func() error { _, err := e.q.HeldJob(ctx, job.ID, job.LeaseOwner); return err }},
+		{"release", func() error { return e.q.Release(ctx, job.ID, job.LeaseOwner) }},
+	} {
+		name, call := step.name, step.call
+		e.clock.Advance(time.Second)
+		if err := call(); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if at, _, _ := e.q.LastWorkerContact(ctx); !at.Equal(e.clock.Now()) {
+			t.Errorf("after %s the contact is %v, want %v", name, at, e.clock.Now())
+		}
+	}
+
+	e.clock.Advance(time.Second)
+	job = e.claim(t)
+	e.clock.Advance(time.Second)
+	if err := e.q.Complete(ctx, job.ID, job.LeaseOwner); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if at, _, _ := e.q.LastWorkerContact(ctx); !at.Equal(e.clock.Now()) {
+		t.Errorf("after a result the contact is %v, want %v", at, e.clock.Now())
+	}
+
+	// The app's own reaper is not a worker.
+	e.clock.Advance(time.Minute)
+	if _, err := e.q.Reap(ctx); err != nil {
+		t.Fatalf("Reap: %v", err)
+	}
+	if at, _, _ := e.q.LastWorkerContact(ctx); at.Equal(e.clock.Now()) {
+		t.Error("a reap pass counted as a worker contact")
+	}
+}
+
+func TestStatsCountsOnlyEligibleQueuedJobs(t *testing.T) {
+	ctx := context.Background()
+	e := newJobEnv(t, 4)
+	e.setCap(t, 1)
+
+	empty, err := e.q.Stats(ctx)
+	if err != nil || empty.OldestAge != 0 || empty.Depth[queue.PriorityHigh] != 0 || empty.Depth[queue.PriorityNormal] != 0 {
+		t.Fatalf("Stats of an empty queue = %+v, %v; want zeros for both priorities", empty, err)
+	}
+	if _, ok := empty.Depth[queue.PriorityNormal]; !ok {
+		t.Fatal("Stats of an empty queue omits a priority")
+	}
+
+	e.enqueue(t, e.repos[0], queue.PriorityNormal)
+	e.clock.Advance(40 * time.Second)
+	e.enqueue(t, e.repos[1], queue.PriorityNormal)
+	e.enqueue(t, e.repos[2], queue.PriorityHigh)
+	e.clock.Advance(20 * time.Second)
+
+	stats, err := e.q.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.Depth[queue.PriorityNormal] != 2 || stats.Depth[queue.PriorityHigh] != 1 {
+		t.Errorf("Depth = %v, want 2 normal and 1 high", stats.Depth)
+	}
+	if stats.OldestAge != time.Minute {
+		t.Errorf("OldestAge = %v, want 1m (the first job, queued 60s ago)", stats.OldestAge)
+	}
+
+	// A job that failed and waits out its backoff is not eligible yet, and a running job is
+	// not queued: neither counts.
+	e.enqueue(t, e.repos[3], queue.PriorityHigh)
+	job := e.claim(t)
+	if _, err := e.q.Fail(ctx, job.ID, job.LeaseOwner, queue.FailParams{}); err != nil {
+		t.Fatalf("Fail: %v", err)
+	}
+	after, err := e.q.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if got := after.Depth[queue.PriorityNormal] + after.Depth[queue.PriorityHigh]; got != 3 {
+		t.Errorf("Depth = %v after a failed job entered its backoff, want the 3 eligible jobs only", after.Depth)
+	}
+}
+
+func TestReapReportsEachExpiredAttemptByRepository(t *testing.T) {
+	ctx := context.Background()
+	e := newJobEnv(t, 2)
+	e.setCap(t, 2)
+
+	var expired []string
+	q := store.NewJobQueue(e.db, store.JobQueueOptions{
+		Now:            e.clock.Now,
+		Rand:           func() float64 { return 0.5 },
+		OnLeaseExpired: func(repository string) { expired = append(expired, repository) },
+	})
+	for _, repo := range e.repos {
+		if _, err := q.Enqueue(ctx, queue.EnqueueParams{RepositoryID: repo, Priority: queue.PriorityHigh, Trigger: queue.TriggerPush}); err != nil {
+			t.Fatalf("Enqueue: %v", err)
+		}
+	}
+	for range e.repos {
+		if _, err := q.Claim(ctx); err != nil {
+			t.Fatalf("Claim: %v", err)
+		}
+	}
+
+	if _, err := q.Reap(ctx); err != nil || len(expired) != 0 {
+		t.Fatalf("Reap before expiry = %v, expired %v; want none", err, expired)
+	}
+	e.clock.Advance(queue.DefaultConfig().LeaseDuration + time.Second)
+	if _, err := q.Reap(ctx); err != nil {
+		t.Fatalf("Reap: %v", err)
+	}
+	slices.Sort(expired)
+	if !slices.Equal(expired, []string{"acme/repo-1", "acme/repo-2"}) {
+		t.Errorf("expired attempts reported for %v, want both repositories", expired)
 	}
 }

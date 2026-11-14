@@ -104,6 +104,45 @@ func (q *Queries) CoalesceQueuedJob(ctx context.Context, arg CoalesceQueuedJobPa
 	return err
 }
 
+const countEligibleQueuedJobs = `-- name: CountEligibleQueuedJobs :many
+SELECT priority, COUNT(*) AS depth, CAST(MIN(run_after) AS TEXT) AS oldest_eligible_at
+FROM jobs
+WHERE state = 'queued'
+  AND run_after <= ?
+GROUP BY priority
+`
+
+type CountEligibleQueuedJobsRow struct {
+	Priority         string `json:"priority"`
+	Depth            int64  `json:"depth"`
+	OldestEligibleAt string `json:"oldest_eligible_at"`
+}
+
+// The eligible queue per priority: queued jobs whose run_after has passed. oldest_eligible_at
+// is the time the oldest of them became eligible.
+func (q *Queries) CountEligibleQueuedJobs(ctx context.Context, runAfter string) ([]CountEligibleQueuedJobsRow, error) {
+	rows, err := q.db.QueryContext(ctx, countEligibleQueuedJobs, runAfter)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountEligibleQueuedJobsRow
+	for rows.Next() {
+		var i CountEligibleQueuedJobsRow
+		if err := rows.Scan(&i.Priority, &i.Depth, &i.OldestEligibleAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const finishJob = `-- name: FinishJob :execrows
 UPDATE jobs
 SET state = ?1,

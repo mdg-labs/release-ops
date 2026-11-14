@@ -77,3 +77,21 @@ func TestLoadWorkerRefusesBadValues(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadWorkerMetricsAddr(t *testing.T) {
+	t.Setenv("INTERNAL_URL", "http://release-ops:9090")
+	t.Setenv("WORKER_SECRET", strings.Repeat("w", minWorkerSecretLen))
+
+	t.Setenv("METRICS_ADDR", "")
+	if cfg, err := LoadWorker(); err != nil || cfg.MetricsAddr != "127.0.0.1:9100" {
+		t.Fatalf("LoadWorker() = %+v, %v; want the loopback default", cfg, err)
+	}
+	t.Setenv("METRICS_ADDR", ":9100")
+	if cfg, err := LoadWorker(); err != nil || cfg.MetricsAddr != ":9100" {
+		t.Fatalf("LoadWorker() = %+v, %v; want :9100", cfg, err)
+	}
+	t.Setenv("METRICS_ADDR", "9100")
+	if _, err := LoadWorker(); err == nil || !strings.Contains(err.Error(), "METRICS_ADDR") {
+		t.Fatalf("LoadWorker() = %v, want METRICS_ADDR refused", err)
+	}
+}

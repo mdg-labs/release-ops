@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mdg-labs/release-ops/internal/metrics"
 	"github.com/mdg-labs/release-ops/internal/queue"
 )
 
@@ -26,6 +27,8 @@ type Options struct {
 	RetryDelay time.Duration
 	// Logger receives worker events; no job content and no secret is logged.
 	Logger *slog.Logger
+	// Jobs counts and times the attempts; nil records nothing.
+	Jobs *metrics.Jobs
 }
 
 const (
@@ -153,6 +156,15 @@ func (r *Runner) untrack(jobID string) {
 }
 
 func (r *Runner) runJob(ctx, jobCtx context.Context, job queue.ClaimedJob) {
+	started := time.Now()
+	outcome := r.runAttempt(ctx, jobCtx, job)
+	r.opts.Jobs.Ended(job.RepositoryFullName, outcome)
+	r.opts.Jobs.Took(job.RepositoryFullName, time.Since(started))
+}
+
+// runAttempt runs the job and reports its result, and returns the outcome of the attempt
+// for the job metrics: an attempt the worker stopped or gave back is aborted.
+func (r *Runner) runAttempt(ctx, jobCtx context.Context, job queue.ClaimedJob) string {
 	r.track(job)
 	defer r.untrack(job.ID)
 
@@ -171,7 +183,7 @@ func (r *Runner) runJob(ctx, jobCtx context.Context, job queue.ClaimedJob) {
 	select {
 	case <-lost:
 		r.log.Warn("worker: lease lost, result dropped", "job", job.ID)
-		return
+		return metrics.OutcomeAborted
 	default:
 	}
 
@@ -179,9 +191,13 @@ func (r *Runner) runJob(ctx, jobCtx context.Context, job queue.ClaimedJob) {
 	// back instead of reporting a failed attempt.
 	if jobCtx.Err() != nil && res.Err != nil {
 		r.release(job)
-		return
+		return metrics.OutcomeAborted
 	}
 	r.report(job, res)
+	if res.Err != nil {
+		return metrics.OutcomeFailed
+	}
+	return metrics.OutcomeSucceeded
 }
 
 func (r *Runner) invoke(ctx context.Context, job queue.ClaimedJob) (res Result) {
