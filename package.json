@@ -10,6 +10,9 @@
     "postcss-selector-parser": "^7.1.6",
     "next": {
       "postcss": "^8.5.23"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.1"
     }
   },
   "scripts": {
