@@ -84,7 +84,7 @@ pre code { background: none; border: none; padding: 0; color: var(--text); }
   .github/workflows/ # pr, dev, main, release + reusable workflows
   VERSION            # Semver — release tag v{VERSION} on main bump
   docs/              # Specification, stack, threat model
-  docker-compose.yml # Two services: release-ops (app) and release-ops-worker</code></pre>
+  docker-compose.yml # Two services: app and worker</code></pre>
 
   <h2>Update engine — worker</h2>
   <table>
@@ -160,7 +160,7 @@ pre code { background: none; border: none; padding: 0; color: var(--text); }
   <table>
     <tr><th>Tool</th><th>Why</th></tr>
     <tr><td><code>Docker</code> multi-stage</td><td>Two images: the <strong>app</strong> <code>ghcr.io/{owner}/release-ops</code> (Next.js + Go) and the <strong>worker</strong> <code>ghcr.io/{owner}/release-ops-worker</code> (the pinned Renovate image plus the <code>release-ops</code> binary). Released with the same tag and upgraded together.</td></tr>
-    <tr><td><code>docker-compose</code></td><td>Two services: <code>release-ops</code> (the app: port 3000, volume <code>/data</code>, the internal listener on the Compose network only) and <code>release-ops-worker</code> (outbound only, a cache volume, no <code>/data</code>). <strong>No Docker socket.</strong> Reference file: <a href="specs.html#deployment">spec §10</a>.</td></tr>
+    <tr><td><code>docker-compose</code></td><td>Two services: <code>app</code> (port 3000, volume <code>/data</code>, the internal listener on the Compose network only) and <code>worker</code> (outbound only, a cache volume, no <code>/data</code>). <strong>No Docker socket.</strong> Reference file: <a href="specs.html#deployment">spec §10</a>.</td></tr>
     <tr><td>Public URL</td><td><code>APP_URL</code> (required, browser-facing) and <code>WEBHOOK_URL</code> (optional, reachable by GitHub). Recommended for seconds-level latency; without it the instance polls (degraded).</td></tr>
     <tr><td>GitHub Actions</td><td>CI — see <a href="specs.html#ci">Spec §11</a>.</td></tr>
   </table>

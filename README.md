@@ -59,7 +59,7 @@ One integration can serve several ticket projects, each with its own status mapp
 
 ## Quick start
 
-Release Ops runs as **two services**: `release-ops` (the app, the only one that publishes a port) and `release-ops-worker` (Renovate, no database access and no Docker socket). Both images are released with the same tag and upgraded together: `ghcr.io/mdg-labs/release-ops` and `ghcr.io/mdg-labs/release-ops-worker` (`:latest` for a release, `:nightly` for the dev branch).
+Release Ops runs as **two services**: `app` (the only one that publishes a port) and `worker` (Renovate, no database access and no Docker socket). Both images are released with the same tag and upgraded together: `ghcr.io/mdg-labs/release-ops` and `ghcr.io/mdg-labs/release-ops-worker` (`:latest` for a release, `:nightly` for the dev branch).
 
 1. Copy `.env.example` to `.env` and set the required variables:
 
@@ -82,7 +82,7 @@ Release Ops runs as **two services**: `release-ops` (the app, the only one that 
    docker compose up -d
    ```
 
-3. **First-start setup.** While no GitHub App exists the instance is in setup mode. Read the one-time setup token from the app's log (`docker compose logs release-ops`), or set `SETUP_TOKEN` yourself.
+3. **First-start setup.** While no GitHub App exists the instance is in setup mode. Read the one-time setup token from the app's log (`docker compose logs app`), or set `SETUP_TOKEN` yourself.
 4. Open `APP_URL/setup`, enter the token and choose who owns the App (a personal account or an organization). Confirm on GitHub, then install the App on the repositories you want updated.
 5. Sign in with GitHub. The first admin is the organization owner (or the account owner), or the GitHub login pinned with `BOOTSTRAP_ADMIN_GITHUB_LOGIN`.
 6. Add a ticket integration and a ticket project, set the installation's default ticket project in Settings, and make sure each repository has a Renovate config (or use **Enable repo**).
