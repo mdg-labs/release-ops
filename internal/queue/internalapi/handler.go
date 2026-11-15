@@ -14,6 +14,7 @@ import (
 
 	"github.com/mdg-labs/release-ops/internal/github"
 	"github.com/mdg-labs/release-ops/internal/queue"
+	"github.com/mdg-labs/release-ops/internal/renovate/redact"
 )
 
 const (
@@ -22,8 +23,11 @@ const (
 	// WriteTimeout is the write timeout the internal listener runs with: it outlasts the
 	// longest claim wait with room to write the response, so a long-poll is never cut off.
 	WriteTimeout = DefaultClaimWait + 30*time.Second
-	// maxBodyBytes bounds every request body.
+	// maxBodyBytes bounds every request body but a result's.
 	maxBodyBytes = 64 << 10
+	// maxResultBytes bounds a result: a run record holds a log excerpt and a report of up to
+	// their caps each, which JSON escaping can double.
+	maxResultBytes = 512 << 10
 )
 
 // TokenIssuer mints the installation access token of a job.
@@ -44,6 +48,10 @@ type Options struct {
 	// TokenRepositories are the repositories a job's token covers besides the job's own, from
 	// instance configuration: a request never names repositories.
 	TokenRepositories []string
+	// GlobalConfigRepo and GlobalConfigRef locate the global Renovate config the worker
+	// fetches at job start; both are sent with every claimed job. Empty means the instance
+	// mounts the config into the worker.
+	GlobalConfigRepo, GlobalConfigRef string
 }
 
 type handler struct {
@@ -52,6 +60,11 @@ type handler struct {
 	claimWait         time.Duration
 	tokens            TokenIssuer
 	tokenRepositories []string
+	globalConfigRepo  string
+	globalConfigRef   string
+	// redactor strips the worker secret and anything secret-shaped from a stored run record,
+	// as a second line behind the worker's own redaction.
+	redactor *redact.Redactor
 }
 
 // NewHandler returns the worker routes over q. Every request, including one for a path no
@@ -60,6 +73,8 @@ func NewHandler(q queue.Queue, opts Options) http.Handler {
 	h := &handler{
 		q: q, secretSum: sha256.Sum256([]byte(opts.Secret)), claimWait: opts.ClaimWait,
 		tokens: opts.Tokens, tokenRepositories: slices.Clone(opts.TokenRepositories),
+		globalConfigRepo: opts.GlobalConfigRepo, globalConfigRef: opts.GlobalConfigRef,
+		redactor: redact.New(opts.Secret),
 	}
 	if h.claimWait <= 0 {
 		h.claimWait = DefaultClaimWait
@@ -105,6 +120,7 @@ func (h *handler) claim(w http.ResponseWriter, r *http.Request) {
 				h.releaseUnsent(job)
 				return
 			}
+			job.GlobalConfigRepo, job.GlobalConfigRef = h.globalConfigRepo, h.globalConfigRef
 			writeJSON(w, http.StatusOK, job)
 			return
 		case !errors.Is(err, queue.ErrNoJob):
@@ -183,23 +199,57 @@ func (h *handler) heartbeat(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) result(w http.ResponseWriter, r *http.Request) {
 	var req queue.ResultRequest
-	if !decode(w, r, &req) {
+	if !decodeLimited(w, r, &req, maxResultBytes) {
 		return
 	}
 	id := r.PathValue("id")
+	var run *queue.RunRecord
+	if req.Run != nil {
+		rec, msg := h.checkedRun(*req.Run)
+		if msg != "" {
+			writeError(w, http.StatusUnprocessableEntity, msg)
+			return
+		}
+		run = &rec
+	}
 	var err error
 	switch req.Outcome {
 	case queue.OutcomeSucceeded:
-		err = h.q.Complete(r.Context(), id, req.LeaseOwner)
+		if run != nil {
+			err = h.q.CompleteRun(r.Context(), id, req.LeaseOwner, *run)
+		} else {
+			err = h.q.Complete(r.Context(), id, req.LeaseOwner)
+		}
 	case queue.OutcomeFailed:
 		_, err = h.q.Fail(r.Context(), id, req.LeaseOwner, queue.FailParams{
 			RetryAfter: time.Duration(max(req.RetryAfterSeconds, 0)) * time.Second,
+			Run:        run,
 		})
 	default:
 		writeError(w, http.StatusUnprocessableEntity, "outcome must be succeeded or failed")
 		return
 	}
 	h.finish(w, r, "result", err)
+}
+
+// checkedRun validates a posted run record against the caps and redacts it; msg is the reason
+// it is refused, empty when it is accepted.
+func (h *handler) checkedRun(run queue.RunRecord) (rec queue.RunRecord, msg string) {
+	switch {
+	case run.ReportStatus != "" && run.ReportStatus != queue.ReportOK && run.ReportStatus != queue.ReportMissing && run.ReportStatus != queue.ReportUnreadable:
+		return rec, "report_status must be ok, missing or unreadable"
+	case len(run.LogExcerpt) > queue.MaxLogExcerptBytes:
+		return rec, "log_excerpt is too large"
+	case len(run.Report) > queue.MaxReportBytes:
+		return rec, "report is too large"
+	case len(run.ErrorMessage) > queue.MaxErrorMessageBytes || len(run.ErrorCode) > 64:
+		return rec, "error_code or error_message is too large"
+	}
+	run.ErrorCode = h.redactor.String(run.ErrorCode)
+	run.ErrorMessage = h.redactor.String(run.ErrorMessage)
+	run.LogExcerpt = h.redactor.String(run.LogExcerpt)
+	run.Report = h.redactor.String(run.Report)
+	return run, ""
 }
 
 func (h *handler) release(w http.ResponseWriter, r *http.Request) {
@@ -222,7 +272,11 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, op string, err 
 }
 
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	return decodeLimited(w, r, v, maxBodyBytes)
+}
+
+func decodeLimited(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {

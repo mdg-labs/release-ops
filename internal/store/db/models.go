@@ -138,6 +138,7 @@ type JobRun struct {
 	RetryAfter   sql.NullString `json:"retry_after"`
 	ReportStatus sql.NullString `json:"report_status"`
 	LogExcerpt   sql.NullString `json:"log_excerpt"`
+	Report       sql.NullString `json:"report"`
 }
 
 type LoginLinkToken struct {

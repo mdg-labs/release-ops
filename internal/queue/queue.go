@@ -102,6 +102,15 @@ type ClaimedJob struct {
 	Slot               int       `json:"slot"`
 	LeaseOwner         string    `json:"lease_owner"`
 	LeaseExpiresAt     time.Time `json:"lease_expires_at"`
+	// GitAuthor is the App's bot identity as Renovate takes it, "<slug>[bot] <<id>+<slug>[bot]@
+	// users.noreply.github.com>"; empty while the bot user's id is not known. The worker has no
+	// GitHub identity of its own, so the app sends it with the job.
+	GitAuthor string `json:"git_author,omitempty"`
+	// GlobalConfigRepo and GlobalConfigRef locate the global Renovate config and tools to
+	// fetch at job start (owner/repo and a branch, tag or commit); empty when the instance
+	// mounts them into the worker instead.
+	GlobalConfigRepo string `json:"global_config_repo,omitempty"`
+	GlobalConfigRef  string `json:"global_config_ref,omitempty"`
 }
 
 // HeldJob is a job as its lease owner holds it: running, leased to that owner, with the lease
@@ -123,11 +132,47 @@ type HeartbeatResult struct {
 // AbortLeaseLost is the Reason of an abort because the lease is no longer held.
 const AbortLeaseLost = "lease_lost"
 
+// Run report statuses of a job_runs row.
+const (
+	ReportOK         = "ok"
+	ReportMissing    = "missing"
+	ReportUnreadable = "unreadable"
+)
+
+// Caps on what a run report stores.
+const (
+	// MaxLogExcerptBytes caps the stored log excerpt; the tail of the log is kept.
+	MaxLogExcerptBytes = 64 << 10
+	// MaxReportBytes caps the stored Renovate report.
+	MaxReportBytes = 64 << 10
+	// MaxErrorMessageBytes caps the stored failure message.
+	MaxErrorMessageBytes = 1 << 10
+)
+
+// RunRecord is what the worker reports of one attempt; the app stores it as a job_runs row in
+// the transaction that ends the attempt. Every string is redacted before it is sent and again
+// before it is stored.
+type RunRecord struct {
+	// ExitCode is Renovate's exit status; nil when the process did not run to an exit.
+	ExitCode *int `json:"exit_code,omitempty"`
+	// ErrorCode and ErrorMessage describe a failed attempt: a short code and a short message.
+	ErrorCode    string `json:"error_code,omitempty"`
+	ErrorMessage string `json:"error_message,omitempty"`
+	// ReportStatus is ReportOK, ReportMissing or ReportUnreadable.
+	ReportStatus string `json:"report_status,omitempty"`
+	// LogExcerpt is the redacted tail of Renovate's JSON log.
+	LogExcerpt string `json:"log_excerpt,omitempty"`
+	// Report is Renovate's report file as written, when it is valid JSON.
+	Report string `json:"report,omitempty"`
+}
+
 // FailParams describes a failed attempt.
 type FailParams struct {
 	// RetryAfter is the minimum delay an upstream asked for (Retry-After, a rate-limit
 	// reset); zero when there is none.
 	RetryAfter time.Duration
+	// Run is the attempt's record; nil stores no job_runs row.
+	Run *RunRecord
 }
 
 // FailOutcome says what became of a failed or expired attempt.
@@ -174,6 +219,8 @@ type Queue interface {
 	Heartbeat(ctx context.Context, jobID, leaseOwner string) (HeartbeatResult, error)
 	// Complete ends the job as succeeded; a repeat for an already finished job is a no-op.
 	Complete(ctx context.Context, jobID, leaseOwner string) error
+	// CompleteRun is Complete that also stores the attempt's record in the same transaction.
+	CompleteRun(ctx context.Context, jobID, leaseOwner string, run RunRecord) error
 	// Fail ends the attempt: the job is requeued with backoff, or failed when no attempts
 	// are left. A repeat for an already failed job is a no-op.
 	Fail(ctx context.Context, jobID, leaseOwner string, p FailParams) (FailOutcome, error)

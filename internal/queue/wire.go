@@ -28,6 +28,9 @@ type ResultRequest struct {
 	Outcome    string `json:"outcome"`
 	// RetryAfterSeconds is the delay an upstream asked for with a failed outcome.
 	RetryAfterSeconds int64 `json:"retry_after_seconds,omitempty"`
+	// Run is the attempt's record; absent when the worker has nothing to report beyond the
+	// outcome.
+	Run *RunRecord `json:"run,omitempty"`
 }
 
 // TokenResponse is the body of a successful token request: the installation access token for

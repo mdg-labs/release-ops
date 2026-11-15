@@ -320,6 +320,7 @@ CREATE TABLE job_runs (
   retry_after TEXT,
   report_status TEXT CHECK (report_status IN ('ok', 'missing', 'unreadable')),
   log_excerpt TEXT,
+  report TEXT,
   UNIQUE (job_id, attempt)
 ) STRICT;
 

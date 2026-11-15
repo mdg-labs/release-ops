@@ -17,6 +17,9 @@ type WorkerConfig struct {
 	// MetricsAddr is where the worker's /metrics listener binds (METRICS_ADDR); empty means
 	// no listener.
 	MetricsAddr string
+	// GitHubBaseURL is the GitHub web URL without a trailing slash (GITHUB_BASE_URL); Renovate's
+	// API endpoint and the global config fetch derive from it.
+	GitHubBaseURL string
 }
 
 // LoadWorker reads and validates the worker's configuration from the process environment.
@@ -25,6 +28,11 @@ func LoadWorker() (*WorkerConfig, error) {
 		InternalURL:  strings.TrimSpace(os.Getenv("INTERNAL_URL")),
 		WorkerSecret: strings.TrimSpace(os.Getenv("WORKER_SECRET")),
 		MetricsAddr:  envOrDefault("METRICS_ADDR", defaultMetricsAddr),
+
+		GitHubBaseURL: strings.TrimRight(envOrDefault("GITHUB_BASE_URL", defaultGitHubURL), "/"),
+	}
+	if err := validateURL("GITHUB_BASE_URL", cfg.GitHubBaseURL, true); err != nil {
+		return nil, err
 	}
 	if err := validateListenAddr(cfg.MetricsAddr); err != nil {
 		return nil, fmt.Errorf("METRICS_ADDR: %w", err)

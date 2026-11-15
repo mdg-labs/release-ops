@@ -239,6 +239,8 @@ func serveInternal(ctx context.Context, cfg *config.Config, q queue.Queue, token
 		Secret:            cfg.WorkerSecret,
 		Tokens:            tokens,
 		TokenRepositories: cfg.JobTokenRepositories(),
+		GlobalConfigRepo:  cfg.GlobalConfigRepo,
+		GlobalConfigRef:   cfg.GlobalConfigRef,
 	})
 	return internalapi.Serve(ctx, cfg.InternalAddr, h, internalapi.WriteTimeout)
 }

@@ -237,7 +237,7 @@ func (r *Runner) heartbeat(job queue.ClaimedJob, stop <-chan struct{}, lost chan
 }
 
 func (r *Runner) report(job queue.ClaimedJob, res Result) {
-	req := queue.ResultRequest{LeaseOwner: job.LeaseOwner, Outcome: queue.OutcomeSucceeded}
+	req := queue.ResultRequest{LeaseOwner: job.LeaseOwner, Outcome: queue.OutcomeSucceeded, Run: res.Run}
 	if res.Err != nil {
 		req.Outcome = queue.OutcomeFailed
 		req.RetryAfterSeconds = int64(res.RetryAfter / time.Second)

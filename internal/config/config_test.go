@@ -23,6 +23,7 @@ func validEnv(t *testing.T) {
 	t.Setenv("WORKER_SECRET", "")
 	t.Setenv("PRESET_REPOSITORIES", "")
 	t.Setenv("GLOBAL_CONFIG_REPO", "")
+	t.Setenv("GLOBAL_CONFIG_REF", "")
 	t.Setenv("METRICS_ADDR", "")
 }
 
@@ -263,6 +264,7 @@ func TestLoadPresetRepositories(t *testing.T) {
 
 	t.Setenv("PRESET_REPOSITORIES", " acme/renovate-presets, ,Acme/RENOVATE-PRESETS,acme/other.repo_1 ")
 	t.Setenv("GLOBAL_CONFIG_REPO", "acme/renovate-global")
+	t.Setenv("GLOBAL_CONFIG_REF", "main")
 	cfg, err = Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -294,6 +296,7 @@ func TestLoadRejectsMalformedRepositoryLists(t *testing.T) {
 
 		validEnv(t)
 		t.Setenv("GLOBAL_CONFIG_REPO", bad)
+		t.Setenv("GLOBAL_CONFIG_REF", "main")
 		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "GLOBAL_CONFIG_REPO") {
 			t.Errorf("GLOBAL_CONFIG_REPO %q: error = %v, want a GLOBAL_CONFIG_REPO error", bad, err)
 		}
@@ -384,5 +387,37 @@ func TestLoadRoleTeams(t *testing.T) {
 			}
 		}
 		t.Setenv(name, "")
+	}
+}
+
+func TestLoadGlobalConfigRef(t *testing.T) {
+	for _, tc := range []struct {
+		name, repo, ref, wantErr string
+	}{
+		{"neither", "", "", ""},
+		{"branch", "acme/renovate", "main", ""},
+		{"tag with a slash", "acme/renovate", "release/v1.2", ""},
+		{"commit", "acme/renovate", strings.Repeat("a1", 20), ""},
+		{"a ref without a repository is ignored", "", "main", ""},
+		{"a repository without a ref", "acme/renovate", "", "GLOBAL_CONFIG_REF is required"},
+		{"a space", "acme/renovate", "my branch", "GLOBAL_CONFIG_REF must be"},
+		{"a reserved character", "acme/renovate", "a~1", "GLOBAL_CONFIG_REF must be"},
+		{"a leading dash", "acme/renovate", "-main", "GLOBAL_CONFIG_REF must be"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			validEnv(t)
+			t.Setenv("GLOBAL_CONFIG_REPO", tc.repo)
+			t.Setenv("GLOBAL_CONFIG_REF", tc.ref)
+			cfg, err := Load()
+			if tc.wantErr == "" {
+				if err != nil || cfg.GlobalConfigRef != tc.ref {
+					t.Fatalf("Load() = %+v, %v", cfg, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("Load() = %v, want %q", err, tc.wantErr)
+			}
+		})
 	}
 }

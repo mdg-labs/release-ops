@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/queue"
 	"github.com/mdg-labs/release-ops/internal/queue/internalapi"
 	"github.com/mdg-labs/release-ops/internal/queue/worker"
+	"github.com/mdg-labs/release-ops/internal/renovate"
 	"github.com/mdg-labs/release-ops/internal/store"
 	"github.com/mdg-labs/release-ops/internal/store/storetest"
 )
@@ -100,18 +102,29 @@ func (a *appSide) waitState(t *testing.T, id, want string) {
 	t.Fatalf("job %s is %s (attempts %d), want %s", id, state, attempts, want)
 }
 
-// The production registry has no handler for renovate_run yet, so a claimed job of that kind
-// fails with "no handler" (runner.invoke) instead of reporting a Renovate run that never
-// happened.
-func TestWorkerRegistryHasNoHandlerForRenovateRun(t *testing.T) {
-	if h, ok := workerRegistry()[queue.KindRenovateRun]; ok {
-		t.Fatalf("workerRegistry registers %T for %s; only the real Renovate handler may", h, queue.KindRenovateRun)
+// The production registry runs a renovate_run job with the Renovate handler, which takes its
+// token from the app's internal listener.
+func TestWorkerRegistryRunsRenovateRunWithTheRenovateHandler(t *testing.T) {
+	registry, err := workerRegistry(&config.WorkerConfig{InternalURL: "http://app:9090", WorkerSecret: testWorkerSecret, GitHubBaseURL: "https://github.com"})
+	if err != nil {
+		t.Fatalf("workerRegistry: %v", err)
+	}
+	h, ok := registry[queue.KindRenovateRun]
+	if !ok {
+		t.Fatalf("workerRegistry has no handler for %s", queue.KindRenovateRun)
+	}
+	if _, ok := h.(*renovate.Handler); !ok {
+		t.Errorf("workerRegistry registers %T for %s, want *renovate.Handler", h, queue.KindRenovateRun)
+	}
+	if len(registry) != 1 {
+		t.Errorf("workerRegistry has %d handlers, want only renovate_run", len(registry))
 	}
 }
 
 // `release-ops worker` starts with no app secret and no database path in its environment,
-// long-polls the internal listener, claims the queued job and reports the result. With no
-// handler registered for renovate_run the attempt is reported failed, never succeeded.
+// long-polls the internal listener, claims the queued job and reports the result. The test app
+// serves no token route, so the Renovate handler cannot get a token: the attempt is reported
+// failed, never succeeded, and the app records the run in job_runs without a secret.
 func TestWorkerCommandReportsAClaimedRenovateRunFailed(t *testing.T) {
 	app := newAppSide(t)
 	id := app.enqueue(t)
@@ -141,6 +154,14 @@ func TestWorkerCommandReportsAClaimedRenovateRunFailed(t *testing.T) {
 			t.Fatal("the worker did not report the claimed job")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+
+	var outcome, errorCode, errorMessage sql.NullString
+	if err := app.db.Reader.QueryRow(`SELECT outcome, error_code, error_message FROM job_runs WHERE job_id = ? AND attempt = 1`, id).Scan(&outcome, &errorCode, &errorMessage); err != nil {
+		t.Fatalf("the failed attempt has no job_runs row: %v", err)
+	}
+	if outcome.String != "failed" || errorCode.String == "" || errorMessage.String == "" || strings.Contains(errorMessage.String, testWorkerSecret) {
+		t.Errorf("job_runs = %q %q %q, want a failed run with a short reason", outcome.String, errorCode.String, errorMessage.String)
 	}
 
 	// The worker serves its own /metrics on METRICS_ADDR, with the failed job counted and no
@@ -469,5 +490,33 @@ func TestServerFailsWhenTheMetricsListenerCannotBind(t *testing.T) {
 	defer cancel()
 	if err := run(ctx, cfg); err == nil || !strings.Contains(err.Error(), "metrics listener") {
 		t.Fatalf("run = %v, want a metrics listener error", err)
+	}
+}
+
+// The app's internal listener sends the global config's repository and ref with every claimed
+// job, so the worker fetches it from the repository the token covers.
+func TestInternalListenerSendsTheGlobalConfigLocationWithAClaimedJob(t *testing.T) {
+	app := newAppSide(t)
+	id := app.enqueue(t)
+	addr := fmt.Sprintf("127.0.0.1:%d", freePort(t))
+	cfg := &config.Config{InternalAddr: addr, WorkerSecret: testWorkerSecret, GlobalConfigRepo: "acme/renovate-global", GlobalConfigRef: "release/1"}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- serveInternal(ctx, cfg, app.q, nil) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("serveInternal: %v", err)
+		}
+	})
+	waitForStatus(t, "http://"+addr+"/internal/v1/jobs/x/heartbeat", http.StatusMethodNotAllowed, true)
+
+	job, err := worker.NewClient("http://"+addr, testWorkerSecret, nil).Claim(ctx)
+	if err != nil || job == nil {
+		t.Fatalf("Claim = %+v, %v", job, err)
+	}
+	if job.ID != id || job.GlobalConfigRepo != "acme/renovate-global" || job.GlobalConfigRef != "release/1" {
+		t.Errorf("claimed job = %+v", job)
 	}
 }

@@ -152,3 +152,16 @@ FROM jobs
 WHERE state = 'queued'
   AND run_after <= ?
 GROUP BY priority;
+
+-- One row per attempt, written in the transaction that ends the attempt.
+-- name: InsertJobRun :exec
+INSERT INTO job_runs (
+  id, job_id, attempt, started_at, finished_at, outcome, exit_code, error_code, error_message,
+  retry_after, report_status, log_excerpt, report
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- The App's slug and the numeric id of its bot user, which Renovate's git author is made of.
+-- name: GetBotIdentity :one
+SELECT slug, bot_user_id
+FROM github_app
+WHERE id = 1;

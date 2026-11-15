@@ -34,6 +34,7 @@ func (c *clock) Now() time.Time {
 type env struct {
 	srv   *httptest.Server
 	q     *store.JobQueue
+	db    *store.DB
 	repos []string
 }
 
@@ -45,7 +46,7 @@ func newEnv(t *testing.T, claimWait time.Duration) *env {
 	q := store.NewJobQueue(db, store.JobQueueOptions{Now: c.Now})
 	srv := httptest.NewServer(internalapi.NewHandler(q, internalapi.Options{Secret: secret, ClaimWait: claimWait}))
 	t.Cleanup(srv.Close)
-	return &env{srv: srv, q: q, repos: storetest.SeedRepositories(t, db, 2)}
+	return &env{srv: srv, q: q, db: db, repos: storetest.SeedRepositories(t, db, 2)}
 }
 
 func (e *env) post(t *testing.T, path, auth string, body any) (int, []byte) {
@@ -237,8 +238,109 @@ func TestHeartbeatResultAndReleaseThroughTheRoutes(t *testing.T) {
 func TestResultBodyIsSizeLimited(t *testing.T) {
 	e := newEnv(t, time.Second)
 
-	big := queue.ResultRequest{LeaseOwner: strings.Repeat("a", 200<<10), Outcome: queue.OutcomeFailed}
+	// A result holds a run record, so its limit is larger than the other routes'.
+	big := queue.ResultRequest{LeaseOwner: strings.Repeat("a", 600<<10), Outcome: queue.OutcomeFailed}
 	if status, _ := e.post(t, strings.Replace(queue.PathResult, "{id}", "x", 1), "Bearer "+secret, big); status != http.StatusRequestEntityTooLarge {
 		t.Fatalf("oversized body = %d, want 413", status)
+	}
+	other := queue.LeaseRequest{LeaseOwner: strings.Repeat("a", 200<<10)}
+	if status, _ := e.post(t, strings.Replace(queue.PathHeartbeat, "{id}", "x", 1), "Bearer "+secret, other); status != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized heartbeat body = %d, want 413", status)
+	}
+}
+
+func (e *env) claimJob(t *testing.T) queue.ClaimedJob {
+	t.Helper()
+	status, body := e.post(t, queue.PathClaim, "Bearer "+secret, map[string]string{})
+	if status != http.StatusOK {
+		t.Fatalf("claim = %d %s", status, body)
+	}
+	var job queue.ClaimedJob
+	if err := json.Unmarshal(body, &job); err != nil {
+		t.Fatal(err)
+	}
+	return job
+}
+
+func TestClaimSendsTheGlobalConfigLocationWhenConfigured(t *testing.T) {
+	db := storetest.OpenMigrated(t)
+	q := store.NewJobQueue(db, store.JobQueueOptions{})
+	repos := storetest.SeedRepositories(t, db, 2)
+	srv := httptest.NewServer(internalapi.NewHandler(q, internalapi.Options{
+		Secret: secret, ClaimWait: 50 * time.Millisecond, GlobalConfigRepo: "acme/renovate", GlobalConfigRef: "main",
+	}))
+	t.Cleanup(srv.Close)
+	e := &env{srv: srv, q: q, db: db, repos: repos}
+	e.enqueue(t, repos[0])
+
+	job := e.claimJob(t)
+	if job.GlobalConfigRepo != "acme/renovate" || job.GlobalConfigRef != "main" {
+		t.Errorf("claimed job = %+v", job)
+	}
+
+	// Unset, the fields are absent from the wire: the worker reads a mount instead.
+	plain := newEnv(t, 50*time.Millisecond)
+	plain.enqueue(t, plain.repos[0])
+	status, body := plain.post(t, queue.PathClaim, "Bearer "+secret, map[string]string{})
+	if status != http.StatusOK || strings.Contains(string(body), "global_config") {
+		t.Errorf("claim = %d %s", status, body)
+	}
+}
+
+func TestResultStoresTheRunRecordRedactedAndWithinTheCaps(t *testing.T) {
+	e := newEnv(t, 50*time.Millisecond)
+	e.enqueue(t, e.repos[0])
+	job := e.claimJob(t)
+
+	status, body := e.post(t, strings.Replace(queue.PathResult, "{id}", job.ID, 1), "Bearer "+secret, queue.ResultRequest{
+		LeaseOwner: job.LeaseOwner, Outcome: queue.OutcomeSucceeded,
+		Run: &queue.RunRecord{
+			ExitCode: new(int), ReportStatus: queue.ReportOK,
+			// A worker that missed a secret: the app's own pass still removes it.
+			LogExcerpt: "worker secret " + secret + " and ghs_" + strings.Repeat("Q", 36),
+			Report:     `{"k":"-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----"}`,
+		},
+	})
+	if status != http.StatusNoContent {
+		t.Fatalf("result = %d %s", status, body)
+	}
+	var log, report string
+	if err := e.db.Reader.QueryRow(`SELECT log_excerpt, report FROM job_runs WHERE job_id = ?`, job.ID).Scan(&log, &report); err != nil {
+		t.Fatalf("no job_runs row: %v", err)
+	}
+	for _, text := range []string{log, report} {
+		for _, leaked := range []string{secret, "ghs_QQQQ", "MIIE"} {
+			if strings.Contains(text, leaked) {
+				t.Errorf("%q is stored: %s", leaked, text)
+			}
+		}
+	}
+}
+
+func TestResultRefusesAnOversizedOrMalformedRunRecord(t *testing.T) {
+	e := newEnv(t, 50*time.Millisecond)
+	e.enqueue(t, e.repos[0])
+	job := e.claimJob(t)
+	path := strings.Replace(queue.PathResult, "{id}", job.ID, 1)
+
+	for name, run := range map[string]queue.RunRecord{
+		"a log excerpt over the cap": {LogExcerpt: strings.Repeat("x", queue.MaxLogExcerptBytes+1)},
+		"a report over the cap":      {Report: strings.Repeat("x", queue.MaxReportBytes+1)},
+		"an error message too long":  {ErrorMessage: strings.Repeat("x", queue.MaxErrorMessageBytes+1)},
+		"an unknown report status":   {ReportStatus: "great"},
+	} {
+		status, body := e.post(t, path, "Bearer "+secret, queue.ResultRequest{LeaseOwner: job.LeaseOwner, Outcome: queue.OutcomeFailed, Run: &run})
+		if status != http.StatusUnprocessableEntity {
+			t.Errorf("%s: result = %d %s, want 422", name, status, body)
+		}
+	}
+	var state string
+	if err := e.db.Reader.QueryRow(`SELECT state FROM jobs WHERE id = ?`, job.ID).Scan(&state); err != nil || state != queue.StateRunning {
+		t.Errorf("job = %q (%v) after refused results, want still running", state, err)
+	}
+	// A record at the caps is accepted: the request body limit holds one of each.
+	full := queue.RunRecord{LogExcerpt: strings.Repeat("\"", queue.MaxLogExcerptBytes), Report: strings.Repeat("\"", queue.MaxReportBytes), ErrorMessage: "x"}
+	if status, body := e.post(t, path, "Bearer "+secret, queue.ResultRequest{LeaseOwner: job.LeaseOwner, Outcome: queue.OutcomeFailed, Run: &full}); status != http.StatusNoContent {
+		t.Errorf("a record at the caps = %d %s, want 204", status, body)
 	}
 }

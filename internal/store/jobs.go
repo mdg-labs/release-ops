@@ -297,6 +297,10 @@ func (q *JobQueue) Claim(ctx context.Context) (*queue.ClaimedJob, error) {
 		if err != nil {
 			return err
 		}
+		gitAuthor, err := botGitAuthor(ctx, qtx)
+		if err != nil {
+			return err
+		}
 		claimed = &queue.ClaimedJob{
 			ID:                 job.ID,
 			Kind:               queue.Kind(job.Kind),
@@ -308,6 +312,7 @@ func (q *JobQueue) Claim(ctx context.Context) (*queue.ClaimedJob, error) {
 			Slot:               slot,
 			LeaseOwner:         owner,
 			LeaseExpiresAt:     expires,
+			GitAuthor:          gitAuthor,
 		}
 		return nil
 	})
@@ -318,6 +323,20 @@ func (q *JobQueue) Claim(ctx context.Context) (*queue.ClaimedJob, error) {
 		return nil, fmt.Errorf("claim: %w", err)
 	}
 	return claimed, nil
+}
+
+// botGitAuthor is the git author of the App's bot user as Renovate takes it. It is empty until
+// the bot user's numeric id is known: the id, not the login, is the identity.
+func botGitAuthor(ctx context.Context, qtx *db.Queries) (string, error) {
+	bot, err := qtx.GetBotIdentity(ctx)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !bot.BotUserID.Valid) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	login := bot.Slug + "[bot]"
+	return fmt.Sprintf("%s <%d+%s@users.noreply.github.com>", login, bot.BotUserID.Int64, login), nil
 }
 
 func (q *JobQueue) concurrencyCap(ctx context.Context, qtx *db.Queries) (int, error) {
@@ -458,6 +477,15 @@ func heldJob(ctx context.Context, qtx *db.Queries, jobID, leaseOwner string) (jo
 
 // Complete implements queue.Queue.
 func (q *JobQueue) Complete(ctx context.Context, jobID, leaseOwner string) error {
+	return q.complete(ctx, jobID, leaseOwner, nil)
+}
+
+// CompleteRun implements queue.Queue.
+func (q *JobQueue) CompleteRun(ctx context.Context, jobID, leaseOwner string, run queue.RunRecord) error {
+	return q.complete(ctx, jobID, leaseOwner, &run)
+}
+
+func (q *JobQueue) complete(ctx context.Context, jobID, leaseOwner string, run *queue.RunRecord) error {
 	q.touch()
 	err := q.inTx(ctx, func(qtx *db.Queries) error {
 		job, finished, err := heldJob(ctx, qtx, jobID, leaseOwner)
@@ -470,7 +498,7 @@ func (q *JobQueue) Complete(ctx context.Context, jobID, leaseOwner string) error
 			}
 			return queue.ErrLeaseLost
 		}
-		_, err = q.endAttempt(ctx, qtx, job, attemptSucceeded, 0)
+		_, err = q.endAttempt(ctx, qtx, job, attemptSucceeded, 0, run)
 		return err
 	})
 	if err != nil {
@@ -496,7 +524,7 @@ func (q *JobQueue) Fail(ctx context.Context, jobID, leaseOwner string, p queue.F
 			}
 			return queue.ErrLeaseLost
 		}
-		outcome, err = q.endAttempt(ctx, qtx, job, attemptFailed, p.RetryAfter)
+		outcome, err = q.endAttempt(ctx, qtx, job, attemptFailed, p.RetryAfter, p.Run)
 		return err
 	})
 	if err != nil {
@@ -542,7 +570,7 @@ func (q *JobQueue) Reap(ctx context.Context) (queue.ReapResult, error) {
 				return err
 			}
 			expiredRepos = append(expiredRepos, fullName)
-			outcome, err := q.endAttempt(ctx, qtx, job, attemptFailed, 0)
+			outcome, err := q.endAttempt(ctx, qtx, job, attemptFailed, 0, nil)
 			if err != nil {
 				return err
 			}
@@ -577,8 +605,9 @@ const (
 
 // endAttempt ends the running job's attempt and counts it. A success or an exhausted job is
 // terminal and enqueues the follow-up a mid-run trigger asked for; any other failure puts
-// the job back with a backoff, and that retry is the follow-up.
-func (q *JobQueue) endAttempt(ctx context.Context, qtx *db.Queries, job db.Job, result attemptResult, retryAfter time.Duration) (queue.FailOutcome, error) {
+// the job back with a backoff, and that retry is the follow-up. A run record is stored as the
+// attempt's job_runs row in the same transaction.
+func (q *JobQueue) endAttempt(ctx context.Context, qtx *db.Queries, job db.Job, result attemptResult, retryAfter time.Duration, run *queue.RunRecord) (queue.FailOutcome, error) {
 	now := q.now().UTC()
 	used := job.Attempts + 1
 
@@ -594,6 +623,9 @@ func (q *JobQueue) endAttempt(ctx context.Context, qtx *db.Queries, job db.Job, 
 		if err := requeue(ctx, qtx, job.ID, used, now.Add(delay)); err != nil {
 			return "", err
 		}
+		if err := insertRun(ctx, qtx, job, used, queue.OutcomeFailed, retryAfter, run, now); err != nil {
+			return "", err
+		}
 		return queue.FailRequeued, nil
 	}
 
@@ -604,12 +636,49 @@ func (q *JobQueue) endAttempt(ctx context.Context, qtx *db.Queries, job db.Job, 
 	if n == 0 {
 		return "", queue.ErrLeaseLost
 	}
+	runOutcome := queue.OutcomeSucceeded
+	if result == attemptFailed {
+		runOutcome = queue.OutcomeFailed
+	}
+	if err := insertRun(ctx, qtx, job, used, runOutcome, retryAfter, run, now); err != nil {
+		return "", err
+	}
 	if job.RerunRequested == 1 {
 		if err := q.enqueueFollowUp(ctx, qtx, job, now); err != nil {
 			return "", err
 		}
 	}
 	return outcome, nil
+}
+
+// insertRun stores the attempt's record as its job_runs row; without a record nothing is stored.
+func insertRun(ctx context.Context, qtx *db.Queries, job db.Job, attempt int64, outcome string, retryAfter time.Duration, run *queue.RunRecord, now time.Time) error {
+	if run == nil {
+		return nil
+	}
+	row := db.InsertJobRunParams{
+		ID:           newID(),
+		JobID:        job.ID,
+		Attempt:      attempt,
+		StartedAt:    formatTime(now),
+		FinishedAt:   nullString(formatTime(now)),
+		Outcome:      outcome,
+		ErrorCode:    nullString(run.ErrorCode),
+		ErrorMessage: nullString(run.ErrorMessage),
+		ReportStatus: nullString(run.ReportStatus),
+		LogExcerpt:   nullString(run.LogExcerpt),
+		Report:       nullString(run.Report),
+	}
+	if job.StartedAt.Valid {
+		row.StartedAt = job.StartedAt.String
+	}
+	if run.ExitCode != nil {
+		row.ExitCode = sql.NullInt64{Int64: int64(*run.ExitCode), Valid: true}
+	}
+	if retryAfter > 0 {
+		row.RetryAfter = nullString(strconv.FormatInt(int64(retryAfter/time.Second), 10))
+	}
+	return qtx.InsertJobRun(ctx, row)
 }
 
 func requeue(ctx context.Context, qtx *db.Queries, jobID string, attempts int64, runAfter time.Time) error {

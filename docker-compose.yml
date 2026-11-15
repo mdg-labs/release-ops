@@ -23,6 +23,7 @@ services:
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
       PRESET_REPOSITORIES: ${PRESET_REPOSITORIES:-}
       GLOBAL_CONFIG_REPO: ${GLOBAL_CONFIG_REPO:-}
+      GLOBAL_CONFIG_REF: ${GLOBAL_CONFIG_REF:-}
       METRICS_ADDR: ${METRICS_ADDR:-127.0.0.1:9100}
       # The internal listener the worker connects to: reachable on the compose network only,
       # so it has no ports entry and Next.js never proxies it.
@@ -52,13 +53,16 @@ services:
         condition: service_healthy
     environment:
       INTERNAL_URL: ${INTERNAL_URL:-http://app:9090}
+      # The worker derives Renovate's API endpoint and the global config fetch from it.
+      GITHUB_BASE_URL: ${GITHUB_BASE_URL:-}
       METRICS_ADDR: ${METRICS_ADDR:-127.0.0.1:9100}
       WORKER_SECRET: ${WORKER_SECRET:?set WORKER_SECRET in .env — see .env.example}
     volumes:
       # One subdirectory per slot for Renovate's cacheDir, repositoryCache and persistRepoData.
       - worker-cache:/cache
-      # Optional, read-only: a global Renovate config file and a tools directory, used instead
-      # of fetching them from GLOBAL_CONFIG_REPO. Create the host paths first, then uncomment.
+      # Optional, read-only: a global Renovate config file (config.js or config.json) and a tools
+      # directory, used instead of fetching them from GLOBAL_CONFIG_REPO. Create the host paths
+      # first, then uncomment.
       # - ./worker/config:/config:ro
       # - ./worker/tools:/opt/renovate-tools:ro
     # The worker runs as an unprivileged user and starts Renovate as another one; setuid and

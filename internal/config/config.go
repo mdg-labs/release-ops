@@ -68,6 +68,9 @@ type Config struct {
 	// token covers the job's repository and these, so Renovate can resolve presets from them.
 	PresetRepositories []string
 	GlobalConfigRepo   string
+	// GlobalConfigRef is GLOBAL_CONFIG_REF, the branch, tag or commit of GlobalConfigRepo the
+	// worker fetches the global Renovate config and tools from at job start.
+	GlobalConfigRef string
 }
 
 // Load reads and validates configuration from the process environment.
@@ -89,6 +92,7 @@ func Load() (*Config, error) {
 		InternalAddr:              strings.TrimSpace(os.Getenv("INTERNAL_ADDR")),
 		WorkerSecret:              strings.TrimSpace(os.Getenv("WORKER_SECRET")),
 		GlobalConfigRepo:          strings.TrimSpace(os.Getenv("GLOBAL_CONFIG_REPO")),
+		GlobalConfigRef:           strings.TrimSpace(os.Getenv("GLOBAL_CONFIG_REF")),
 		MetricsAddr:               envOrDefault("METRICS_ADDR", defaultMetricsAddr),
 	}
 
@@ -206,6 +210,12 @@ func (c *Config) validate() error {
 	if c.GlobalConfigRepo != "" && !validRepository(c.GlobalConfigRepo) {
 		return fmt.Errorf("GLOBAL_CONFIG_REPO must be owner/repo")
 	}
+	if c.GlobalConfigRepo != "" && c.GlobalConfigRef == "" {
+		return fmt.Errorf("GLOBAL_CONFIG_REF is required when GLOBAL_CONFIG_REPO is set: a branch, tag or commit")
+	}
+	if c.GlobalConfigRef != "" && !refPattern.MatchString(c.GlobalConfigRef) {
+		return fmt.Errorf("GLOBAL_CONFIG_REF must be a branch, tag or commit name")
+	}
 	return c.validateInternalListener()
 }
 
@@ -225,6 +235,10 @@ func (c *Config) JobTokenRepositories() []string {
 // repositoryPattern is owner/repo as GitHub names them: an account name and a repository
 // name made of letters, digits, dots, hyphens and underscores.
 var repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$`)
+
+// refPattern is a branch, tag or commit name as the worker puts it in a request: no space,
+// control or git-reserved character.
+var refPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/+@-]{0,254}$`)
 
 // githubLoginPattern is GitHub's account name syntax: up to 39 letters, digits and single
 // hyphens, neither starting nor ending with a hyphen.

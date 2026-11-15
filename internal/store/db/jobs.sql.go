@@ -176,6 +176,25 @@ func (q *Queries) FinishJob(ctx context.Context, arg FinishJobParams) (int64, er
 	return result.RowsAffected()
 }
 
+const getBotIdentity = `-- name: GetBotIdentity :one
+SELECT slug, bot_user_id
+FROM github_app
+WHERE id = 1
+`
+
+type GetBotIdentityRow struct {
+	Slug      string        `json:"slug"`
+	BotUserID sql.NullInt64 `json:"bot_user_id"`
+}
+
+// The App's slug and the numeric id of its bot user, which Renovate's git author is made of.
+func (q *Queries) GetBotIdentity(ctx context.Context) (GetBotIdentityRow, error) {
+	row := q.db.QueryRowContext(ctx, getBotIdentity)
+	var i GetBotIdentityRow
+	err := row.Scan(&i.Slug, &i.BotUserID)
+	return i, err
+}
+
 const getConcurrencyCap = `-- name: GetConcurrencyCap :one
 SELECT concurrency_cap
 FROM instance_settings
@@ -405,6 +424,49 @@ func (q *Queries) InsertJob(ctx context.Context, arg InsertJobParams) error {
 		arg.MatchedMarkers,
 		arg.WebhookReceivedAt,
 		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertJobRun = `-- name: InsertJobRun :exec
+INSERT INTO job_runs (
+  id, job_id, attempt, started_at, finished_at, outcome, exit_code, error_code, error_message,
+  retry_after, report_status, log_excerpt, report
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+type InsertJobRunParams struct {
+	ID           string         `json:"id"`
+	JobID        string         `json:"job_id"`
+	Attempt      int64          `json:"attempt"`
+	StartedAt    string         `json:"started_at"`
+	FinishedAt   sql.NullString `json:"finished_at"`
+	Outcome      string         `json:"outcome"`
+	ExitCode     sql.NullInt64  `json:"exit_code"`
+	ErrorCode    sql.NullString `json:"error_code"`
+	ErrorMessage sql.NullString `json:"error_message"`
+	RetryAfter   sql.NullString `json:"retry_after"`
+	ReportStatus sql.NullString `json:"report_status"`
+	LogExcerpt   sql.NullString `json:"log_excerpt"`
+	Report       sql.NullString `json:"report"`
+}
+
+// One row per attempt, written in the transaction that ends the attempt.
+func (q *Queries) InsertJobRun(ctx context.Context, arg InsertJobRunParams) error {
+	_, err := q.db.ExecContext(ctx, insertJobRun,
+		arg.ID,
+		arg.JobID,
+		arg.Attempt,
+		arg.StartedAt,
+		arg.FinishedAt,
+		arg.Outcome,
+		arg.ExitCode,
+		arg.ErrorCode,
+		arg.ErrorMessage,
+		arg.RetryAfter,
+		arg.ReportStatus,
+		arg.LogExcerpt,
+		arg.Report,
 	)
 	return err
 }
