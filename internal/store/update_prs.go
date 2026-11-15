@@ -58,10 +58,16 @@ type UpdatePRRepository interface {
 	// last_seen_at, so a caller wakes the ticket engine only for a change. The row's last_seen_at
 	// holds the EventAt of the newest report applied, and a report older than it changes
 	// nothing; at the same EventAt a report that reopens a merged, closed or superseded PR
-	// changes nothing either, because GitHub stamps a close and an earlier edit alike. A
+	// changes nothing either, because GitHub stamps a close and an earlier edit alike. A PR
+	// closed by CloseGone carries no such stamp, so an open report at its EventAt reopens it. A
 	// closed report keeps the superseded state of a row, and an open one clears its
 	// replacement.
 	Upsert(ctx context.Context, tx *sql.Tx, in UpdatePRInput) (changed bool, err error)
+	// CloseGone stores the repository's open PR with the number as closed, stamped closed at
+	// now, through tx, for a PR GitHub no longer knows, and reports whether it did. A row that
+	// is not open, or absent, is left as it is. It keeps last_seen_at, and a later report that
+	// lists the PR open reopens it.
+	CloseGone(ctx context.Context, tx *sql.Tx, repositoryID string, number int64, now time.Time) (changed bool, err error)
 	// OpenNumbers returns the numbers of the repository's open PRs, ascending.
 	OpenNumbers(ctx context.Context, repositoryID string) ([]int64, error)
 	// OpenCounts returns the number of open PRs of every repository that is not removed, by
@@ -124,7 +130,7 @@ func (r updatePRRepo) Upsert(ctx context.Context, tx *sql.Tx, in UpdatePRInput) 
 	if in.EventAt.Before(seen) {
 		return false, nil
 	}
-	if in.EventAt.Equal(seen) && in.State == UpdatePROpen && row.State != UpdatePROpen {
+	if in.EventAt.Equal(seen) && in.State == UpdatePROpen && row.State != UpdatePROpen && !closedAsGone(row, seen) {
 		return false, nil
 	}
 
@@ -151,6 +157,28 @@ func (r updatePRRepo) Upsert(ctx context.Context, tx *sql.Tx, in UpdatePRInput) 
 		return false, fmt.Errorf("update update PR: %w", err)
 	}
 	return changed, nil
+}
+
+// closedAsGone reports whether the row was closed by CloseGone and not by a report from GitHub:
+// a close from GitHub never carries a closed_at later than the row's last_seen_at, CloseGone's
+// is stamped with the time it ran.
+func closedAsGone(row db.GetUpdatePRRow, seen time.Time) bool {
+	if row.State != UpdatePRClosed || !row.ClosedAt.Valid {
+		return false
+	}
+	closed, err := time.Parse(timeLayout, row.ClosedAt.String)
+	return err == nil && closed.After(seen)
+}
+
+func (r updatePRRepo) CloseGone(ctx context.Context, tx *sql.Tx, repositoryID string, number int64, now time.Time) (bool, error) {
+	n, err := r.store.writes.WithTx(tx).CloseGoneUpdatePR(ctx, db.CloseGoneUpdatePRParams{
+		ClosedAt: sql.NullString{String: formatTime(now), Valid: true}, UpdatedAt: formatTime(now),
+		RepositoryID: repositoryID, Number: number,
+	})
+	if err != nil {
+		return false, fmt.Errorf("close update PR: %w", err)
+	}
+	return n > 0, nil
 }
 
 func (r updatePRRepo) OpenNumbers(ctx context.Context, repositoryID string) ([]int64, error) {

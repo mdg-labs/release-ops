@@ -16,6 +16,13 @@ SET node_id = ?, url = ?, title = ?, head_ref = ?, head_sha = ?, state = ?, supe
     labels = ?, opened_at = ?, merged_at = ?, closed_at = ?, last_seen_at = ?, updated_at = ?
 WHERE id = ?;
 
+-- Closes an open row GitHub no longer knows; a row in any other state is left as it is. The
+-- last_seen_at stays, so a later report from GitHub is ordered as it was before.
+-- name: CloseGoneUpdatePR :execrows
+UPDATE update_prs
+SET state = 'closed', closed_at = ?, updated_at = ?
+WHERE repository_id = ? AND number = ? AND state = 'open';
+
 -- name: ListOpenUpdatePRNumbers :many
 SELECT number FROM update_prs WHERE repository_id = ? AND state = 'open' ORDER BY number;
 

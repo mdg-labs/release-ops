@@ -223,21 +223,101 @@ func TestReconcileFailureAppliesNothing(t *testing.T) {
 	})
 }
 
-func TestReconcileSkipsAStoredPRGitHubDoesNotKnow(t *testing.T) {
+// A stored open PR that is no longer listed and that GitHub answers 404 for is gone: it is
+// stored closed, wakes the engine, and is not fetched again.
+func TestReconcileClosesAStoredPRGitHubDoesNotKnow(t *testing.T) {
 	r := newRig(t, true)
 	r.bot(1)
 	r.bot(2)
+	r.bot(3)
 	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
 		t.Fatal(err)
 	}
+	r.woken()
 	r.fake.FailPullRequest("acme/repo-1", 1, 404)
 	r.bot(1, func(p *githubtest.PullRequest) { p.State, p.UpdatedAt = "closed", at(9) })
 	r.bot(2, func(p *githubtest.PullRequest) { p.State, p.ClosedAt, p.UpdatedAt = "closed", at(9), at(9) })
 	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
-	if got := r.states(t); !reflect.DeepEqual(got, map[int64]string{1: "open", 2: "closed"}) {
-		t.Fatalf("rows = %v", got)
+	if got := r.states(t); !reflect.DeepEqual(got, map[int64]string{1: "closed", 2: "closed", 3: "open"}) {
+		t.Fatalf("rows = %v, want the unknown PR 1 closed", got)
+	}
+	var closedAt *string
+	if err := r.db.Reader.QueryRow(`SELECT closed_at FROM update_prs WHERE repository_id = ? AND number = 1`, r.repo).Scan(&closedAt); err != nil {
+		t.Fatal(err)
+	}
+	if closedAt == nil {
+		t.Error("the closed PR has no closed_at")
+	}
+	if !r.woken() {
+		t.Fatal("closing a PR GitHub does not know did not wake the engine")
+	}
+
+	before := len(r.fake.Requests())
+	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
+		t.Fatal(err)
+	}
+	for _, req := range r.fake.Requests()[before:] {
+		if strings.HasPrefix(req.Path, "/repos/acme/repo-1/pulls/") {
+			t.Errorf("a closed PR was fetched again: %s", req.Path)
+		}
+	}
+	if r.woken() {
+		t.Fatal("a reconcile with nothing left to close woke the engine")
+	}
+}
+
+// A PR stored closed because GitHub did not know it is reopened when a later reconcile lists it
+// open again, even when its updated_at has not moved.
+func TestReconcileReopensAGoneClosedPRThatGitHubListsAgain(t *testing.T) {
+	r := newRig(t, true)
+	r.bot(1)
+	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
+		t.Fatal(err)
+	}
+	r.fake.FailPullRequest("acme/repo-1", 1, 404)
+	r.bot(1, func(p *githubtest.PullRequest) { p.State = "closed" })
+	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.states(t); !reflect.DeepEqual(got, map[int64]string{1: "closed"}) {
+		t.Fatalf("rows = %v, want PR 1 stored closed", got)
+	}
+	r.woken()
+
+	r.fake.FailPullRequest("acme/repo-1", 1, 0)
+	r.bot(1)
+	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.states(t); !reflect.DeepEqual(got, map[int64]string{1: "open"}) {
+		t.Fatalf("rows = %v, want PR 1 open again after the listing showed it", got)
+	}
+	if !r.woken() {
+		t.Fatal("reopening the PR did not wake the engine")
+	}
+}
+
+// A 404 does not close the row when the same pass could not list the repository: nothing says
+// the repository and the token are fine.
+func TestReconcileLeavesAStoredPRAloneWhenTheListingFailed(t *testing.T) {
+	r := newRig(t, true)
+	r.bot(1)
+	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
+		t.Fatal(err)
+	}
+	r.woken()
+	r.fake.FailPulls("acme/repo-1", 500)
+	r.fake.FailPullRequest("acme/repo-1", 1, 404)
+	if err := r.rec.Reconcile(context.Background(), r.repo); err == nil {
+		t.Fatal("a failed listing returned no error")
+	}
+	if got := r.states(t); !reflect.DeepEqual(got, map[int64]string{1: "open"}) {
+		t.Fatalf("rows = %v, want PR 1 still open", got)
+	}
+	if r.woken() {
+		t.Fatal("a failed reconcile woke the engine")
 	}
 }
 

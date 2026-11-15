@@ -10,6 +10,34 @@ import (
 	"database/sql"
 )
 
+const closeGoneUpdatePR = `-- name: CloseGoneUpdatePR :execrows
+UPDATE update_prs
+SET state = 'closed', closed_at = ?, updated_at = ?
+WHERE repository_id = ? AND number = ? AND state = 'open'
+`
+
+type CloseGoneUpdatePRParams struct {
+	ClosedAt     sql.NullString `json:"closed_at"`
+	UpdatedAt    string         `json:"updated_at"`
+	RepositoryID string         `json:"repository_id"`
+	Number       int64          `json:"number"`
+}
+
+// Closes an open row GitHub no longer knows; a row in any other state is left as it is. The
+// last_seen_at stays, so a later report from GitHub is ordered as it was before.
+func (q *Queries) CloseGoneUpdatePR(ctx context.Context, arg CloseGoneUpdatePRParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, closeGoneUpdatePR,
+		arg.ClosedAt,
+		arg.UpdatedAt,
+		arg.RepositoryID,
+		arg.Number,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const countOpenUpdatePRsByRepository = `-- name: CountOpenUpdatePRsByRepository :many
 SELECT r.full_name, COUNT(p.id) AS open_count
 FROM repositories r

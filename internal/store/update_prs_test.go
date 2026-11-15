@@ -263,3 +263,83 @@ func TestOpenNumbersCountsAndReconcileRepositories(t *testing.T) {
 		t.Fatalf("OpenCounts = %v, want a removed repository left out", counts)
 	}
 }
+
+func (e *prEnv) closeGone(t *testing.T, repositoryID string, number int64) bool {
+	t.Helper()
+	tx, err := e.db.Writer.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := e.repos.CloseGone(context.Background(), tx, repositoryID, number, at(90))
+	if err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("CloseGone: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	return changed
+}
+
+// CloseGone closes an open row and nothing else: a merged row, another repository's row with
+// the same number and an absent row stay as they are, and last_seen_at keeps ordering reports.
+func TestCloseGoneClosesOnlyTheOpenRowOfTheRepository(t *testing.T) {
+	e := newPREnv(t)
+	var other string
+	if err := e.db.Reader.QueryRow(`SELECT id FROM repositories WHERE id <> ?`, e.repo).Scan(&other); err != nil {
+		t.Fatal(err)
+	}
+	e.upsert(t, store.UpdatePRInput{EventAt: at(5), OpenedAt: at(0)})
+	e.upsert(t, store.UpdatePRInput{RepositoryID: other, EventAt: at(5), OpenedAt: at(0)})
+	e.upsert(t, store.UpdatePRInput{Number: 22, EventAt: at(6), OpenedAt: at(0), State: store.UpdatePRMerged, MergedAt: at(6)})
+
+	if e.closeGone(t, e.repo, 99) {
+		t.Fatal("closing an absent row reported a change")
+	}
+	if e.closeGone(t, e.repo, 22) {
+		t.Fatal("closing a merged row reported a change")
+	}
+	if !e.closeGone(t, e.repo, 21) {
+		t.Fatal("closing an open row reported no change")
+	}
+	got := e.row(t)
+	if got.State != "closed" || got.ClosedAt.String != "2026-11-15T11:30:00.000Z" || got.SeenAt != "2026-11-15T10:05:00.000Z" || got.MergedAt.Valid {
+		t.Fatalf("row = %+v, want closed at 11:30 with last_seen_at 10:05", got)
+	}
+	var otherState, mergedState string
+	if err := e.db.Reader.QueryRow(`SELECT state FROM update_prs WHERE repository_id = ? AND number = 21`, other).Scan(&otherState); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.db.Reader.QueryRow(`SELECT state FROM update_prs WHERE repository_id = ? AND number = 22`, e.repo).Scan(&mergedState); err != nil {
+		t.Fatal(err)
+	}
+	if otherState != "open" || mergedState != "merged" {
+		t.Fatalf("another repository's PR is %q, the merged PR is %q, want open and merged", otherState, mergedState)
+	}
+	if e.closeGone(t, e.repo, 21) {
+		t.Fatal("closing a closed row again reported a change")
+	}
+}
+
+// An open report at the EventAt a row was closed by CloseGone at reopens it, because that close
+// carries no stamp from GitHub; a close from GitHub keeps refusing an open report at its
+// EventAt.
+func TestUpsertReopensARowCloseGoneClosedAtTheSameEventAt(t *testing.T) {
+	e := newPREnv(t)
+	e.upsert(t, store.UpdatePRInput{EventAt: at(5), OpenedAt: at(0)})
+	e.upsert(t, store.UpdatePRInput{Number: 22, EventAt: at(5), OpenedAt: at(0)})
+	e.upsert(t, store.UpdatePRInput{Number: 22, EventAt: at(6), OpenedAt: at(0), State: store.UpdatePRClosed, ClosedAt: at(6)})
+	if !e.closeGone(t, e.repo, 21) {
+		t.Fatal("closing an open row reported no change")
+	}
+
+	if !e.upsert(t, store.UpdatePRInput{EventAt: at(5), OpenedAt: at(0)}) {
+		t.Fatal("an open report at the EventAt of a gone-closed row changed nothing")
+	}
+	if got := e.row(t); got.State != "open" || got.ClosedAt.Valid {
+		t.Fatalf("row = %+v, want open without closed_at", got)
+	}
+	if e.upsert(t, store.UpdatePRInput{Number: 22, EventAt: at(6), OpenedAt: at(0)}) {
+		t.Fatal("an open report at the EventAt of a close from GitHub changed the row")
+	}
+}
