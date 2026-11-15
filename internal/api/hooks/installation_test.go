@@ -163,6 +163,20 @@ func TestInstallationRepositoriesAddedAndRemovedChangeTheRepositoryRows(t *testi
 	}
 }
 
+func TestInstallationRepositoriesRemovalOnlyDeliveryRequestsASync(t *testing.T) {
+	t.Parallel()
+
+	r := newRig(t)
+	r.mustDeliver(t, "installation", "g-1", "installation_created.json")
+	r.mustDeliver(t, "installation_repositories", "g-2", "installation_repositories_added.json")
+	before := r.changed.Load()
+
+	r.mustDeliver(t, "installation_repositories", "g-3", "installation_repositories_removed.json")
+	if got := r.changed.Load() - before; got != 1 {
+		t.Errorf("a removal-only delivery nudged the sync %d times, want once so a removal that arrived after a newer addition is reconciled", got)
+	}
+}
+
 func TestInstallationRepositoriesReplayedUnderANewDeliveryChangesNothing(t *testing.T) {
 	t.Parallel()
 

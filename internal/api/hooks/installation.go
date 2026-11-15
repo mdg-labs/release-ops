@@ -157,7 +157,9 @@ func (h installationHandlers) installationRepositories(ctx context.Context, tx *
 	if err != nil {
 		return err
 	}
-	h.notify(len(added) > 0)
+	if (len(added) > 0 || len(removed) > 0) && h.changed != nil {
+		d.AfterCommit(h.changed)
+	}
 	return nil
 }
 
