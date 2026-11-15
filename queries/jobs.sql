@@ -165,3 +165,15 @@ INSERT INTO job_runs (
 SELECT slug, bot_user_id
 FROM github_app
 WHERE id = 1;
+
+-- A repository's state when a trigger asks for a job: no row means the repository is unknown.
+-- name: GetRepositoryEnqueueState :one
+SELECT enabled, removed_at
+FROM repositories
+WHERE id = ?;
+
+-- Pausing a repository drops its queued job; a running one is aborted at its next heartbeat.
+-- name: DeleteQueuedJobsForRepository :execrows
+DELETE FROM jobs
+WHERE repository_id = ?
+  AND state = 'queued';

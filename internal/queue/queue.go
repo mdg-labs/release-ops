@@ -56,6 +56,11 @@ var (
 	// ErrLeaseLost is returned when the caller does not hold the job's lease: the job is
 	// unknown, not running, or leased to another claim.
 	ErrLeaseLost = errors.New("lease is not held for this job")
+	// ErrRepositoryPaused is returned by Enqueue for a repository that is paused or removed:
+	// a paused repository gets no job from any trigger (specs.html § 2.7).
+	ErrRepositoryPaused = errors.New("repository is paused or removed")
+	// ErrRepositoryNotFound is returned by Enqueue for a repository id that is not recorded.
+	ErrRepositoryNotFound = errors.New("repository is not recorded")
 )
 
 // EnqueueParams describes one trigger for a repository.

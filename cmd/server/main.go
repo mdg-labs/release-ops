@@ -24,6 +24,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/providers/integrationtester"
 	"github.com/mdg-labs/release-ops/internal/queue"
 	"github.com/mdg-labs/release-ops/internal/queue/internalapi"
+	"github.com/mdg-labs/release-ops/internal/scheduler"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
@@ -40,6 +41,9 @@ var (
 	// redeliveryInterval is how often failed webhook deliveries are redelivered, after the
 	// pass at startup.
 	redeliveryInterval = github.RedeliveryInterval
+	// schedulerInterval is how often the safety net enqueues a job per repository: hourly, as
+	// docs/specs.html §5.7 fixes it. There is no setting for it.
+	schedulerInterval = scheduler.Interval
 )
 
 // reapInterval is how often the app requeues jobs whose lease has expired.
@@ -173,6 +177,18 @@ func run(ctx context.Context, cfg *config.Config) error {
 	var background sync.WaitGroup
 	background.Go(func() {
 		queue.RunReaper(appCtx, jobs, reapInterval, func(err error) { log.Printf("job reaper: %v", err) })
+	})
+	background.Go(func() {
+		ticker := time.NewTicker(schedulerInterval)
+		defer ticker.Stop()
+		scheduler.New(appStore.Repositories(), jobs).Run(appCtx, ticker.C, func(res scheduler.Result, err error) {
+			if err != nil {
+				log.Printf("scheduler: %v", err)
+			}
+			if res.Enqueued > 0 {
+				log.Printf("scheduler: enqueued %d repository runs", res.Enqueued)
+			}
+		})
 	})
 	syncEvery := installationSyncInterval
 	if cfg.PollingMode() {

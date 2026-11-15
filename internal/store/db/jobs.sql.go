@@ -147,6 +147,21 @@ func (q *Queries) CountEligibleQueuedJobs(ctx context.Context, runAfter string) 
 	return items, nil
 }
 
+const deleteQueuedJobsForRepository = `-- name: DeleteQueuedJobsForRepository :execrows
+DELETE FROM jobs
+WHERE repository_id = ?
+  AND state = 'queued'
+`
+
+// Pausing a repository drops its queued job; a running one is aborted at its next heartbeat.
+func (q *Queries) DeleteQueuedJobsForRepository(ctx context.Context, repositoryID string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteQueuedJobsForRepository, repositoryID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const finishJob = `-- name: FinishJob :execrows
 UPDATE jobs
 SET state = ?1,
@@ -309,6 +324,25 @@ func (q *Queries) GetQueuedJobForRepository(ctx context.Context, repositoryID st
 		&i.CreatedAt,
 		&i.FinishedAt,
 	)
+	return i, err
+}
+
+const getRepositoryEnqueueState = `-- name: GetRepositoryEnqueueState :one
+SELECT enabled, removed_at
+FROM repositories
+WHERE id = ?
+`
+
+type GetRepositoryEnqueueStateRow struct {
+	Enabled   int64          `json:"enabled"`
+	RemovedAt sql.NullString `json:"removed_at"`
+}
+
+// A repository's state when a trigger asks for a job: no row means the repository is unknown.
+func (q *Queries) GetRepositoryEnqueueState(ctx context.Context, id string) (GetRepositoryEnqueueStateRow, error) {
+	row := q.db.QueryRowContext(ctx, getRepositoryEnqueueState, id)
+	var i GetRepositoryEnqueueStateRow
+	err := row.Scan(&i.Enabled, &i.RemovedAt)
 	return i, err
 }
 

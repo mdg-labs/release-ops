@@ -10,6 +10,39 @@ import (
 	"database/sql"
 )
 
+const getManageableRepository = `-- name: GetManageableRepository :one
+SELECT r.id, r.full_name, r.default_branch, r.enabled, r.config_state, i.status AS installation_status
+FROM repositories r
+JOIN installations i ON i.id = r.installation_id
+WHERE r.id = ?
+  AND r.removed_at IS NULL
+  AND i.status <> 'removed'
+`
+
+type GetManageableRepositoryRow struct {
+	ID                 string `json:"id"`
+	FullName           string `json:"full_name"`
+	DefaultBranch      string `json:"default_branch"`
+	Enabled            int64  `json:"enabled"`
+	ConfigState        string `json:"config_state"`
+	InstallationStatus string `json:"installation_status"`
+}
+
+// A repository an admin can act on: not removed, and of an installation that is not removed.
+func (q *Queries) GetManageableRepository(ctx context.Context, id string) (GetManageableRepositoryRow, error) {
+	row := q.db.QueryRowContext(ctx, getManageableRepository, id)
+	var i GetManageableRepositoryRow
+	err := row.Scan(
+		&i.ID,
+		&i.FullName,
+		&i.DefaultBranch,
+		&i.Enabled,
+		&i.ConfigState,
+		&i.InstallationStatus,
+	)
+	return i, err
+}
+
 const listActiveRepositoryConfigStates = `-- name: ListActiveRepositoryConfigStates :many
 SELECT github_repository_id, config_state
 FROM repositories
@@ -68,6 +101,46 @@ func (q *Queries) ListActiveRepositoryIDs(ctx context.Context, installationID st
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listScheduledRunRepositoryIDs = `-- name: ListScheduledRunRepositoryIDs :many
+SELECT r.id
+FROM repositories r
+JOIN installations i ON i.id = r.installation_id
+WHERE r.enabled = 1
+  AND r.removed_at IS NULL
+  AND i.status = 'active'
+  AND r.config_state <> 'missing'
+  AND NOT EXISTS (
+    SELECT 1 FROM jobs j
+    WHERE j.repository_id = r.id AND j.state IN ('queued', 'running')
+  )
+ORDER BY r.full_name, r.id
+`
+
+// The repositories the hourly safety net enqueues (specs.html section 2.9): enabled, not removed, of an
+// active installation, not recorded as having no config, and without a queued or running job.
+func (q *Queries) ListScheduledRunRepositoryIDs(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listScheduledRunRepositoryIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -141,6 +214,28 @@ type ReleaseRepositoryNameParams struct {
 // old row gets its own name back when it is listed.
 func (q *Queries) ReleaseRepositoryName(ctx context.Context, arg ReleaseRepositoryNameParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, releaseRepositoryName, arg.InstallationID, arg.FullName, arg.GithubRepositoryID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const setRepositoryEnabled = `-- name: SetRepositoryEnabled :execrows
+UPDATE repositories
+SET enabled = ?1, updated_at = ?2
+WHERE repositories.id = ?3
+  AND repositories.removed_at IS NULL
+  AND repositories.installation_id IN (SELECT i.id FROM installations i WHERE i.status <> 'removed')
+`
+
+type SetRepositoryEnabledParams struct {
+	Enabled   int64  `json:"enabled"`
+	UpdatedAt string `json:"updated_at"`
+	ID        string `json:"id"`
+}
+
+func (q *Queries) SetRepositoryEnabled(ctx context.Context, arg SetRepositoryEnabledParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setRepositoryEnabled, arg.Enabled, arg.UpdatedAt, arg.ID)
 	if err != nil {
 		return 0, err
 	}

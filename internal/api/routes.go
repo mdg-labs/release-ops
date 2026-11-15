@@ -20,8 +20,8 @@ import (
 //     only the setup routes; GET /setup/installed is public
 //  4. Logout, behind a session alone, so a user whose role cannot be evaluated can still end it
 //  5. Protected group (Authenticate: a session with a role, re-evaluated every 15 minutes):
-//     status for any role; settings, integrations, ticket-projects and users for an admin
-//     only (RequireAdmin), a viewer getting 403
+//     status for any role; settings, integrations, ticket-projects, repositories (run now,
+//     pause and enable) and users for an admin only (RequireAdmin), a viewer getting 403
 func RegisterAll(api chi.Router, deps *ServerDeps) {
 	if deps == nil || deps.Session == nil {
 		return
@@ -152,6 +152,10 @@ func registerAdminRoutes(protected chi.Router, deps *ServerDeps, appURL string, 
 	protected.Post("/ticket-projects", ticketProjectHandlers.Create)
 	protected.Patch("/ticket-projects/{id}", ticketProjectHandlers.Patch)
 	protected.Delete("/ticket-projects/{id}", ticketProjectHandlers.Delete)
+
+	repositoryHandlers := &handlers.RepositoryHandlers{Repositories: st.Repositories(), Queue: deps.Queue}
+	protected.Patch("/repositories/{id}", repositoryHandlers.Patch)
+	protected.Post("/repositories/{id}/run", repositoryHandlers.Run)
 
 	protected.Get("/users", userHandlers.List)
 	protected.Delete("/users/{id}", userHandlers.Delete)

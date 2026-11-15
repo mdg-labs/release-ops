@@ -143,6 +143,16 @@ func (q *JobQueue) Enqueue(ctx context.Context, p queue.EnqueueParams) (queue.En
 
 	var res queue.EnqueueResult
 	err := q.inTx(ctx, func(qtx *db.Queries) error {
+		state, err := qtx.GetRepositoryEnqueueState(ctx, p.RepositoryID)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return queue.ErrRepositoryNotFound
+		case err != nil:
+			return err
+		case state.Enabled != 1 || state.RemovedAt.Valid:
+			return queue.ErrRepositoryPaused
+		}
+
 		queued, err := qtx.GetQueuedJobForRepository(ctx, p.RepositoryID)
 		switch {
 		case err == nil:

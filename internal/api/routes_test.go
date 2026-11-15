@@ -492,6 +492,7 @@ func newRoutesTestDeps(t *testing.T) *ServerDeps {
 		Queries: storedb.New(db.Writer),
 		Store:   store.New(db, cipher),
 		Mailer:  mail.NoopMailer{},
+		Queue:   store.NewJobQueue(db, store.JobQueueOptions{}),
 	}
 }
 

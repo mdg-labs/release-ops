@@ -54,3 +54,35 @@ WHERE installation_id = ? AND removed_at IS NULL;
 SELECT id, github_repository_id
 FROM repositories
 WHERE installation_id = ? AND removed_at IS NULL;
+
+-- A repository an admin can act on: not removed, and of an installation that is not removed.
+-- name: GetManageableRepository :one
+SELECT r.id, r.full_name, r.default_branch, r.enabled, r.config_state, i.status AS installation_status
+FROM repositories r
+JOIN installations i ON i.id = r.installation_id
+WHERE r.id = ?
+  AND r.removed_at IS NULL
+  AND i.status <> 'removed';
+
+-- name: SetRepositoryEnabled :execrows
+UPDATE repositories
+SET enabled = sqlc.arg(enabled), updated_at = sqlc.arg(updated_at)
+WHERE repositories.id = sqlc.arg(id)
+  AND repositories.removed_at IS NULL
+  AND repositories.installation_id IN (SELECT i.id FROM installations i WHERE i.status <> 'removed');
+
+-- The repositories the hourly safety net enqueues (specs.html section 2.9): enabled, not removed, of an
+-- active installation, not recorded as having no config, and without a queued or running job.
+-- name: ListScheduledRunRepositoryIDs :many
+SELECT r.id
+FROM repositories r
+JOIN installations i ON i.id = r.installation_id
+WHERE r.enabled = 1
+  AND r.removed_at IS NULL
+  AND i.status = 'active'
+  AND r.config_state <> 'missing'
+  AND NOT EXISTS (
+    SELECT 1 FROM jobs j
+    WHERE j.repository_id = r.id AND j.state IN ('queued', 'running')
+  )
+ORDER BY r.full_name, r.id;
