@@ -444,10 +444,13 @@ func (h *Handler) environment(job queue.ClaimedJob, token, cfgPath, toolsDir, ba
 }
 
 // readReport reads Renovate's report file: ok when it is valid JSON and, redacted, within the
-// cap; missing when there is none and unreadable otherwise. The report is returned redacted,
-// and none is returned unless it is ok. A report never fails a job.
+// cap; missing when there is none and unreadable otherwise, which includes anything that is not
+// a regular file. The report is returned redacted, and none is returned unless it is ok. A
+// report never fails a job.
 func readReport(path string, redactor *redact.Redactor) (status, report string) {
-	f, err := os.Open(path)
+	// O_NONBLOCK keeps the open of a FIFO that has no writer from waiting for one; the opened
+	// descriptor is then checked, so only a regular file is ever read.
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if errors.Is(err, os.ErrNotExist) {
 		return queue.ReportMissing, ""
 	}
@@ -455,6 +458,9 @@ func readReport(path string, redactor *redact.Redactor) (status, report string) 
 		return queue.ReportUnreadable, ""
 	}
 	defer func() { _ = f.Close() }()
+	if info, err := f.Stat(); err != nil || !info.Mode().IsRegular() {
+		return queue.ReportUnreadable, ""
+	}
 	raw, err := io.ReadAll(io.LimitReader(f, queue.MaxReportBytes+1))
 	if err != nil || len(raw) > queue.MaxReportBytes || !json.Valid(raw) {
 		return queue.ReportUnreadable, ""
