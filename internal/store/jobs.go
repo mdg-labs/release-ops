@@ -214,7 +214,7 @@ func (q *JobQueue) enqueue(ctx context.Context, qtx *db.Queries, p queue.Enqueue
 		if p.Priority != queue.PriorityHigh {
 			return queue.EnqueueResult{Outcome: queue.EnqueueDropped, JobID: running.ID}, nil
 		}
-		return queue.EnqueueResult{Outcome: queue.EnqueueRerunRequested, JobID: running.ID}, qtx.SetJobRerunRequested(ctx, running.ID)
+		return queue.EnqueueResult{Outcome: queue.EnqueueRerunRequested, JobID: running.ID}, qtx.SetJobRerunRequested(ctx, rerunParams(running, p))
 	case !errors.Is(err, sql.ErrNoRows):
 		return queue.EnqueueResult{}, err
 	}
@@ -257,10 +257,7 @@ func coalesceParams(queued db.Job, p queue.EnqueueParams) db.CoalesceQueuedJobPa
 		out.Trigger = string(p.Trigger)
 	}
 	if len(p.MatchedMarkers) > 0 {
-		merged := unionMarkers(queued.MatchedMarkers, p.MatchedMarkers)
-		if raw, err := json.Marshal(merged); err == nil {
-			out.MatchedMarkers = nullString(string(raw))
-		}
+		out.MatchedMarkers = mergeMarkers(queued.MatchedMarkers, p.MatchedMarkers)
 	}
 	if p.WebhookReceivedAt != nil {
 		arrived := formatTime(*p.WebhookReceivedAt)
@@ -269,6 +266,71 @@ func coalesceParams(queued db.Job, p queue.EnqueueParams) db.CoalesceQueuedJobPa
 		}
 	}
 	return out
+}
+
+// rerunParams records a high-priority trigger that arrives while the job runs. Several of them
+// collapse into one follow-up: the latest trigger wins, the markers are the union and the
+// earliest webhook arrival is kept.
+func rerunParams(running db.Job, p queue.EnqueueParams) db.SetJobRerunRequestedParams {
+	out := db.SetJobRerunRequestedParams{
+		ID:                     running.ID,
+		RerunTrigger:           nullString(string(p.Trigger)),
+		RerunMarkers:           running.RerunMarkers,
+		RerunWebhookReceivedAt: running.RerunWebhookReceivedAt,
+	}
+	if len(p.MatchedMarkers) > 0 {
+		out.RerunMarkers = mergeMarkers(running.RerunMarkers, p.MatchedMarkers)
+	}
+	if p.WebhookReceivedAt != nil {
+		out.RerunWebhookReceivedAt = earlierTime(running.RerunWebhookReceivedAt, nullString(formatTime(*p.WebhookReceivedAt)))
+	}
+	return out
+}
+
+// mergeMarkers is the union of existing and added as the JSON stored in a column; existing is
+// kept if the union cannot be marshalled.
+func mergeMarkers(existing sql.NullString, added []string) sql.NullString {
+	raw, err := json.Marshal(unionMarkers(existing, added))
+	if err != nil {
+		return existing
+	}
+	return nullString(string(raw))
+}
+
+// earlierTime returns the earlier of two stored timestamps, which share one fixed-width layout;
+// a NULL loses to a value.
+func earlierTime(a, b sql.NullString) sql.NullString {
+	if !a.Valid || (b.Valid && b.String < a.String) {
+		return b
+	}
+	return a
+}
+
+// foldRerun merges what the triggers that arrived while job ran recorded into the trigger state
+// of the job that carries on after it (the follow-up or the retry), the same way a coalesce
+// into a queued job merges: the job becomes high priority, a normal-priority job takes the
+// recorded trigger while a high-priority one keeps its own, the markers are the union and the
+// earliest webhook arrival is kept. A job with no rerun requested, or one requested before the
+// recorded columns existed, keeps what it has, with the priority raised if it was requested.
+func foldRerun(job db.Job, priority, trigger string, markers, webhook sql.NullString) (string, string, sql.NullString, sql.NullString) {
+	if job.RerunRequested != 1 {
+		return priority, trigger, markers, webhook
+	}
+	if job.RerunTrigger.Valid && priority == string(queue.PriorityNormal) {
+		trigger = job.RerunTrigger.String
+	}
+	if added := parseMarkers(job.RerunMarkers); len(added) > 0 {
+		markers = mergeMarkers(markers, added)
+	}
+	return string(queue.PriorityHigh), trigger, markers, earlierTime(webhook, job.RerunWebhookReceivedAt)
+}
+
+func parseMarkers(raw sql.NullString) []string {
+	var markers []string
+	if raw.Valid {
+		_ = json.Unmarshal([]byte(raw.String), &markers)
+	}
+	return markers
 }
 
 func marshalMarkers(markers []string) (sql.NullString, error) {
@@ -590,7 +652,7 @@ func (q *JobQueue) Release(ctx context.Context, jobID, leaseOwner string) error 
 		if finished {
 			return queue.ErrLeaseLost
 		}
-		return requeue(ctx, qtx, job.ID, job.Attempts, q.now())
+		return requeue(ctx, qtx, job, job.Attempts, q.now())
 	})
 	if err != nil {
 		return fmt.Errorf("release: %w", err)
@@ -665,7 +727,7 @@ func (q *JobQueue) endAttempt(ctx context.Context, qtx *db.Queries, job db.Job, 
 		outcome = queue.FailExhausted
 	default:
 		delay := max(q.cfg.Backoff(int(used), q.rand()), retryAfter)
-		if err := requeue(ctx, qtx, job.ID, used, now.Add(delay)); err != nil {
+		if err := requeue(ctx, qtx, job, used, now.Add(delay)); err != nil {
 			return "", err
 		}
 		if err := insertRun(ctx, qtx, job, used, queue.OutcomeFailed, retryAfter, run, now); err != nil {
@@ -726,8 +788,19 @@ func insertRun(ctx context.Context, qtx *db.Queries, job db.Job, attempt int64, 
 	return qtx.InsertJobRun(ctx, row)
 }
 
-func requeue(ctx context.Context, qtx *db.Queries, jobID string, attempts int64, runAfter time.Time) error {
-	n, err := qtx.RequeueJob(ctx, db.RequeueJobParams{ID: jobID, Attempts: attempts, RunAfter: formatTime(runAfter)})
+// requeue puts the running job back in the queue. When a trigger arrived while it ran, the job
+// is the follow-up that trigger asked for and takes what the trigger recorded.
+func requeue(ctx context.Context, qtx *db.Queries, job db.Job, attempts int64, runAfter time.Time) error {
+	priority, trigger, markers, webhook := foldRerun(job, job.Priority, job.Trigger, job.MatchedMarkers, job.WebhookReceivedAt)
+	n, err := qtx.RequeueJob(ctx, db.RequeueJobParams{
+		ID:                job.ID,
+		Attempts:          attempts,
+		RunAfter:          formatTime(runAfter),
+		Priority:          priority,
+		Trigger:           trigger,
+		MatchedMarkers:    markers,
+		WebhookReceivedAt: webhook,
+	})
 	if err != nil {
 		return err
 	}
@@ -738,29 +811,38 @@ func requeue(ctx context.Context, qtx *db.Queries, jobID string, attempts int64,
 }
 
 // enqueueFollowUp queues the one high-priority job that follows a run during which a
-// high-priority trigger arrived. It carries the finished job's trigger and markers.
+// high-priority trigger arrived. It carries what those triggers recorded, and the finished
+// job's own trigger and markers when the trigger was requested before the columns existed.
 func (q *JobQueue) enqueueFollowUp(ctx context.Context, qtx *db.Queries, job db.Job, now time.Time) error {
 	queued, err := qtx.GetQueuedJobForRepository(ctx, job.RepositoryID)
 	switch {
 	case err == nil:
+		priority, trigger, markers, webhook := foldRerun(job, queued.Priority, queued.Trigger, queued.MatchedMarkers, queued.WebhookReceivedAt)
 		return qtx.CoalesceQueuedJob(ctx, db.CoalesceQueuedJobParams{
 			ID:                queued.ID,
-			Priority:          string(queue.PriorityHigh),
-			Trigger:           queued.Trigger,
-			MatchedMarkers:    queued.MatchedMarkers,
-			WebhookReceivedAt: queued.WebhookReceivedAt,
+			Priority:          priority,
+			Trigger:           trigger,
+			MatchedMarkers:    markers,
+			WebhookReceivedAt: webhook,
 		})
 	case !errors.Is(err, sql.ErrNoRows):
 		return err
 	}
-	return qtx.InsertJob(ctx, db.InsertJobParams{
-		ID:             newID(),
-		Kind:           job.Kind,
-		RepositoryID:   job.RepositoryID,
-		Priority:       string(queue.PriorityHigh),
-		RunAfter:       formatTime(now),
-		Trigger:        job.Trigger,
-		MatchedMarkers: job.MatchedMarkers,
-		CreatedAt:      formatTime(now),
-	})
+	follow := db.InsertJobParams{
+		ID:           newID(),
+		Kind:         job.Kind,
+		RepositoryID: job.RepositoryID,
+		Priority:     string(queue.PriorityHigh),
+		RunAfter:     formatTime(now),
+		Trigger:      job.Trigger,
+		CreatedAt:    formatTime(now),
+	}
+	if job.RerunTrigger.Valid {
+		follow.Trigger = job.RerunTrigger.String
+		follow.MatchedMarkers = job.RerunMarkers
+		follow.WebhookReceivedAt = job.RerunWebhookReceivedAt
+	} else {
+		follow.MatchedMarkers = job.MatchedMarkers
+	}
+	return qtx.InsertJob(ctx, follow)
 }

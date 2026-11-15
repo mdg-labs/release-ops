@@ -97,23 +97,26 @@ type Integration struct {
 }
 
 type Job struct {
-	ID                string         `json:"id"`
-	Kind              string         `json:"kind"`
-	RepositoryID      string         `json:"repository_id"`
-	Priority          string         `json:"priority"`
-	State             string         `json:"state"`
-	RunAfter          string         `json:"run_after"`
-	Attempts          int64          `json:"attempts"`
-	LeaseOwner        sql.NullString `json:"lease_owner"`
-	LeaseExpiresAt    sql.NullString `json:"lease_expires_at"`
-	LastHeartbeatAt   sql.NullString `json:"last_heartbeat_at"`
-	RerunRequested    int64          `json:"rerun_requested"`
-	Trigger           string         `json:"trigger"`
-	MatchedMarkers    sql.NullString `json:"matched_markers"`
-	WebhookReceivedAt sql.NullString `json:"webhook_received_at"`
-	StartedAt         sql.NullString `json:"started_at"`
-	CreatedAt         string         `json:"created_at"`
-	FinishedAt        sql.NullString `json:"finished_at"`
+	ID                     string         `json:"id"`
+	Kind                   string         `json:"kind"`
+	RepositoryID           string         `json:"repository_id"`
+	Priority               string         `json:"priority"`
+	State                  string         `json:"state"`
+	RunAfter               string         `json:"run_after"`
+	Attempts               int64          `json:"attempts"`
+	LeaseOwner             sql.NullString `json:"lease_owner"`
+	LeaseExpiresAt         sql.NullString `json:"lease_expires_at"`
+	LastHeartbeatAt        sql.NullString `json:"last_heartbeat_at"`
+	RerunRequested         int64          `json:"rerun_requested"`
+	Trigger                string         `json:"trigger"`
+	MatchedMarkers         sql.NullString `json:"matched_markers"`
+	WebhookReceivedAt      sql.NullString `json:"webhook_received_at"`
+	StartedAt              sql.NullString `json:"started_at"`
+	CreatedAt              string         `json:"created_at"`
+	FinishedAt             sql.NullString `json:"finished_at"`
+	RerunTrigger           sql.NullString `json:"rerun_trigger"`
+	RerunMarkers           sql.NullString `json:"rerun_markers"`
+	RerunWebhookReceivedAt sql.NullString `json:"rerun_webhook_received_at"`
 }
 
 type JobEvent struct {

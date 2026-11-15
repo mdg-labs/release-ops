@@ -357,7 +357,15 @@ CREATE TABLE jobs (
   webhook_received_at TEXT,
   started_at TEXT,
   created_at TEXT NOT NULL,
-  finished_at TEXT
+  finished_at TEXT,
+  rerun_trigger TEXT CHECK (
+    rerun_trigger IS NULL OR rerun_trigger IN (
+      'dashboard_checkbox', 'pr_checkbox', 'pr_closed', 'push',
+      'repository_added', 'schedule', 'polling', 'run_now'
+    )
+  ),
+  rerun_markers TEXT CHECK (rerun_markers IS NULL OR json_valid(rerun_markers)),
+  rerun_webhook_received_at TEXT
 ) STRICT;
 
 CREATE UNIQUE INDEX idx_jobs_one_queued_per_repository ON jobs (repository_id) WHERE state = 'queued';
