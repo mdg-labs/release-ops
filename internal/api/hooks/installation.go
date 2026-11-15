@@ -15,7 +15,8 @@ import (
 
 // RegisterInstallationHandlers replaces the acknowledging handlers of the installation and
 // installation_repositories events with ones that apply the payload through sync, the
-// functions the startup and periodic sync use. changed is called after a delivery adds
+// functions the startup and periodic sync use. changed is called after the delivery's
+// transaction commits, when the delivery recorded an installation or added or removed
 // repositories, so the sync can fill in what a payload does not carry (the default branch
 // and the Renovate config); it may be nil. No handler calls GitHub.
 func RegisterInstallationHandlers(r *Routes, sync store.InstallationSync, changed func()) {
@@ -122,7 +123,9 @@ func (h installationHandlers) installation(ctx context.Context, tx *sql.Tx, d De
 			return err
 		}
 	}
-	h.notify(outcome == store.InstallationRecorded || len(p.Repositories) > 0)
+	if (outcome == store.InstallationRecorded || len(p.Repositories) > 0) && h.changed != nil {
+		d.AfterCommit(h.changed)
+	}
 	return nil
 }
 
@@ -177,10 +180,4 @@ func (h installationHandlers) apply(ctx context.Context, tx *sql.Tx, installatio
 		return h.sync.RemoveRepositories(ctx, tx, installationID, ids)
 	}
 	return nil
-}
-
-func (h installationHandlers) notify(changed bool) {
-	if changed && h.changed != nil {
-		h.changed()
-	}
 }

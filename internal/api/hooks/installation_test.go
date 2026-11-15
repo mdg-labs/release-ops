@@ -322,3 +322,42 @@ func TestInstallationEventWithAnUnusablePayloadIsRefusedAndNotRemembered(t *test
 		t.Errorf("repositories = %d, want nothing from the refused delivery", len(r.repos(t)))
 	}
 }
+
+// rollsBack applies a delivery in a transaction of the real store and then rolls it back, as a
+// failing commit does.
+type rollsBack struct{ db *store.DB }
+
+func (r rollsBack) Receive(ctx context.Context, _ store.WebhookDelivery, apply func(ctx context.Context, tx *sql.Tx) error) (bool, error) {
+	tx, err := r.db.Writer.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := apply(ctx, tx); err != nil {
+		return false, err
+	}
+	return false, errors.New("commit failed")
+}
+
+func TestInstallationEventDoesNotRequestASyncWhenItsTransactionRollsBack(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.OpenMigrated(t)
+	st := store.New(db, nil)
+	var changed atomic.Int64
+	routes := hooks.NewRoutes()
+	hooks.RegisterInstallationHandlers(routes, st.InstallationSync(), func() { changed.Add(1) })
+	srv := httptest.NewServer(&hooks.Receiver{Secrets: secrets{}, Deliveries: rollsBack{db: db}, Routes: routes})
+	t.Cleanup(srv.Close)
+	r := &rig{srv: srv, db: db}
+
+	if got := r.deliver(t, "installation", "g-1", fixture(t, "installation_created.json")); got != http.StatusInternalServerError {
+		t.Fatalf("installation delivery = %d, want 500 for the rolled-back transaction", got)
+	}
+	if _, _, ok := r.installationStatus(t, 1000); ok {
+		t.Fatal("the installation was recorded although its transaction rolled back")
+	}
+	if changed.Load() != 0 {
+		t.Errorf("sync requested %d times for a delivery that did not commit, want 0", changed.Load())
+	}
+}
