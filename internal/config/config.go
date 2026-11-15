@@ -193,8 +193,8 @@ func (c *Config) validate() error {
 	if c.SetupToken != "" && len(c.SetupToken) < minSetupTokenLen {
 		return fmt.Errorf("SETUP_TOKEN must be at least %d characters; generate one with: openssl rand -hex 32", minSetupTokenLen)
 	}
-	if c.BootstrapAdminGitHubLogin != "" && (len(c.BootstrapAdminGitHubLogin) > 39 || !githubLoginPattern.MatchString(c.BootstrapAdminGitHubLogin)) {
-		return fmt.Errorf("BOOTSTRAP_ADMIN_GITHUB_LOGIN must be a GitHub login: up to 39 letters, digits and single hyphens")
+	if c.BootstrapAdminGitHubLogin != "" && !validUserLogin(c.BootstrapAdminGitHubLogin) {
+		return fmt.Errorf("BOOTSTRAP_ADMIN_GITHUB_LOGIN must be a GitHub login: up to 39 letters, digits and single hyphens, with an Enterprise Managed User's _shortcode (mona-cat_octo) allowed")
 	}
 	for name, team := range map[string]string{"ADMIN_TEAM": c.AdminTeam, "VIEWER_TEAM": c.ViewerTeam} {
 		if team != "" && !validTeam(team) {
@@ -241,9 +241,17 @@ var repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[
 // it can never look like an option, a hidden name or a path.
 var refPattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._/+@-]{0,254}$`)
 
-// githubLoginPattern is GitHub's account name syntax: up to 39 letters, digits and single
-// hyphens, neither starting nor ending with a hyphen.
-var githubLoginPattern = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$`)
+// userLoginPattern is a GitHub user's login: letters, digits and single hyphens, neither
+// starting nor ending with a hyphen, followed for an Enterprise Managed User by an underscore
+// and the short code of the enterprise (mona-cat_octo). It is the rule internal/github applies
+// to the login a user signs in with; config does not import that package, because the worker
+// must not depend on the database, and a test keeps the two in step.
+var userLoginPattern = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*(?:_[A-Za-z0-9]{1,39})?$`)
+
+func validUserLogin(s string) bool {
+	name, _, _ := strings.Cut(s, "_")
+	return len(name) <= 39 && userLoginPattern.MatchString(s)
+}
 
 // teamPattern is org/team-slug: a GitHub account name and a team slug of letters, digits,
 // dots, hyphens and underscores.

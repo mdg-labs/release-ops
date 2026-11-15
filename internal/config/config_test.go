@@ -3,6 +3,8 @@ package config
 import (
 	"strings"
 	"testing"
+
+	"github.com/mdg-labs/release-ops/internal/github"
 )
 
 func validEnv(t *testing.T) {
@@ -354,10 +356,29 @@ func TestLoadBootstrapAdminGitHubLogin(t *testing.T) {
 		t.Errorf("BootstrapAdminGitHubLogin = %q, want the trimmed login", cfg.BootstrapAdminGitHubLogin)
 	}
 
-	for _, bad := range []string{"-octo", "octo-", "oc--to", "octo cat", "octo/cat", "@octocat", strings.Repeat("a", 40)} {
+	// The rule sign-in and the membership checks apply: github.ValidUserLogin.
+	for _, login := range []string{"mona-cat_octo", "octocat", "a", strings.Repeat("a", 39), "mona_" + strings.Repeat("b", 39)} {
+		if !github.ValidUserLogin(login) {
+			t.Errorf("github.ValidUserLogin(%q) = false, want the rule config applies to accept it", login)
+		}
+		t.Setenv("BOOTSTRAP_ADMIN_GITHUB_LOGIN", login)
+		cfg, err := Load()
+		if err != nil {
+			t.Errorf("Load() with login %q error = %v, want it accepted", login, err)
+			continue
+		}
+		if cfg.BootstrapAdminGitHubLogin != login {
+			t.Errorf("BootstrapAdminGitHubLogin = %q, want %q", cfg.BootstrapAdminGitHubLogin, login)
+		}
+	}
+
+	for _, bad := range []string{"-octo", "octo-", "oc--to", "octo cat", "octo/cat", "@octocat", strings.Repeat("a", 40), "mona/cat", "_mona", "mona_", "mona--cat", "mona_octo_cat", "mona_" + strings.Repeat("b", 40)} {
+		if github.ValidUserLogin(bad) {
+			t.Errorf("github.ValidUserLogin(%q) = true, want the rule config applies to refuse it", bad)
+		}
 		t.Setenv("BOOTSTRAP_ADMIN_GITHUB_LOGIN", bad)
-		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "BOOTSTRAP_ADMIN_GITHUB_LOGIN") {
-			t.Errorf("Load() with login %q error = %v, want a BOOTSTRAP_ADMIN_GITHUB_LOGIN error", bad, err)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "BOOTSTRAP_ADMIN_GITHUB_LOGIN") || !strings.Contains(err.Error(), "mona-cat_octo") {
+			t.Errorf("Load() with login %q error = %v, want a BOOTSTRAP_ADMIN_GITHUB_LOGIN error naming the accepted form", bad, err)
 		}
 	}
 }

@@ -26,13 +26,18 @@ var (
 // digits and hyphens, starting with a letter or a digit.
 var loginPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`)
 
-// userLoginPattern is a user's login: a loginPattern name, followed for an Enterprise
-// Managed User by an underscore and the short code of the enterprise (mona-cat_octo).
-var userLoginPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:_[A-Za-z0-9]{1,39})?$`)
+// userLoginPattern is a user's login: letters, digits and single hyphens, neither starting
+// nor ending with a hyphen, followed for an Enterprise Managed User by an underscore and the
+// short code of the enterprise (mona-cat_octo).
+var userLoginPattern = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*(?:_[A-Za-z0-9]{1,39})?$`)
 
 func validUserLogin(s string) bool {
-	return userLoginPattern.MatchString(s) && !strings.Contains(s, "--")
+	name, _, _ := strings.Cut(s, "_")
+	return len(name) <= 39 && userLoginPattern.MatchString(s)
 }
+
+// ValidUserLogin reports whether s is a GitHub user login, a managed user's included.
+func ValidUserLogin(s string) bool { return validUserLogin(s) }
 
 // UserToken is a GitHub user access token. It is held in memory for the length of one
 // sign-in; the type renders without the value when printed or logged.

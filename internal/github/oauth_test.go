@@ -178,3 +178,17 @@ func TestUserAndOrganizationOwner(t *testing.T) {
 		}
 	})
 }
+
+func TestValidUserLogin(t *testing.T) {
+	t.Parallel()
+	for _, login := range []string{"octocat", "a", "mona-cat", "mona-cat_octo", strings.Repeat("a", 39), "mona_" + strings.Repeat("b", 39)} {
+		if !ValidUserLogin(login) {
+			t.Errorf("ValidUserLogin(%q) = false, want true", login)
+		}
+	}
+	for _, login := range []string{"", "mona/cat", "_mona", "mona_", "mona--cat", "-mona", "mona-", "mona-_octo", "mona_octo_cat", "mona cat", "@mona", strings.Repeat("a", 40), "mona_" + strings.Repeat("b", 40)} {
+		if ValidUserLogin(login) {
+			t.Errorf("ValidUserLogin(%q) = true, want false", login)
+		}
+	}
+}
