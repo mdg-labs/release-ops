@@ -53,14 +53,16 @@ type Redactor struct {
 }
 
 // New returns a Redactor for the given secrets. Each is replaced as it is and in the encodings
-// it travels in: URL-escaped, base64 and JSON-escaped. Empty and very short values are ignored.
+// it travels in: URL-escaped, base64 and JSON-escaped, with or without the HTML characters and
+// the solidus escaped. Empty and very short values are ignored.
 func New(secrets ...string) *Redactor {
 	var forms []string
 	for _, s := range secrets {
 		if len(s) < minSecretLen {
 			continue
 		}
-		forms = append(forms, s, url.QueryEscape(s), url.PathEscape(s), jsonEscape(s))
+		forms = append(forms, s, url.QueryEscape(s), url.PathEscape(s))
+		forms = append(forms, jsonForms(s)...)
 		for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
 			forms = append(forms, enc.EncodeToString([]byte(s)))
 		}
@@ -81,12 +83,25 @@ func New(secrets ...string) *Redactor {
 	return r
 }
 
-func jsonEscape(s string) string {
-	raw, err := json.Marshal(s)
-	if err != nil || len(raw) < 2 {
-		return s
+// jsonForms returns the ways a JSON encoder writes s inside a string: with the HTML characters
+// (&, <, >) as \u escapes or left alone, each with the solidus as / or as \/.
+func jsonForms(s string) []string {
+	var forms []string
+	for _, escapeHTML := range []bool{true, false} {
+		var buf strings.Builder
+		enc := json.NewEncoder(&buf)
+		enc.SetEscapeHTML(escapeHTML)
+		if err := enc.Encode(s); err != nil {
+			continue
+		}
+		quoted := strings.TrimSuffix(buf.String(), "\n")
+		if len(quoted) < 2 {
+			continue
+		}
+		form := quoted[1 : len(quoted)-1]
+		forms = append(forms, form, strings.ReplaceAll(form, "/", `\/`))
 	}
-	return string(raw[1 : len(raw)-1])
+	return forms
 }
 
 // String returns s with every known secret and every secret-shaped part replaced.

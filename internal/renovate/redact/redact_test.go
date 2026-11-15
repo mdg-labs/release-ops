@@ -19,16 +19,18 @@ func TestStringRemovesKnownSecretsInEveryEncoding(t *testing.T) {
 		"url escaped":  "q=" + url.QueryEscape(secret),
 		"base64":       "basic " + base64.StdEncoding.EncodeToString([]byte(secret)),
 		"raw base64":   base64.RawURLEncoding.EncodeToString([]byte(token)),
-		"json escaped": `{"msg":"` + strings.ReplaceAll(secret, "/", `\/`) + `"}`,
+		"json escaped": `{"msg":"w0rker\/secret+with=chars&more"}`,
+		"json html":    `{"msg":"w0rker/secret+with=chars\u0026more"}`,
+		"json both":    `{"msg":"w0rker\/secret+with=chars\u0026more"}`,
 		"worker":       "secret=" + secret,
 	} {
 		out := r.String(in)
-		for _, leaked := range []string{token, secret, url.QueryEscape(secret), base64.StdEncoding.EncodeToString([]byte(secret)), base64.RawURLEncoding.EncodeToString([]byte(token))} {
+		for _, leaked := range []string{token, secret, "w0rker", "secret+with", "chars", url.QueryEscape(secret), base64.StdEncoding.EncodeToString([]byte(secret)), base64.RawURLEncoding.EncodeToString([]byte(token))} {
 			if strings.Contains(out, leaked) {
 				t.Errorf("%s: %q still holds %q", name, out, leaked)
 			}
 		}
-		if name != "json escaped" && !strings.Contains(out, Placeholder) {
+		if !strings.Contains(out, Placeholder) {
 			t.Errorf("%s: %q has no placeholder", name, out)
 		}
 	}
