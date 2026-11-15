@@ -214,6 +214,9 @@ func run(ctx context.Context, cfg *config.Config) error {
 		})
 	})
 	background.Go(func() { prRunner.Run(appCtx) })
+	// The start-up reconcile needs the bot user id, which is what tells a bot PR, and the
+	// repositories of the first sync, so it waits for both.
+	startup := &startupReconcile{trigger: func() { triggerReconciles(appCtx, prRunner) }}
 	syncEvery := installationSyncInterval
 	if cfg.PollingMode() {
 		syncEvery = pollingInterval
@@ -235,17 +238,11 @@ func run(ctx context.Context, cfg *config.Config) error {
 	background.Go(func() {
 		ticker := time.NewTicker(github.BotRetryInterval)
 		defer ticker.Stop()
-		// The bot user id is what tells a bot PR; the reconcile at start follows the resolver's
-		// first pass, so the id is looked up once and a reconcile never runs before it is stored.
-		first := true
 		botResolver.Run(appCtx, ticker.C, func(err error) {
 			if err != nil {
 				log.Printf("github bot user id: %v", err)
 			}
-			if first {
-				first = false
-				triggerReconciles(appCtx, prRunner)
-			}
+			startup.botPass(appCtx, err, appStore.GitHubApp())
 		})
 	})
 	background.Go(func() {
@@ -255,6 +252,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 			if err != nil {
 				log.Printf("github sync: %v", err)
 			}
+			startup.syncPass(appCtx, err, appStore.GitHubApp())
 		})
 	})
 	var internalErr, metricsErr error
