@@ -37,16 +37,37 @@ type fakeRoles struct {
 	role  string
 	err   error
 	calls int
+	// hold, when set, makes the next evaluation answer as it stands, then wait for release
+	// before returning: a request caught between reading GitHub and writing its session.
+	hold *evaluationHold
+}
+
+type evaluationHold struct {
+	entered chan struct{}
+	release chan struct{}
 }
 
 func (f *fakeRoles) Evaluate(_ context.Context, githubID int64) (string, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.calls++
+	role, err, hold := f.role, f.err, f.hold
+	f.hold = nil
+	f.mu.Unlock()
 	if githubID != testGitHubID {
 		return "", nil
 	}
-	return f.role, f.err
+	if hold != nil {
+		close(hold.entered)
+		<-hold.release
+	}
+	return role, err
+}
+
+func (f *fakeRoles) holdNext() *evaluationHold {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.hold = &evaluationHold{entered: make(chan struct{}), release: make(chan struct{})}
+	return f.hold
 }
 
 func (f *fakeRoles) set(role string, err error) {
@@ -583,5 +604,116 @@ func TestSessionLifetimeIsCappedAtEightHours(t *testing.T) {
 	}
 	if after := remaining(); after < before-0.01 || after > before+0.001 {
 		t.Fatalf("expiry moved from %.5f to %.5f hours by a re-evaluation, want unchanged", before, after)
+	}
+}
+
+// requestWithCookie sends a request that carries the session cookie value by hand, so it keeps
+// using that session however the cookie jar changes.
+func (a *authRig) requestWithCookie(method, path, token string) int {
+	a.t.Helper()
+	req, err := http.NewRequest(method, a.srv.URL+path, nil)
+	if err != nil {
+		a.t.Fatalf("new request: %v", err)
+	}
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: token})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		a.t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode
+}
+
+func (a *authRig) sessionToken() string {
+	a.t.Helper()
+	var token string
+	if err := a.db.Writer.QueryRow(`SELECT token FROM sessions`).Scan(&token); err != nil {
+		a.t.Fatalf("read the session token: %v", err)
+	}
+	return token
+}
+
+// A request that read the session before another one destroyed it must not write it back: the
+// first re-check reads admin, the membership is removed, the second re-check reads no access and
+// ends the session, and the first request's commit lands afterwards.
+func TestARecheckInFlightDoesNotReviveASessionTheNextRecheckDestroyed(t *testing.T) {
+	t.Parallel()
+	a := newAuthRig(t)
+	a.signIn(auth.RoleAdmin)
+	token := a.sessionToken()
+	a.advance(auth.RoleRecheckInterval + time.Minute)
+
+	hold := a.roles.holdNext()
+	first := make(chan int, 1)
+	go func() { first <- a.requestWithCookie(http.MethodGet, "/me", token) }()
+	<-hold.entered
+
+	a.roles.set("", nil) // the membership is removed after the first evaluation
+	if code := a.requestWithCookie(http.MethodGet, "/me", token); code != http.StatusUnauthorized {
+		t.Fatalf("the second request = %d, want 401", code)
+	}
+	if n := a.count(`SELECT COUNT(*) FROM sessions`); n != 0 {
+		t.Fatalf("sessions after the second request = %d, want 0", n)
+	}
+
+	close(hold.release)
+	<-first
+
+	if n := a.count(`SELECT COUNT(*) FROM sessions`); n != 0 {
+		t.Fatalf("sessions after the first request's commit = %d, want the destroyed session to stay gone", n)
+	}
+	a.roles.set(auth.RoleAdmin, nil)
+	if code := a.requestWithCookie(http.MethodGet, "/admin", token); code != http.StatusUnauthorized {
+		t.Fatalf("GET /admin with the destroyed token = %d, want 401", code)
+	}
+}
+
+// Logout racing a request that writes the session leaves the session ended.
+func TestALogoutIsNotUndoneByARequestThatWritesTheSession(t *testing.T) {
+	t.Parallel()
+	a := newAuthRig(t)
+	a.signIn(auth.RoleAdmin)
+	token := a.sessionToken()
+	a.advance(auth.RoleRecheckInterval + time.Minute)
+
+	hold := a.roles.holdNext()
+	first := make(chan int, 1)
+	go func() { first <- a.requestWithCookie(http.MethodGet, "/me", token) }()
+	<-hold.entered
+
+	if code := a.requestWithCookie(http.MethodPost, "/auth/logout", token); code != http.StatusOK {
+		t.Fatalf("logout = %d, want 200", code)
+	}
+	close(hold.release)
+	<-first
+
+	if n := a.count(`SELECT COUNT(*) FROM sessions`); n != 0 {
+		t.Fatalf("sessions after logout and the concurrent request = %d, want 0", n)
+	}
+	if code := a.requestWithCookie(http.MethodGet, "/me", token); code != http.StatusUnauthorized {
+		t.Fatalf("GET /me with the logged-out token = %d, want 401", code)
+	}
+}
+
+// A re-check on a live session still writes the new check time.
+func TestARecheckOnALiveSessionIsPersisted(t *testing.T) {
+	t.Parallel()
+	a := newAuthRig(t)
+	a.signIn(auth.RoleViewer, "repo-1")
+	a.roles.set(auth.RoleAdmin, nil)
+	a.advance(auth.RoleRecheckInterval + time.Minute)
+	if code, _ := a.do(http.MethodGet, "/me"); code != http.StatusOK {
+		t.Fatalf("GET /me = %d", code)
+	}
+	if n := a.roles.count(); n != 1 {
+		t.Fatalf("GitHub was asked %d times, want once", n)
+	}
+	// The stored check time is fresh: the next request does not ask again, and the new role holds.
+	if code, _ := a.do(http.MethodGet, "/admin"); code != http.StatusNoContent {
+		t.Fatalf("GET /admin = %d, want 204 for the promoted role", code)
+	}
+	if n := a.roles.count(); n != 1 {
+		t.Fatalf("GitHub was asked %d times, want the stored re-check time to be used", n)
 	}
 }

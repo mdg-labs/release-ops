@@ -204,6 +204,17 @@ CREATE TABLE repositories (
   UNIQUE (installation_id, full_name)
 ) STRICT;
 
+-- Tokens that were deleted while a request might still hold the session: logout, a failed role
+-- re-check, a renewed token. A commit never writes a token listed here, so a request that loaded
+-- the session before it was destroyed cannot bring it back. token_hash is the SHA-256 (hex) of the
+-- token; a row is kept until the latest moment the session could have expired.
+CREATE TABLE revoked_sessions (
+  token_hash TEXT PRIMARY KEY,
+  expiry REAL NOT NULL
+) STRICT;
+
+CREATE INDEX idx_revoked_sessions_expiry ON revoked_sessions (expiry);
+
 -- The repository-access list of a viewer's session (specs.html § 3.9): the repositories the user
 -- can access, written at sign-in and never refreshed. Rows go with the session and with a deleted
 -- repository; an admin session has none, and a viewer session without rows sees no repository.

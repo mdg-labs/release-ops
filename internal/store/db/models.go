@@ -167,6 +167,11 @@ type Repository struct {
 	UpdatedAt            string         `json:"updated_at"`
 }
 
+type RevokedSession struct {
+	TokenHash string  `json:"token_hash"`
+	Expiry    float64 `json:"expiry"`
+}
+
 type Session struct {
 	Token  string  `json:"token"`
 	Data   []byte  `json:"data"`
