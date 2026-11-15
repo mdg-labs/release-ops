@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mdg-labs/release-ops/internal/github"
 	"github.com/mdg-labs/release-ops/internal/github/githubtest"
 	"github.com/mdg-labs/release-ops/internal/updateprs"
 )
@@ -137,6 +138,45 @@ func TestReconcileUsesTheETagAndStillRepairsDriftOnANotModifiedPage(t *testing.T
 	var title string
 	if err := r.db.Reader.QueryRow(`SELECT title FROM update_prs WHERE number = 2`).Scan(&title); err != nil || title != "renamed" {
 		t.Fatalf("title = %q, %v", title, err)
+	}
+}
+
+// withoutLinkOnNotModified answers a 304 the way a server may: without the Link header.
+type withoutLinkOnNotModified struct{ updateprs.API }
+
+func (a withoutLinkOnNotModified) OpenPullRequestsPage(ctx context.Context, token, fullName, pageURL, etag string) (github.PullRequestPage, error) {
+	page, err := a.API.OpenPullRequestsPage(ctx, token, fullName, pageURL, etag)
+	if page.NotModified {
+		page.Next = ""
+	}
+	return page, err
+}
+
+// A cached page that GitHub answers 304 without a Link header still leads to the next page, so
+// the PRs behind it stay in the listing.
+func TestReconcileFollowsTheCachedNextPageWhenANotModifiedAnswerOmitsLink(t *testing.T) {
+	r := newRig(t, true)
+	r.rec.API = withoutLinkOnNotModified{r.rec.API}
+	r.fake.SetPageSize(1)
+	r.bot(1)
+	r.bot(2)
+	ctx := context.Background()
+	if err := r.rec.Reconcile(ctx, r.repo); err != nil {
+		t.Fatal(err)
+	}
+	// The fake lists newest first, so PR 2 is on page 1 and PR 1 on page 2: a PR 1 lost from the
+	// store only comes back when page 2 is read after page 1's 304.
+	if _, err := r.db.Writer.Exec(`DELETE FROM update_prs WHERE number = 1`); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.rec.Reconcile(ctx, r.repo); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.fake.NotModifiedAnswers(); got != 2 {
+		t.Fatalf("%d pages answered 304, want both: page 2 must be requested after page 1's 304", got)
+	}
+	if got, want := r.states(t), map[int64]string{1: "open", 2: "open"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("rows = %v, want the PR on page 2 back", got)
 	}
 }
 

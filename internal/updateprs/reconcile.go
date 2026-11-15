@@ -237,6 +237,10 @@ func (r *Reconciler) list(ctx context.Context, token, fullName string, botUserID
 		entry := cachedPage{etag: page.ETag, next: page.Next}
 		if page.NotModified && haveCached {
 			entry.prs = cached.prs
+			if entry.next == "" {
+				// A 304 need not repeat Link; the page is unchanged, so its next page is too.
+				entry.next = cached.next
+			}
 		} else if page.NotModified {
 			return nil, errors.New("page not modified without a cached page")
 		} else {
