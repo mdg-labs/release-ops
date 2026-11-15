@@ -36,8 +36,9 @@ var shapes = []struct {
 	{regexp.MustCompile(`eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}`), Placeholder},
 	// A 256-bit key as hex, the shape of APP_ENCRYPTION_KEY.
 	{regexp.MustCompile(`(?i)\b[0-9a-f]{64}\b`), Placeholder},
-	// Credentials in a URL's user-info part.
-	{regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://)[^/\s"'@]+@`), "${1}" + Placeholder + "@"},
+	// Credentials in a URL's user-info part: everything up to the last @ before a slash,
+	// whitespace or a quote, so an @, ? or # inside a password does not leave the rest of it behind.
+	{regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://)[^/\s"']+@`), "${1}" + Placeholder + "@"},
 	// An Authorization header value.
 	{regexp.MustCompile(`(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}`), "${1} " + Placeholder},
 	// An environment dump or a log line of NAME=value for a secret-named variable.

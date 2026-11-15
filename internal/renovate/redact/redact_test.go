@@ -77,3 +77,23 @@ func TestNewIgnoresEmptyAndShortSecrets(t *testing.T) {
 		t.Errorf("a short secret shredded the text: %q", out)
 	}
 }
+
+func TestStringConsumesTheWholeURLUserInfo(t *testing.T) {
+	for name, tc := range map[string]struct{ in, want string }{
+		"an @ in the password":     {"clone https://user:p@ss@word@example.com/repo now", "clone https://" + Placeholder + "@example.com/repo now"},
+		"a plain user-info":        {"https://user:pw@host/x", "https://" + Placeholder + "@host/x"},
+		"no user-info":             {"https://host/x", "https://host/x"},
+		"an address after a path":  {"see https://host/x and mail dev@example.com", "see https://host/x and mail dev@example.com"},
+		"an address after a space": {"https://host dev@example.com", "https://host dev@example.com"},
+		"an @ in the query":        {"https://host/x?mail=a@b.example", "https://host/x?mail=a@b.example"},
+		"a # in the password":      {"https://user:p#ss@host/x", "https://" + Placeholder + "@host/x"},
+		"a # in a token password":  {"https://x-access-token:ab#cd@github.com/o/r.git", "https://" + Placeholder + "@github.com/o/r.git"},
+		"a ? in the password":      {"https://user:p?ss@host/x", "https://" + Placeholder + "@host/x"},
+		"an @ in the fragment":     {"https://host#a@b", "https://" + Placeholder + "@b"},
+		"a quoted url":             {`"https://user:p@ss@host/x"`, `"https://` + Placeholder + `@host/x"`},
+	} {
+		if got := Shapes(tc.in); got != tc.want {
+			t.Errorf("%s: %q -> %q, want %q", name, tc.in, got, tc.want)
+		}
+	}
+}
