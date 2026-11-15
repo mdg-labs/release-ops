@@ -1117,21 +1117,70 @@ func TestFailStoresTheAttemptsRecordAcrossRetries(t *testing.T) {
 	}
 }
 
-// Without a record nothing is stored, as before: Complete and Fail without Run write no row.
-func TestResultsWithoutARunRecordStoreNoRun(t *testing.T) {
+// A result without a record still leaves the attempt's job_runs row: the outcome and nothing else.
+func TestResultsWithoutARunRecordStoreAMinimalRun(t *testing.T) {
 	e := newJobEnv(t, 2)
 	ctx := context.Background()
-	a := e.enqueue(t, e.repos[0], queue.PriorityHigh).JobID
-	b := e.enqueue(t, e.repos[1], queue.PriorityHigh).JobID
+	e.enqueue(t, e.repos[0], queue.PriorityHigh)
+	e.enqueue(t, e.repos[1], queue.PriorityHigh)
 	ja, jb := e.claim(t), e.claim(t)
+	a, b := ja.ID, jb.ID
+	if _, err := e.q.Heartbeat(ctx, ja.ID, ja.LeaseOwner); err != nil {
+		t.Fatal(err)
+	}
+	e.clock.Advance(5 * time.Second)
 	if err := e.q.Complete(ctx, ja.ID, ja.LeaseOwner); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.q.Fail(ctx, jb.ID, jb.LeaseOwner, queue.FailParams{}); err != nil {
+	if _, err := e.q.Fail(ctx, jb.ID, jb.LeaseOwner, queue.FailParams{RetryAfter: time.Minute}); err != nil {
 		t.Fatal(err)
 	}
-	if len(e.runs(t, a)) != 0 || len(e.runs(t, b)) != 0 {
-		t.Errorf("rows were stored without a record")
+	for id, want := range map[string]string{a: "succeeded", b: "failed"} {
+		rows := e.runs(t, id)
+		if len(rows) != 1 {
+			t.Fatalf("job_runs of %s = %+v, want one row", id, rows)
+		}
+		r := rows[0]
+		if r.Attempt != 1 || r.Outcome != want || !r.FinishedAt.Valid || r.FinishedAt.String != formatForTest(e.clock.Now()) ||
+			r.ExitCode.Valid || r.ErrorCode.Valid || r.ErrorMessage.Valid || r.ReportStatus.Valid || r.LogExcerpt.Valid || r.Report.Valid {
+			t.Errorf("run of %s = %+v, want a bare %s row", id, r, want)
+		}
+	}
+	if rows := e.runs(t, b); rows[0].RetryAfter.String != "60" {
+		t.Errorf("retry_after = %v, want the delay the worker reported", rows[0].RetryAfter)
+	}
+}
+
+// Every attempt that ends, however it ends, leaves exactly one job_runs row: a reaped one is
+// recorded as lease_expired with the times it ran.
+func TestReapStoresALeaseExpiredRunForEachExpiredAttempt(t *testing.T) {
+	e := newJobEnv(t, 1)
+	ctx := context.Background()
+	id := e.enqueue(t, e.repos[0], queue.PriorityHigh).JobID
+
+	for attempt := 1; attempt <= queue.DefaultConfig().MaxAttempts; attempt++ {
+		job := e.claim(t)
+		if _, err := e.q.Heartbeat(ctx, job.ID, job.LeaseOwner); err != nil {
+			t.Fatal(err)
+		}
+		started := e.clock.Now()
+		e.clock.Advance(3 * time.Minute)
+		if _, err := e.q.Reap(ctx); err != nil {
+			t.Fatalf("Reap %d: %v", attempt, err)
+		}
+		rows := e.runs(t, id)
+		if len(rows) != attempt {
+			t.Fatalf("job_runs after reap %d = %+v, want one row per attempt", attempt, rows)
+		}
+		r := rows[attempt-1]
+		if r.Attempt != int64(attempt) || r.Outcome != "lease_expired" || r.StartedAt != formatForTest(started) ||
+			!r.FinishedAt.Valid || r.FinishedAt.String != formatForTest(e.clock.Now()) || r.ErrorCode.Valid || r.ExitCode.Valid {
+			t.Errorf("run %d = %+v, want lease_expired from %s to now", attempt, r, formatForTest(started))
+		}
+		e.clock.Advance(time.Hour)
+	}
+	if got := e.row(t, id); got.State != queue.StateFailed {
+		t.Errorf("job = %s, want failed after the last reaped attempt", got.State)
 	}
 }
 

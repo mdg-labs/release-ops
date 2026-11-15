@@ -30,8 +30,10 @@ type RepositoryRepository interface {
 	// Get returns the repository, or ErrRepositoryNotFound.
 	Get(ctx context.Context, id string) (Repository, error)
 	// SetEnabled pauses (false) or enables (true) the repository and returns it as stored. In
-	// the same transaction a pause drops the repository's queued job; a running job is aborted
-	// at its next heartbeat. It returns ErrRepositoryNotFound for a repository Get would not find.
+	// the same transaction a pause ends its queued job: one that already ran an attempt (a
+	// retry waiting its turn) is marked failed and keeps its runs and events, one that never
+	// ran is deleted. A running job is aborted at its next heartbeat. It returns
+	// ErrRepositoryNotFound for a repository Get would not find.
 	SetEnabled(ctx context.Context, id string, enabled bool) (Repository, error)
 	// ListScheduled returns the ids of the repositories the hourly safety net enqueues: enabled,
 	// of an active installation, not recorded as having no config, and with no queued or

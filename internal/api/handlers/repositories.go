@@ -77,9 +77,11 @@ func (h *RepositoryHandlers) Run(w http.ResponseWriter, r *http.Request) {
 	writeRepositoryJSON(w, http.StatusAccepted, map[string]string{"jobId": res.JobID})
 }
 
-// Patch is PATCH /repositories/{id}: pause or enable the repository. A pause drops its queued
-// job and a running job is aborted at its next heartbeat. The ticket-project override of the
-// spec's body belongs to the repository mapping and is refused here instead of being ignored.
+// Patch is PATCH /repositories/{id}: pause or enable the repository. A pause ends its queued
+// job: one with no attempts is deleted, a queued retry with attempt history ends failed and
+// keeps its runs, and a running job is aborted at its next heartbeat. The ticket-project
+// override of the spec's body belongs to the repository mapping and is refused here instead of
+// being ignored.
 func (h *RepositoryHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 	repo, ok := h.find(w, r)
 	if !ok {

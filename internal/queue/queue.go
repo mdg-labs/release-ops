@@ -186,7 +186,8 @@ type FailParams struct {
 	// RetryAfter is the minimum delay an upstream asked for (Retry-After, a rate-limit
 	// reset); zero when there is none.
 	RetryAfter time.Duration
-	// Run is the attempt's record; nil stores no job_runs row.
+	// Run is the attempt's record. Every attempt leaves a job_runs row: nil stores one holding
+	// only the outcome, the times and the retry delay.
 	Run *RunRecord
 }
 
