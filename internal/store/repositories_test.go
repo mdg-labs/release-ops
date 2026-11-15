@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"slices"
 	"testing"
@@ -82,6 +83,51 @@ func TestSetEnabledPausesAndDropsOnlyTheQueuedJobOfThatRepository(t *testing.T) 
 	got, err = repos.SetEnabled(ctx, e.repos[0], true)
 	if err != nil || !got.Enabled {
 		t.Fatalf("SetEnabled(true) = %+v, %v", got, err)
+	}
+}
+
+func TestPausingKeepsTheAttemptHistoryOfAJobWaitingForItsRetry(t *testing.T) {
+	e := newJobEnv(t, 2)
+	repos := newRepoStore(t, e)
+	ctx := context.Background()
+
+	e.enqueue(t, e.repos[0], queue.PriorityHigh)
+	job := e.claim(t)
+	run := queue.RunRecord{ExitCode: intPtr(1), ErrorCode: "renovate_failed", ErrorMessage: "boom", ReportStatus: queue.ReportOK, LogExcerpt: "log tail"}
+	outcome, err := e.q.Fail(ctx, job.ID, job.LeaseOwner, queue.FailParams{Run: &run})
+	if err != nil || outcome != queue.FailRequeued {
+		t.Fatalf("Fail = %v, %v; want the job queued for its retry", outcome, err)
+	}
+	e.exec(t, `INSERT INTO job_events (id, job_id, job_run_id, at, kind) SELECT 'evt-1', job_id, id, 't', 'attempt_failed' FROM job_runs WHERE job_id = ?`, job.ID)
+	noRuns := e.enqueue(t, e.repos[1], queue.PriorityNormal)
+
+	for _, id := range e.repos {
+		if _, err := repos.SetEnabled(ctx, id, false); err != nil {
+			t.Fatalf("SetEnabled(%s, false): %v", id, err)
+		}
+	}
+
+	got := e.row(t, job.ID)
+	if got.State != queue.StateFailed || got.Attempts != 1 {
+		t.Errorf("job after the pause = %+v, want state failed with its one attempt", got)
+	}
+	var finishedAt sql.NullString
+	if err := e.db.Writer.QueryRow(`SELECT finished_at FROM jobs WHERE id = ?`, job.ID).Scan(&finishedAt); err != nil || !finishedAt.Valid {
+		t.Errorf("finished_at = %v, %v; want it set", finishedAt, err)
+	}
+	runs := e.runs(t, job.ID)
+	if len(runs) != 1 || runs[0].Outcome != queue.OutcomeFailed || runs[0].ErrorMessage.String != "boom" || runs[0].LogExcerpt.String != "log tail" {
+		t.Errorf("job_runs after the pause = %+v, want the failed attempt intact", runs)
+	}
+	if n := e.count(t, `state = 'queued'`); n != 0 {
+		t.Errorf("queued jobs after the pauses = %d, want none", n)
+	}
+	var events int
+	if err := e.db.Writer.QueryRow(`SELECT COUNT(*) FROM job_events WHERE job_id = ?`, job.ID).Scan(&events); err != nil || events != 1 {
+		t.Errorf("job_events after the pause = %d, %v; want the one event kept", events, err)
+	}
+	if n := e.count(t, `id = ?`, noRuns.JobID); n != 0 {
+		t.Errorf("the queued job without attempts still exists, want it deleted")
 	}
 }
 

@@ -182,7 +182,18 @@ SELECT enabled, removed_at
 FROM repositories
 WHERE id = ?;
 
--- Pausing a repository drops its queued job; a running one is aborted at its next heartbeat.
+-- Pausing a repository cancels its queued job; a running one is aborted at its next heartbeat.
+-- A queued job that already ran an attempt is waiting for its retry: it ends as failed, so the
+-- attempt's job_runs row and events are kept, as FinishJob ends an exhausted job.
+-- name: FailQueuedJobsWithRunsForRepository :execrows
+UPDATE jobs
+SET state = 'failed',
+    finished_at = CAST(sqlc.arg(now) AS TEXT)
+WHERE repository_id = sqlc.arg(repository_id)
+  AND state = 'queued'
+  AND EXISTS (SELECT 1 FROM job_runs WHERE job_runs.job_id = jobs.id);
+
+-- What is still queued once FailQueuedJobsWithRunsForRepository has run has no attempt history.
 -- name: DeleteQueuedJobsForRepository :execrows
 DELETE FROM jobs
 WHERE repository_id = ?

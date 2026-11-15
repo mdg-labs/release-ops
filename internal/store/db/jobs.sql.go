@@ -156,9 +156,34 @@ WHERE repository_id = ?
   AND state = 'queued'
 `
 
-// Pausing a repository drops its queued job; a running one is aborted at its next heartbeat.
+// What is still queued once FailQueuedJobsWithRunsForRepository has run has no attempt history.
 func (q *Queries) DeleteQueuedJobsForRepository(ctx context.Context, repositoryID string) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteQueuedJobsForRepository, repositoryID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const failQueuedJobsWithRunsForRepository = `-- name: FailQueuedJobsWithRunsForRepository :execrows
+UPDATE jobs
+SET state = 'failed',
+    finished_at = CAST(?1 AS TEXT)
+WHERE repository_id = ?2
+  AND state = 'queued'
+  AND EXISTS (SELECT 1 FROM job_runs WHERE job_runs.job_id = jobs.id)
+`
+
+type FailQueuedJobsWithRunsForRepositoryParams struct {
+	Now          string `json:"now"`
+	RepositoryID string `json:"repository_id"`
+}
+
+// Pausing a repository cancels its queued job; a running one is aborted at its next heartbeat.
+// A queued job that already ran an attempt is waiting for its retry: it ends as failed, so the
+// attempt's job_runs row and events are kept, as FinishJob ends an exhausted job.
+func (q *Queries) FailQueuedJobsWithRunsForRepository(ctx context.Context, arg FailQueuedJobsWithRunsForRepositoryParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, failQueuedJobsWithRunsForRepository, arg.Now, arg.RepositoryID)
 	if err != nil {
 		return 0, err
 	}

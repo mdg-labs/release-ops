@@ -113,6 +113,9 @@ func (r repositoryRepo) SetEnabled(ctx context.Context, id string, enabled bool)
 		return Repository{}, ErrRepositoryNotFound
 	}
 	if !enabled {
+		if _, err := qtx.FailQueuedJobsWithRunsForRepository(ctx, db.FailQueuedJobsWithRunsForRepositoryParams{Now: nowUTC(), RepositoryID: id}); err != nil {
+			return Repository{}, fmt.Errorf("end queued job with attempts: %w", err)
+		}
 		if _, err := qtx.DeleteQueuedJobsForRepository(ctx, id); err != nil {
 			return Repository{}, fmt.Errorf("drop queued job: %w", err)
 		}
