@@ -61,6 +61,12 @@ func TestSetEnabledPausesAndDropsOnlyTheQueuedJobOfThatRepository(t *testing.T) 
 	if err != nil || got.Enabled || got.ID != e.repos[0] {
 		t.Fatalf("SetEnabled(false) = %+v, %v; want the paused repository", got, err)
 	}
+	if state := e.row(t, other.JobID).State; state != queue.StateQueued {
+		t.Errorf("the other repository's job is %q after the first pause, want it still queued", state)
+	}
+	if untouched, err := repos.Get(ctx, e.repos[1]); err != nil || !untouched.Enabled {
+		t.Fatalf("Get(other) after the first pause = %+v, %v; want it still enabled", untouched, err)
+	}
 	if _, err := repos.SetEnabled(ctx, e.repos[1], false); err != nil {
 		t.Fatalf("SetEnabled repo 2: %v", err)
 	}
