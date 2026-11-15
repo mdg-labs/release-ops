@@ -863,6 +863,37 @@ func TestInvalidJobsAreRefusedBeforeAnythingIsRequested(t *testing.T) {
 	}
 }
 
+// makeAncestorsSearchable adds search permission for others to the directories between path
+// and the temporary directory t.TempDir creates below (exclusive); the temporary directory
+// itself must already be searchable; when it is not, the test is skipped, since the second user
+// cannot reach the fixture.
+func makeAncestorsSearchable(t *testing.T, path string) {
+	t.Helper()
+	base := os.Getenv("GOTMPDIR")
+	if base == "" {
+		base = os.TempDir()
+	}
+	base = filepath.Clean(base)
+	for dir := filepath.Dir(path); ; dir = filepath.Dir(dir) {
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if dir == base {
+			if info.Mode().Perm()&0o001 == 0 {
+				t.Skipf("%s is not searchable by others, so the second user cannot reach the fixture", dir)
+			}
+			return
+		}
+		if err := os.Chmod(dir, info.Mode().Perm()|0o001); err != nil {
+			t.Fatal(err)
+		}
+		if dir == filepath.Dir(dir) {
+			t.Fatalf("%s is not below the temporary directory %s", path, base)
+		}
+	}
+}
+
 // Renovate runs as the second Unix user. Unprivileged, the switch is refused, so the child
 // never runs as the worker: nothing runs. As root the child's uid is the configured one and it
 // cannot read a root-only file standing in for the worker's secret.
@@ -885,6 +916,13 @@ func TestRenovateIsStartedAsTheSecondUser(t *testing.T) {
 	// Let the unprivileged user be anyone: the directories are world-accessible for this test.
 	for _, d := range []string{e.cacheRoot, e.cfgMount, e.out, filepath.Dir(e.out)} {
 		_ = os.Chmod(d, 0o777)
+	}
+	// t.TempDir places its numbered directories below a private (0700) parent. The child
+	// switches credentials before it changes into its working directory, so every ancestor of
+	// the fixture must be searchable by it. The secret file below stays 0600. Unprivileged, the
+	// switch is refused before any directory matters.
+	if os.Geteuid() == 0 {
+		makeAncestorsSearchable(t, e.out)
 	}
 
 	res := e.h.Run(context.Background(), job(0))
