@@ -169,6 +169,15 @@ describe("auth middleware", () => {
       expect(user).toBeNull();
     });
 
+    it("returns null when the session endpoint answers 503", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({ ok: false, status: 503 }),
+      );
+
+      expect(await getSessionUser(makeRequest("/repos"))).toBeNull();
+    });
+
     it("uses GO_API_URL when set", async () => {
       vi.stubEnv("GO_API_URL", "http://127.0.0.1:9090");
       const fetchMock = vi.fn().mockResolvedValue({
@@ -238,6 +247,52 @@ describe("auth middleware", () => {
       expect(response.headers.get("location")).toBe(
         `${ORIGIN}/login?redirect=%2Frepos`,
       );
+    });
+
+    it("does not send a valid session to /login while the access check is unavailable", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({ ok: false, status: 503 }),
+      );
+
+      const response = await middleware(makeRequest("/repos"));
+      expect(response.status).toBe(200);
+      expect(response.headers.get("location")).toBeNull();
+    });
+
+    it("still redirects to /login when the session endpoint answers another error or cannot be reached", async () => {
+      for (const status of [401, 500, 502]) {
+        vi.stubGlobal(
+          "fetch",
+          vi.fn().mockResolvedValue({ ok: false, status }),
+        );
+        const response = await middleware(makeRequest("/repos"));
+        expect(response.status).toBe(307);
+        expect(response.headers.get("location")).toBe(
+          `${ORIGIN}/login?redirect=%2Frepos`,
+        );
+      }
+
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockRejectedValue(new TypeError("fetch failed")),
+      );
+      const unreachable = await middleware(makeRequest("/repos"));
+      expect(unreachable.status).toBe(307);
+      expect(unreachable.headers.get("location")).toBe(
+        `${ORIGIN}/login?redirect=%2Frepos`,
+      );
+    });
+
+    it("renders /login and does not redirect home while the access check is unavailable", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({ ok: false, status: 503 }),
+      );
+
+      const response = await middleware(makeRequest("/login"));
+      expect(response.status).toBe(200);
+      expect(response.headers.get("location")).toBeNull();
     });
 
     it("redirects authenticated users away from /login", async () => {

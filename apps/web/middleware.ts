@@ -33,9 +33,19 @@ export function isLoginPath(pathname: string): boolean {
   return pathname === LOGIN_PATH || pathname.startsWith(`${LOGIN_PATH}/`);
 }
 
-export async function getSessionUser(
+/**
+ * What the session endpoint says about the request: a signed-in user, no session, or that it
+ * cannot tell right now. GitHub being unreachable for the role re-check answers 503 and the
+ * session stays valid, so that is not "no session".
+ */
+export type SessionState =
+  | { kind: "user"; user: NonNullable<SessionResponse["user"]> }
+  | { kind: "none" }
+  | { kind: "unavailable" };
+
+export async function getSessionState(
   request: NextRequest,
-): Promise<SessionResponse["user"]> {
+): Promise<SessionState> {
   try {
     const response = await fetch(getSessionCheckUrl(), {
       headers: {
@@ -45,22 +55,40 @@ export async function getSessionUser(
       cache: "no-store",
     });
 
+    if (response.status === 503) {
+      return { kind: "unavailable" };
+    }
     if (!response.ok) {
-      return null;
+      return { kind: "none" };
     }
 
     const data = (await response.json()) as SessionResponse;
-    return data.user ?? null;
+    return data.user ? { kind: "user", user: data.user } : { kind: "none" };
   } catch {
-    return null;
+    return { kind: "none" };
   }
+}
+
+export async function getSessionUser(
+  request: NextRequest,
+): Promise<SessionResponse["user"]> {
+  const session = await getSessionState(request);
+  return session.kind === "user" ? session.user : null;
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const onPublicAuthPath = isPublicAuthPath(pathname);
   const onLoginPage = isLoginPath(pathname);
-  const user = await getSessionUser(request);
+  const session = await getSessionState(request);
+
+  // The access check is unavailable, not the session gone: the page renders and says so
+  // itself, and the next request checks again.
+  if (session.kind === "unavailable") {
+    return NextResponse.next();
+  }
+
+  const user = session.kind === "user" ? session.user : null;
 
   if (!user && !onPublicAuthPath) {
     const loginUrl = request.nextUrl.clone();
