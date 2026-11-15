@@ -42,12 +42,12 @@ type failingTracker struct {
 	failApply *atomic.Bool
 }
 
-func (f failingTracker) ApplyTx(ctx context.Context, tx *sql.Tx, repositoryID string, pr github.PullRequest, botUserID int64) (bool, error) {
-	changed, err := f.UpdatePRTracker.ApplyTx(ctx, tx, repositoryID, pr, botUserID)
+func (f failingTracker) ApplyTx(ctx context.Context, tx *sql.Tx, repositoryID string, pr github.PullRequest, botUserID int64) (updateprs.Outcome, error) {
+	out, err := f.UpdatePRTracker.ApplyTx(ctx, tx, repositoryID, pr, botUserID)
 	if err == nil && f.failApply.Load() {
-		return false, errors.New("upsert failed")
+		return updateprs.Outcome{}, errors.New("upsert failed")
 	}
-	return changed, err
+	return out, err
 }
 
 type prRig struct {

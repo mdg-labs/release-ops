@@ -68,6 +68,18 @@ type UpdatePRRepository interface {
 	// is not open, or absent, is left as it is. It keeps last_seen_at, and a later report that
 	// lists the PR open reopens it.
 	CloseGone(ctx context.Context, tx *sql.Tx, repositoryID string, number int64, now time.Time) (changed bool, err error)
+	// LatestReport returns the newest readable Renovate report of the repository through tx, and
+	// false when it has none.
+	LatestReport(ctx context.Context, tx *sql.Tx, repositoryID string) (RenovateReport, bool, error)
+	// RecordDependencies stores a PR's derived dependency list and release-notes excerpt
+	// through tx. See DependenciesInput.
+	RecordDependencies(ctx context.Context, tx *sql.Tx, in DependenciesInput) (DependenciesResult, error)
+	// SupersedeReplaced marks the closed PRs that the open PR with the id and number replaces
+	// as superseded, through tx, and returns them; a replay returns none.
+	SupersedeReplaced(ctx context.Context, tx *sql.Tx, repositoryID, id string, number int64, now time.Time) ([]Superseded, error)
+	// SupersedeIfReplaced marks the closed PR with the id and number as superseded through tx
+	// when an open PR replaces it, and returns it; a replay returns none.
+	SupersedeIfReplaced(ctx context.Context, tx *sql.Tx, repositoryID, id string, number int64, now time.Time) ([]Superseded, error)
 	// OpenNumbers returns the numbers of the repository's open PRs, ascending.
 	OpenNumbers(ctx context.Context, repositoryID string) ([]int64, error)
 	// OpenCounts returns the number of open PRs of every repository that is not removed, by

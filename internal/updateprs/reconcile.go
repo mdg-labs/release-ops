@@ -50,7 +50,8 @@ type TxBeginner interface {
 // (specs.html section 5.1): a bot PR GitHub lists and the store lacks is created, and a stored
 // open PR that is no longer listed is fetched and set to merged or closed as GitHub reports.
 // A stored open PR that GitHub answers 404 for, after the listing succeeded with the same token,
-// is gone and is stored closed. It never marks a PR superseded.
+// is gone and is stored closed. Each PR it applies goes through Tracker.ApplyTx, so the
+// dependency and supersede rules run for it as they do for a webhook.
 type Reconciler struct {
 	Store   store.UpdatePRRepository
 	Tracker *Tracker
@@ -196,11 +197,11 @@ func (r *Reconciler) apply(ctx context.Context, repositoryID string, botUserID i
 	defer func() { _ = tx.Rollback() }()
 	changed := 0
 	for _, pr := range prs {
-		c, err := r.Tracker.ApplyTx(ctx, tx, repositoryID, pr, botUserID)
+		out, err := r.Tracker.ApplyTx(ctx, tx, repositoryID, pr, botUserID)
 		if err != nil {
 			return 0, err
 		}
-		if c {
+		if out.Changed {
 			changed++
 		}
 	}

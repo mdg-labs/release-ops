@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/mdg-labs/release-ops/internal/api/hooks"
@@ -93,5 +95,37 @@ func TestWebhookPullRequestsStoreNothingWithoutTheTracker(t *testing.T) {
 	}
 	if got := f.updatePRStates(t); len(got) != 0 {
 		t.Fatalf("update PRs = %v, want none", got)
+	}
+}
+
+// POST /hooks/github records the dependencies and release notes of the bot PR, and none for the
+// config-migration and onboarding PRs.
+func TestWebhookPullRequestsRecordDependenciesAndReleaseNotesThroughThePublicRoute(t *testing.T) {
+	t.Parallel()
+	f, _ := newUpdatePRFlow(t, true, true)
+	for _, file := range []string{"update_pr_opened.json", "update_pr_edited_release_notes.json", "update_pr_config_migration.json", "update_pr_onboarding.json"} {
+		if status, _ := f.post(t, signedHook("pull_request", file, fixture(t, file))); status != http.StatusAccepted {
+			t.Fatalf("%s = %d, want 202", file, status)
+		}
+	}
+	rows, err := f.deps.DB.Query(`SELECT p.number, COUNT(d.id), COALESCE(MIN(d.name), ''), COALESCE(MIN(d.source), ''), COALESCE(p.release_notes, '') != ''
+		FROM update_prs p LEFT JOIN update_pr_dependencies d ON d.update_pr_id = p.id GROUP BY p.id ORDER BY p.number`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var got []string
+	for rows.Next() {
+		var number, count int
+		var name, source string
+		var notes bool
+		if err := rows.Scan(&number, &count, &name, &source, &notes); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, fmt.Sprintf("%d:%d:%s:%s:%v", number, count, name, source, notes))
+	}
+	want := []string{"21:1:lodash:body:true", "30:0:::false", "31:0:::false"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("update PRs = %v, want %v", got, want)
 	}
 }
