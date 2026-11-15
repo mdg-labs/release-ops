@@ -16,6 +16,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/api/handlers"
 	"github.com/mdg-labs/release-ops/internal/api/hooks"
+	apimw "github.com/mdg-labs/release-ops/internal/api/middleware"
 	"github.com/mdg-labs/release-ops/internal/github"
 	"github.com/mdg-labs/release-ops/internal/mail"
 	"github.com/mdg-labs/release-ops/internal/queue"
@@ -123,6 +124,8 @@ func registerWebhook(r chi.Router, deps *ServerDeps) {
 		Secrets:    deps.Store.GitHubApp(),
 		Deliveries: deps.Store.WebhookDeliveries(),
 		Routes:     routes,
+		// Own limiter: the failure counts are not shared with the auth endpoints.
+		SignatureFailure: apimw.NewRateLimiter().WebhookSignatureFailure,
 	}).ServeHTTP)
 }
 
