@@ -127,18 +127,25 @@ func TestWorkerRegistryRunsRenovateRunWithTheRenovateHandler(t *testing.T) {
 // failed, never succeeded, and the app records the run in job_runs without a secret.
 func TestWorkerCommandReportsAClaimedRenovateRunFailed(t *testing.T) {
 	app := newAppSide(t)
-	id := app.enqueue(t)
 
 	for _, name := range []string{"SESSION_SECRET", "APP_ENCRYPTION_KEY", "APP_DB_PATH"} {
 		t.Setenv(name, "")
 	}
 	t.Setenv("INTERNAL_URL", app.url)
 	t.Setenv("WORKER_SECRET", testWorkerSecret)
-	metricsAddr := fmt.Sprintf("127.0.0.1:%d", freePort(t))
-	t.Setenv("METRICS_ADDR", metricsAddr)
 
-	done := make(chan error, 1)
-	go func() { done <- runWorkerCommand() }()
+	// The job is queued once the worker's metrics listener is up: a worker that lost its port
+	// stops before it claims anything, and its retry on a fresh port finds the job still queued.
+	var metricsAddr string
+	var done chan error
+	withFreePorts(t, 1, func(ports []int) error {
+		metricsAddr = fmt.Sprintf("127.0.0.1:%d", ports[0])
+		t.Setenv("METRICS_ADDR", metricsAddr)
+		done = make(chan error, 1)
+		go func() { done <- runWorkerCommand() }()
+		return awaitReady(done, probe{url: "http://" + metricsAddr + "/metrics", status: http.StatusOK})
+	})
+	id := app.enqueue(t)
 
 	// The failed attempt is requeued with backoff; the fake clock does not advance, so no
 	// second claim follows.
@@ -271,37 +278,25 @@ func TestKilledWorkerJobIsReapedAndRunOnceBySecondWorker(t *testing.T) {
 // The app serves the worker routes on INTERNAL_ADDR only, behind the worker secret; the
 // public Go listener does not mount them, with or without the secret.
 func TestServerMountsWorkerRoutesOnTheInternalListenerOnly(t *testing.T) {
-	publicPort, internalPort := freePort(t), freePort(t)
-	cfg := &config.Config{
-		SessionSecret:          strings.Repeat("s", 32),
-		AppEncryptionKey:       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
-		AppDBPath:              filepath.Join(t.TempDir(), "app.db"),
-		GoInternalPort:         publicPort,
-		BootstrapAdminEmail:    "admin@example.com",
-		BootstrapAdminPassword: "correct-horse-battery",
-		InternalAddr:           fmt.Sprintf("127.0.0.1:%d", internalPort),
-		WorkerSecret:           testWorkerSecret,
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- run(ctx, cfg) }()
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Errorf("run: %v", err)
-			}
-		case <-time.After(20 * time.Second):
-			t.Error("server did not shut down")
+	var public, internal string
+	dbPath := filepath.Join(t.TempDir(), "app.db")
+	withFreePorts(t, 2, func(ports []int) error {
+		cfg := &config.Config{
+			SessionSecret:          strings.Repeat("s", 32),
+			AppEncryptionKey:       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+			AppDBPath:              dbPath,
+			GoInternalPort:         ports[0],
+			BootstrapAdminEmail:    "admin@example.com",
+			BootstrapAdminPassword: "correct-horse-battery",
+			InternalAddr:           fmt.Sprintf("127.0.0.1:%d", ports[1]),
+			WorkerSecret:           testWorkerSecret,
 		}
+		public = fmt.Sprintf("http://127.0.0.1:%d", ports[0])
+		internal = fmt.Sprintf("http://127.0.0.1:%d", ports[1])
+		return launch(t, func(ctx context.Context) error { return run(ctx, cfg) },
+			probe{url: public + "/healthz", status: http.StatusOK},
+			probe{url: internal + "/internal/v1/jobs/x/heartbeat", status: http.StatusMethodNotAllowed, bearer: true})
 	})
-
-	public := fmt.Sprintf("http://127.0.0.1:%d", publicPort)
-	internal := fmt.Sprintf("http://127.0.0.1:%d", internalPort)
-	waitForStatus(t, public+"/healthz", http.StatusOK, false)
-	waitForStatus(t, internal+"/internal/v1/jobs/x/heartbeat", http.StatusMethodNotAllowed, true)
 
 	post := func(url string, bearer bool) int {
 		t.Helper()
@@ -384,43 +379,32 @@ func getBody(t *testing.T, url string, wantStatus int) string {
 // answers 404 for it, as the /api/go proxy forwards to it, and the metrics listener serves
 // nothing else.
 func TestServerServesReadinessAndMetricsOnTheirListeners(t *testing.T) {
-	publicPort, internalPort, metricsPort := freePort(t), freePort(t), freePort(t)
-	cfg := &config.Config{
-		SessionSecret:          strings.Repeat("s", 32),
-		AppEncryptionKey:       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
-		AppDBPath:              filepath.Join(t.TempDir(), "app.db"),
-		GoInternalPort:         publicPort,
-		BootstrapAdminEmail:    "admin@example.com",
-		BootstrapAdminPassword: "correct-horse-battery",
-		InternalAddr:           fmt.Sprintf("127.0.0.1:%d", internalPort),
-		WorkerSecret:           testWorkerSecret,
-		MetricsAddr:            fmt.Sprintf("127.0.0.1:%d", metricsPort),
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- run(ctx, cfg) }()
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Errorf("run: %v", err)
-			}
-		case <-time.After(20 * time.Second):
-			t.Error("server did not shut down")
+	var cfg *config.Config
+	var public, internal, metricsURL string
+	dbPath := filepath.Join(t.TempDir(), "app.db")
+	withFreePorts(t, 3, func(ports []int) error {
+		cfg = &config.Config{
+			SessionSecret:          strings.Repeat("s", 32),
+			AppEncryptionKey:       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+			AppDBPath:              dbPath,
+			GoInternalPort:         ports[0],
+			BootstrapAdminEmail:    "admin@example.com",
+			BootstrapAdminPassword: "correct-horse-battery",
+			InternalAddr:           fmt.Sprintf("127.0.0.1:%d", ports[1]),
+			WorkerSecret:           testWorkerSecret,
+			MetricsAddr:            fmt.Sprintf("127.0.0.1:%d", ports[2]),
 		}
+		public = fmt.Sprintf("http://127.0.0.1:%d", ports[0])
+		internal = fmt.Sprintf("http://127.0.0.1:%d", ports[1])
+		metricsURL = fmt.Sprintf("http://127.0.0.1:%d", ports[2])
+		// The listeners start in their own goroutines. A GET on the internal heartbeat path is
+		// a 405 from the router before any queue method runs, so the probe is not a worker
+		// contact and /readyz stays 503 below.
+		return launch(t, func(ctx context.Context) error { return run(ctx, cfg) },
+			probe{url: public + "/healthz", status: http.StatusOK},
+			probe{url: internal + "/internal/v1/jobs/x/heartbeat", status: http.StatusMethodNotAllowed, bearer: true},
+			probe{url: metricsURL + "/metrics", status: http.StatusOK})
 	})
-
-	public := fmt.Sprintf("http://127.0.0.1:%d", publicPort)
-	internal := fmt.Sprintf("http://127.0.0.1:%d", internalPort)
-	metricsURL := fmt.Sprintf("http://127.0.0.1:%d", metricsPort)
-	waitForStatus(t, public+"/healthz", http.StatusOK, false)
-	// The listeners start in their own goroutines. A GET on the internal heartbeat path is a
-	// 405 from the router before any queue method runs, so the probe is not a worker contact
-	// and /readyz stays 503 below.
-	waitForStatus(t, internal+"/internal/v1/jobs/x/heartbeat", http.StatusMethodNotAllowed, true)
-	waitForStatus(t, metricsURL+"/metrics", http.StatusOK, false)
 
 	if body := getBody(t, public+"/readyz", http.StatusServiceUnavailable); !strings.Contains(body, "no worker has contacted the app") {
 		t.Errorf("readyz before any worker = %s", body)
@@ -481,7 +465,7 @@ func TestServerFailsWhenTheMetricsListenerCannotBind(t *testing.T) {
 		SessionSecret:          strings.Repeat("s", 32),
 		AppEncryptionKey:       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
 		AppDBPath:              filepath.Join(t.TempDir(), "app.db"),
-		GoInternalPort:         freePort(t),
+		GoInternalPort:         0,
 		BootstrapAdminEmail:    "admin@example.com",
 		BootstrapAdminPassword: "correct-horse-battery",
 		MetricsAddr:            busy.Addr().String(),
@@ -498,20 +482,15 @@ func TestServerFailsWhenTheMetricsListenerCannotBind(t *testing.T) {
 func TestInternalListenerSendsTheGlobalConfigLocationWithAClaimedJob(t *testing.T) {
 	app := newAppSide(t)
 	id := app.enqueue(t)
-	addr := fmt.Sprintf("127.0.0.1:%d", freePort(t))
-	cfg := &config.Config{InternalAddr: addr, WorkerSecret: testWorkerSecret, GlobalConfigRepo: "acme/renovate-global", GlobalConfigRef: "release/1"}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- serveInternal(ctx, cfg, app.q, nil) }()
-	t.Cleanup(func() {
-		cancel()
-		if err := <-done; err != nil {
-			t.Errorf("serveInternal: %v", err)
-		}
+	var addr string
+	withFreePorts(t, 1, func(ports []int) error {
+		addr = fmt.Sprintf("127.0.0.1:%d", ports[0])
+		cfg := &config.Config{InternalAddr: addr, WorkerSecret: testWorkerSecret, GlobalConfigRepo: "acme/renovate-global", GlobalConfigRef: "release/1"}
+		return launch(t, func(ctx context.Context) error { return serveInternal(ctx, cfg, app.q, nil) },
+			probe{url: "http://" + addr + "/internal/v1/jobs/x/heartbeat", status: http.StatusMethodNotAllowed, bearer: true})
 	})
-	waitForStatus(t, "http://"+addr+"/internal/v1/jobs/x/heartbeat", http.StatusMethodNotAllowed, true)
 
+	ctx := context.Background()
 	job, err := worker.NewClient("http://"+addr, testWorkerSecret, nil).Claim(ctx)
 	if err != nil || job == nil {
 		t.Fatalf("Claim = %+v, %v", job, err)
