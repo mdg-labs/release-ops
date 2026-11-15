@@ -218,6 +218,26 @@ func (r *trigRig) wantJobs(t *testing.T, n int) []jobRow {
 	return got
 }
 
+// originalAndFollowUp tells the claimed job from its follow-up by id: both can share a
+// millisecond, so their order in the rows says nothing about which came first.
+func originalAndFollowUp(t *testing.T, jobs []jobRow, claimedID string) (original, followUp jobRow) {
+	t.Helper()
+	if len(jobs) != 2 {
+		t.Fatalf("jobs = %+v, want the claimed job and one follow-up", jobs)
+	}
+	for _, j := range jobs {
+		if j.ID == claimedID {
+			original = j
+		} else {
+			followUp = j
+		}
+	}
+	if original.ID == "" || followUp.ID == "" {
+		t.Fatalf("jobs = %+v, want the claimed job %s and a follow-up with another id", jobs, claimedID)
+	}
+	return original, followUp
+}
+
 func TestDashboardTickEnqueuesAHighPriorityRunAndKeepsTheMarker(t *testing.T) {
 	t.Parallel()
 	r := newTrigRig(t, trigConfig{botID: botUserID})
@@ -622,12 +642,13 @@ func TestATickDuringARunningJobGivesExactlyOneFollowUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	jobs = r.wantJobs(t, 2)
-	if jobs[0].State != "succeeded" || jobs[1].State != "queued" || jobs[1].Priority != "high" || jobs[1].Rerun != 0 {
+	finished, followUp := originalAndFollowUp(t, jobs, claimed.ID)
+	if finished.State != "succeeded" || followUp.State != "queued" || followUp.Priority != "high" || followUp.Rerun != 0 {
 		t.Fatalf("jobs = %+v, want the finished job and exactly one queued high-priority follow-up", jobs)
 	}
 
 	next, err := r.jobs.Claim(ctx)
-	if err != nil || next.ID != jobs[1].ID {
+	if err != nil || next.ID != followUp.ID {
 		t.Fatalf("Claim = %+v, %v, want the follow-up", next, err)
 	}
 	if err := r.jobs.Complete(ctx, next.ID, next.LeaseOwner); err != nil {

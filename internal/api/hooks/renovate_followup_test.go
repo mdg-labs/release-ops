@@ -22,11 +22,10 @@ func TestFollowUpOfATickDuringARunningJobNamesTheTick(t *testing.T) {
 	if err := r.jobs.Complete(ctx, claimed.ID, claimed.LeaseOwner); err != nil {
 		t.Fatal(err)
 	}
-	jobs := r.wantJobs(t, 2)
-	if jobs[0].Trigger != "push" || jobs[0].State != "succeeded" {
-		t.Errorf("finished job = %+v, want the push job", jobs[0])
+	finished, f := originalAndFollowUp(t, r.wantJobs(t, 2), claimed.ID)
+	if finished.Trigger != "push" || finished.State != "succeeded" {
+		t.Errorf("finished job = %+v, want the push job", finished)
 	}
-	f := jobs[1]
 	if f.State != "queued" || f.Priority != "high" || f.Trigger != "dashboard_checkbox" || f.Markers != `["approve-branch=renovate/vite-7.x"]` {
 		t.Errorf("follow-up = %+v, want a queued high-priority dashboard_checkbox job with the ticked marker", f)
 	}
@@ -51,8 +50,7 @@ func TestTwoTicksDuringARunningJobGiveOneFollowUpWithBothMarkers(t *testing.T) {
 	if err := r.jobs.Complete(ctx, claimed.ID, claimed.LeaseOwner); err != nil {
 		t.Fatal(err)
 	}
-	jobs := r.wantJobs(t, 2)
-	f := jobs[1]
+	_, f := originalAndFollowUp(t, r.wantJobs(t, 2), claimed.ID)
 	if f.State != "queued" || f.Trigger != "pr_checkbox" || f.Markers != `["approve-branch=renovate/vite-7.x","rebase-check"]` {
 		t.Errorf("follow-up = %+v, want one queued job from the latest tick with both markers", f)
 	}

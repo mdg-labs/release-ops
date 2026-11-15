@@ -75,6 +75,6 @@ func TestRepeatedTicksCannotGrowAJobsMarkersWithoutBound(t *testing.T) {
 	if err := r.jobs.Complete(ctx, claimed.ID, claimed.LeaseOwner); err != nil {
 		t.Fatal(err)
 	}
-	jobs := r.wantJobs(t, 2)
-	r.wantCapped(t, "follow-up markers", jobs[1].Markers, "approve-branch=edit100-0")
+	_, followUp := originalAndFollowUp(t, r.wantJobs(t, 2), claimed.ID)
+	r.wantCapped(t, "follow-up markers", followUp.Markers, "approve-branch=edit100-0")
 }
