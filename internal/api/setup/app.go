@@ -38,6 +38,7 @@ const (
 // AppStore stores the instance's GitHub App.
 type AppStore interface {
 	Create(ctx context.Context, app store.NewGitHubApp) error
+	github.BotStore
 }
 
 // InstallationStore records the instance's one installation.
@@ -46,9 +47,11 @@ type InstallationStore interface {
 	Record(ctx context.Context, in store.NewInstallation) (store.InstallationOutcome, error)
 }
 
-// ManifestConverter exchanges a manifest code for the App GitHub created.
+// ManifestConverter exchanges a manifest code for the App GitHub created, and reads the numeric
+// id of the App's bot user once it is stored.
 type ManifestConverter interface {
 	ConvertManifest(ctx context.Context, code string) (*github.ManifestConversion, error)
+	github.BotUserLooker
 }
 
 type manifestRequest struct {
@@ -124,7 +127,9 @@ const (
 // before GitHub is called. The code is then converted to the App, which is stored with its
 // secrets encrypted, and the browser is redirected (302) to the App's installation page. A
 // failure before the store leaves nothing behind and redirects to /setup with an error code;
-// so does a missing or expired setup session (RequireCallbackSession).
+// so does a missing or expired setup session (RequireCallbackSession). Once the App is stored
+// its bot user's numeric id is read from GitHub; a lookup that fails is logged and neither
+// undoes nor fails the App, and the server retries it in the background.
 func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	query := r.URL.Query()
@@ -163,6 +168,10 @@ func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		h.redirectToSetup(w, r, errFailed)
 		return
+	}
+
+	if err := github.NewBotResolver(h.Converter, h.Apps).Ensure(ctx); err != nil {
+		slog.Warn("setup callback: reading the App's bot user id failed; it is retried in the background", "err", err)
 	}
 
 	http.Redirect(w, r, InstallURL(h.GitHubBaseURL, conversion.Slug), http.StatusFound)

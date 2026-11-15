@@ -123,6 +123,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	appClient := github.NewAppClient(githubClient, appStore.GitHubApp(), github.AppClientOptions{})
 	syncer := github.NewSyncer(appClient, appStore.InstallationSync())
 	recovery := github.NewRecovery(appClient, github.RecoveryOptions{})
+	botResolver := github.NewBotResolver(githubClient, appStore.GitHubApp())
 	webhookRoutes := hooks.NewRoutes()
 	hooks.RegisterInstallationHandlers(webhookRoutes, appStore.InstallationSync(), syncer.Trigger)
 
@@ -191,6 +192,15 @@ func run(ctx context.Context, cfg *config.Config) error {
 			})
 		})
 	}
+	background.Go(func() {
+		ticker := time.NewTicker(github.BotRetryInterval)
+		defer ticker.Stop()
+		botResolver.Run(appCtx, ticker.C, func(err error) {
+			if err != nil {
+				log.Printf("github bot user id: %v", err)
+			}
+		})
+	})
 	background.Go(func() {
 		ticker := time.NewTicker(syncEvery)
 		defer ticker.Stop()

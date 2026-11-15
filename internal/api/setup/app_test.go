@@ -2,7 +2,9 @@ package setup_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +18,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/api/setup"
 	"github.com/mdg-labs/release-ops/internal/crypto"
 	"github.com/mdg-labs/release-ops/internal/github"
+	"github.com/mdg-labs/release-ops/internal/github/githubtest"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 	"github.com/mdg-labs/release-ops/internal/store/storetest"
@@ -23,6 +26,15 @@ import (
 
 type fakeConverter struct {
 	calls int
+	// bot reads the bot user's id from a fake GitHub API; nil answers that GitHub is unreachable.
+	bot *github.Client
+}
+
+func (f *fakeConverter) BotUserID(ctx context.Context, slug string) (int64, error) {
+	if f.bot == nil {
+		return 0, github.ErrBotUserLookupFailed
+	}
+	return f.bot.BotUserID(ctx, slug)
 }
 
 func (f *fakeConverter) ConvertManifest(context.Context, string) (*github.ManifestConversion, error) {
@@ -311,5 +323,124 @@ func TestStatusOffersTheInstallPageOnlyUntilTheAppIsInstalled(t *testing.T) {
 	}
 	if body := get(); strings.Contains(body, "installUrl") {
 		t.Errorf("status with an installation = %q, want no installUrl", body)
+	}
+}
+
+// completeManifestFlow runs the manifest flow up to a successful conversion against the
+// handlers and returns where the callback redirected.
+func completeManifestFlow(t *testing.T, conv *fakeConverter) (db *store.DB, location string) {
+	t.Helper()
+
+	db = storetest.OpenMigrated(t)
+	cipher, err := crypto.NewCipherFromHex(strings.Repeat("ab", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := setup.EnsureToken(context.Background(), db.Writer, configToken, appURL, t.Logf); err != nil {
+		t.Fatal(err)
+	}
+	sm := auth.NewSessionManager(db.Writer, strings.Repeat("s", 32), false)
+	h := &setup.Handlers{
+		Sessions: sm, Queries: storedb.New(db.Writer),
+		Apps: store.New(db, cipher).GitHubApp(), Converter: conv,
+		AppURL: appURL, GitHubBaseURL: "https://github.com",
+	}
+	r := chi.NewRouter()
+	r.Use(sm.LoadAndSave)
+	r.Post("/setup/session", h.CreateSession)
+	r.With(h.RequireSession).Post("/setup/manifest", h.Manifest)
+	r.With(h.RequireCallbackSession).Get("/setup/callback", h.Callback)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+	client := newClient(t)
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
+	post := func(path, body string) (int, string) {
+		t.Helper()
+		resp, err := client.Post(srv.URL+path, "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		out, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.StatusCode, string(out)
+	}
+	if code, _ := post("/setup/session", `{"token":"`+configToken+`"}`); code != http.StatusNoContent {
+		t.Fatalf("redeem = %d", code)
+	}
+	code, body := post("/setup/manifest", `{"owner":{"type":"user"}}`)
+	if code != http.StatusOK {
+		t.Fatalf("manifest = %d %q", code, body)
+	}
+	var reply struct{ URL string }
+	if err := json.Unmarshal([]byte(body), &reply); err != nil {
+		t.Fatal(err)
+	}
+	state := strings.SplitN(reply.URL, "state=", 2)[1]
+
+	resp, err := client.Get(srv.URL + "/setup/callback?code=abc&state=" + state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("callback = %d, want 302", resp.StatusCode)
+	}
+	return db, resp.Header.Get("Location")
+}
+
+func botUserIDRow(t *testing.T, db *store.DB) (id sql.NullInt64, apps int) {
+	t.Helper()
+	if err := db.Writer.QueryRow(`SELECT COUNT(*) FROM github_app`).Scan(&apps); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Writer.QueryRow(`SELECT bot_user_id FROM github_app`).Scan(&id); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		t.Fatal(err)
+	}
+	return id, apps
+}
+
+// Once the callback has stored the App, its bot user's numeric id is read from GitHub's users
+// endpoint and kept with it.
+func TestCallbackRecordsTheBotUsersNumericId(t *testing.T) {
+	t.Parallel()
+
+	fake := githubtest.New(t, time.Now)
+	fake.SetBotUser("ro", 424242)
+	conv := &fakeConverter{bot: github.NewClient(fake.URL, 5*time.Second)}
+
+	db, location := completeManifestFlow(t, conv)
+	if location != "https://github.com/apps/ro/installations/new" {
+		t.Errorf("redirect = %q, want the installation page", location)
+	}
+	if id, apps := botUserIDRow(t, db); apps != 1 || !id.Valid || id.Int64 != 424242 {
+		t.Errorf("github_app rows = %d, bot_user_id = %+v, want one App with 424242", apps, id)
+	}
+}
+
+// A users lookup that fails neither fails nor undoes the App: the bot user id stays unset
+// and is read later.
+func TestCallbackKeepsTheAppWhenTheBotUserLookupFails(t *testing.T) {
+	t.Parallel()
+
+	fake := githubtest.New(t, time.Now)
+	fake.SetBotUser("ro", 424242)
+	fake.FailBotUser(http.StatusBadGateway)
+	for name, conv := range map[string]*fakeConverter{
+		"github answers an error": {bot: github.NewClient(fake.URL, 5*time.Second)},
+		"github is unreachable":   {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			db, location := completeManifestFlow(t, conv)
+			if location != "https://github.com/apps/ro/installations/new" {
+				t.Errorf("redirect = %q, want the installation page", location)
+			}
+			if id, apps := botUserIDRow(t, db); apps != 1 || id.Valid {
+				t.Errorf("github_app rows = %d, bot_user_id = %+v, want the App stored with no bot user id", apps, id)
+			}
+		})
 	}
 }

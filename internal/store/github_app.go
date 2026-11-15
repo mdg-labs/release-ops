@@ -48,6 +48,22 @@ type GitHubAppRepository interface {
 	// decrypted client secret. The caller sends the secret to GitHub's token endpoint and
 	// never logs or stores it. It returns ErrGitHubAppNotFound before an App is stored.
 	SignIn(ctx context.Context) (GitHubAppSignIn, error)
+	// BotIdentity returns the App's slug and, once it has been read from GitHub, the numeric id
+	// of its bot user. It returns ErrGitHubAppNotFound before an App is stored.
+	BotIdentity(ctx context.Context) (GitHubAppBot, error)
+	// RecordBotUserID stores the bot user's numeric id when none is stored yet and reports
+	// whether it did. An id already stored is never replaced, and an id that is not positive
+	// is refused. It stores nothing before an App is stored.
+	RecordBotUserID(ctx context.Context, id int64) (bool, error)
+}
+
+// GitHubAppBot is the App's bot user <slug>[bot]. Its numeric id, not its login, is its
+// identity: author comparisons and RENOVATE_GIT_AUTHOR use the id.
+type GitHubAppBot struct {
+	Slug string
+	// UserID is the bot user's numeric id; Known is false until it has been read from GitHub.
+	UserID int64
+	Known  bool
 }
 
 // GitHubAppSignIn is the part of the stored App the OAuth sign-in uses.
@@ -173,4 +189,33 @@ func (r githubAppRepo) SignIn(ctx context.Context) (GitHubAppSignIn, error) {
 		OwnerLogin:   row.OwnerLogin,
 		OwnerType:    row.OwnerType,
 	}, nil
+}
+
+func (r githubAppRepo) BotIdentity(ctx context.Context) (GitHubAppBot, error) {
+	row, err := r.store.reads.GetBotIdentity(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return GitHubAppBot{}, ErrGitHubAppNotFound
+	}
+	if err != nil {
+		return GitHubAppBot{}, fmt.Errorf("read github app bot user: %w", err)
+	}
+	bot := GitHubAppBot{Slug: row.Slug}
+	if row.BotUserID.Valid && row.BotUserID.Int64 > 0 {
+		bot.UserID, bot.Known = row.BotUserID.Int64, true
+	}
+	return bot, nil
+}
+
+func (r githubAppRepo) RecordBotUserID(ctx context.Context, id int64) (bool, error) {
+	if id <= 0 {
+		return false, errors.New("record github app bot user: the id must be positive")
+	}
+	changed, err := r.store.writes.SetGitHubAppBotUserID(ctx, db.SetGitHubAppBotUserIDParams{
+		BotUserID: sql.NullInt64{Int64: id, Valid: true},
+		UpdatedAt: nowUTC(),
+	})
+	if err != nil {
+		return false, fmt.Errorf("store github app bot user: %w", err)
+	}
+	return changed > 0, nil
 }

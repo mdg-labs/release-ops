@@ -19,10 +19,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/mdg-labs/release-ops/internal/config"
+	"github.com/mdg-labs/release-ops/internal/crypto"
 	"github.com/mdg-labs/release-ops/internal/store"
 	"github.com/mdg-labs/release-ops/migrations"
 	sqlitemigrate "github.com/mdg-labs/sqlite-migrate"
@@ -493,5 +495,55 @@ func TestServerStartupUsesTheConfiguredSetupToken(t *testing.T) {
 	}
 	if code, body := c.do(http.MethodPost, "/api/v1/setup/session", map[string]string{"token": token}); code != http.StatusNoContent {
 		t.Fatalf("redeem the configured token = %d %s, want 204", code, body)
+	}
+}
+
+// An instance whose App was stored before its bot user's id was recorded gets the id filled
+// in at start-up, from the users endpoint of the configured GitHub API, without setup.
+func TestServerFillsInTheBotUserIdOfAnAppStoredWithoutIt(t *testing.T) {
+	var lookups atomic.Int32
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v3/users/release-ops-acme[bot]" || r.Header.Get("Authorization") != "" {
+			http.NotFound(w, r)
+			return
+		}
+		lookups.Add(1)
+		_, _ = w.Write([]byte(`{"id":424242,"login":"release-ops-acme[bot]","type":"Bot"}`))
+	}))
+	t.Cleanup(github.Close)
+
+	dbPath := filepath.Join(t.TempDir(), "app.db")
+	if _, err := store.Migrate(context.Background(), dbPath); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	db, err := store.OpenPath(dbPath)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	cipher, err := crypto.NewCipherFromHex("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.New(db, cipher).GitHubApp().Create(context.Background(), store.NewGitHubApp{
+		AppID: 7, Slug: "release-ops-acme", ClientID: "cid", HTMLURL: "https://github.com/apps/release-ops-acme",
+		OwnerLogin: "acme", OwnerType: "Organization", PrivateKey: "pem", ClientSecret: "cs", WebhookSecret: "ws",
+	}); err != nil {
+		t.Fatalf("store app: %v", err)
+	}
+
+	startServer(t, &config.Config{
+		AppDBPath:     dbPath,
+		AppURL:        "https://release-ops.example.com",
+		WebhookURL:    "https://release-ops.example.com/hooks/github",
+		GitHubBaseURL: github.URL,
+	})
+
+	waitFor(t, "the start-up lookup to record the bot user id", func() bool {
+		var id sql.NullInt64
+		return db.Reader.QueryRow(`SELECT bot_user_id FROM github_app`).Scan(&id) == nil && id.Valid && id.Int64 == 424242
+	})
+	if n := lookups.Load(); n != 1 {
+		t.Errorf("GitHub was asked %d times, want once", n)
 	}
 }

@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const countLiveInstallations = `-- name: CountLiveInstallations :one
@@ -152,4 +153,21 @@ func (q *Queries) GetGitHubAppWebhookSecret(ctx context.Context) (string, error)
 	var encrypted_webhook_secret string
 	err := row.Scan(&encrypted_webhook_secret)
 	return encrypted_webhook_secret, err
+}
+
+const setGitHubAppBotUserID = `-- name: SetGitHubAppBotUserID :execrows
+UPDATE github_app SET bot_user_id = ?, updated_at = ? WHERE id = 1 AND bot_user_id IS NULL
+`
+
+type SetGitHubAppBotUserIDParams struct {
+	BotUserID sql.NullInt64 `json:"bot_user_id"`
+	UpdatedAt string        `json:"updated_at"`
+}
+
+func (q *Queries) SetGitHubAppBotUserID(ctx context.Context, arg SetGitHubAppBotUserIDParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setGitHubAppBotUserID, arg.BotUserID, arg.UpdatedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

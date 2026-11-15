@@ -89,6 +89,9 @@ type Fake struct {
 	pageSize    int                 // entries per page for listings; 0 means everything on one page
 	foreignNext string              // host a Link header names as the next page instead of the fake
 
+	bots          map[string]int64 // lower-cased bot login (<slug>[bot]) -> user id
+	botUserStatus int              // status for the bot user lookup; 0 answers normally
+
 	users          map[int64]string             // user id -> current login
 	orgMembers     map[string]Membership        // "org/login" (lower-cased) -> membership
 	teamMembers    map[string]Membership        // "org/team/login" (lower-cased) -> membership
@@ -141,6 +144,7 @@ func New(t testing.TB, now func() time.Time) *Fake {
 		repos:       map[int64][]Repo{},
 		repoStatus:  map[int64]int{},
 		tokenOwner:  map[string]int64{},
+		bots:        map[string]int64{},
 		users:       map[int64]string{},
 		orgMembers:  map[string]Membership{},
 		teamMembers: map[string]Membership{},
@@ -156,6 +160,21 @@ func New(t testing.TB, now func() time.Time) *Fake {
 	t.Cleanup(f.srv.Close)
 	f.URL = f.srv.URL
 	return f
+}
+
+// SetBotUser makes the public GET /users/{slug}[bot] answer the bot user of the App with that
+// slug, with the numeric id given.
+func (f *Fake) SetBotUser(slug string, id int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.bots[strings.ToLower(slug+"[bot]")] = id
+}
+
+// FailBotUser makes the bot user lookup answer status; zero answers normally again.
+func (f *Fake) FailBotUser(status int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.botUserStatus = status
 }
 
 // AddInstallation makes GET /app/installations/{id} answer the fixture for that id. The
@@ -402,6 +421,10 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Unlock()
 
 	bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if login, ok := strings.CutPrefix(r.URL.Path, "/users/"); ok {
+		f.serveBotUser(w, login)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/user/installations/") {
 		f.serveUserRepositories(w, r, bearer)
 		return
@@ -696,6 +719,22 @@ func (f *Fake) serveWithToken(w http.ResponseWriter, r *http.Request, token stri
 		return
 	}
 	_ = json.NewEncoder(w).Encode(entries)
+}
+
+// serveBotUser answers the public GET /users/{login} for a bot user the fake knows.
+func (f *Fake) serveBotUser(w http.ResponseWriter, login string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.botUserStatus != 0 {
+		w.WriteHeader(f.botUserStatus)
+		return
+	}
+	id, ok := f.bots[strings.ToLower(login)]
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "login": login, "type": "Bot"})
 }
 
 // serveDirectory answers the user and membership calls an installation token makes; the
