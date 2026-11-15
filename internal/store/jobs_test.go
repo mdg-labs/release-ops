@@ -941,6 +941,62 @@ func TestHeartbeatAbortsAJobOfAPausedOrRemovedRepository(t *testing.T) {
 	}
 }
 
+// setInstallationStatus changes the status of the installation every seeded repository hangs off.
+func (e *jobEnv) setInstallationStatus(t *testing.T, status string) {
+	t.Helper()
+
+	if _, err := e.db.Writer.Exec(`UPDATE installations SET status = ?`, status); err != nil {
+		t.Fatalf("set installation status %s: %v", status, err)
+	}
+}
+
+func TestClaimSkipsAQueuedJobOfAnInactiveInstallation(t *testing.T) {
+	for _, status := range []string{"suspended", "removed"} {
+		t.Run(status, func(t *testing.T) {
+			e := newJobEnv(t, 1)
+			queued := e.enqueue(t, e.repos[0], queue.PriorityHigh)
+			e.setInstallationStatus(t, status)
+
+			e.wantNoClaim(t)
+			if row := e.row(t, queued.JobID); row.State != "queued" || row.Attempts != 0 {
+				t.Errorf("job of the %s installation = %+v, want it left queued", status, row)
+			}
+
+			e.setInstallationStatus(t, "active")
+			if got := e.claim(t).ID; got != queued.JobID {
+				t.Fatalf("claim after reactivating = %s, want %s", got, queued.JobID)
+			}
+		})
+	}
+}
+
+func TestHeartbeatAbortsAJobOfAnInactiveInstallation(t *testing.T) {
+	for _, status := range []string{"suspended", "removed"} {
+		t.Run(status, func(t *testing.T) {
+			e := newJobEnv(t, 1)
+			ctx := context.Background()
+			e.enqueue(t, e.repos[0], queue.PriorityHigh)
+			job := e.claim(t)
+
+			e.clock.Advance(30 * time.Second)
+			if res, err := e.q.Heartbeat(ctx, job.ID, job.LeaseOwner); err != nil || res.Abort {
+				t.Fatalf("Heartbeat before the change = %+v, %v; want no abort", res, err)
+			}
+			before := e.row(t, job.ID)
+
+			e.setInstallationStatus(t, status)
+			e.clock.Advance(30 * time.Second)
+			res, err := e.q.Heartbeat(ctx, job.ID, job.LeaseOwner)
+			if err != nil || !res.Abort || res.Reason != queue.AbortLeaseLost {
+				t.Errorf("Heartbeat = %+v, %v; want an abort", res, err)
+			}
+			if after := e.row(t, job.ID); after != before {
+				t.Errorf("a refused heartbeat changed the job: %+v, was %+v", after, before)
+			}
+		})
+	}
+}
+
 func TestFirstHeartbeatReportsTheLagFromTheWebhookArrival(t *testing.T) {
 	ctx := context.Background()
 	e := newJobEnv(t, 2)

@@ -237,6 +237,37 @@ func TestHeartbeatResultAndReleaseThroughTheRoutes(t *testing.T) {
 	}
 }
 
+func TestSuspendedInstallationsJobIsNeverHandedToAWorker(t *testing.T) {
+	e := newEnv(t, 50*time.Millisecond)
+	auth := "Bearer " + secret
+	setStatus := func(status string) {
+		t.Helper()
+		if _, err := e.db.Writer.Exec(`UPDATE installations SET status = ?`, status); err != nil {
+			t.Fatalf("set installation status: %v", err)
+		}
+	}
+
+	e.enqueue(t, e.repos[0])
+	setStatus("suspended")
+	if status, body := e.post(t, queue.PathClaim, auth, struct{}{}); status != http.StatusNoContent {
+		t.Fatalf("claim of a suspended installation's job = %d %s, want 204", status, body)
+	}
+
+	setStatus("active")
+	var job queue.ClaimedJob
+	status, body := e.post(t, queue.PathClaim, auth, struct{}{})
+	if status != http.StatusOK || json.Unmarshal(body, &job) != nil {
+		t.Fatalf("claim after reactivating = %d %s, want the job", status, body)
+	}
+
+	setStatus("suspended")
+	heartbeat := strings.Replace(queue.PathHeartbeat, "{id}", job.ID, 1)
+	status, body = e.post(t, heartbeat, auth, queue.LeaseRequest{LeaseOwner: job.LeaseOwner})
+	if status != http.StatusOK || !strings.Contains(string(body), `"abort":true`) {
+		t.Fatalf("heartbeat after the suspension = %d %s, want an abort", status, body)
+	}
+}
+
 func TestResultBodyIsSizeLimited(t *testing.T) {
 	e := newEnv(t, time.Second)
 

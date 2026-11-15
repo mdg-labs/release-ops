@@ -536,8 +536,9 @@ func (q *JobQueue) HeldJob(ctx context.Context, jobID, leaseOwner string) (*queu
 }
 
 // Heartbeat implements queue.Queue. A heartbeat that matches no row answers with an abort: the
-// lease was lost, or the job's repository was paused or removed. The wire carries one reason
-// for both, since the spec defines no separate code.
+// lease was lost, the job's repository was paused or removed, or the repository's installation
+// is not active. The wire carries one reason for all three, since the spec defines no separate
+// code.
 func (q *JobQueue) Heartbeat(ctx context.Context, jobID, leaseOwner string) (queue.HeartbeatResult, error) {
 	q.touch()
 	now := q.now().UTC()

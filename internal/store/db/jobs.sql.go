@@ -20,10 +20,12 @@ WHERE id = (
   SELECT j.id
   FROM jobs j
   JOIN repositories repo ON repo.id = j.repository_id
+  JOIN installations inst ON inst.id = repo.installation_id
   WHERE j.state = 'queued'
     AND j.run_after <= ?3
     AND repo.enabled = 1
     AND repo.removed_at IS NULL
+    AND inst.status = 'active'
     AND NOT EXISTS (
       SELECT 1 FROM jobs r
       WHERE r.repository_id = j.repository_id AND r.state = 'running'
@@ -45,9 +47,11 @@ type ClaimNextJobParams struct {
 }
 
 // A queued job is claimable when its run_after has passed, its repository is enabled and not
-// removed, the repository has no running job and the number of running jobs is below the limit
-// for its priority. The limit of a normal job leaves one slot free for high-priority jobs when
-// the cap is 2 or more. A job of a paused or removed repository stays queued.
+// removed, that repository's installation is active, the repository has no running job and the
+// number of running jobs is below the limit for its priority. The limit of a normal job leaves
+// one slot free for high-priority jobs when the cap is 2 or more. A job of a paused or removed
+// repository or of an installation that is not active stays queued. The repository and
+// installation condition is the one of HeartbeatJob and GetLeasedJob; change the three together.
 func (q *Queries) ClaimNextJob(ctx context.Context, arg ClaimNextJobParams) (Job, error) {
 	row := q.db.QueryRowContext(ctx, claimNextJob,
 		arg.LeaseOwner,
@@ -313,7 +317,8 @@ type GetLeasedJobRow struct {
 }
 
 // The job a lease owner holds right now: running, leased to that owner, lease not yet expired,
-// its repository enabled and not removed, and that repository's installation active.
+// its repository enabled and not removed, and that repository's installation active (the
+// condition of ClaimNextJob and HeartbeatJob).
 func (q *Queries) GetLeasedJob(ctx context.Context, arg GetLeasedJobParams) (GetLeasedJobRow, error) {
 	row := q.db.QueryRowContext(ctx, getLeasedJob, arg.ID, arg.LeaseOwner, arg.Now)
 	var i GetLeasedJobRow
@@ -438,8 +443,10 @@ WHERE jobs.id = ?3
   AND jobs.lease_owner = ?4
   AND jobs.repository_id IN (
     SELECT repo.id FROM repositories repo
+    JOIN installations inst ON inst.id = repo.installation_id
     WHERE repo.enabled = 1
       AND repo.removed_at IS NULL
+      AND inst.status = 'active'
   )
 RETURNING id
 `
@@ -451,8 +458,9 @@ type HeartbeatJobParams struct {
 	LeaseOwner     sql.NullString `json:"lease_owner"`
 }
 
-// A heartbeat renews the lease only while the job's repository is enabled and not removed; for
-// a paused or removed repository no row matches and the worker is told to abort.
+// A heartbeat renews the lease only while the job's repository is enabled and not removed and
+// its installation is active (the condition of ClaimNextJob and GetLeasedJob); otherwise no row
+// matches and the worker is told to abort.
 func (q *Queries) HeartbeatJob(ctx context.Context, arg HeartbeatJobParams) (string, error) {
 	row := q.db.QueryRowContext(ctx, heartbeatJob,
 		arg.Now,
