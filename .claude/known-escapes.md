@@ -17,6 +17,10 @@ existing line by adding its PR number.
 - **scope** — a filter that matches more or less than its documented rule (`git log --grep` over the whole message where only the subject and a trailer were meant to count; a SemVer tag pattern that rejects a prerelease and build suffix together) — PR 133, PR 153
 - **scope** — a provider payload field sent unconditionally or empty where the remote API rejects it (Jira priority when unset, empty ADF text) — PR 112
 - **scope** — an eligibility rule the spec states (a paused or removed repository gets no job, no token, and its running job is told to abort) enforced at none of the gates that hand out work (claim, token lookup, heartbeat) — PR 246
+- **wiring** — a one-shot start-up action fired on the first pass of one of its inputs even when that pass failed or ran before the other input existed (the PR reconcile triggered before the bot id resolved or the repositories were synced), and never fired again — PR 255
+- **scope** — a reconcile asked for on one direction of a change only (repositories added, not removed), so out-of-order or concurrent deliveries leave stale state until the next scheduled pass — PR 255
+- **scope** — a validation pattern stricter than the identifier it checks (managed-user GitHub logins with `_`, a git ref starting with `_`), so valid input is refused at sign-in or startup — PR 255
+- **scope** — bounded per-pass work that always takes the same first N items, so the rest are starved for good; and a conditional request whose 304 lacks a header the loop needs (`Link`) taken as "no next page" — PR 255
 
 ## Partial failure and atomicity
 - **partial-failure** — the new external object (ticket) is not persisted right after it is created, so a later failing step orphans it and the next poll creates a duplicate — PR 112
@@ -25,12 +29,15 @@ existing line by adding its PR number.
 - **stale-state** — changing a parent setting (a repo's ticket project or source) leaves derived state (open ticket, baseline tag) pointing at the old one — PR 112
 - **partial-failure** — a file written before the validation meant to guard it, so an edit the tool reports as refused is already on disk — PR 133
 - **data-safety** — a generated migration that drops and recreates a table loses existing rows; additive changes must come out as `ALTER TABLE … ADD COLUMN` — #96
+- **data-safety** — a cleanup `DELETE` whose `ON DELETE CASCADE` erases history the spec keeps (pausing a repository deleted a retry-waiting job and its `job_runs`); end such rows in a terminal state instead — PR 255
 
 ## Fail-open and error handling
 - **fail-open** — a failed fetch or ticket call recorded as a successful run (engine error actions not counted), so the run status hides the failure — PR 112
 - **fail-open** — a security option silently downgraded when the peer doesn't support it (SMTP STARTTLS not offered → mail sent in plaintext) instead of failing the send — PR 112
 - **fail-open** — a public placeholder secret from `.env.example` accepted at startup — PR 112
 - **fail-open** — a stand-in handler registered in production that reports success for work it never did (a no-op `renovate_run` handler); leave the kind unregistered so the attempt fails visibly — PR 246
+- **fail-open** — a read error inside a handler whose transaction marks the work as done (a webhook delivery GUID) treated as "nothing to do", so the delivery commits as handled and its redelivery is deduplicated away — PR 255
+- **limit** — a body-size cap sized from the raw field caps without the encoding's worst-case expansion (JSON `\u003c` is six bytes), so a valid maximal request is refused — PR 255
 
 ## Security
 - **auth** — session token not renewed on login, invitation accept, password reset or email change (session fixation); a password reset that leaves other sessions alive — PR 112
@@ -40,6 +47,9 @@ existing line by adding its PR number.
 - **rate-limit** — `X-Forwarded-For` trusted from any peer, or not forwarded by the Next.js proxy, so every user shares one bucket or an attacker picks their own — PR 112, PR 133
 - **input** — email addresses compared case-sensitively, or display-name forms (`Name <a@b>`) accepted where a bare address is expected — PR 112
 - **credential** — a token cache keyed on less than what decides the token's scope, so a narrower fallback token minted for one request is served to another it does not cover — PR 246
+- **redaction** — a secret shape or tail cut that stops at a delimiter the secret may contain or that misses an encoding it travels in (`@`/`#` in URL user-info, quoted `NAME="…"`, JSON `\/`, a truncated line with no newline) — PR 255
+- **untrusted-path** — a file the untrusted side can create opened with a blocking `open` (a FIFO at the report path hangs the worker slot); open non-blocking and check the type first — PR 255
+- **owned-config** — settings the app owns removed from the top level of a user-supplied config but not from a nested override that wins over them (Renovate `force`) — PR 255
 
 ## Docs
 - **docs** — a worked example or table row that contradicts the rule it illustrates, or states an invariant without the gap the same doc records elsewhere (or the partial-failure path the code takes) — PR 133, PR 140, PR 153, PR 167, PR 246
@@ -53,9 +63,11 @@ existing line by adding its PR number.
 - **ui** — a "hidden while loading or failed" state gated on `data` alone; TanStack Query keeps the last data after a failed refetch, so check `isError` too — PR 153
 - **ui** — an async action's result applied to whatever dialog is open when it settles, so a dismissed dialog's late failure (or success) lands on the next one; guard each attempt and invalidate it on close — PR 167
 - **ui** — state set just before navigating away (a hand-off flag) never cleared when the page comes back from the back-forward cache, leaving the form disabled; also an error message whose recovery step cannot work (re-enter a single-use token) — PR 246
+- **ui** — a "cannot check right now" answer (503 from the session check) treated as "no session", sending a signed-in user to the login page — PR 255
 
 ## Tests
 - **test** — a rejection test whose input fails an earlier validation, so it passes with the guard it claims to cover removed; a test that uses a listener started in a goroutine before waiting for it to answer — PR 246
+- **test** — a test that depends on the row order of random ids or on variables leaking in from the process environment, or a filtered-deletion test with no similar-but-distinct record asserted to survive; a privileged-only fixture step run on the unprivileged path — PR 255
 
 ## Release and CI
 - **ci** — a release workflow that builds from the branch head at publish time instead of the release tag, so the tagged image and the tag differ — PR 112
