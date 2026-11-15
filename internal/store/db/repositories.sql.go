@@ -43,6 +43,35 @@ func (q *Queries) GetManageableRepository(ctx context.Context, id string) (GetMa
 	return i, err
 }
 
+const getRepositoryByGitHubID = `-- name: GetRepositoryByGitHubID :one
+SELECT id, full_name, default_branch, enabled, removed_at
+FROM repositories
+WHERE github_repository_id = ?
+`
+
+type GetRepositoryByGitHubIDRow struct {
+	ID            string         `json:"id"`
+	FullName      string         `json:"full_name"`
+	DefaultBranch string         `json:"default_branch"`
+	Enabled       int64          `json:"enabled"`
+	RemovedAt     sql.NullString `json:"removed_at"`
+}
+
+// The repository a webhook payload names by its GitHub id, read inside the delivery's
+// transaction so a repository the same delivery just synced is found.
+func (q *Queries) GetRepositoryByGitHubID(ctx context.Context, githubRepositoryID int64) (GetRepositoryByGitHubIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getRepositoryByGitHubID, githubRepositoryID)
+	var i GetRepositoryByGitHubIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.FullName,
+		&i.DefaultBranch,
+		&i.Enabled,
+		&i.RemovedAt,
+	)
+	return i, err
+}
+
 const listActiveRepositoryConfigStates = `-- name: ListActiveRepositoryConfigStates :many
 SELECT github_repository_id, config_state
 FROM repositories

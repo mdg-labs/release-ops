@@ -86,3 +86,10 @@ WHERE r.enabled = 1
     WHERE j.repository_id = r.id AND j.state IN ('queued', 'running')
   )
 ORDER BY r.full_name, r.id;
+
+-- The repository a webhook payload names by its GitHub id, read inside the delivery's
+-- transaction so a repository the same delivery just synced is found.
+-- name: GetRepositoryByGitHubID :one
+SELECT id, full_name, default_branch, enabled, removed_at
+FROM repositories
+WHERE github_repository_id = ?;

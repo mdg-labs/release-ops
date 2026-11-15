@@ -39,6 +39,29 @@ type RepositoryRepository interface {
 	ListScheduled(ctx context.Context) ([]string, error)
 }
 
+// WebhookRepository is the repository a webhook payload names.
+type WebhookRepository struct {
+	ID            string
+	FullName      string
+	DefaultBranch string
+	Enabled       bool
+}
+
+// RepositoryByGitHubID returns the repository a webhook payload names by its GitHub id, read
+// through the delivery's transaction so a repository the same delivery synced is found. It
+// returns ErrRepositoryNotFound for a repository that is not recorded or was removed from
+// its installation; a paused one is returned, with Enabled false.
+func (s *Store) RepositoryByGitHubID(ctx context.Context, tx *sql.Tx, githubRepositoryID int64) (WebhookRepository, error) {
+	row, err := s.writes.WithTx(tx).GetRepositoryByGitHubID(ctx, githubRepositoryID)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && row.RemovedAt.Valid) {
+		return WebhookRepository{}, ErrRepositoryNotFound
+	}
+	if err != nil {
+		return WebhookRepository{}, fmt.Errorf("read repository: %w", err)
+	}
+	return WebhookRepository{ID: row.ID, FullName: row.FullName, DefaultBranch: row.DefaultBranch, Enabled: row.Enabled == 1}, nil
+}
+
 // Repositories returns the repository repository.
 func (s *Store) Repositories() RepositoryRepository {
 	return repositoryRepo{store: s}

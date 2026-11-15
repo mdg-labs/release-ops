@@ -1,0 +1,43 @@
+{
+  "action": "edited",
+  "issue": {
+    "url": "https://api.github.com/repos/acme/widgets/issues/5",
+    "number": 5,
+    "title": "Dependency Dashboard",
+    "user": {
+      "login": "release-ops-acme[bot]",
+      "id": 99887766,
+      "type": "Bot"
+    },
+    "state": "open",
+    "author_association": "NONE",
+    "body": "This issue lists Renovate updates and detected dependencies. Read the [Docs](https://docs.renovatebot.com/key-concepts/dashboard/) to learn more.\n\n## Pending Approval\n\nThe following branches are pending approval. To create them, click on a checkbox below.\n\n - [ ] <!-- approve-branch=renovate/major-react -->chore(deps): update dependency react to v19\n - [x] <!-- approve-branch=renovate/vite-7.x -->chore(deps): update dependency vite to v7\n\n## Open\n\nThe following updates have all been created. To force a retry/rebase of any, click on a checkbox below.\n\n - [ ] <!-- rebase-branch=renovate/lodash-4.x -->[chore(deps): update dependency lodash to v4.17.21](../pull/12)\n\n - [ ] <!-- rebase-all-open-prs -->**Click on this checkbox to rebase all open PRs at once**\n\n## Detected Dependencies\n\n<details><summary>npm</summary>\n<blockquote>\n\n<details><summary>package.json</summary>\n\n - `react ^18.3.0`\n - `vite ^6.0.0`\n\n</details>\n\n</blockquote>\n</details>\n\n---\n\n- [ ] <!-- manual job -->Check this box to trigger a request for Renovate to run again on this repository\n"
+  },
+  "changes": {
+    "body": {
+      "from": "This issue lists Renovate updates and detected dependencies. Read the [Docs](https://docs.renovatebot.com/key-concepts/dashboard/) to learn more.\n\n## Pending Approval\n\nThe following branches are pending approval. To create them, click on a checkbox below.\n\n - [ ] <!-- approve-branch=renovate/major-react -->chore(deps): update dependency react to v19\n - [ ] <!-- approve-branch=renovate/vite-7.x -->chore(deps): update dependency vite to v7\n\n## Open\n\nThe following updates have all been created. To force a retry/rebase of any, click on a checkbox below.\n\n - [ ] <!-- rebase-branch=renovate/lodash-4.x -->[chore(deps): update dependency lodash to v4.17.21](../pull/12)\n\n - [ ] <!-- rebase-all-open-prs -->**Click on this checkbox to rebase all open PRs at once**\n\n## Detected Dependencies\n\n<details><summary>npm</summary>\n<blockquote>\n\n<details><summary>package.json</summary>\n\n - `react ^18.3.0`\n - `vite ^6.0.0`\n\n</details>\n\n</blockquote>\n</details>\n\n---\n\n- [ ] <!-- manual job -->Check this box to trigger a request for Renovate to run again on this repository\n"
+    }
+  },
+  "repository": {
+    "id": 7001,
+    "node_id": "R_fixtureNodeId1",
+    "name": "widgets",
+    "full_name": "acme/widgets",
+    "private": false,
+    "default_branch": "main",
+    "owner": {
+      "login": "acme",
+      "id": 4242,
+      "type": "Organization"
+    }
+  },
+  "sender": {
+    "login": "octocat",
+    "id": 1,
+    "type": "User"
+  },
+  "installation": {
+    "id": 1000,
+    "node_id": "I_fixtureNodeId"
+  }
+}

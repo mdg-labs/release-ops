@@ -102,6 +102,13 @@ func registerWebhook(r chi.Router, deps *ServerDeps) {
 	if routes == nil {
 		routes = hooks.NewRoutes()
 	}
+	if jobs, ok := deps.Queue.(hooks.RunEnqueuer); ok {
+		hooks.RegisterRenovateHandlers(routes, hooks.RenovateTriggers{
+			Queue:        jobs,
+			Repositories: deps.Store,
+			Bot:          deps.Store.GitHubApp(),
+		})
+	}
 	r.Post(hooks.Path, (&hooks.Receiver{
 		Secrets:    deps.Store.GitHubApp(),
 		Deliveries: deps.Store.WebhookDeliveries(),

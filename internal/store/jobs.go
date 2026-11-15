@@ -131,80 +131,115 @@ func nullString(s string) sql.NullString {
 
 // Enqueue implements queue.Queue.
 func (q *JobQueue) Enqueue(ctx context.Context, p queue.EnqueueParams) (queue.EnqueueResult, error) {
-	if p.Kind == "" {
-		p.Kind = queue.KindRenovateRun
-	}
-	if p.RepositoryID == "" {
-		return queue.EnqueueResult{}, errors.New("enqueue: repository id is required")
-	}
-	if p.Priority != queue.PriorityHigh && p.Priority != queue.PriorityNormal {
-		return queue.EnqueueResult{}, fmt.Errorf("enqueue: invalid priority %q", p.Priority)
+	p, err := validEnqueue(p)
+	if err != nil {
+		return queue.EnqueueResult{}, err
 	}
 
 	var res queue.EnqueueResult
-	err := q.inTx(ctx, func(qtx *db.Queries) error {
-		state, err := qtx.GetRepositoryEnqueueState(ctx, p.RepositoryID)
-		switch {
-		case errors.Is(err, sql.ErrNoRows):
-			return queue.ErrRepositoryNotFound
-		case err != nil:
-			return err
-		case state.Enabled != 1 || state.RemovedAt.Valid:
-			return queue.ErrRepositoryPaused
-		}
-
-		queued, err := qtx.GetQueuedJobForRepository(ctx, p.RepositoryID)
-		switch {
-		case err == nil:
-			res = queue.EnqueueResult{Outcome: queue.EnqueueCoalesced, JobID: queued.ID}
-			return qtx.CoalesceQueuedJob(ctx, coalesceParams(queued, p))
-		case !errors.Is(err, sql.ErrNoRows):
-			return err
-		}
-
-		running, err := qtx.GetRunningJobForRepository(ctx, p.RepositoryID)
-		switch {
-		case err == nil:
-			if p.Priority != queue.PriorityHigh {
-				res = queue.EnqueueResult{Outcome: queue.EnqueueDropped, JobID: running.ID}
-				return nil
-			}
-			res = queue.EnqueueResult{Outcome: queue.EnqueueRerunRequested, JobID: running.ID}
-			return qtx.SetJobRerunRequested(ctx, running.ID)
-		case !errors.Is(err, sql.ErrNoRows):
-			return err
-		}
-
-		markers, err := marshalMarkers(p.MatchedMarkers)
-		if err != nil {
-			return err
-		}
-		now := q.now()
-		webhook := sql.NullString{}
-		if p.WebhookReceivedAt != nil {
-			webhook = nullString(formatTime(*p.WebhookReceivedAt))
-		}
-		id := newID()
-		res = queue.EnqueueResult{Outcome: queue.EnqueueQueued, JobID: id}
-		return qtx.InsertJob(ctx, db.InsertJobParams{
-			ID:                id,
-			Kind:              string(p.Kind),
-			RepositoryID:      p.RepositoryID,
-			Priority:          string(p.Priority),
-			RunAfter:          formatTime(now),
-			Trigger:           string(p.Trigger),
-			MatchedMarkers:    markers,
-			WebhookReceivedAt: webhook,
-			CreatedAt:         formatTime(now),
-		})
+	err = q.inTx(ctx, func(qtx *db.Queries) error {
+		var err error
+		res, err = q.enqueue(ctx, qtx, p)
+		return err
 	})
 	if err != nil {
 		return queue.EnqueueResult{}, fmt.Errorf("enqueue: %w", err)
 	}
-	if res.Outcome == queue.EnqueueQueued || res.Outcome == queue.EnqueueCoalesced {
-		q.notifier.Notify()
-	}
+	q.wake(res)()
 	return res, nil
+}
+
+// EnqueueTx is Enqueue inside the caller's transaction, which must be one on the writer
+// connection: the job is recorded when the caller commits and not at all when it rolls back.
+// A waiting claim is woken by the returned function, which the caller runs after the commit
+// and never before it, as a claim woken earlier cannot see the job. The function is non-nil
+// whenever the error is nil, and a no-op when the enqueue changed nothing a claim could take.
+func (q *JobQueue) EnqueueTx(ctx context.Context, tx *sql.Tx, p queue.EnqueueParams) (queue.EnqueueResult, func(), error) {
+	p, err := validEnqueue(p)
+	if err != nil {
+		return queue.EnqueueResult{}, nil, err
+	}
+	res, err := q.enqueue(ctx, db.New(tx), p)
+	if err != nil {
+		return queue.EnqueueResult{}, nil, fmt.Errorf("enqueue: %w", err)
+	}
+	return res, q.wake(res), nil
+}
+
+// wake returns the function that wakes the waiting claims for an enqueue with this result:
+// only a queued or grown queued job can become claimable.
+func (q *JobQueue) wake(res queue.EnqueueResult) func() {
+	if res.Outcome == queue.EnqueueQueued || res.Outcome == queue.EnqueueCoalesced {
+		return q.notifier.Notify
+	}
+	return func() {}
+}
+
+func validEnqueue(p queue.EnqueueParams) (queue.EnqueueParams, error) {
+	if p.Kind == "" {
+		p.Kind = queue.KindRenovateRun
+	}
+	if p.RepositoryID == "" {
+		return p, errors.New("enqueue: repository id is required")
+	}
+	if p.Priority != queue.PriorityHigh && p.Priority != queue.PriorityNormal {
+		return p, fmt.Errorf("enqueue: invalid priority %q", p.Priority)
+	}
+	return p, nil
+}
+
+// enqueue records one trigger through qtx. It writes at most once, after every read.
+func (q *JobQueue) enqueue(ctx context.Context, qtx *db.Queries, p queue.EnqueueParams) (queue.EnqueueResult, error) {
+	state, err := qtx.GetRepositoryEnqueueState(ctx, p.RepositoryID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return queue.EnqueueResult{}, queue.ErrRepositoryNotFound
+	case err != nil:
+		return queue.EnqueueResult{}, err
+	case state.Enabled != 1 || state.RemovedAt.Valid:
+		return queue.EnqueueResult{}, queue.ErrRepositoryPaused
+	}
+
+	queued, err := qtx.GetQueuedJobForRepository(ctx, p.RepositoryID)
+	switch {
+	case err == nil:
+		return queue.EnqueueResult{Outcome: queue.EnqueueCoalesced, JobID: queued.ID}, qtx.CoalesceQueuedJob(ctx, coalesceParams(queued, p))
+	case !errors.Is(err, sql.ErrNoRows):
+		return queue.EnqueueResult{}, err
+	}
+
+	running, err := qtx.GetRunningJobForRepository(ctx, p.RepositoryID)
+	switch {
+	case err == nil:
+		if p.Priority != queue.PriorityHigh {
+			return queue.EnqueueResult{Outcome: queue.EnqueueDropped, JobID: running.ID}, nil
+		}
+		return queue.EnqueueResult{Outcome: queue.EnqueueRerunRequested, JobID: running.ID}, qtx.SetJobRerunRequested(ctx, running.ID)
+	case !errors.Is(err, sql.ErrNoRows):
+		return queue.EnqueueResult{}, err
+	}
+
+	markers, err := marshalMarkers(p.MatchedMarkers)
+	if err != nil {
+		return queue.EnqueueResult{}, err
+	}
+	now := q.now()
+	webhook := sql.NullString{}
+	if p.WebhookReceivedAt != nil {
+		webhook = nullString(formatTime(*p.WebhookReceivedAt))
+	}
+	id := newID()
+	return queue.EnqueueResult{Outcome: queue.EnqueueQueued, JobID: id}, qtx.InsertJob(ctx, db.InsertJobParams{
+		ID:                id,
+		Kind:              string(p.Kind),
+		RepositoryID:      p.RepositoryID,
+		Priority:          string(p.Priority),
+		RunAfter:          formatTime(now),
+		Trigger:           string(p.Trigger),
+		MatchedMarkers:    markers,
+		WebhookReceivedAt: webhook,
+		CreatedAt:         formatTime(now),
+	})
 }
 
 // coalesceParams folds a trigger into the queued job: the higher priority wins and brings

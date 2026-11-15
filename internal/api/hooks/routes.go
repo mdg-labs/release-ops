@@ -18,6 +18,17 @@ type Delivery struct {
 	GitHubInstallationID int64
 	// ReceivedAt is when the request arrived.
 	ReceivedAt time.Time
+
+	afterCommit func(func())
+}
+
+// AfterCommit schedules f to run once the transaction of the delivery has committed, and
+// never when it rolls back or the delivery is a duplicate. A handler uses it for what must
+// see the committed rows, such as waking a worker that waits for a job.
+func (d Delivery) AfterCommit(f func()) {
+	if d.afterCommit != nil {
+		d.afterCommit(f)
+	}
 }
 
 // Handler applies a delivery. It runs inside the transaction that records the delivery's
@@ -34,6 +45,7 @@ func Acknowledge(context.Context, *sql.Tx, Delivery) error { return nil }
 type Routes struct {
 	mu       sync.RWMutex
 	handlers map[string]Handler
+	renovate bool
 }
 
 // NewRoutes returns the routing table with the installation events acknowledged. The

@@ -115,13 +115,20 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	d := Delivery{GUID: guid, Event: event, Payload: body, GitHubInstallationID: payload.Installation.ID, ReceivedAt: receivedAt}
 
-	_, err = rc.Deliveries.Receive(r.Context(), store.WebhookDelivery{
+	var afterCommit []func()
+	d.afterCommit = func(f func()) { afterCommit = append(afterCommit, f) }
+	duplicate, err := rc.Deliveries.Receive(r.Context(), store.WebhookDelivery{
 		GUID: guid, Event: event, GitHubInstallationID: d.GitHubInstallationID, ReceivedAt: receivedAt,
 	}, func(ctx context.Context, tx *sql.Tx) error { return handle(ctx, tx, d) })
 	if err != nil {
 		slog.Error("webhook: apply delivery", "event", event, "delivery", guid, "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
+	}
+	if !duplicate {
+		for _, f := range afterCommit {
+			f()
+		}
 	}
 	w.WriteHeader(http.StatusAccepted)
 }

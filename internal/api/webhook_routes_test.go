@@ -318,7 +318,7 @@ func TestWebhookUnknownEventIsAcknowledgedAndIgnored(t *testing.T) {
 	t.Parallel()
 
 	f := newWebhookFlow(t, "https://release-ops.example.com/hooks/github", true, nil)
-	for _, event := range []string{"ping", "star", "issues", "pull_request", "push"} {
+	for _, event := range []string{"ping", "star", "check_run"} {
 		if status, resp := f.post(t, signedHook(event, "guid-"+event, fixture(t, "ping.json"))); status != http.StatusAccepted || resp != "" {
 			t.Errorf("%s: status = %d body %q, want 202 and no body", event, status, resp)
 		}
