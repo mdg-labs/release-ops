@@ -237,8 +237,9 @@ func (c *Config) JobTokenRepositories() []string {
 var repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$`)
 
 // refPattern is a branch, tag or commit name as the worker puts it in a request: no space,
-// control or git-reserved character.
-var refPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/+@-]{0,254}$`)
+// control or git-reserved character. It starts with a letter, a digit or an underscore, so
+// it can never look like an option, a hidden name or a path.
+var refPattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._/+@-]{0,254}$`)
 
 // githubLoginPattern is GitHub's account name syntax: up to 39 letters, digits and single
 // hyphens, neither starting nor ending with a hyphen.

@@ -401,11 +401,14 @@ func TestLoadGlobalConfigRef(t *testing.T) {
 		{"branch", "acme/renovate", "main", ""},
 		{"tag with a slash", "acme/renovate", "release/v1.2", ""},
 		{"commit", "acme/renovate", strings.Repeat("a1", 20), ""},
+		{"a leading underscore", "acme/renovate", "_global", ""},
 		{"a ref without a repository is ignored", "", "main", ""},
 		{"a repository without a ref", "acme/renovate", "", "GLOBAL_CONFIG_REF is required"},
 		{"a space", "acme/renovate", "my branch", "GLOBAL_CONFIG_REF must be"},
 		{"a reserved character", "acme/renovate", "a~1", "GLOBAL_CONFIG_REF must be"},
 		{"a leading dash", "acme/renovate", "-main", "GLOBAL_CONFIG_REF must be"},
+		{"a leading dot", "acme/renovate", ".main", "GLOBAL_CONFIG_REF must be"},
+		{"a leading slash", "acme/renovate", "/main", "GLOBAL_CONFIG_REF must be"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			validEnv(t)
