@@ -25,9 +25,17 @@ const (
 	WriteTimeout = DefaultClaimWait + 30*time.Second
 	// maxBodyBytes bounds every request body but a result's.
 	maxBodyBytes = 64 << 10
-	// maxResultBytes bounds a result: a run record holds a log excerpt and a report of up to
-	// their caps each, which JSON escaping can double.
-	maxResultBytes = 512 << 10
+	// maxErrorCodeBytes caps a run record's error code.
+	maxErrorCodeBytes = 64
+	// maxJSONEscapeFactor is the most a byte grows when JSON-encoded: "<", ">", "&" and control
+	// characters each become a six-byte \uXXXX escape.
+	maxJSONEscapeFactor = 6
+	// resultEnvelopeBytes allows for the rest of a result: its field names, lease owner,
+	// outcome and retry delay.
+	resultEnvelopeBytes = 4 << 10
+	// maxResultBytes bounds a result: every capped string of a run record, escaped as widely as
+	// JSON allows, plus the rest of the request.
+	maxResultBytes = maxJSONEscapeFactor*(queue.MaxLogExcerptBytes+queue.MaxReportBytes+queue.MaxErrorMessageBytes+maxErrorCodeBytes) + resultEnvelopeBytes
 )
 
 // TokenIssuer mints the installation access token of a job.
@@ -259,7 +267,7 @@ func (h *handler) checkedRun(run queue.RunRecord) (rec queue.RunRecord, msg stri
 		return rec, "log_excerpt is too large"
 	case len(run.Report) > queue.MaxReportBytes:
 		return rec, "report is too large"
-	case len(run.ErrorMessage) > queue.MaxErrorMessageBytes || len(run.ErrorCode) > 64:
+	case len(run.ErrorMessage) > queue.MaxErrorMessageBytes || len(run.ErrorCode) > maxErrorCodeBytes:
 		return rec, "error_code or error_message is too large"
 	}
 	run.ErrorCode = h.redactor.String(run.ErrorCode)

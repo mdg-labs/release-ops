@@ -240,7 +240,7 @@ func TestResultBodyIsSizeLimited(t *testing.T) {
 	e := newEnv(t, time.Second)
 
 	// A result holds a run record, so its limit is larger than the other routes'.
-	big := queue.ResultRequest{LeaseOwner: strings.Repeat("a", 600<<10), Outcome: queue.OutcomeFailed}
+	big := queue.ResultRequest{LeaseOwner: strings.Repeat("a", 900<<10), Outcome: queue.OutcomeFailed}
 	if status, _ := e.post(t, strings.Replace(queue.PathResult, "{id}", "x", 1), "Bearer "+secret, big); status != http.StatusRequestEntityTooLarge {
 		t.Fatalf("oversized body = %d, want 413", status)
 	}
@@ -343,6 +343,39 @@ func TestResultRefusesAnOversizedOrMalformedRunRecord(t *testing.T) {
 	full := queue.RunRecord{LogExcerpt: strings.Repeat("\"", queue.MaxLogExcerptBytes), Report: strings.Repeat("\"", queue.MaxReportBytes), ErrorMessage: "x"}
 	if status, body := e.post(t, path, "Bearer "+secret, queue.ResultRequest{LeaseOwner: job.LeaseOwner, Outcome: queue.OutcomeFailed, Run: &full}); status != http.StatusNoContent {
 		t.Errorf("a record at the caps = %d %s, want 204", status, body)
+	}
+}
+
+// JSON encodes "<" as a six-byte escape, so a record whose capped fields are made of it is the
+// widest body a worker can send within the caps.
+func TestResultAcceptsARunRecordAtTheCapsOfWorstCaseEscapedCharacters(t *testing.T) {
+	e := newEnv(t, 50*time.Millisecond)
+	e.enqueue(t, e.repos[0])
+	job := e.claimJob(t)
+	path := strings.Replace(queue.PathResult, "{id}", job.ID, 1)
+
+	full := queue.RunRecord{
+		ErrorCode:    strings.Repeat("<", 64),
+		ErrorMessage: strings.Repeat("<", queue.MaxErrorMessageBytes),
+		LogExcerpt:   strings.Repeat("<", queue.MaxLogExcerptBytes),
+		Report:       `"` + strings.Repeat("<", queue.MaxReportBytes-2) + `"`,
+	}
+	raw, err := json.Marshal(queue.ResultRequest{LeaseOwner: job.LeaseOwner, Outcome: queue.OutcomeFailed, Run: &full})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) <= 512<<10 {
+		t.Fatalf("the worst-case body is %d bytes; the test needs one over the old 512 KiB limit", len(raw))
+	}
+	if status, body := e.post(t, path, "Bearer "+secret, queue.ResultRequest{LeaseOwner: job.LeaseOwner, Outcome: queue.OutcomeFailed, Run: &full}); status != http.StatusNoContent {
+		t.Fatalf("a record at the caps made of escaped characters = %d %s, want 204", status, body)
+	}
+	var log, report string
+	if err := e.db.Reader.QueryRow(`SELECT log_excerpt, report FROM job_runs WHERE job_id = ?`, job.ID).Scan(&log, &report); err != nil {
+		t.Fatalf("no job_runs row: %v", err)
+	}
+	if len(log) != queue.MaxLogExcerptBytes || len(report) != queue.MaxReportBytes {
+		t.Errorf("stored log %d and report %d bytes, want the caps %d and %d", len(log), len(report), queue.MaxLogExcerptBytes, queue.MaxReportBytes)
 	}
 }
 
