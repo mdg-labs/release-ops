@@ -3,6 +3,7 @@ package updateprs_test
 import (
 	"context"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -197,6 +198,53 @@ func TestReconcileSkipsAStoredPRGitHubDoesNotKnow(t *testing.T) {
 	}
 	if got := r.states(t); !reflect.DeepEqual(got, map[int64]string{1: "open", 2: "closed"}) {
 		t.Fatalf("rows = %v", got)
+	}
+}
+
+// More stored open PRs are missing from the listing than one reconcile fetches, and they all
+// stay open: the next reconciles carry on past the ones already fetched instead of fetching the
+// same first ones every time.
+func TestReconcileFetchesEveryVanishedPRWhenMoreThanOnePassFetches(t *testing.T) {
+	const total = 150
+	r := newRig(t, true)
+	for n := int64(1); n <= total; n++ {
+		r.bot(n)
+	}
+	ctx := context.Background()
+	if err := r.rec.Reconcile(ctx, r.repo); err != nil {
+		t.Fatal(err)
+	}
+	// An edit drops the markers from every PR, so none is listed any more; they stay tracked.
+	for n := int64(1); n <= total; n++ {
+		r.bot(n, func(p *githubtest.PullRequest) { p.Body = "no markers any more" })
+	}
+	// One past the first hundred closed without a webhook.
+	r.bot(101, func(p *githubtest.PullRequest) {
+		p.Body, p.State, p.ClosedAt, p.UpdatedAt = "no markers any more", "closed", at(30), at(30)
+	})
+
+	for range 2 {
+		if err := r.rec.Reconcile(ctx, r.repo); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fetched := map[string]bool{}
+	for _, req := range r.fake.Requests() {
+		if number, ok := strings.CutPrefix(req.Path, "/repos/acme/repo-1/pulls/"); ok {
+			fetched[number] = true
+		}
+	}
+	if len(fetched) != total {
+		t.Errorf("%d distinct PRs fetched over two reconciles, want all %d", len(fetched), total)
+	}
+	got := r.states(t)
+	if got[101] != "closed" {
+		t.Errorf("PR 101 is %q, want closed", got[101])
+	}
+	for n := int64(1); n <= total; n++ {
+		if n != 101 && got[n] != "open" {
+			t.Errorf("PR %d is %q, want open", n, got[n])
+		}
 	}
 }
 

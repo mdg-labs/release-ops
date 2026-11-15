@@ -16,7 +16,7 @@ import (
 
 const (
 	// maxFetches bounds how many vanished open PRs one reconcile fetches one by one; the rest
-	// are fetched by the next reconcile.
+	// are fetched by the next reconciles, which carry on after the last number fetched.
 	maxFetches = 100
 	// ReconcileTimeout bounds one repository's reconcile, GitHub calls included.
 	ReconcileTimeout = 2 * time.Minute
@@ -63,8 +63,9 @@ type Reconciler struct {
 	// text.
 	Logger *slog.Logger
 
-	mu    sync.Mutex
-	pages map[string]*pageCache // by repository full name
+	mu      sync.Mutex
+	pages   map[string]*pageCache // by repository full name
+	cursors map[string]int64      // by repository id: the last stored PR number fetched one by one
 }
 
 // pageCache holds the last listing of a repository: the pages by URL, for conditional
@@ -128,12 +129,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, repositoryID string) error {
 	for _, pr := range listed {
 		seen[pr.Number] = true
 	}
-	fetched := 0
+	var vanished []int64
 	for _, number := range stored {
-		if seen[number] || fetched == maxFetches {
-			continue
+		if !seen[number] {
+			vanished = append(vanished, number)
 		}
-		fetched++
+	}
+	vanished = r.nextFetches(repo.ID, vanished)
+	for _, number := range vanished {
 		pr, err := r.API.PullRequest(ctx, token.Value(), repo.FullName, number)
 		if errors.Is(err, github.ErrPullRequestNotFound) {
 			r.logger().Warn("update PR reconcile: a stored open pull request is not known to GitHub", "repository", repo.FullName, "number", number)
@@ -149,11 +152,35 @@ func (r *Reconciler) Reconcile(ctx context.Context, repositoryID string) error {
 	if err != nil {
 		return err
 	}
+	if len(vanished) > 0 {
+		r.cursors[repo.ID] = vanished[len(vanished)-1]
+	}
 	if changed > 0 {
 		r.Wake.Wake()
 	}
-	r.logger().Debug("update PR reconcile done", "repository", repo.FullName, "listed", len(listed)-fetched, "fetched", fetched, "changed", changed)
+	r.logger().Debug("update PR reconcile done", "repository", repo.FullName, "listed", len(listed)-len(vanished), "fetched", len(vanished), "changed", changed)
 	return nil
+}
+
+// nextFetches picks at most maxFetches of the vanished PR numbers (ascending) to fetch now: it
+// starts after the last number the repository's previous reconcile fetched and wraps around,
+// so that when more than maxFetches stay unresolved every one of them is reached in turn.
+func (r *Reconciler) nextFetches(repositoryID string, vanished []int64) []int64 {
+	if r.cursors == nil {
+		r.cursors = map[string]int64{}
+	}
+	if len(vanished) <= maxFetches {
+		return vanished
+	}
+	start := slices.IndexFunc(vanished, func(n int64) bool { return n > r.cursors[repositoryID] })
+	if start < 0 {
+		start = 0
+	}
+	picked := make([]int64, 0, maxFetches)
+	for i := range maxFetches {
+		picked = append(picked, vanished[(start+i)%len(vanished)])
+	}
+	return picked
 }
 
 // apply upserts the PRs in one transaction and returns how many rows changed.
