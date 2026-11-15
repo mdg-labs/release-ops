@@ -32,7 +32,8 @@ func (t *tailBuffer) Write(p []byte) (int, error) {
 }
 
 // String returns the kept tail. When output was dropped the first, possibly cut, line is left
-// out, so no secret is half there for a redactor to miss.
+// out, so no secret is half there for a redactor to miss; with no newline in what was kept, all
+// of it is one cut line and nothing is returned.
 func (t *tailBuffer) String() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -42,9 +43,11 @@ func (t *tailBuffer) String() string {
 		t.dropped = true
 	}
 	if t.dropped {
-		if i := bytes.IndexByte(b, '\n'); i >= 0 {
-			b = b[i+1:]
+		i := bytes.IndexByte(b, '\n')
+		if i < 0 {
+			return ""
 		}
+		b = b[i+1:]
 	}
 	return string(b)
 }
