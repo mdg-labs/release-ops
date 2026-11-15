@@ -328,11 +328,14 @@ func safeName(name string) bool {
 }
 
 // WithoutOwnedKeys returns the path of the config as Renovate should read it. A JSON config
-// that sets a key of OwnedKeys is rewritten into dir without it and the removed key names are
-// returned; any other config is returned as it is, which is also what happens to JSON the
-// worker cannot parse. The per-job environment sets the same four settings and wins over the
-// file in Renovate, so a key left in a file the worker cannot rewrite is still overridden.
-// Values are never read.
+// that sets a key of OwnedKeys, at the top level or inside its "force" object (which Renovate
+// applies over the merged settings), is rewritten into dir without it; the removed key names
+// are returned, those inside "force" as "force.<key>". A "force" that is not an object is left
+// as it is. Any other config is returned as it is, which is also what happens to JSON the
+// worker cannot parse and to a JavaScript config, whose file the worker cannot rewrite without
+// evaluating it. The per-job environment sets the same four settings and wins over the file
+// in Renovate, so a key left in a file the worker cannot rewrite is still overridden except
+// under "force". Values are never read.
 func (c *Config) WithoutOwnedKeys(dir string) (string, []string, error) {
 	if filepath.Ext(c.Path) != ".json" {
 		return c.Path, nil, nil
@@ -346,6 +349,26 @@ func (c *Config) WithoutOwnedKeys(dir string) (string, []string, error) {
 		if _, ok := doc[key]; ok {
 			delete(doc, key)
 			removed = append(removed, key)
+		}
+	}
+	if rawForce, ok := doc["force"]; ok {
+		var force map[string]json.RawMessage
+		if err := json.Unmarshal(rawForce, &force); err == nil && force != nil {
+			var forced []string
+			for _, key := range OwnedKeys {
+				if _, ok := force[key]; ok {
+					delete(force, key)
+					forced = append(forced, "force."+key)
+				}
+			}
+			if len(forced) > 0 {
+				raw, err := json.Marshal(force)
+				if err != nil {
+					return "", nil, err
+				}
+				doc["force"] = raw
+				removed = append(removed, forced...)
+			}
 		}
 	}
 	if len(removed) == 0 {

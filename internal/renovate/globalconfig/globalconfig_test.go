@@ -330,6 +330,35 @@ func TestWithoutOwnedKeys(t *testing.T) {
 			t.Error("the original file path was handed back")
 		}
 	})
+	t.Run("owned keys inside force are removed too and the rest of force is kept", func(t *testing.T) {
+		raw := `{"force":{"repositories":["acme/x"],"platform":"gitlab","labels":["a"]}}`
+		cfg := &Config{Path: filepath.Join(t.TempDir(), "config.json"), Raw: raw}
+
+		p, removed, err := cfg.WithoutOwnedKeys(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		slices.Sort(removed)
+		if want := []string{"force.platform", "force.repositories"}; !slices.Equal(removed, want) {
+			t.Errorf("removed = %v, want %v", removed, want)
+		}
+		got, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := `{"force":{"labels":["a"]}}`; string(got) != want {
+			t.Errorf("rewritten config = %s, want %s", got, want)
+		}
+	})
+	t.Run("a force that is not an object is left as it is", func(t *testing.T) {
+		for _, raw := range []string{`{"force":null}`, `{"force":["repositories"]}`, `{"force":"x"}`} {
+			cfg := &Config{Path: "/config/config.json", Raw: raw}
+			p, removed, err := cfg.WithoutOwnedKeys(t.TempDir())
+			if err != nil || p != cfg.Path || removed != nil {
+				t.Errorf("%s: p = %q, removed = %v, err = %v", raw, p, removed, err)
+			}
+		}
+	})
 	t.Run("a config without them is left where it is", func(t *testing.T) {
 		cfg := &Config{Path: "/config/config.json", Raw: `{"onboarding":false}`}
 		p, removed, err := cfg.WithoutOwnedKeys(t.TempDir())
