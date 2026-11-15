@@ -32,6 +32,7 @@ const routesTestKeyHex = "0123456789abcdef0123456789abcdef0123456789abcdef012345
 var expectedAPIRoutes = []string{
 	"POST /api/v1/auth/login",
 	"GET /api/v1/auth/session",
+	"POST /api/v1/auth/login-link",
 	"POST /api/v1/auth/accept-invitation",
 	"POST /api/v1/auth/confirm-email-change",
 	"POST /api/v1/auth/logout",
@@ -491,6 +492,7 @@ func newRoutesTestDeps(t *testing.T) *ServerDeps {
 		Queries: storedb.New(db.Writer),
 		Store:   store.New(db, cipher),
 		Mailer:  mail.NoopMailer{},
+		Queue:   store.NewJobQueue(db, store.JobQueueOptions{}),
 	}
 }
 

@@ -17,12 +17,16 @@ func validEnv(t *testing.T) {
 	t.Setenv("WEBHOOK_URL", "")
 	t.Setenv("GITHUB_BASE_URL", "")
 	t.Setenv("SETUP_TOKEN", "")
+	t.Setenv("BOOTSTRAP_ADMIN_GITHUB_LOGIN", "")
+	t.Setenv("ADMIN_TEAM", "")
+	t.Setenv("VIEWER_TEAM", "")
 	t.Setenv("BOOTSTRAP_ADMIN_EMAIL", "")
 	t.Setenv("BOOTSTRAP_ADMIN_PASSWORD", "")
 	t.Setenv("INTERNAL_ADDR", "")
 	t.Setenv("WORKER_SECRET", "")
 	t.Setenv("PRESET_REPOSITORIES", "")
 	t.Setenv("GLOBAL_CONFIG_REPO", "")
+	t.Setenv("GLOBAL_CONFIG_REF", "")
 	t.Setenv("METRICS_ADDR", "")
 }
 
@@ -147,6 +151,15 @@ func TestLoadWebhookAndGitHubURLs(t *testing.T) {
 	}
 }
 
+func TestPollingModeFollowsWebhookURL(t *testing.T) {
+	if !(&Config{}).PollingMode() {
+		t.Error("PollingMode() = false without WEBHOOK_URL, want true")
+	}
+	if (&Config{WebhookURL: "https://hooks.example.com/hooks/github"}).PollingMode() {
+		t.Error("PollingMode() = true with WEBHOOK_URL, want false")
+	}
+}
+
 func TestLoadSetupTokenMinimumStrength(t *testing.T) {
 	validEnv(t)
 
@@ -254,6 +267,7 @@ func TestLoadPresetRepositories(t *testing.T) {
 
 	t.Setenv("PRESET_REPOSITORIES", " acme/renovate-presets, ,Acme/RENOVATE-PRESETS,acme/other.repo_1 ")
 	t.Setenv("GLOBAL_CONFIG_REPO", "acme/renovate-global")
+	t.Setenv("GLOBAL_CONFIG_REF", "main")
 	cfg, err = Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -285,6 +299,7 @@ func TestLoadRejectsMalformedRepositoryLists(t *testing.T) {
 
 		validEnv(t)
 		t.Setenv("GLOBAL_CONFIG_REPO", bad)
+		t.Setenv("GLOBAL_CONFIG_REF", "main")
 		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "GLOBAL_CONFIG_REPO") {
 			t.Errorf("GLOBAL_CONFIG_REPO %q: error = %v, want a GLOBAL_CONFIG_REPO error", bad, err)
 		}
@@ -315,6 +330,99 @@ func TestLoadMetricsAddr(t *testing.T) {
 			}
 			if err != nil || cfg.MetricsAddr != tc.want {
 				t.Fatalf("Load() = %+v, %v; want MetricsAddr %q", cfg, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadBootstrapAdminGitHubLogin(t *testing.T) {
+	validEnv(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.BootstrapAdminGitHubLogin != "" {
+		t.Errorf("BootstrapAdminGitHubLogin = %q, want empty by default", cfg.BootstrapAdminGitHubLogin)
+	}
+
+	t.Setenv("BOOTSTRAP_ADMIN_GITHUB_LOGIN", " octo-cat ")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.BootstrapAdminGitHubLogin != "octo-cat" {
+		t.Errorf("BootstrapAdminGitHubLogin = %q, want the trimmed login", cfg.BootstrapAdminGitHubLogin)
+	}
+
+	for _, bad := range []string{"-octo", "octo-", "oc--to", "octo cat", "octo/cat", "@octocat", strings.Repeat("a", 40)} {
+		t.Setenv("BOOTSTRAP_ADMIN_GITHUB_LOGIN", bad)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "BOOTSTRAP_ADMIN_GITHUB_LOGIN") {
+			t.Errorf("Load() with login %q error = %v, want a BOOTSTRAP_ADMIN_GITHUB_LOGIN error", bad, err)
+		}
+	}
+}
+
+func TestLoadRoleTeams(t *testing.T) {
+	validEnv(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.AdminTeam != "" || cfg.ViewerTeam != "" {
+		t.Errorf("teams = %q, %q, want both empty by default", cfg.AdminTeam, cfg.ViewerTeam)
+	}
+
+	t.Setenv("ADMIN_TEAM", " acme/release-ops-admins ")
+	t.Setenv("VIEWER_TEAM", "acme/Dev.Team_1")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.AdminTeam != "acme/release-ops-admins" || cfg.ViewerTeam != "acme/Dev.Team_1" {
+		t.Errorf("teams = %q, %q, want the trimmed values", cfg.AdminTeam, cfg.ViewerTeam)
+	}
+
+	for _, name := range []string{"ADMIN_TEAM", "VIEWER_TEAM"} {
+		for _, bad := range []string{"acme", "acme/", "/team", "acme/team/extra", "acme/team slug", "-acme/team", "acme/../x", "acme/.team", strings.Repeat("a", 40) + "/team"} {
+			t.Setenv(name, bad)
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), name) {
+				t.Errorf("Load() with %s=%q error = %v, want a %s error", name, bad, err, name)
+			}
+		}
+		t.Setenv(name, "")
+	}
+}
+
+func TestLoadGlobalConfigRef(t *testing.T) {
+	for _, tc := range []struct {
+		name, repo, ref, wantErr string
+	}{
+		{"neither", "", "", ""},
+		{"branch", "acme/renovate", "main", ""},
+		{"tag with a slash", "acme/renovate", "release/v1.2", ""},
+		{"commit", "acme/renovate", strings.Repeat("a1", 20), ""},
+		{"a leading underscore", "acme/renovate", "_global", ""},
+		{"a ref without a repository is ignored", "", "main", ""},
+		{"a repository without a ref", "acme/renovate", "", "GLOBAL_CONFIG_REF is required"},
+		{"a space", "acme/renovate", "my branch", "GLOBAL_CONFIG_REF must be"},
+		{"a reserved character", "acme/renovate", "a~1", "GLOBAL_CONFIG_REF must be"},
+		{"a leading dash", "acme/renovate", "-main", "GLOBAL_CONFIG_REF must be"},
+		{"a leading dot", "acme/renovate", ".main", "GLOBAL_CONFIG_REF must be"},
+		{"a leading slash", "acme/renovate", "/main", "GLOBAL_CONFIG_REF must be"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			validEnv(t)
+			t.Setenv("GLOBAL_CONFIG_REPO", tc.repo)
+			t.Setenv("GLOBAL_CONFIG_REF", tc.ref)
+			cfg, err := Load()
+			if tc.wantErr == "" {
+				if err != nil || cfg.GlobalConfigRef != tc.ref {
+					t.Fatalf("Load() = %+v, %v", cfg, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("Load() = %v, want %q", err, tc.wantErr)
 			}
 		})
 	}

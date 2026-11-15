@@ -11,7 +11,9 @@ import (
 const (
 	// SessionCookieName is the HttpOnly session cookie used by the Go API.
 	SessionCookieName = "release_ops_session"
-	sessionLifetime   = 7 * 24 * time.Hour
+	// SessionLifetime is how long a session lasts from sign-in. It is absolute: nothing a
+	// request does extends it (specs.html § 3.8).
+	SessionLifetime = 8 * time.Hour
 )
 
 // NewSessionManager configures scs with the SQLite sessions table store.
@@ -21,7 +23,7 @@ func NewSessionManager(db *sql.DB, sessionSecret string, secureCookies bool) *sc
 
 	manager := scs.New()
 	manager.Store = newUserBoundSQLiteStore(db, manager.Codec)
-	manager.Lifetime = sessionLifetime
+	manager.Lifetime = SessionLifetime
 	manager.Cookie.Name = SessionCookieName
 	manager.Cookie.HttpOnly = true
 	manager.Cookie.Path = "/"

@@ -13,7 +13,9 @@ import (
 	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/api/handlers"
+	"github.com/mdg-labs/release-ops/internal/api/hooks"
 	"github.com/mdg-labs/release-ops/internal/github"
 	"github.com/mdg-labs/release-ops/internal/mail"
 	"github.com/mdg-labs/release-ops/internal/queue"
@@ -36,9 +38,25 @@ type ServerDeps struct {
 	AppURL string
 	// WebhookURL is the configured WEBHOOK_URL, empty when unset, and GitHubBaseURL the
 	// configured GITHUB_BASE_URL; with GitHub they serve the manifest flow on /setup.
+	// A WebhookURL also serves POST /hooks/github; without one that route does not exist.
 	WebhookURL    string
 	GitHubBaseURL string
 	GitHub        *github.Client
+	// GitHubOAuth runs the OAuth sign-in. When nil it is built from GitHub and GitHubBaseURL;
+	// tests set it to a fake.
+	GitHubOAuth auth.OAuthProvider
+	// Roles derives the role of a GitHub user from the installation's account and
+	// memberships, at sign-in and every 15 minutes of a session. Without it only the
+	// bootstrap admin can sign in, and a session whose role is due for a re-check is refused.
+	Roles auth.RoleEvaluator
+	// BootstrapAdminGitHubLogin is BOOTSTRAP_ADMIN_GITHUB_LOGIN.
+	BootstrapAdminGitHubLogin string
+	// WebhookRoutes holds the handlers of the webhook events. When nil, the route serves
+	// the default table, which acknowledges the installation events and ignores the rest.
+	WebhookRoutes *hooks.Routes
+	// UpdatePRs stores the update PRs of pull_request deliveries and wakes the ticket engine.
+	// Without it those deliveries only start runs.
+	UpdatePRs hooks.UpdatePRTracker
 	// Queue is read by /readyz for the last worker contact. Without it the server is never
 	// ready.
 	Queue queue.Queue
@@ -70,9 +88,42 @@ func newBaseRouter(deps *ServerDeps) http.Handler {
 		}
 		r.Get("/readyz", Ready(db, deps.Queue, time.Now))
 		RegisterAll(api, deps)
+		registerWebhook(r, deps)
 	}
 
 	return r
+}
+
+// registerWebhook serves POST /hooks/github outside /api/v1: GitHub authenticates by
+// signature, not by session. Without WEBHOOK_URL no webhook is configured and the route
+// is not mounted.
+func registerWebhook(r chi.Router, deps *ServerDeps) {
+	if deps.WebhookURL == "" || deps.Store == nil {
+		return
+	}
+	routes := deps.WebhookRoutes
+	if routes == nil {
+		routes = hooks.NewRoutes()
+	}
+	if jobs, ok := deps.Queue.(hooks.RunEnqueuer); ok {
+		hooks.RegisterRenovateHandlers(routes, hooks.RenovateTriggers{
+			Queue:        jobs,
+			Repositories: deps.Store,
+			Bot:          deps.Store.GitHubApp(),
+		})
+	}
+	if deps.UpdatePRs != nil {
+		hooks.RegisterUpdatePRHandler(routes, hooks.UpdatePRs{
+			Tracker:      deps.UpdatePRs,
+			Repositories: deps.Store,
+			Bot:          deps.Store.GitHubApp(),
+		})
+	}
+	r.Post(hooks.Path, (&hooks.Receiver{
+		Secrets:    deps.Store.GitHubApp(),
+		Deliveries: deps.Store.WebhookDeliveries(),
+		Routes:     routes,
+	}).ServeHTTP)
 }
 
 // MountAPI registers the /api/v1 subrouter on r and returns it for route registration.

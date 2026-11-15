@@ -62,17 +62,31 @@ func (r installationRepo) LiveIDs(ctx context.Context) ([]int64, error) {
 }
 
 func (r installationRepo) Record(ctx context.Context, in NewInstallation) (InstallationOutcome, error) {
-	permissions := in.Permissions
-	if permissions == "" {
-		permissions = "{}"
-	}
-
 	tx, err := r.store.db.Writer.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("begin installation: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	q := r.store.writes.WithTx(tx)
+
+	outcome, err := recordInstallation(ctx, r.store.writes.WithTx(tx), in)
+	if err != nil {
+		return 0, err
+	}
+	if outcome == InstallationRecorded {
+		if err := tx.Commit(); err != nil {
+			return 0, fmt.Errorf("commit installation: %w", err)
+		}
+	}
+	return outcome, nil
+}
+
+// recordInstallation stores the installation unless one that is not removed exists; the
+// caller commits.
+func recordInstallation(ctx context.Context, q *db.Queries, in NewInstallation) (InstallationOutcome, error) {
+	permissions := in.Permissions
+	if permissions == "" {
+		permissions = "{}"
+	}
 
 	live, err := q.ListLiveInstallationIDs(ctx)
 	if err != nil {
@@ -100,9 +114,6 @@ func (r installationRepo) Record(ctx context.Context, in NewInstallation) (Insta
 	})
 	if err != nil {
 		return 0, fmt.Errorf("store installation: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit installation: %w", err)
 	}
 	return InstallationRecorded, nil
 }

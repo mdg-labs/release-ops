@@ -940,3 +940,241 @@ func TestHeartbeatAbortsAJobOfAPausedOrRemovedRepository(t *testing.T) {
 		})
 	}
 }
+
+func TestFirstHeartbeatReportsTheLagFromTheWebhookArrival(t *testing.T) {
+	ctx := context.Background()
+	e := newJobEnv(t, 2)
+	e.setCap(t, 2)
+
+	var lags []time.Duration
+	q := store.NewJobQueue(e.db, store.JobQueueOptions{
+		Now:          e.clock.Now,
+		Rand:         func() float64 { return 0.5 },
+		OnJobStarted: func(lag time.Duration) { lags = append(lags, lag) },
+	})
+	arrived := e.clock.Now()
+	if _, err := q.Enqueue(ctx, queue.EnqueueParams{
+		RepositoryID: e.repos[0], Priority: queue.PriorityHigh, Trigger: queue.TriggerPush, WebhookReceivedAt: &arrived,
+	}); err != nil {
+		t.Fatalf("Enqueue webhook job: %v", err)
+	}
+	if _, err := q.Enqueue(ctx, queue.EnqueueParams{
+		RepositoryID: e.repos[1], Priority: queue.PriorityHigh, Trigger: queue.TriggerPush,
+	}); err != nil {
+		t.Fatalf("Enqueue scheduled job: %v", err)
+	}
+	// Both jobs share priority and created_at, and ids are random, so claim
+	// order is not fixed: tell the jobs apart by repository.
+	webhookJob, err := q.Claim(ctx)
+	if err != nil || webhookJob == nil {
+		t.Fatalf("first Claim = %v, %v", webhookJob, err)
+	}
+	scheduledJob, err := q.Claim(ctx)
+	if err != nil || scheduledJob == nil {
+		t.Fatalf("second Claim = %v, %v", scheduledJob, err)
+	}
+	if webhookJob.RepositoryID != e.repos[0] {
+		webhookJob, scheduledJob = scheduledJob, webhookJob
+	}
+
+	e.clock.Advance(40 * time.Second)
+	if len(lags) != 0 {
+		t.Fatalf("lags %v before any heartbeat, want none: a claim is not a start", lags)
+	}
+	if _, err := q.Heartbeat(ctx, webhookJob.ID, "0.not-the-owner"); err != nil {
+		t.Fatalf("Heartbeat with a foreign owner: %v", err)
+	}
+	if len(lags) != 0 {
+		t.Fatalf("lags %v after a refused heartbeat, want none", lags)
+	}
+
+	if _, err := q.Heartbeat(ctx, webhookJob.ID, webhookJob.LeaseOwner); err != nil {
+		t.Fatalf("first Heartbeat: %v", err)
+	}
+	if len(lags) != 1 || lags[0] != 40*time.Second {
+		t.Fatalf("lags after the first heartbeat = %v, want [40s]", lags)
+	}
+
+	e.clock.Advance(30 * time.Second)
+	if _, err := q.Heartbeat(ctx, webhookJob.ID, webhookJob.LeaseOwner); err != nil {
+		t.Fatalf("second Heartbeat: %v", err)
+	}
+	if _, err := q.Heartbeat(ctx, scheduledJob.ID, scheduledJob.LeaseOwner); err != nil {
+		t.Fatalf("scheduled job Heartbeat: %v", err)
+	}
+	if len(lags) != 1 {
+		t.Errorf("lags = %v, want one: only the first heartbeat of a webhook-triggered job counts", lags)
+	}
+}
+
+type runRow struct {
+	Attempt                             int64
+	Outcome                             string
+	StartedAt                           string
+	FinishedAt                          sql.NullString
+	ExitCode                            sql.NullInt64
+	ErrorCode, ErrorMessage, RetryAfter sql.NullString
+	ReportStatus, LogExcerpt, Report    sql.NullString
+}
+
+func (e *jobEnv) runs(t *testing.T, jobID string) []runRow {
+	t.Helper()
+	rows, err := e.db.Reader.Query(`SELECT attempt, outcome, started_at, finished_at, exit_code, error_code, error_message, retry_after, report_status, log_excerpt, report
+		FROM job_runs WHERE job_id = ? ORDER BY attempt`, jobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []runRow
+	for rows.Next() {
+		var r runRow
+		if err := rows.Scan(&r.Attempt, &r.Outcome, &r.StartedAt, &r.FinishedAt, &r.ExitCode, &r.ErrorCode, &r.ErrorMessage, &r.RetryAfter, &r.ReportStatus, &r.LogExcerpt, &r.Report); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+func intPtr(n int) *int { return &n }
+
+// The result of an attempt and its job_runs row are one transaction: a result the lease does
+// not allow stores no row, and a repeated result stores none either.
+func TestCompleteRunStoresTheAttemptInTheSameTransactionAsTheResult(t *testing.T) {
+	e := newJobEnv(t, 1)
+	ctx := context.Background()
+	e.enqueue(t, e.repos[0], queue.PriorityHigh)
+	job := e.claim(t)
+	if _, err := e.q.Heartbeat(ctx, job.ID, job.LeaseOwner); err != nil {
+		t.Fatal(err)
+	}
+	e.clock.Advance(5 * time.Second)
+	run := queue.RunRecord{ExitCode: intPtr(0), ReportStatus: queue.ReportOK, LogExcerpt: "log tail", Report: `{"a":1}`}
+
+	if err := e.q.CompleteRun(ctx, job.ID, "0.not-the-owner", run); !errors.Is(err, queue.ErrLeaseLost) {
+		t.Fatalf("CompleteRun by another owner = %v, want ErrLeaseLost", err)
+	}
+	if rows := e.runs(t, job.ID); len(rows) != 0 {
+		t.Fatalf("a refused result stored %+v", rows)
+	}
+
+	if err := e.q.CompleteRun(ctx, job.ID, job.LeaseOwner, run); err != nil {
+		t.Fatalf("CompleteRun: %v", err)
+	}
+	rows := e.runs(t, job.ID)
+	if len(rows) != 1 {
+		t.Fatalf("job_runs = %+v, want one row", rows)
+	}
+	r := rows[0]
+	if r.Attempt != 1 || r.Outcome != "succeeded" || !r.ExitCode.Valid || r.ExitCode.Int64 != 0 || r.ReportStatus.String != "ok" ||
+		r.LogExcerpt.String != "log tail" || r.Report.String != `{"a":1}` || r.ErrorCode.Valid || r.ErrorMessage.Valid || r.RetryAfter.Valid {
+		t.Errorf("run = %+v", r)
+	}
+	if r.StartedAt != formatForTest(e.clock.Now().Add(-5*time.Second)) || !r.FinishedAt.Valid || r.FinishedAt.String != formatForTest(e.clock.Now()) {
+		t.Errorf("started %s finished %v, want the first heartbeat and now", r.StartedAt, r.FinishedAt)
+	}
+
+	// A repeated result is a no-op: no second row.
+	if err := e.q.CompleteRun(ctx, job.ID, job.LeaseOwner, run); err != nil {
+		t.Fatalf("repeat: %v", err)
+	}
+	if rows := e.runs(t, job.ID); len(rows) != 1 {
+		t.Errorf("a repeated result stored %d rows", len(rows))
+	}
+}
+
+func formatForTest(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000Z") }
+
+func TestFailStoresTheAttemptsRecordAcrossRetries(t *testing.T) {
+	e := newJobEnv(t, 1)
+	ctx := context.Background()
+	id := e.enqueue(t, e.repos[0], queue.PriorityHigh).JobID
+
+	for attempt := 1; attempt <= queue.DefaultConfig().MaxAttempts; attempt++ {
+		e.clock.Advance(time.Hour)
+		job := e.claim(t)
+		_, err := e.q.Fail(ctx, job.ID, job.LeaseOwner, queue.FailParams{
+			RetryAfter: 90 * time.Second,
+			Run:        &queue.RunRecord{ExitCode: intPtr(attempt), ErrorCode: "renovate_exit", ErrorMessage: "renovate exited", ReportStatus: queue.ReportMissing, LogExcerpt: "attempt log"},
+		})
+		if err != nil {
+			t.Fatalf("attempt %d: %v", attempt, err)
+		}
+	}
+
+	rows := e.runs(t, id)
+	if len(rows) != queue.DefaultConfig().MaxAttempts {
+		t.Fatalf("job_runs = %+v, want one row per attempt", rows)
+	}
+	for i, r := range rows {
+		if r.Attempt != int64(i+1) || r.Outcome != "failed" || r.ExitCode.Int64 != int64(i+1) || r.ErrorCode.String != "renovate_exit" ||
+			r.ReportStatus.String != "missing" || r.LogExcerpt.String != "attempt log" || r.RetryAfter.String != "90" {
+			t.Errorf("row %d = %+v", i, r)
+		}
+	}
+	if got := e.row(t, id); got.State != queue.StateFailed {
+		t.Errorf("job = %s after the last attempt, want failed", got.State)
+	}
+}
+
+// Without a record nothing is stored, as before: Complete and Fail without Run write no row.
+func TestResultsWithoutARunRecordStoreNoRun(t *testing.T) {
+	e := newJobEnv(t, 2)
+	ctx := context.Background()
+	a := e.enqueue(t, e.repos[0], queue.PriorityHigh).JobID
+	b := e.enqueue(t, e.repos[1], queue.PriorityHigh).JobID
+	ja, jb := e.claim(t), e.claim(t)
+	if err := e.q.Complete(ctx, ja.ID, ja.LeaseOwner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.q.Fail(ctx, jb.ID, jb.LeaseOwner, queue.FailParams{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.runs(t, a)) != 0 || len(e.runs(t, b)) != 0 {
+		t.Errorf("rows were stored without a record")
+	}
+}
+
+// A record that cannot be stored leaves the job running: the result is not half applied.
+func TestARunRecordThatCannotBeStoredLeavesTheJobRunning(t *testing.T) {
+	e := newJobEnv(t, 1)
+	ctx := context.Background()
+	e.enqueue(t, e.repos[0], queue.PriorityHigh)
+	job := e.claim(t)
+	// The table refuses a second row of the same attempt.
+	if _, err := e.db.Writer.Exec(`INSERT INTO job_runs (id, job_id, attempt, started_at, outcome) VALUES ('x', ?, 1, '2026-11-14T12:00:00.000Z', 'running')`, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.q.CompleteRun(ctx, job.ID, job.LeaseOwner, queue.RunRecord{ReportStatus: queue.ReportOK}); err == nil {
+		t.Fatal("CompleteRun stored a duplicate attempt")
+	}
+	if got := e.row(t, job.ID); got.State != queue.StateRunning || got.Attempts != 0 {
+		t.Errorf("job = %s with %d attempts after a failed result, want running with none", got.State, got.Attempts)
+	}
+}
+
+func TestClaimCarriesTheBotGitAuthorOnceTheBotUserIsKnown(t *testing.T) {
+	e := newJobEnv(t, 2)
+	ctx := context.Background()
+	if _, err := e.db.Writer.Exec(`INSERT INTO github_app (id, app_id, slug, client_id, html_url, owner_login, owner_type, webhook_active,
+		encrypted_private_key, encrypted_client_secret, encrypted_webhook_secret, key_id, created_at, updated_at)
+		VALUES (1, 7, 'release-ops-acme', 'cid', 'https://github.com/apps/x', 'acme', 'Organization', 0, 'k', 's', 'w', 'kid', '2026-11-14T12:00:00.000Z', '2026-11-14T12:00:00.000Z')`); err != nil {
+		t.Fatal(err)
+	}
+	e.enqueue(t, e.repos[0], queue.PriorityHigh)
+	if job := e.claim(t); job.GitAuthor != "" {
+		t.Errorf("GitAuthor = %q before the bot user's id is known, want none", job.GitAuthor)
+	}
+
+	if _, err := e.db.Writer.Exec(`UPDATE github_app SET bot_user_id = 424242`); err != nil {
+		t.Fatal(err)
+	}
+	e.enqueue(t, e.repos[1], queue.PriorityHigh)
+	job, err := e.q.Claim(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "release-ops-acme[bot] <424242+release-ops-acme[bot]@users.noreply.github.com>"; job.GitAuthor != want {
+		t.Errorf("GitAuthor = %q, want %q", job.GitAuthor, want)
+	}
+}

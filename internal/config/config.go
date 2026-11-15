@@ -44,7 +44,16 @@ type Config struct {
 	GitHubBaseURL string
 	// SetupToken is the operator-supplied first-start setup token (SETUP_TOKEN); empty means
 	// the server generates one.
-	SetupToken             string
+	SetupToken string
+	// BootstrapAdminGitHubLogin is the GitHub login of the pinned first admin
+	// (BOOTSTRAP_ADMIN_GITHUB_LOGIN); empty means the App's owner is the first admin. It is
+	// resolved to a numeric id at the first matching sign-in and ignored afterwards.
+	BootstrapAdminGitHubLogin string
+	// AdminTeam and ViewerTeam are ADMIN_TEAM and VIEWER_TEAM as org/team-slug, empty when
+	// unset: the members of AdminTeam are admins, and with ViewerTeam set only its members
+	// (and admins) may sign in as viewers (docs/specs.html § 3.7).
+	AdminTeam              string
+	ViewerTeam             string
 	BootstrapAdminEmail    string
 	BootstrapAdminPassword string
 	// InternalAddr is where the internal listener for the worker binds (INTERNAL_ADDR); empty
@@ -59,25 +68,32 @@ type Config struct {
 	// token covers the job's repository and these, so Renovate can resolve presets from them.
 	PresetRepositories []string
 	GlobalConfigRepo   string
+	// GlobalConfigRef is GLOBAL_CONFIG_REF, the branch, tag or commit of GlobalConfigRepo the
+	// worker fetches the global Renovate config and tools from at job start.
+	GlobalConfigRef string
 }
 
 // Load reads and validates configuration from the process environment.
 func Load() (*Config, error) {
 	cfg := &Config{
-		SessionSecret:          strings.TrimSpace(os.Getenv("SESSION_SECRET")),
-		AppEncryptionKey:       strings.TrimSpace(os.Getenv("APP_ENCRYPTION_KEY")),
-		AppDBPath:              envOrDefault("APP_DB_PATH", defaultAppDBPath),
-		GoAPIURL:               envOrDefault("GO_API_URL", defaultGoAPIURL),
-		AppURL:                 strings.TrimRight(strings.TrimSpace(os.Getenv("APP_URL")), "/"),
-		WebhookURL:             strings.TrimSpace(os.Getenv("WEBHOOK_URL")),
-		GitHubBaseURL:          strings.TrimRight(envOrDefault("GITHUB_BASE_URL", defaultGitHubURL), "/"),
-		SetupToken:             strings.TrimSpace(os.Getenv("SETUP_TOKEN")),
-		BootstrapAdminEmail:    strings.TrimSpace(os.Getenv("BOOTSTRAP_ADMIN_EMAIL")),
-		BootstrapAdminPassword: os.Getenv("BOOTSTRAP_ADMIN_PASSWORD"),
-		InternalAddr:           strings.TrimSpace(os.Getenv("INTERNAL_ADDR")),
-		WorkerSecret:           strings.TrimSpace(os.Getenv("WORKER_SECRET")),
-		GlobalConfigRepo:       strings.TrimSpace(os.Getenv("GLOBAL_CONFIG_REPO")),
-		MetricsAddr:            envOrDefault("METRICS_ADDR", defaultMetricsAddr),
+		SessionSecret:             strings.TrimSpace(os.Getenv("SESSION_SECRET")),
+		AppEncryptionKey:          strings.TrimSpace(os.Getenv("APP_ENCRYPTION_KEY")),
+		AppDBPath:                 envOrDefault("APP_DB_PATH", defaultAppDBPath),
+		GoAPIURL:                  envOrDefault("GO_API_URL", defaultGoAPIURL),
+		AppURL:                    strings.TrimRight(strings.TrimSpace(os.Getenv("APP_URL")), "/"),
+		WebhookURL:                strings.TrimSpace(os.Getenv("WEBHOOK_URL")),
+		GitHubBaseURL:             strings.TrimRight(envOrDefault("GITHUB_BASE_URL", defaultGitHubURL), "/"),
+		SetupToken:                strings.TrimSpace(os.Getenv("SETUP_TOKEN")),
+		BootstrapAdminGitHubLogin: strings.TrimSpace(os.Getenv("BOOTSTRAP_ADMIN_GITHUB_LOGIN")),
+		AdminTeam:                 strings.TrimSpace(os.Getenv("ADMIN_TEAM")),
+		ViewerTeam:                strings.TrimSpace(os.Getenv("VIEWER_TEAM")),
+		BootstrapAdminEmail:       strings.TrimSpace(os.Getenv("BOOTSTRAP_ADMIN_EMAIL")),
+		BootstrapAdminPassword:    os.Getenv("BOOTSTRAP_ADMIN_PASSWORD"),
+		InternalAddr:              strings.TrimSpace(os.Getenv("INTERNAL_ADDR")),
+		WorkerSecret:              strings.TrimSpace(os.Getenv("WORKER_SECRET")),
+		GlobalConfigRepo:          strings.TrimSpace(os.Getenv("GLOBAL_CONFIG_REPO")),
+		GlobalConfigRef:           strings.TrimSpace(os.Getenv("GLOBAL_CONFIG_REF")),
+		MetricsAddr:               envOrDefault("METRICS_ADDR", defaultMetricsAddr),
 	}
 
 	var err error
@@ -128,6 +144,12 @@ func (c *Config) SecureCookies() bool {
 	return u.Scheme == "https"
 }
 
+// PollingMode reports that no webhook is configured (WEBHOOK_URL is unset): GitHub delivers no
+// events, so the instance polls instead and runs degraded, with minutes of latency.
+func (c *Config) PollingMode() bool {
+	return c.WebhookURL == ""
+}
+
 // BootstrapAdminConfigured reports whether one-time admin bootstrap env is set.
 func (c *Config) BootstrapAdminConfigured() bool {
 	return c.BootstrapAdminEmail != "" || c.BootstrapAdminPassword != ""
@@ -171,6 +193,14 @@ func (c *Config) validate() error {
 	if c.SetupToken != "" && len(c.SetupToken) < minSetupTokenLen {
 		return fmt.Errorf("SETUP_TOKEN must be at least %d characters; generate one with: openssl rand -hex 32", minSetupTokenLen)
 	}
+	if c.BootstrapAdminGitHubLogin != "" && (len(c.BootstrapAdminGitHubLogin) > 39 || !githubLoginPattern.MatchString(c.BootstrapAdminGitHubLogin)) {
+		return fmt.Errorf("BOOTSTRAP_ADMIN_GITHUB_LOGIN must be a GitHub login: up to 39 letters, digits and single hyphens")
+	}
+	for name, team := range map[string]string{"ADMIN_TEAM": c.AdminTeam, "VIEWER_TEAM": c.ViewerTeam} {
+		if team != "" && !validTeam(team) {
+			return fmt.Errorf("%s must be org/team-slug, e.g. acme/release-ops-admins", name)
+		}
+	}
 	if c.BootstrapAdminEmail != "" && c.BootstrapAdminPassword == "" {
 		return fmt.Errorf("BOOTSTRAP_ADMIN_PASSWORD is required when BOOTSTRAP_ADMIN_EMAIL is set")
 	}
@@ -179,6 +209,12 @@ func (c *Config) validate() error {
 	}
 	if c.GlobalConfigRepo != "" && !validRepository(c.GlobalConfigRepo) {
 		return fmt.Errorf("GLOBAL_CONFIG_REPO must be owner/repo")
+	}
+	if c.GlobalConfigRepo != "" && c.GlobalConfigRef == "" {
+		return fmt.Errorf("GLOBAL_CONFIG_REF is required when GLOBAL_CONFIG_REPO is set: a branch, tag or commit")
+	}
+	if c.GlobalConfigRef != "" && !refPattern.MatchString(c.GlobalConfigRef) {
+		return fmt.Errorf("GLOBAL_CONFIG_REF must be a branch, tag or commit name")
 	}
 	return c.validateInternalListener()
 }
@@ -199,6 +235,24 @@ func (c *Config) JobTokenRepositories() []string {
 // repositoryPattern is owner/repo as GitHub names them: an account name and a repository
 // name made of letters, digits, dots, hyphens and underscores.
 var repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$`)
+
+// refPattern is a branch, tag or commit name as the worker puts it in a request: no space,
+// control or git-reserved character. It starts with a letter, a digit or an underscore, so
+// it can never look like an option, a hidden name or a path.
+var refPattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._/+@-]{0,254}$`)
+
+// githubLoginPattern is GitHub's account name syntax: up to 39 letters, digits and single
+// hyphens, neither starting nor ending with a hyphen.
+var githubLoginPattern = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$`)
+
+// teamPattern is org/team-slug: a GitHub account name and a team slug of letters, digits,
+// dots, hyphens and underscores.
+var teamPattern = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
+
+func validTeam(s string) bool {
+	org, _, _ := strings.Cut(s, "/")
+	return len(org) <= 39 && teamPattern.MatchString(s)
+}
 
 func validRepository(s string) bool {
 	return repositoryPattern.MatchString(s) && !strings.HasSuffix(s, "/.") && !strings.HasSuffix(s, "/..")

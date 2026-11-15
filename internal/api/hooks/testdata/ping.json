@@ -1,0 +1,15 @@
+{
+  "zen": "Keep it logically awesome.",
+  "hook_id": 123456,
+  "hook": {
+    "type": "App",
+    "id": 123456,
+    "active": true,
+    "events": ["push", "pull_request", "issues"],
+    "config": {
+      "content_type": "json",
+      "insecure_ssl": "0",
+      "url": "https://release-ops.example.com/hooks/github"
+    }
+  }
+}

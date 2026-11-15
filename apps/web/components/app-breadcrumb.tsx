@@ -23,11 +23,6 @@ export const ROUTE_BREADCRUMBS: Record<string, BreadcrumbSegment[]> = {
   "/integrations": [{ labelKey: "integrations" }],
   "/ticket-projects": [{ labelKey: "ticketProjects" }],
   "/settings": [{ labelKey: "settings" }],
-  "/settings/users": [
-    { href: "/settings", labelKey: "settings" },
-    { labelKey: "settingsUsers" },
-  ],
-  "/profile": [{ labelKey: "profile" }],
 };
 
 function getBreadcrumbSegments(pathname: string): BreadcrumbSegment[] {

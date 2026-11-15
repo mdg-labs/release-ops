@@ -5,10 +5,7 @@ import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 
-const SETTINGS_LINKS = [
-  { href: "/settings", labelKey: "general" },
-  { href: "/settings/users", labelKey: "usersNav" },
-] as const;
+const SETTINGS_LINKS = [{ href: "/settings", labelKey: "general" }] as const;
 
 export function SettingsNav(): React.ReactElement {
   const pathname = usePathname() ?? "";

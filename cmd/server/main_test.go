@@ -19,25 +19,164 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/mdg-labs/release-ops/internal/config"
+	"github.com/mdg-labs/release-ops/internal/crypto"
 	"github.com/mdg-labs/release-ops/internal/store"
 	"github.com/mdg-labs/release-ops/migrations"
 	sqlitemigrate "github.com/mdg-labs/sqlite-migrate"
 	_ "modernc.org/sqlite"
 )
 
-func freePort(t *testing.T) int {
+// bindAttempts bounds how often a server start is retried on fresh ports after one of its
+// listeners finds its address taken.
+const bindAttempts = 5
+
+// withFreePorts calls start with n distinct loopback ports. The server's listeners bind
+// addresses, so a port picked here can be taken by another process before the server binds
+// it; start returns the server's error for that case and is called again with fresh ports,
+// up to bindAttempts times. Any other error fails the test.
+func withFreePorts(t *testing.T, n int, start func(ports []int) error) {
 	t.Helper()
 
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
+	var err error
+	for attempt := 1; attempt <= bindAttempts; attempt++ {
+		held := make([]net.Listener, 0, n)
+		ports := make([]int, 0, n)
+		for range n {
+			l, lerr := net.Listen("tcp", "127.0.0.1:0")
+			if lerr != nil {
+				t.Fatalf("listen: %v", lerr)
+			}
+			held = append(held, l)
+			ports = append(ports, l.Addr().(*net.TCPAddr).Port)
+		}
+		for _, l := range held {
+			_ = l.Close()
+		}
+
+		if err = start(ports); err == nil {
+			return
+		}
+		if !errors.Is(err, syscall.EADDRINUSE) {
+			t.Fatalf("start server: %v", err)
+		}
+		t.Logf("attempt %d: %v; retrying on fresh ports", attempt, err)
 	}
-	defer func() { _ = l.Close() }()
-	return l.Addr().(*net.TCPAddr).Port
+	t.Fatalf("start server: no free ports after %d attempts: %v", bindAttempts, err)
+}
+
+// probe is a request that only the server under test answers as wanted.
+type probe struct {
+	url    string
+	status int
+	bearer bool
+}
+
+// awaitReady polls every probe until it answers its status. It returns the server's own
+// error as soon as done yields one: a server that stops before it is ready has failed to
+// start, for example on a port that was taken.
+func awaitReady(done <-chan error, probes ...probe) error {
+	client := &http.Client{Timeout: 2 * time.Second}
+	deadline := time.Now().Add(20 * time.Second)
+	for _, p := range probes {
+		for {
+			select {
+			case err := <-done:
+				if err == nil {
+					err = errors.New("the server stopped before it was ready")
+				}
+				return err
+			default:
+			}
+			req, err := http.NewRequest(http.MethodGet, p.url, nil)
+			if err != nil {
+				return err
+			}
+			if p.bearer {
+				req.Header.Set("Authorization", "Bearer "+testWorkerSecret)
+			}
+			var last error
+			resp, err := client.Do(req)
+			if err == nil {
+				_ = resp.Body.Close()
+				if resp.StatusCode == p.status {
+					break
+				}
+				last = fmt.Errorf("status %d", resp.StatusCode)
+			} else {
+				last = err
+			}
+			if time.Now().After(deadline) {
+				return fmt.Errorf("%s did not answer %d: %w", p.url, p.status, last)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	return nil
+}
+
+// launch runs serve in the background until the test ends and waits until every probe is
+// answered. It returns serve's error if it stops first. A failed start leaves nothing running.
+func launch(t *testing.T, serve func(ctx context.Context) error, probes ...probe) error {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx) }()
+	if err := awaitReady(done, probes...); err != nil {
+		cancel()
+		return err
+	}
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("run: %v", err)
+			}
+		case <-time.After(20 * time.Second):
+			t.Error("server did not shut down")
+		}
+	})
+	return nil
+}
+
+// A listener that loses its port is reported by launch as an address-in-use error and
+// withFreePorts starts the server again on fresh ports.
+func TestLaunchReportsATakenPortAndWithFreePortsRetriesIt(t *testing.T) {
+	taken, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = taken.Close() }()
+
+	attempts := 0
+	var firstPorts []int
+	withFreePorts(t, 2, func(ports []int) error {
+		attempts++
+		if attempts == 1 {
+			firstPorts = ports
+			cfg := &config.Config{InternalAddr: taken.Addr().String(), WorkerSecret: testWorkerSecret}
+			err := launch(t, func(ctx context.Context) error { return serveInternal(ctx, cfg, nil, nil) },
+				probe{url: "http://" + taken.Addr().String() + "/internal/v1/jobs/x/heartbeat", status: http.StatusMethodNotAllowed, bearer: true})
+			if !errors.Is(err, syscall.EADDRINUSE) {
+				t.Fatalf("launch on a taken port = %v, want address already in use", err)
+			}
+			return err
+		}
+		if len(ports) != 2 || ports[0] == ports[1] {
+			t.Errorf("ports = %v, want two distinct ports", ports)
+		}
+		return nil
+	})
+	if attempts != 2 || len(firstPorts) != 2 {
+		t.Errorf("attempts = %d, want the taken port retried once", attempts)
+	}
 }
 
 type apiClient struct {
@@ -82,48 +221,19 @@ func (c *apiClient) do(method, path string, body any) (int, []byte) {
 func TestServerStartsOnFreshDatabase(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "app.db")
 
-	port := freePort(t)
-	cfg := &config.Config{
-		SessionSecret:          strings.Repeat("s", 32),
-		AppEncryptionKey:       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
-		AppDBPath:              dbPath,
-		GoInternalPort:         port,
-		BootstrapAdminEmail:    "admin@example.com",
-		BootstrapAdminPassword: "correct-horse-battery",
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		if err := run(ctx, cfg); err != nil {
-			t.Errorf("run: %v", err)
+	var base string
+	withFreePorts(t, 1, func(ports []int) error {
+		cfg := &config.Config{
+			SessionSecret:          strings.Repeat("s", 32),
+			AppEncryptionKey:       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+			AppDBPath:              dbPath,
+			GoInternalPort:         ports[0],
+			BootstrapAdminEmail:    "admin@example.com",
+			BootstrapAdminPassword: "correct-horse-battery",
 		}
-	}()
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case <-done:
-		case <-time.After(20 * time.Second):
-			t.Error("server did not shut down")
-		}
+		base = fmt.Sprintf("http://127.0.0.1:%d", ports[0])
+		return launch(t, func(ctx context.Context) error { return run(ctx, cfg) }, probe{url: base + "/healthz", status: http.StatusOK})
 	})
-
-	base := fmt.Sprintf("http://127.0.0.1:%d", port)
-	deadline := time.Now().Add(20 * time.Second)
-	for {
-		resp, err := http.Get(base + "/healthz")
-		if err == nil {
-			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				break
-			}
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("server did not become healthy: %v", err)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
 
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -324,7 +434,7 @@ func TestServerRefusesV1Database(t *testing.T) {
 		SessionSecret:          strings.Repeat("s", 32),
 		AppEncryptionKey:       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
 		AppDBPath:              dbPath,
-		GoInternalPort:         freePort(t),
+		GoInternalPort:         0,
 		BootstrapAdminEmail:    "admin@example.com",
 		BootstrapAdminPassword: "correct-horse-battery",
 	}
@@ -384,41 +494,16 @@ func startServer(t *testing.T, cfg *config.Config) *apiClient {
 
 	cfg.SessionSecret = strings.Repeat("s", 32)
 	cfg.AppEncryptionKey = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
-	cfg.AppDBPath = filepath.Join(t.TempDir(), "app.db")
-	cfg.GoInternalPort = freePort(t)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		if err := run(ctx, cfg); err != nil {
-			t.Errorf("run: %v", err)
-		}
-	}()
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case <-done:
-		case <-time.After(20 * time.Second):
-			t.Error("server did not shut down")
-		}
-	})
-
-	base := fmt.Sprintf("http://127.0.0.1:%d", cfg.GoInternalPort)
-	deadline := time.Now().Add(20 * time.Second)
-	for {
-		resp, err := http.Get(base + "/healthz")
-		if err == nil {
-			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				break
-			}
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("server did not become healthy: %v", err)
-		}
-		time.Sleep(50 * time.Millisecond)
+	if cfg.AppDBPath == "" {
+		cfg.AppDBPath = filepath.Join(t.TempDir(), "app.db")
 	}
+
+	var base string
+	withFreePorts(t, 1, func(ports []int) error {
+		cfg.GoInternalPort = ports[0]
+		base = fmt.Sprintf("http://127.0.0.1:%d", ports[0])
+		return launch(t, func(ctx context.Context) error { return run(ctx, cfg) }, probe{url: base + "/healthz", status: http.StatusOK})
+	})
 
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -491,5 +576,55 @@ func TestServerStartupUsesTheConfiguredSetupToken(t *testing.T) {
 	}
 	if code, body := c.do(http.MethodPost, "/api/v1/setup/session", map[string]string{"token": token}); code != http.StatusNoContent {
 		t.Fatalf("redeem the configured token = %d %s, want 204", code, body)
+	}
+}
+
+// An instance whose App was stored before its bot user's id was recorded gets the id filled
+// in at start-up, from the users endpoint of the configured GitHub API, without setup.
+func TestServerFillsInTheBotUserIdOfAnAppStoredWithoutIt(t *testing.T) {
+	var lookups atomic.Int32
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v3/users/release-ops-acme[bot]" || r.Header.Get("Authorization") != "" {
+			http.NotFound(w, r)
+			return
+		}
+		lookups.Add(1)
+		_, _ = w.Write([]byte(`{"id":424242,"login":"release-ops-acme[bot]","type":"Bot"}`))
+	}))
+	t.Cleanup(github.Close)
+
+	dbPath := filepath.Join(t.TempDir(), "app.db")
+	if _, err := store.Migrate(context.Background(), dbPath); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	db, err := store.OpenPath(dbPath)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	cipher, err := crypto.NewCipherFromHex("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.New(db, cipher).GitHubApp().Create(context.Background(), store.NewGitHubApp{
+		AppID: 7, Slug: "release-ops-acme", ClientID: "cid", HTMLURL: "https://github.com/apps/release-ops-acme",
+		OwnerLogin: "acme", OwnerType: "Organization", PrivateKey: "pem", ClientSecret: "cs", WebhookSecret: "ws",
+	}); err != nil {
+		t.Fatalf("store app: %v", err)
+	}
+
+	startServer(t, &config.Config{
+		AppDBPath:     dbPath,
+		AppURL:        "https://release-ops.example.com",
+		WebhookURL:    "https://release-ops.example.com/hooks/github",
+		GitHubBaseURL: github.URL,
+	})
+
+	waitFor(t, "the start-up lookup to record the bot user id", func() bool {
+		var id sql.NullInt64
+		return db.Reader.QueryRow(`SELECT bot_user_id FROM github_app`).Scan(&id) == nil && id.Valid && id.Int64 == 424242
+	})
+	if n := lookups.Load(); n != 1 {
+		t.Errorf("GitHub was asked %d times, want once", n)
 	}
 }

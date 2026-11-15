@@ -3,6 +3,7 @@ package worker_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -476,5 +477,43 @@ func TestWorkerPackagesDoNotDependOnTheDatabase(t *testing.T) {
 		if strings.Contains(dep, "release-ops/internal/store") || strings.Contains(dep, "sqlite") || strings.Contains(dep, "release-ops/internal/crypto") {
 			t.Errorf("the worker depends on %s", dep)
 		}
+	}
+}
+
+func TestClientTokenAsksForTheClaimedJobAndMapsRefusals(t *testing.T) {
+	expires := time.Date(2026, 11, 14, 13, 0, 0, 0, time.UTC)
+	var gotAuth, gotPath, gotOwner string
+	status, respBody := http.StatusOK, ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth, gotPath = r.Header.Get("Authorization"), r.URL.Path
+		var req queue.LeaseRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		gotOwner = req.LeaseOwner
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(respBody))
+	}))
+	defer srv.Close()
+	c := worker.NewClient(srv.URL, secret, nil)
+
+	respBody = `{"token":"ghs_abc","expires_at":"2026-11-14T13:00:00Z"}`
+	tok, err := c.Token(context.Background(), "job-9", "0.lease")
+	if err != nil || tok.Token != "ghs_abc" || !tok.ExpiresAt.Equal(expires) {
+		t.Fatalf("Token = %+v, %v", tok, err)
+	}
+	if gotPath != "/internal/v1/jobs/job-9/token" || gotAuth != "Bearer "+secret || gotOwner != "0.lease" {
+		t.Errorf("request: %s, %q, owner %q", gotPath, gotAuth, gotOwner)
+	}
+
+	status, respBody = http.StatusConflict, `{"error":"lease is not held for this job"}`
+	if _, err := c.Token(context.Background(), "job-9", "0.lease"); !errors.Is(err, worker.ErrLeaseLost) {
+		t.Errorf("409: err = %v, want ErrLeaseLost", err)
+	}
+	status, respBody = http.StatusBadGateway, `{"error":"token could not be issued"}`
+	if _, err := c.Token(context.Background(), "job-9", "0.lease"); err == nil || errors.Is(err, worker.ErrLeaseLost) {
+		t.Errorf("502: err = %v, want a plain failure", err)
+	}
+	status, respBody = http.StatusOK, `{"expires_at":"2026-11-14T13:00:00Z"}`
+	if _, err := c.Token(context.Background(), "job-9", "0.lease"); err == nil {
+		t.Error("a response without a token was accepted")
 	}
 }

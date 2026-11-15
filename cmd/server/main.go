@@ -14,6 +14,7 @@ import (
 
 	"github.com/mdg-labs/release-ops/internal/api"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
+	"github.com/mdg-labs/release-ops/internal/api/hooks"
 	"github.com/mdg-labs/release-ops/internal/api/setup"
 	"github.com/mdg-labs/release-ops/internal/config"
 	"github.com/mdg-labs/release-ops/internal/crypto"
@@ -23,8 +24,27 @@ import (
 	"github.com/mdg-labs/release-ops/internal/providers/integrationtester"
 	"github.com/mdg-labs/release-ops/internal/queue"
 	"github.com/mdg-labs/release-ops/internal/queue/internalapi"
+	"github.com/mdg-labs/release-ops/internal/scheduler"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
+	"github.com/mdg-labs/release-ops/internal/updateprs"
+)
+
+// The intervals of the periodic jobs are variables only so a test can shorten them.
+var (
+	// installationSyncInterval is how often the app reconciles the installation and its
+	// repositories with GitHub, after the sync at startup: hourly, as docs/specs.html
+	// §3.4 fixes it. A pass over an unchanged installation is a handful of list calls.
+	installationSyncInterval = time.Hour
+	// pollingInterval replaces it when no webhook is configured, because the reconcile is
+	// then the only way a change reaches the instance (docs/specs.html §2.11).
+	pollingInterval = github.PollingInterval
+	// redeliveryInterval is how often failed webhook deliveries are redelivered, after the
+	// pass at startup.
+	redeliveryInterval = github.RedeliveryInterval
+	// schedulerInterval is how often the safety net enqueues a job per repository: hourly, as
+	// docs/specs.html §5.7 fixes it. There is no setting for it.
+	schedulerInterval = scheduler.Interval
 )
 
 // reapInterval is how often the app requeues jobs whose lease has expired.
@@ -32,10 +52,16 @@ const reapInterval = 15 * time.Second
 
 func main() {
 	if len(os.Args) > 1 {
-		if os.Args[1] != "worker" {
-			log.Fatalf("unknown command %q: the only command is worker", os.Args[1])
+		var err error
+		switch os.Args[1] {
+		case "worker":
+			err = runWorkerCommand()
+		case "admin":
+			err = runAdminCommand(context.Background(), os.Args[2:], os.Stdout)
+		default:
+			err = fmt.Errorf("unknown command %q: the commands are worker and admin", os.Args[1])
 		}
-		if err := runWorkerCommand(); err != nil {
+		if err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -99,18 +125,44 @@ func run(ctx context.Context, cfg *config.Config) error {
 	}
 
 	githubClient := github.NewClient(github.APIBaseURL(cfg.GitHubBaseURL), 0)
+	appClient := github.NewAppClient(githubClient, appStore.GitHubApp(), github.AppClientOptions{})
+	syncer := github.NewSyncer(appClient, appStore.InstallationSync())
+	recovery := github.NewRecovery(appClient, github.RecoveryOptions{})
+	botResolver := github.NewBotResolver(githubClient, appStore.GitHubApp())
+	webhookRoutes := hooks.NewRoutes()
+	hooks.RegisterInstallationHandlers(webhookRoutes, appStore.InstallationSync(), syncer.Trigger)
 
 	registry := metrics.NewRegistry()
 	jobMetrics, err := metrics.NewJobs(registry)
 	if err != nil {
 		return fmt.Errorf("metrics: %w", err)
 	}
-	// The webhook receiver observes the lag histogram; it is registered here so the name is served.
-	if _, err := metrics.NewWebhookLag(registry); err != nil {
+	webhookLag, err := metrics.NewWebhookLag(registry)
+	if err != nil {
 		return fmt.Errorf("metrics: %w", err)
+	}
+	if err := metrics.RegisterOpenUpdatePRs(registry, appStore.UpdatePRs()); err != nil {
+		return fmt.Errorf("metrics: %w", err)
+	}
+	// ticketWake is what the ticket engine of epic E6 receives from: every committed change of
+	// an update PR fires it.
+	ticketWake := updateprs.NewNotifier()
+	prTracker := updateprs.NewTracker(appStore.UpdatePRs(), nil, ticketWake)
+	prRunner := &updateprs.Runner{
+		Reconciler: &updateprs.Reconciler{
+			Store: appStore.UpdatePRs(), Tracker: prTracker, API: githubClient, Tokens: appClient,
+			Bot: appStore.GitHubApp(), DB: db.Writer, Wake: ticketWake,
+		},
+		Repositories: appStore.UpdatePRs(),
+		Report: func(repositoryID string, err error) {
+			if err != nil {
+				log.Printf("update PR reconcile of repository %s: %v", repositoryID, err)
+			}
+		},
 	}
 	jobs := store.NewJobQueue(db, store.JobQueueOptions{
 		OnLeaseExpired: func(repository string) { jobMetrics.Ended(repository, metrics.OutcomeLeaseExpired) },
+		OnJobStarted:   func(lag time.Duration) { webhookLag.Observe(lag.Seconds()) },
 	})
 	if err := metrics.RegisterQueue(registry, jobs); err != nil {
 		return fmt.Errorf("metrics: %w", err)
@@ -128,7 +180,17 @@ func run(ctx context.Context, cfg *config.Config) error {
 		WebhookURL:        cfg.WebhookURL,
 		GitHubBaseURL:     cfg.GitHubBaseURL,
 		GitHub:            githubClient,
-		Queue:             jobs,
+		Roles: &auth.GitHubRoles{
+			Access:     appStore.Access(),
+			Users:      appStore.SignIn(),
+			GitHub:     appClient,
+			AdminTeam:  cfg.AdminTeam,
+			ViewerTeam: cfg.ViewerTeam,
+		},
+		BootstrapAdminGitHubLogin: cfg.BootstrapAdminGitHubLogin,
+		WebhookRoutes:             webhookRoutes,
+		Queue:                     jobs,
+		UpdatePRs:                 prTracker,
 	})
 
 	appCtx, cancel := context.WithCancel(ctx)
@@ -136,6 +198,62 @@ func run(ctx context.Context, cfg *config.Config) error {
 	var background sync.WaitGroup
 	background.Go(func() {
 		queue.RunReaper(appCtx, jobs, reapInterval, func(err error) { log.Printf("job reaper: %v", err) })
+	})
+	background.Go(func() {
+		ticker := time.NewTicker(schedulerInterval)
+		defer ticker.Stop()
+		sched := scheduler.New(appStore.Repositories(), jobs)
+		sched.AfterTick = func(ctx context.Context) { triggerReconciles(ctx, prRunner) }
+		sched.Run(appCtx, ticker.C, func(res scheduler.Result, err error) {
+			if err != nil {
+				log.Printf("scheduler: %v", err)
+			}
+			if res.Enqueued > 0 {
+				log.Printf("scheduler: enqueued %d repository runs", res.Enqueued)
+			}
+		})
+	})
+	background.Go(func() { prRunner.Run(appCtx) })
+	// The start-up reconcile needs the bot user id, which is what tells a bot PR, and the
+	// repositories of the first sync, so it waits for both.
+	startup := &startupReconcile{trigger: func() { triggerReconciles(appCtx, prRunner) }}
+	syncEvery := installationSyncInterval
+	if cfg.PollingMode() {
+		syncEvery = pollingInterval
+		log.Printf("WEBHOOK_URL is not set: running in polling mode (degraded), re-reading installations and repositories from GitHub every %s; changes reach this instance with minutes of latency", pollingInterval)
+	} else {
+		background.Go(func() {
+			ticker := time.NewTicker(redeliveryInterval)
+			defer ticker.Stop()
+			recovery.Run(appCtx, ticker.C, func(redelivered int, err error) {
+				if err != nil {
+					log.Printf("github redelivery: %v", err)
+				}
+				if redelivered > 0 {
+					log.Printf("github redelivery: asked GitHub to redeliver %d failed webhook deliveries", redelivered)
+				}
+			})
+		})
+	}
+	background.Go(func() {
+		ticker := time.NewTicker(github.BotRetryInterval)
+		defer ticker.Stop()
+		botResolver.Run(appCtx, ticker.C, func(err error) {
+			if err != nil {
+				log.Printf("github bot user id: %v", err)
+			}
+			startup.botPass(appCtx, err, appStore.GitHubApp())
+		})
+	})
+	background.Go(func() {
+		ticker := time.NewTicker(syncEvery)
+		defer ticker.Stop()
+		syncer.Run(appCtx, ticker.C, func(err error) {
+			if err != nil {
+				log.Printf("github sync: %v", err)
+			}
+			startup.syncPass(appCtx, err, appStore.GitHubApp())
+		})
 	})
 	var internalErr, metricsErr error
 	if cfg.MetricsAddr != "" {
@@ -150,7 +268,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	if cfg.InternalAddr != "" {
 		background.Go(func() {
 			log.Printf("release-ops internal listener on %s", cfg.InternalAddr)
-			if err := serveInternal(appCtx, cfg, jobs, github.NewAppClient(githubClient, appStore.GitHubApp(), github.AppClientOptions{})); err != nil {
+			if err := serveInternalWith(appCtx, cfg, jobs, appClient, prRunner.Trigger); err != nil {
 				internalErr = fmt.Errorf("internal listener: %w", err)
 				cancel()
 			}
@@ -172,10 +290,26 @@ func run(ctx context.Context, cfg *config.Config) error {
 // serveInternal serves the worker routes on INTERNAL_ADDR until ctx ends.
 // Its token route mints job tokens with the App's key, which stays in this process.
 func serveInternal(ctx context.Context, cfg *config.Config, q queue.Queue, tokens internalapi.TokenIssuer) error {
+	return serveInternalWith(ctx, cfg, q, tokens, nil)
+}
+
+// serveInternalWith is serveInternal that tells afterResult, when not nil, the repository of
+// every stored job result.
+func serveInternalWith(ctx context.Context, cfg *config.Config, q queue.Queue, tokens internalapi.TokenIssuer, afterResult func(repositoryID string)) error {
 	h := internalapi.NewHandler(q, internalapi.Options{
 		Secret:            cfg.WorkerSecret,
 		Tokens:            tokens,
 		TokenRepositories: cfg.JobTokenRepositories(),
+		GlobalConfigRepo:  cfg.GlobalConfigRepo,
+		GlobalConfigRef:   cfg.GlobalConfigRef,
+		AfterResult:       afterResult,
 	})
 	return internalapi.Serve(ctx, cfg.InternalAddr, h, internalapi.WriteTimeout)
+}
+
+// triggerReconciles asks for a PR reconcile of every repository that takes part.
+func triggerReconciles(ctx context.Context, r *updateprs.Runner) {
+	if err := r.TriggerAll(ctx); err != nil && ctx.Err() == nil {
+		log.Printf("update PR reconcile: %v", err)
+	}
 }

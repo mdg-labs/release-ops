@@ -71,8 +71,8 @@ func TestLoginFlow(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&loginResp); err != nil {
 		t.Fatalf("decode login response: %v", err)
 	}
-	if loginResp.User.ID != user.ID || loginResp.User.Email != user.Email {
-		t.Fatalf("login user = %+v, want id=%s email=%s", loginResp.User, user.ID, user.Email)
+	if loginResp.User.ID != user.ID || loginResp.User.Email != "admin@example.com" {
+		t.Fatalf("login user = %+v, want id=%s email=admin@example.com", loginResp.User, user.ID)
 	}
 
 	var cookie *http.Cookie
@@ -263,8 +263,8 @@ func TestSessionReturnsUserWhenLoggedIn(t *testing.T) {
 	if err := json.NewDecoder(sessionResp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode session response: %v", err)
 	}
-	if body.User.ID != user.ID || body.User.Email != user.Email {
-		t.Fatalf("session user = %+v, want id=%s email=%s", body.User, user.ID, user.Email)
+	if body.User.ID != user.ID || body.User.Email != "admin@example.com" {
+		t.Fatalf("session user = %+v, want id=%s email=admin@example.com", body.User, user.ID)
 	}
 }
 

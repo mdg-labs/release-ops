@@ -95,3 +95,22 @@ func TestLoadWorkerMetricsAddr(t *testing.T) {
 		t.Fatalf("LoadWorker() = %v, want METRICS_ADDR refused", err)
 	}
 }
+
+func TestLoadWorkerGitHubBaseURL(t *testing.T) {
+	t.Setenv("INTERNAL_URL", "http://release-ops:9090")
+	t.Setenv("WORKER_SECRET", strings.Repeat("w", minWorkerSecretLen))
+	t.Setenv("METRICS_ADDR", "")
+
+	t.Setenv("GITHUB_BASE_URL", "")
+	if cfg, err := LoadWorker(); err != nil || cfg.GitHubBaseURL != "https://github.com" {
+		t.Fatalf("LoadWorker() = %+v, %v; want the github.com default", cfg, err)
+	}
+	t.Setenv("GITHUB_BASE_URL", "https://ghe.example.com/")
+	if cfg, err := LoadWorker(); err != nil || cfg.GitHubBaseURL != "https://ghe.example.com" {
+		t.Fatalf("LoadWorker() = %+v, %v; want the trimmed enterprise URL", cfg, err)
+	}
+	t.Setenv("GITHUB_BASE_URL", "ghe.example.com")
+	if _, err := LoadWorker(); err == nil || !strings.Contains(err.Error(), "GITHUB_BASE_URL") {
+		t.Fatalf("LoadWorker() = %v, want GITHUB_BASE_URL refused", err)
+	}
+}

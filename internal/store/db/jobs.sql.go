@@ -33,7 +33,7 @@ WHERE id = (
   ORDER BY CASE j.priority WHEN 'high' THEN 0 ELSE 1 END, j.created_at, j.id
   LIMIT 1
 )
-RETURNING id, kind, repository_id, priority, state, run_after, attempts, lease_owner, lease_expires_at, last_heartbeat_at, rerun_requested, "trigger", matched_markers, webhook_received_at, started_at, created_at, finished_at
+RETURNING id, kind, repository_id, priority, state, run_after, attempts, lease_owner, lease_expires_at, last_heartbeat_at, rerun_requested, "trigger", matched_markers, webhook_received_at, started_at, created_at, finished_at, rerun_trigger, rerun_markers, rerun_webhook_received_at
 `
 
 type ClaimNextJobParams struct {
@@ -75,6 +75,9 @@ func (q *Queries) ClaimNextJob(ctx context.Context, arg ClaimNextJobParams) (Job
 		&i.StartedAt,
 		&i.CreatedAt,
 		&i.FinishedAt,
+		&i.RerunTrigger,
+		&i.RerunMarkers,
+		&i.RerunWebhookReceivedAt,
 	)
 	return i, err
 }
@@ -147,6 +150,46 @@ func (q *Queries) CountEligibleQueuedJobs(ctx context.Context, runAfter string) 
 	return items, nil
 }
 
+const deleteQueuedJobsForRepository = `-- name: DeleteQueuedJobsForRepository :execrows
+DELETE FROM jobs
+WHERE repository_id = ?
+  AND state = 'queued'
+`
+
+// What is still queued once FailQueuedJobsWithRunsForRepository has run has no attempt history.
+func (q *Queries) DeleteQueuedJobsForRepository(ctx context.Context, repositoryID string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteQueuedJobsForRepository, repositoryID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const failQueuedJobsWithRunsForRepository = `-- name: FailQueuedJobsWithRunsForRepository :execrows
+UPDATE jobs
+SET state = 'failed',
+    finished_at = CAST(?1 AS TEXT)
+WHERE repository_id = ?2
+  AND state = 'queued'
+  AND EXISTS (SELECT 1 FROM job_runs WHERE job_runs.job_id = jobs.id)
+`
+
+type FailQueuedJobsWithRunsForRepositoryParams struct {
+	Now          string `json:"now"`
+	RepositoryID string `json:"repository_id"`
+}
+
+// Pausing a repository cancels its queued job; a running one is aborted at its next heartbeat.
+// A queued job that already ran an attempt is waiting for its retry: it ends as failed, so the
+// attempt's job_runs row and events are kept, as FinishJob ends an exhausted job.
+func (q *Queries) FailQueuedJobsWithRunsForRepository(ctx context.Context, arg FailQueuedJobsWithRunsForRepositoryParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, failQueuedJobsWithRunsForRepository, arg.Now, arg.RepositoryID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const finishJob = `-- name: FinishJob :execrows
 UPDATE jobs
 SET state = ?1,
@@ -176,6 +219,25 @@ func (q *Queries) FinishJob(ctx context.Context, arg FinishJobParams) (int64, er
 	return result.RowsAffected()
 }
 
+const getBotIdentity = `-- name: GetBotIdentity :one
+SELECT slug, bot_user_id
+FROM github_app
+WHERE id = 1
+`
+
+type GetBotIdentityRow struct {
+	Slug      string        `json:"slug"`
+	BotUserID sql.NullInt64 `json:"bot_user_id"`
+}
+
+// The App's slug and the numeric id of its bot user, which Renovate's git author is made of.
+func (q *Queries) GetBotIdentity(ctx context.Context) (GetBotIdentityRow, error) {
+	row := q.db.QueryRowContext(ctx, getBotIdentity)
+	var i GetBotIdentityRow
+	err := row.Scan(&i.Slug, &i.BotUserID)
+	return i, err
+}
+
 const getConcurrencyCap = `-- name: GetConcurrencyCap :one
 SELECT concurrency_cap
 FROM instance_settings
@@ -190,7 +252,7 @@ func (q *Queries) GetConcurrencyCap(ctx context.Context) (int64, error) {
 }
 
 const getJob = `-- name: GetJob :one
-SELECT id, kind, repository_id, priority, state, run_after, attempts, lease_owner, lease_expires_at, last_heartbeat_at, rerun_requested, "trigger", matched_markers, webhook_received_at, started_at, created_at, finished_at
+SELECT id, kind, repository_id, priority, state, run_after, attempts, lease_owner, lease_expires_at, last_heartbeat_at, rerun_requested, "trigger", matched_markers, webhook_received_at, started_at, created_at, finished_at, rerun_trigger, rerun_markers, rerun_webhook_received_at
 FROM jobs
 WHERE id = ?
 `
@@ -216,6 +278,9 @@ func (q *Queries) GetJob(ctx context.Context, id string) (Job, error) {
 		&i.StartedAt,
 		&i.CreatedAt,
 		&i.FinishedAt,
+		&i.RerunTrigger,
+		&i.RerunMarkers,
+		&i.RerunWebhookReceivedAt,
 	)
 	return i, err
 }
@@ -262,7 +327,7 @@ func (q *Queries) GetLeasedJob(ctx context.Context, arg GetLeasedJobParams) (Get
 }
 
 const getQueuedJobForRepository = `-- name: GetQueuedJobForRepository :one
-SELECT id, kind, repository_id, priority, state, run_after, attempts, lease_owner, lease_expires_at, last_heartbeat_at, rerun_requested, "trigger", matched_markers, webhook_received_at, started_at, created_at, finished_at
+SELECT id, kind, repository_id, priority, state, run_after, attempts, lease_owner, lease_expires_at, last_heartbeat_at, rerun_requested, "trigger", matched_markers, webhook_received_at, started_at, created_at, finished_at, rerun_trigger, rerun_markers, rerun_webhook_received_at
 FROM jobs
 WHERE repository_id = ?
   AND state = 'queued'
@@ -289,7 +354,29 @@ func (q *Queries) GetQueuedJobForRepository(ctx context.Context, repositoryID st
 		&i.StartedAt,
 		&i.CreatedAt,
 		&i.FinishedAt,
+		&i.RerunTrigger,
+		&i.RerunMarkers,
+		&i.RerunWebhookReceivedAt,
 	)
+	return i, err
+}
+
+const getRepositoryEnqueueState = `-- name: GetRepositoryEnqueueState :one
+SELECT enabled, removed_at
+FROM repositories
+WHERE id = ?
+`
+
+type GetRepositoryEnqueueStateRow struct {
+	Enabled   int64          `json:"enabled"`
+	RemovedAt sql.NullString `json:"removed_at"`
+}
+
+// A repository's state when a trigger asks for a job: no row means the repository is unknown.
+func (q *Queries) GetRepositoryEnqueueState(ctx context.Context, id string) (GetRepositoryEnqueueStateRow, error) {
+	row := q.db.QueryRowContext(ctx, getRepositoryEnqueueState, id)
+	var i GetRepositoryEnqueueStateRow
+	err := row.Scan(&i.Enabled, &i.RemovedAt)
 	return i, err
 }
 
@@ -307,7 +394,7 @@ func (q *Queries) GetRepositoryFullName(ctx context.Context, id string) (string,
 }
 
 const getRunningJobForRepository = `-- name: GetRunningJobForRepository :one
-SELECT id, kind, repository_id, priority, state, run_after, attempts, lease_owner, lease_expires_at, last_heartbeat_at, rerun_requested, "trigger", matched_markers, webhook_received_at, started_at, created_at, finished_at
+SELECT id, kind, repository_id, priority, state, run_after, attempts, lease_owner, lease_expires_at, last_heartbeat_at, rerun_requested, "trigger", matched_markers, webhook_received_at, started_at, created_at, finished_at, rerun_trigger, rerun_markers, rerun_webhook_received_at
 FROM jobs
 WHERE repository_id = ?
   AND state = 'running'
@@ -334,6 +421,9 @@ func (q *Queries) GetRunningJobForRepository(ctx context.Context, repositoryID s
 		&i.StartedAt,
 		&i.CreatedAt,
 		&i.FinishedAt,
+		&i.RerunTrigger,
+		&i.RerunMarkers,
+		&i.RerunWebhookReceivedAt,
 	)
 	return i, err
 }
@@ -409,8 +499,51 @@ func (q *Queries) InsertJob(ctx context.Context, arg InsertJobParams) error {
 	return err
 }
 
+const insertJobRun = `-- name: InsertJobRun :exec
+INSERT INTO job_runs (
+  id, job_id, attempt, started_at, finished_at, outcome, exit_code, error_code, error_message,
+  retry_after, report_status, log_excerpt, report
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+type InsertJobRunParams struct {
+	ID           string         `json:"id"`
+	JobID        string         `json:"job_id"`
+	Attempt      int64          `json:"attempt"`
+	StartedAt    string         `json:"started_at"`
+	FinishedAt   sql.NullString `json:"finished_at"`
+	Outcome      string         `json:"outcome"`
+	ExitCode     sql.NullInt64  `json:"exit_code"`
+	ErrorCode    sql.NullString `json:"error_code"`
+	ErrorMessage sql.NullString `json:"error_message"`
+	RetryAfter   sql.NullString `json:"retry_after"`
+	ReportStatus sql.NullString `json:"report_status"`
+	LogExcerpt   sql.NullString `json:"log_excerpt"`
+	Report       sql.NullString `json:"report"`
+}
+
+// One row per attempt, written in the transaction that ends the attempt.
+func (q *Queries) InsertJobRun(ctx context.Context, arg InsertJobRunParams) error {
+	_, err := q.db.ExecContext(ctx, insertJobRun,
+		arg.ID,
+		arg.JobID,
+		arg.Attempt,
+		arg.StartedAt,
+		arg.FinishedAt,
+		arg.Outcome,
+		arg.ExitCode,
+		arg.ErrorCode,
+		arg.ErrorMessage,
+		arg.RetryAfter,
+		arg.ReportStatus,
+		arg.LogExcerpt,
+		arg.Report,
+	)
+	return err
+}
+
 const listExpiredJobs = `-- name: ListExpiredJobs :many
-SELECT id, kind, repository_id, priority, state, run_after, attempts, lease_owner, lease_expires_at, last_heartbeat_at, rerun_requested, "trigger", matched_markers, webhook_received_at, started_at, created_at, finished_at
+SELECT id, kind, repository_id, priority, state, run_after, attempts, lease_owner, lease_expires_at, last_heartbeat_at, rerun_requested, "trigger", matched_markers, webhook_received_at, started_at, created_at, finished_at, rerun_trigger, rerun_markers, rerun_webhook_received_at
 FROM jobs
 WHERE state = 'running'
   AND lease_expires_at < ?
@@ -444,6 +577,9 @@ func (q *Queries) ListExpiredJobs(ctx context.Context, leaseExpiresAt sql.NullSt
 			&i.StartedAt,
 			&i.CreatedAt,
 			&i.FinishedAt,
+			&i.RerunTrigger,
+			&i.RerunMarkers,
+			&i.RerunWebhookReceivedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -493,26 +629,45 @@ UPDATE jobs
 SET state = 'queued',
     attempts = ?1,
     run_after = ?2,
-    priority = CASE WHEN rerun_requested = 1 THEN 'high' ELSE priority END,
+    priority = ?3,
+    "trigger" = ?4,
+    matched_markers = ?5,
+    webhook_received_at = ?6,
     rerun_requested = 0,
+    rerun_trigger = NULL,
+    rerun_markers = NULL,
+    rerun_webhook_received_at = NULL,
     lease_owner = NULL,
     lease_expires_at = NULL,
     last_heartbeat_at = NULL,
     started_at = NULL
-WHERE id = ?3
+WHERE id = ?7
   AND state = 'running'
 `
 
 type RequeueJobParams struct {
-	Attempts int64  `json:"attempts"`
-	RunAfter string `json:"run_after"`
-	ID       string `json:"id"`
+	Attempts          int64          `json:"attempts"`
+	RunAfter          string         `json:"run_after"`
+	Priority          string         `json:"priority"`
+	Trigger           string         `json:"trigger"`
+	MatchedMarkers    sql.NullString `json:"matched_markers"`
+	WebhookReceivedAt sql.NullString `json:"webhook_received_at"`
+	ID                string         `json:"id"`
 }
 
-// A requeued job keeps the high priority of a trigger that arrived while it ran: the retry
-// is the follow-up that trigger asked for.
+// A requeued job is the follow-up of a trigger that arrived while it ran: the caller passes the
+// priority, trigger, markers and webhook arrival with that trigger merged in, and what the
+// mid-run triggers recorded is cleared.
 func (q *Queries) RequeueJob(ctx context.Context, arg RequeueJobParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, requeueJob, arg.Attempts, arg.RunAfter, arg.ID)
+	result, err := q.db.ExecContext(ctx, requeueJob,
+		arg.Attempts,
+		arg.RunAfter,
+		arg.Priority,
+		arg.Trigger,
+		arg.MatchedMarkers,
+		arg.WebhookReceivedAt,
+		arg.ID,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -521,12 +676,27 @@ func (q *Queries) RequeueJob(ctx context.Context, arg RequeueJobParams) (int64, 
 
 const setJobRerunRequested = `-- name: SetJobRerunRequested :exec
 UPDATE jobs
-SET rerun_requested = 1
+SET rerun_requested = 1,
+    rerun_trigger = ?,
+    rerun_markers = ?,
+    rerun_webhook_received_at = ?
 WHERE id = ?
   AND state = 'running'
 `
 
-func (q *Queries) SetJobRerunRequested(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, setJobRerunRequested, id)
+type SetJobRerunRequestedParams struct {
+	RerunTrigger           sql.NullString `json:"rerun_trigger"`
+	RerunMarkers           sql.NullString `json:"rerun_markers"`
+	RerunWebhookReceivedAt sql.NullString `json:"rerun_webhook_received_at"`
+	ID                     string         `json:"id"`
+}
+
+func (q *Queries) SetJobRerunRequested(ctx context.Context, arg SetJobRerunRequestedParams) error {
+	_, err := q.db.ExecContext(ctx, setJobRerunRequested,
+		arg.RerunTrigger,
+		arg.RerunMarkers,
+		arg.RerunWebhookReceivedAt,
+		arg.ID,
+	)
 	return err
 }

@@ -1,0 +1,46 @@
+{
+  "ref": "refs/heads/main",
+  "before": "89abcdef0123456789abcdef0123456789abcdef",
+  "after": "fedcba9876543210fedcba9876543210fedcba98",
+  "created": false,
+  "deleted": false,
+  "forced": false,
+  "repository": {
+    "id": 7001,
+    "node_id": "R_fixtureNodeId1",
+    "name": "widgets",
+    "full_name": "acme/widgets",
+    "private": false,
+    "default_branch": "main",
+    "owner": {
+      "login": "acme",
+      "id": 4242,
+      "type": "Organization"
+    }
+  },
+  "pusher": {
+    "name": "octocat",
+    "email": "octocat@example.com"
+  },
+  "sender": {
+    "login": "octocat",
+    "id": 1,
+    "type": "User"
+  },
+  "installation": {
+    "id": 1000,
+    "node_id": "I_fixtureNodeId"
+  },
+  "commits": [
+    {
+      "id": "fedcba9876543210fedcba9876543210fedcba98",
+      "message": "docs: update readme",
+      "timestamp": "2026-11-15T09:00:00Z",
+      "author": {
+        "name": "octocat",
+        "username": "octocat"
+      }
+    }
+  ],
+  "head_commit": null
+}

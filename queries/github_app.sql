@@ -40,3 +40,12 @@ SELECT COUNT(*) FROM installations WHERE status <> 'removed';
 
 -- name: GetGitHubAppSigningKey :one
 SELECT app_id, encrypted_private_key FROM github_app WHERE id = 1;
+
+-- name: GetGitHubAppWebhookSecret :one
+SELECT encrypted_webhook_secret FROM github_app WHERE id = 1;
+
+-- name: GetGitHubAppSignIn :one
+SELECT client_id, encrypted_client_secret, owner_login, owner_type FROM github_app WHERE id = 1;
+
+-- name: SetGitHubAppBotUserID :execrows
+UPDATE github_app SET bot_user_id = ?, updated_at = ? WHERE id = 1 AND bot_user_id IS NULL;

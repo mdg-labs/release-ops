@@ -77,7 +77,10 @@ WHERE id = ?
 
 -- name: SetJobRerunRequested :exec
 UPDATE jobs
-SET rerun_requested = 1
+SET rerun_requested = 1,
+    rerun_trigger = ?,
+    rerun_markers = ?,
+    rerun_webhook_received_at = ?
 WHERE id = ?
   AND state = 'running';
 
@@ -113,15 +116,22 @@ SET state = sqlc.arg(state),
 WHERE id = sqlc.arg(id)
   AND state = 'running';
 
--- A requeued job keeps the high priority of a trigger that arrived while it ran: the retry
--- is the follow-up that trigger asked for.
+-- A requeued job is the follow-up of a trigger that arrived while it ran: the caller passes the
+-- priority, trigger, markers and webhook arrival with that trigger merged in, and what the
+-- mid-run triggers recorded is cleared.
 -- name: RequeueJob :execrows
 UPDATE jobs
 SET state = 'queued',
     attempts = sqlc.arg(attempts),
     run_after = sqlc.arg(run_after),
-    priority = CASE WHEN rerun_requested = 1 THEN 'high' ELSE priority END,
+    priority = sqlc.arg(priority),
+    "trigger" = sqlc.arg(trigger),
+    matched_markers = sqlc.arg(matched_markers),
+    webhook_received_at = sqlc.arg(webhook_received_at),
     rerun_requested = 0,
+    rerun_trigger = NULL,
+    rerun_markers = NULL,
+    rerun_webhook_received_at = NULL,
     lease_owner = NULL,
     lease_expires_at = NULL,
     last_heartbeat_at = NULL,
@@ -152,3 +162,39 @@ FROM jobs
 WHERE state = 'queued'
   AND run_after <= ?
 GROUP BY priority;
+
+-- One row per attempt, written in the transaction that ends the attempt.
+-- name: InsertJobRun :exec
+INSERT INTO job_runs (
+  id, job_id, attempt, started_at, finished_at, outcome, exit_code, error_code, error_message,
+  retry_after, report_status, log_excerpt, report
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- The App's slug and the numeric id of its bot user, which Renovate's git author is made of.
+-- name: GetBotIdentity :one
+SELECT slug, bot_user_id
+FROM github_app
+WHERE id = 1;
+
+-- A repository's state when a trigger asks for a job: no row means the repository is unknown.
+-- name: GetRepositoryEnqueueState :one
+SELECT enabled, removed_at
+FROM repositories
+WHERE id = ?;
+
+-- Pausing a repository cancels its queued job; a running one is aborted at its next heartbeat.
+-- A queued job that already ran an attempt is waiting for its retry: it ends as failed, so the
+-- attempt's job_runs row and events are kept, as FinishJob ends an exhausted job.
+-- name: FailQueuedJobsWithRunsForRepository :execrows
+UPDATE jobs
+SET state = 'failed',
+    finished_at = CAST(sqlc.arg(now) AS TEXT)
+WHERE repository_id = sqlc.arg(repository_id)
+  AND state = 'queued'
+  AND EXISTS (SELECT 1 FROM job_runs WHERE job_runs.job_id = jobs.id);
+
+-- What is still queued once FailQueuedJobsWithRunsForRepository has run has no attempt history.
+-- name: DeleteQueuedJobsForRepository :execrows
+DELETE FROM jobs
+WHERE repository_id = ?
+  AND state = 'queued';

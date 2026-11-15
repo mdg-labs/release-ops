@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const countLiveInstallations = `-- name: CountLiveInstallations :one
@@ -93,6 +94,29 @@ func (q *Queries) CreateGitHubApp(ctx context.Context, arg CreateGitHubAppParams
 	return result.RowsAffected()
 }
 
+const getGitHubAppSignIn = `-- name: GetGitHubAppSignIn :one
+SELECT client_id, encrypted_client_secret, owner_login, owner_type FROM github_app WHERE id = 1
+`
+
+type GetGitHubAppSignInRow struct {
+	ClientID              string `json:"client_id"`
+	EncryptedClientSecret string `json:"encrypted_client_secret"`
+	OwnerLogin            string `json:"owner_login"`
+	OwnerType             string `json:"owner_type"`
+}
+
+func (q *Queries) GetGitHubAppSignIn(ctx context.Context) (GetGitHubAppSignInRow, error) {
+	row := q.db.QueryRowContext(ctx, getGitHubAppSignIn)
+	var i GetGitHubAppSignInRow
+	err := row.Scan(
+		&i.ClientID,
+		&i.EncryptedClientSecret,
+		&i.OwnerLogin,
+		&i.OwnerType,
+	)
+	return i, err
+}
+
 const getGitHubAppSigningKey = `-- name: GetGitHubAppSigningKey :one
 SELECT app_id, encrypted_private_key FROM github_app WHERE id = 1
 `
@@ -118,4 +142,32 @@ func (q *Queries) GetGitHubAppSlug(ctx context.Context) (string, error) {
 	var slug string
 	err := row.Scan(&slug)
 	return slug, err
+}
+
+const getGitHubAppWebhookSecret = `-- name: GetGitHubAppWebhookSecret :one
+SELECT encrypted_webhook_secret FROM github_app WHERE id = 1
+`
+
+func (q *Queries) GetGitHubAppWebhookSecret(ctx context.Context) (string, error) {
+	row := q.db.QueryRowContext(ctx, getGitHubAppWebhookSecret)
+	var encrypted_webhook_secret string
+	err := row.Scan(&encrypted_webhook_secret)
+	return encrypted_webhook_secret, err
+}
+
+const setGitHubAppBotUserID = `-- name: SetGitHubAppBotUserID :execrows
+UPDATE github_app SET bot_user_id = ?, updated_at = ? WHERE id = 1 AND bot_user_id IS NULL
+`
+
+type SetGitHubAppBotUserIDParams struct {
+	BotUserID sql.NullInt64 `json:"bot_user_id"`
+	UpdatedAt string        `json:"updated_at"`
+}
+
+func (q *Queries) SetGitHubAppBotUserID(ctx context.Context, arg SetGitHubAppBotUserIDParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setGitHubAppBotUserID, arg.BotUserID, arg.UpdatedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

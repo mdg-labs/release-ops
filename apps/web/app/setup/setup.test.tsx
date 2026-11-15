@@ -280,6 +280,7 @@ describe("SetupForm", () => {
     ["conversion_rejected", "setup.callbackRejected"],
     ["conversion_failed", "setup.callbackFailed"],
     ["session_expired", "setup.callbackSessionExpired"],
+    ["rate_limited", "setup.rateLimited"],
     ["something_else", "setup.requestFailed"],
   ])(
     "shows an inline error and the form again when GitHub's callback ends in %s",
@@ -309,6 +310,17 @@ describe("SetupForm", () => {
     expect(
       screen.getByText("setup.callbackSessionExpired"),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText(/setup\.tokenLabel/)).toBeInTheDocument();
+  });
+
+  it("shows the rate-limited message and the token form when GitHub's callback is rate limited with no setup session", async () => {
+    searchParams = new URLSearchParams({ error: "rate_limited" });
+    statusIs(true);
+    noSession();
+
+    renderSetupForm();
+
+    expect(await screen.findByText("setup.rateLimited")).toBeInTheDocument();
     expect(screen.getByLabelText(/setup\.tokenLabel/)).toBeInTheDocument();
   });
 

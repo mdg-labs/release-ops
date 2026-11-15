@@ -136,32 +136,48 @@ func (c *Client) CreateInstallationToken(ctx context.Context, appJWT string, ins
 // do sends one authenticated request and returns the status and the bounded body. The client
 // never follows a redirect, so the bearer credential goes to the configured host only.
 func (c *Client) do(ctx context.Context, method, path, bearer string, payload io.Reader) (int, []byte, error) {
-	req, err := http.NewRequestWithContext(ctx, method, c.apiBase+path, payload)
+	status, _, body, err := c.sendTo(ctx, method, c.apiBase+path, bearer, payload, maxResponseBytes)
+	return status, body, err
+}
+
+// sendTo sends one authenticated request to rawURL, which the caller has built from the
+// configured API base, and returns the status, the headers and the body read through limit.
+func (c *Client) sendTo(ctx context.Context, method, rawURL, bearer string, payload io.Reader, limit int64) (int, http.Header, []byte, error) {
+	return c.sendWith(ctx, method, rawURL, bearer, payload, limit, nil)
+}
+
+// sendWith is sendTo with extra request headers, such as a conditional request's
+// If-None-Match.
+func (c *Client) sendWith(ctx context.Context, method, rawURL, bearer string, payload io.Reader, limit int64, extra http.Header) (int, http.Header, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, method, rawURL, payload)
 	if err != nil {
-		return 0, nil, ErrRequestFailed
+		return 0, nil, nil, ErrRequestFailed
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", apiVersion)
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Authorization", "Bearer "+bearer)
+	for name, values := range extra {
+		req.Header[name] = values
+	}
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return 0, nil, fmt.Errorf("%w: request did not complete", ErrRequestFailed)
+		return 0, nil, nil, fmt.Errorf("%w: request did not complete", ErrRequestFailed)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
-		return 0, nil, fmt.Errorf("%w: response not readable", ErrRequestFailed)
+		return 0, nil, nil, fmt.Errorf("%w: response not readable", ErrRequestFailed)
 	}
-	if len(body) > maxResponseBytes {
-		return 0, nil, fmt.Errorf("%w: response too large", ErrRequestFailed)
+	if int64(len(body)) > limit {
+		return 0, nil, nil, fmt.Errorf("%w: response too large", ErrRequestFailed)
 	}
-	return resp.StatusCode, body, nil
+	return resp.StatusCode, resp.Header, body, nil
 }
 
 // ownerAndName splits owner/repo; ok is false for any other shape.

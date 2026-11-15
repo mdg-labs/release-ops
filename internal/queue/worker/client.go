@@ -69,6 +69,25 @@ func (c *Client) Claim(ctx context.Context) (*queue.ClaimedJob, error) {
 	}
 }
 
+// Token asks for the installation token of a job this worker holds. The app refuses a job the
+// worker does not hold (ErrLeaseLost); the token and its expiry are returned as the app sent them.
+func (c *Client) Token(ctx context.Context, jobID, leaseOwner string) (queue.TokenResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, callTimeout)
+	defer cancel()
+	status, body, err := c.post(ctx, jobPath(queue.PathToken, jobID), queue.LeaseRequest{LeaseOwner: leaseOwner})
+	if err != nil {
+		return queue.TokenResponse{}, err
+	}
+	if status != http.StatusOK {
+		return queue.TokenResponse{}, statusError("token", status)
+	}
+	var tok queue.TokenResponse
+	if err := json.Unmarshal(body, &tok); err != nil || tok.Token == "" {
+		return queue.TokenResponse{}, errors.New("token: the response holds no token")
+	}
+	return tok, nil
+}
+
 // Heartbeat renews the lease. It reports an abort when the app says to stop.
 func (c *Client) Heartbeat(ctx context.Context, jobID, leaseOwner string) (queue.HeartbeatResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)

@@ -14,6 +14,19 @@ const FORWARD_REQUEST_HEADERS = [
   "x-forwarded-for",
 ];
 
+// GitHub's webhook delivery (specs.html § 2.10) is the one request that carries no session:
+// Go authenticates it by the HMAC of the raw body. Its path gets its own header list, which
+// leaves out the cookie and authorization headers, and a cap on the body the proxy buffers.
+const WEBHOOK_PATH = "hooks/github";
+const WEBHOOK_REQUEST_HEADERS = [
+  "content-type",
+  "x-forwarded-for",
+  "x-hub-signature-256",
+  "x-github-event",
+  "x-github-delivery",
+];
+const WEBHOOK_MAX_BODY_BYTES = 1024 * 1024;
+
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const GITHUB_ORIGIN = "https://github.com";
 
@@ -28,9 +41,16 @@ function buildUpstreamUrl(pathSegments: string[], search: string): string {
   return search ? `${url}?${search}` : url;
 }
 
-function buildUpstreamHeaders(request: NextRequest): Headers {
+function isWebhookRequest(pathSegments: string[], method: string): boolean {
+  return method === "POST" && pathSegments.join("/") === WEBHOOK_PATH;
+}
+
+function buildUpstreamHeaders(
+  request: NextRequest,
+  names: string[] = FORWARD_REQUEST_HEADERS,
+): Headers {
   const headers = new Headers();
-  for (const name of FORWARD_REQUEST_HEADERS) {
+  for (const name of names) {
     const value = request.headers.get(name);
     if (value) {
       headers.set(name, value);
@@ -105,6 +125,47 @@ function upstreamErrorResponse(): Response {
   );
 }
 
+function payloadTooLargeResponse(): Response {
+  return new Response(null, { status: 413 });
+}
+
+// Reads the body of a webhook delivery, giving up as soon as it passes the cap, so a request
+// without a Content-Length cannot make the proxy buffer more than the cap. Returns null when
+// the body is over the cap.
+async function readCappedBody(
+  request: NextRequest,
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  const declared = request.headers.get("content-length");
+  if (declared !== null && Number(declared) > WEBHOOK_MAX_BODY_BYTES) {
+    return null;
+  }
+  if (!request.body) {
+    return new Uint8Array(0);
+  }
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    total += value.byteLength;
+    if (total > WEBHOOK_MAX_BODY_BYTES) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
 async function proxyRequest(
   request: NextRequest,
   pathSegments: string[],
@@ -114,13 +175,26 @@ async function proxyRequest(
   const upstreamUrl = buildUpstreamUrl(pathSegments, search);
 
   try {
+    const webhook = isWebhookRequest(pathSegments, method);
     const hasBody = method !== "GET" && method !== "HEAD";
-    const body = hasBody ? await request.arrayBuffer() : undefined;
+    let body: ArrayBuffer | Uint8Array<ArrayBuffer> | undefined;
+    if (webhook) {
+      const capped = await readCappedBody(request);
+      if (capped === null) {
+        return payloadTooLargeResponse();
+      }
+      body = capped;
+    } else if (hasBody) {
+      body = await request.arrayBuffer();
+    }
     const hasPayload = body !== undefined && body.byteLength > 0;
 
     const upstream = await fetch(upstreamUrl, {
       method,
-      headers: buildUpstreamHeaders(request),
+      headers: buildUpstreamHeaders(
+        request,
+        webhook ? WEBHOOK_REQUEST_HEADERS : FORWARD_REQUEST_HEADERS,
+      ),
       body: hasPayload ? body : undefined,
       duplex: hasPayload ? "half" : undefined,
       redirect: "manual",

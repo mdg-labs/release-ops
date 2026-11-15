@@ -13,6 +13,8 @@ type Result struct {
 	Err error
 	// RetryAfter is the minimum delay before a retry, when an upstream asked for one.
 	RetryAfter time.Duration
+	// Run is the attempt's record for the app to store; nil reports the outcome alone.
+	Run *queue.RunRecord
 }
 
 // Handler runs one claimed job. It returns when the job is done or ctx ends: ctx is

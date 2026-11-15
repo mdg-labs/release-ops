@@ -34,6 +34,9 @@ type JobQueueOptions struct {
 	// OnLeaseExpired is called after Reap ends an attempt whose lease expired, with the full
 	// name of the job's repository. The attempt ended without a result from the worker.
 	OnLeaseExpired func(repository string)
+	// OnJobStarted is called after a job's first heartbeat of an attempt, when the job was
+	// triggered by a webhook, with the time from the webhook's arrival to that heartbeat.
+	OnJobStarted func(lag time.Duration)
 }
 
 // JobQueue is the SQLite implementation of queue.Queue over the jobs table. Every write
@@ -47,6 +50,8 @@ type JobQueue struct {
 	notifier queue.Notifier
 	// onLeaseExpired is nil when nobody counts expired attempts.
 	onLeaseExpired func(repository string)
+	// onJobStarted is nil when nobody records the webhook lag.
+	onJobStarted func(lag time.Duration)
 	// lastContact is the unix-nanosecond time of the last worker contact; 0 before the first.
 	lastContact atomic.Int64
 }
@@ -55,7 +60,7 @@ var _ queue.Queue = (*JobQueue)(nil)
 
 // NewJobQueue returns the queue over d's writer connection.
 func NewJobQueue(d *DB, opts JobQueueOptions) *JobQueue {
-	q := &JobQueue{db: d, cfg: opts.Config, now: opts.Now, rand: opts.Rand, onLeaseExpired: opts.OnLeaseExpired}
+	q := &JobQueue{db: d, cfg: opts.Config, now: opts.Now, rand: opts.Rand, onLeaseExpired: opts.OnLeaseExpired, onJobStarted: opts.OnJobStarted}
 	if q.cfg == (queue.Config{}) {
 		q.cfg = queue.DefaultConfig()
 	}
@@ -126,70 +131,115 @@ func nullString(s string) sql.NullString {
 
 // Enqueue implements queue.Queue.
 func (q *JobQueue) Enqueue(ctx context.Context, p queue.EnqueueParams) (queue.EnqueueResult, error) {
-	if p.Kind == "" {
-		p.Kind = queue.KindRenovateRun
-	}
-	if p.RepositoryID == "" {
-		return queue.EnqueueResult{}, errors.New("enqueue: repository id is required")
-	}
-	if p.Priority != queue.PriorityHigh && p.Priority != queue.PriorityNormal {
-		return queue.EnqueueResult{}, fmt.Errorf("enqueue: invalid priority %q", p.Priority)
+	p, err := validEnqueue(p)
+	if err != nil {
+		return queue.EnqueueResult{}, err
 	}
 
 	var res queue.EnqueueResult
-	err := q.inTx(ctx, func(qtx *db.Queries) error {
-		queued, err := qtx.GetQueuedJobForRepository(ctx, p.RepositoryID)
-		switch {
-		case err == nil:
-			res = queue.EnqueueResult{Outcome: queue.EnqueueCoalesced, JobID: queued.ID}
-			return qtx.CoalesceQueuedJob(ctx, coalesceParams(queued, p))
-		case !errors.Is(err, sql.ErrNoRows):
-			return err
-		}
-
-		running, err := qtx.GetRunningJobForRepository(ctx, p.RepositoryID)
-		switch {
-		case err == nil:
-			if p.Priority != queue.PriorityHigh {
-				res = queue.EnqueueResult{Outcome: queue.EnqueueDropped, JobID: running.ID}
-				return nil
-			}
-			res = queue.EnqueueResult{Outcome: queue.EnqueueRerunRequested, JobID: running.ID}
-			return qtx.SetJobRerunRequested(ctx, running.ID)
-		case !errors.Is(err, sql.ErrNoRows):
-			return err
-		}
-
-		markers, err := marshalMarkers(p.MatchedMarkers)
-		if err != nil {
-			return err
-		}
-		now := q.now()
-		webhook := sql.NullString{}
-		if p.WebhookReceivedAt != nil {
-			webhook = nullString(formatTime(*p.WebhookReceivedAt))
-		}
-		id := newID()
-		res = queue.EnqueueResult{Outcome: queue.EnqueueQueued, JobID: id}
-		return qtx.InsertJob(ctx, db.InsertJobParams{
-			ID:                id,
-			Kind:              string(p.Kind),
-			RepositoryID:      p.RepositoryID,
-			Priority:          string(p.Priority),
-			RunAfter:          formatTime(now),
-			Trigger:           string(p.Trigger),
-			MatchedMarkers:    markers,
-			WebhookReceivedAt: webhook,
-			CreatedAt:         formatTime(now),
-		})
+	err = q.inTx(ctx, func(qtx *db.Queries) error {
+		var err error
+		res, err = q.enqueue(ctx, qtx, p)
+		return err
 	})
 	if err != nil {
 		return queue.EnqueueResult{}, fmt.Errorf("enqueue: %w", err)
 	}
-	if res.Outcome == queue.EnqueueQueued || res.Outcome == queue.EnqueueCoalesced {
-		q.notifier.Notify()
-	}
+	q.wake(res)()
 	return res, nil
+}
+
+// EnqueueTx is Enqueue inside the caller's transaction, which must be one on the writer
+// connection: the job is recorded when the caller commits and not at all when it rolls back.
+// A waiting claim is woken by the returned function, which the caller runs after the commit
+// and never before it, as a claim woken earlier cannot see the job. The function is non-nil
+// whenever the error is nil, and a no-op when the enqueue changed nothing a claim could take.
+func (q *JobQueue) EnqueueTx(ctx context.Context, tx *sql.Tx, p queue.EnqueueParams) (queue.EnqueueResult, func(), error) {
+	p, err := validEnqueue(p)
+	if err != nil {
+		return queue.EnqueueResult{}, nil, err
+	}
+	res, err := q.enqueue(ctx, db.New(tx), p)
+	if err != nil {
+		return queue.EnqueueResult{}, nil, fmt.Errorf("enqueue: %w", err)
+	}
+	return res, q.wake(res), nil
+}
+
+// wake returns the function that wakes the waiting claims for an enqueue with this result:
+// only a queued or grown queued job can become claimable.
+func (q *JobQueue) wake(res queue.EnqueueResult) func() {
+	if res.Outcome == queue.EnqueueQueued || res.Outcome == queue.EnqueueCoalesced {
+		return q.notifier.Notify
+	}
+	return func() {}
+}
+
+func validEnqueue(p queue.EnqueueParams) (queue.EnqueueParams, error) {
+	if p.Kind == "" {
+		p.Kind = queue.KindRenovateRun
+	}
+	if p.RepositoryID == "" {
+		return p, errors.New("enqueue: repository id is required")
+	}
+	if p.Priority != queue.PriorityHigh && p.Priority != queue.PriorityNormal {
+		return p, fmt.Errorf("enqueue: invalid priority %q", p.Priority)
+	}
+	return p, nil
+}
+
+// enqueue records one trigger through qtx. It writes at most once, after every read.
+func (q *JobQueue) enqueue(ctx context.Context, qtx *db.Queries, p queue.EnqueueParams) (queue.EnqueueResult, error) {
+	state, err := qtx.GetRepositoryEnqueueState(ctx, p.RepositoryID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return queue.EnqueueResult{}, queue.ErrRepositoryNotFound
+	case err != nil:
+		return queue.EnqueueResult{}, err
+	case state.Enabled != 1 || state.RemovedAt.Valid:
+		return queue.EnqueueResult{}, queue.ErrRepositoryPaused
+	}
+
+	queued, err := qtx.GetQueuedJobForRepository(ctx, p.RepositoryID)
+	switch {
+	case err == nil:
+		return queue.EnqueueResult{Outcome: queue.EnqueueCoalesced, JobID: queued.ID}, qtx.CoalesceQueuedJob(ctx, coalesceParams(queued, p))
+	case !errors.Is(err, sql.ErrNoRows):
+		return queue.EnqueueResult{}, err
+	}
+
+	running, err := qtx.GetRunningJobForRepository(ctx, p.RepositoryID)
+	switch {
+	case err == nil:
+		if p.Priority != queue.PriorityHigh {
+			return queue.EnqueueResult{Outcome: queue.EnqueueDropped, JobID: running.ID}, nil
+		}
+		return queue.EnqueueResult{Outcome: queue.EnqueueRerunRequested, JobID: running.ID}, qtx.SetJobRerunRequested(ctx, rerunParams(running, p))
+	case !errors.Is(err, sql.ErrNoRows):
+		return queue.EnqueueResult{}, err
+	}
+
+	markers, err := marshalMarkers(p.MatchedMarkers)
+	if err != nil {
+		return queue.EnqueueResult{}, err
+	}
+	now := q.now()
+	webhook := sql.NullString{}
+	if p.WebhookReceivedAt != nil {
+		webhook = nullString(formatTime(*p.WebhookReceivedAt))
+	}
+	id := newID()
+	return queue.EnqueueResult{Outcome: queue.EnqueueQueued, JobID: id}, qtx.InsertJob(ctx, db.InsertJobParams{
+		ID:                id,
+		Kind:              string(p.Kind),
+		RepositoryID:      p.RepositoryID,
+		Priority:          string(p.Priority),
+		RunAfter:          formatTime(now),
+		Trigger:           string(p.Trigger),
+		MatchedMarkers:    markers,
+		WebhookReceivedAt: webhook,
+		CreatedAt:         formatTime(now),
+	})
 }
 
 // coalesceParams folds a trigger into the queued job: the higher priority wins and brings
@@ -207,10 +257,7 @@ func coalesceParams(queued db.Job, p queue.EnqueueParams) db.CoalesceQueuedJobPa
 		out.Trigger = string(p.Trigger)
 	}
 	if len(p.MatchedMarkers) > 0 {
-		merged := unionMarkers(queued.MatchedMarkers, p.MatchedMarkers)
-		if raw, err := json.Marshal(merged); err == nil {
-			out.MatchedMarkers = nullString(string(raw))
-		}
+		out.MatchedMarkers = mergeMarkers(queued.MatchedMarkers, p.MatchedMarkers)
 	}
 	if p.WebhookReceivedAt != nil {
 		arrived := formatTime(*p.WebhookReceivedAt)
@@ -219,6 +266,71 @@ func coalesceParams(queued db.Job, p queue.EnqueueParams) db.CoalesceQueuedJobPa
 		}
 	}
 	return out
+}
+
+// rerunParams records a high-priority trigger that arrives while the job runs. Several of them
+// collapse into one follow-up: the latest trigger wins, the markers are the union and the
+// earliest webhook arrival is kept.
+func rerunParams(running db.Job, p queue.EnqueueParams) db.SetJobRerunRequestedParams {
+	out := db.SetJobRerunRequestedParams{
+		ID:                     running.ID,
+		RerunTrigger:           nullString(string(p.Trigger)),
+		RerunMarkers:           running.RerunMarkers,
+		RerunWebhookReceivedAt: running.RerunWebhookReceivedAt,
+	}
+	if len(p.MatchedMarkers) > 0 {
+		out.RerunMarkers = mergeMarkers(running.RerunMarkers, p.MatchedMarkers)
+	}
+	if p.WebhookReceivedAt != nil {
+		out.RerunWebhookReceivedAt = earlierTime(running.RerunWebhookReceivedAt, nullString(formatTime(*p.WebhookReceivedAt)))
+	}
+	return out
+}
+
+// mergeMarkers is the union of existing and added as the JSON stored in a column; existing is
+// kept if the union cannot be marshalled.
+func mergeMarkers(existing sql.NullString, added []string) sql.NullString {
+	raw, err := json.Marshal(unionMarkers(existing, added))
+	if err != nil {
+		return existing
+	}
+	return nullString(string(raw))
+}
+
+// earlierTime returns the earlier of two stored timestamps, which share one fixed-width layout;
+// a NULL loses to a value.
+func earlierTime(a, b sql.NullString) sql.NullString {
+	if !a.Valid || (b.Valid && b.String < a.String) {
+		return b
+	}
+	return a
+}
+
+// foldRerun merges what the triggers that arrived while job ran recorded into the trigger state
+// of the job that carries on after it (the follow-up or the retry), the same way a coalesce
+// into a queued job merges: the job becomes high priority, a normal-priority job takes the
+// recorded trigger while a high-priority one keeps its own, the markers are the union and the
+// earliest webhook arrival is kept. A job with no rerun requested, or one requested before the
+// recorded columns existed, keeps what it has, with the priority raised if it was requested.
+func foldRerun(job db.Job, priority, trigger string, markers, webhook sql.NullString) (string, string, sql.NullString, sql.NullString) {
+	if job.RerunRequested != 1 {
+		return priority, trigger, markers, webhook
+	}
+	if job.RerunTrigger.Valid && priority == string(queue.PriorityNormal) {
+		trigger = job.RerunTrigger.String
+	}
+	if added := parseMarkers(job.RerunMarkers); len(added) > 0 {
+		markers = mergeMarkers(markers, added)
+	}
+	return string(queue.PriorityHigh), trigger, markers, earlierTime(webhook, job.RerunWebhookReceivedAt)
+}
+
+func parseMarkers(raw sql.NullString) []string {
+	var markers []string
+	if raw.Valid {
+		_ = json.Unmarshal([]byte(raw.String), &markers)
+	}
+	return markers
 }
 
 func marshalMarkers(markers []string) (sql.NullString, error) {
@@ -232,6 +344,8 @@ func marshalMarkers(markers []string) (sql.NullString, error) {
 	return nullString(string(raw)), nil
 }
 
+// unionMarkers is the markers of existing followed by those of added that are not in it, capped
+// by capMarkers, so the list a job stores stays bounded however many triggers coalesce into it.
 func unionMarkers(existing sql.NullString, added []string) []string {
 	var merged []string
 	seen := map[string]bool{}
@@ -247,7 +361,20 @@ func unionMarkers(existing sql.NullString, added []string) []string {
 			merged = append(merged, m)
 		}
 	}
-	return merged
+	return capMarkers(merged)
+}
+
+// capMarkers keeps the longest prefix of markers that holds at most queue.MaxMarkers entries and
+// queue.MaxMergedMarkerBytes bytes: the earliest markers stay, the rest are dropped.
+func capMarkers(markers []string) []string {
+	size := 0
+	for i, m := range markers {
+		size += len(m)
+		if i == queue.MaxMarkers || size > queue.MaxMergedMarkerBytes {
+			return markers[:i]
+		}
+	}
+	return markers
 }
 
 // Claim implements queue.Queue. The slot a claim names is the lowest one below the cap that
@@ -292,6 +419,10 @@ func (q *JobQueue) Claim(ctx context.Context) (*queue.ClaimedJob, error) {
 		if err != nil {
 			return err
 		}
+		gitAuthor, err := botGitAuthor(ctx, qtx)
+		if err != nil {
+			return err
+		}
 		claimed = &queue.ClaimedJob{
 			ID:                 job.ID,
 			Kind:               queue.Kind(job.Kind),
@@ -303,6 +434,7 @@ func (q *JobQueue) Claim(ctx context.Context) (*queue.ClaimedJob, error) {
 			Slot:               slot,
 			LeaseOwner:         owner,
 			LeaseExpiresAt:     expires,
+			GitAuthor:          gitAuthor,
 		}
 		return nil
 	})
@@ -313,6 +445,20 @@ func (q *JobQueue) Claim(ctx context.Context) (*queue.ClaimedJob, error) {
 		return nil, fmt.Errorf("claim: %w", err)
 	}
 	return claimed, nil
+}
+
+// botGitAuthor is the git author of the App's bot user as Renovate takes it. It is empty until
+// the bot user's numeric id is known: the id, not the login, is the identity.
+func botGitAuthor(ctx context.Context, qtx *db.Queries) (string, error) {
+	bot, err := qtx.GetBotIdentity(ctx)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !bot.BotUserID.Valid) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	login := bot.Slug + "[bot]"
+	return fmt.Sprintf("%s <%d+%s@users.noreply.github.com>", login, bot.BotUserID.Int64, login), nil
 }
 
 func (q *JobQueue) concurrencyCap(ctx context.Context, qtx *db.Queries) (int, error) {
@@ -395,17 +541,35 @@ func (q *JobQueue) HeldJob(ctx context.Context, jobID, leaseOwner string) (*queu
 func (q *JobQueue) Heartbeat(ctx context.Context, jobID, leaseOwner string) (queue.HeartbeatResult, error) {
 	q.touch()
 	now := q.now().UTC()
-	_, err := db.New(q.db.Writer).HeartbeatJob(ctx, db.HeartbeatJobParams{
-		ID:             jobID,
-		LeaseOwner:     nullString(leaseOwner),
-		Now:            nullString(formatTime(now)),
-		LeaseExpiresAt: formatTime(now.Add(q.cfg.LeaseDuration)),
+	var firstOfAttempt bool
+	var webhookReceivedAt sql.NullString
+	err := q.inTx(ctx, func(qtx *db.Queries) error {
+		job, err := qtx.GetJob(ctx, jobID)
+		if err != nil {
+			return err
+		}
+		firstOfAttempt = !job.StartedAt.Valid
+		webhookReceivedAt = job.WebhookReceivedAt
+		_, err = qtx.HeartbeatJob(ctx, db.HeartbeatJobParams{
+			ID:             jobID,
+			LeaseOwner:     nullString(leaseOwner),
+			Now:            nullString(formatTime(now)),
+			LeaseExpiresAt: formatTime(now.Add(q.cfg.LeaseDuration)),
+		})
+		return err
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return queue.HeartbeatResult{Abort: true, Reason: queue.AbortLeaseLost}, nil
 	}
 	if err != nil {
 		return queue.HeartbeatResult{}, fmt.Errorf("heartbeat: %w", err)
+	}
+	if firstOfAttempt && webhookReceivedAt.Valid && q.onJobStarted != nil {
+		arrived, err := time.Parse(timeLayout, webhookReceivedAt.String)
+		if err != nil {
+			return queue.HeartbeatResult{}, fmt.Errorf("heartbeat: webhook_received_at %q: %w", webhookReceivedAt.String, err)
+		}
+		q.onJobStarted(now.Sub(arrived))
 	}
 	return queue.HeartbeatResult{}, nil
 }
@@ -435,6 +599,15 @@ func heldJob(ctx context.Context, qtx *db.Queries, jobID, leaseOwner string) (jo
 
 // Complete implements queue.Queue.
 func (q *JobQueue) Complete(ctx context.Context, jobID, leaseOwner string) error {
+	return q.complete(ctx, jobID, leaseOwner, nil)
+}
+
+// CompleteRun implements queue.Queue.
+func (q *JobQueue) CompleteRun(ctx context.Context, jobID, leaseOwner string, run queue.RunRecord) error {
+	return q.complete(ctx, jobID, leaseOwner, &run)
+}
+
+func (q *JobQueue) complete(ctx context.Context, jobID, leaseOwner string, run *queue.RunRecord) error {
 	q.touch()
 	err := q.inTx(ctx, func(qtx *db.Queries) error {
 		job, finished, err := heldJob(ctx, qtx, jobID, leaseOwner)
@@ -447,7 +620,7 @@ func (q *JobQueue) Complete(ctx context.Context, jobID, leaseOwner string) error
 			}
 			return queue.ErrLeaseLost
 		}
-		_, err = q.endAttempt(ctx, qtx, job, attemptSucceeded, 0)
+		_, err = q.endAttempt(ctx, qtx, job, attemptSucceeded, 0, run)
 		return err
 	})
 	if err != nil {
@@ -473,7 +646,7 @@ func (q *JobQueue) Fail(ctx context.Context, jobID, leaseOwner string, p queue.F
 			}
 			return queue.ErrLeaseLost
 		}
-		outcome, err = q.endAttempt(ctx, qtx, job, attemptFailed, p.RetryAfter)
+		outcome, err = q.endAttempt(ctx, qtx, job, attemptFailed, p.RetryAfter, p.Run)
 		return err
 	})
 	if err != nil {
@@ -494,7 +667,7 @@ func (q *JobQueue) Release(ctx context.Context, jobID, leaseOwner string) error 
 		if finished {
 			return queue.ErrLeaseLost
 		}
-		return requeue(ctx, qtx, job.ID, job.Attempts, q.now())
+		return requeue(ctx, qtx, job, job.Attempts, q.now())
 	})
 	if err != nil {
 		return fmt.Errorf("release: %w", err)
@@ -519,7 +692,7 @@ func (q *JobQueue) Reap(ctx context.Context) (queue.ReapResult, error) {
 				return err
 			}
 			expiredRepos = append(expiredRepos, fullName)
-			outcome, err := q.endAttempt(ctx, qtx, job, attemptFailed, 0)
+			outcome, err := q.endAttempt(ctx, qtx, job, attemptFailed, 0, nil)
 			if err != nil {
 				return err
 			}
@@ -554,8 +727,9 @@ const (
 
 // endAttempt ends the running job's attempt and counts it. A success or an exhausted job is
 // terminal and enqueues the follow-up a mid-run trigger asked for; any other failure puts
-// the job back with a backoff, and that retry is the follow-up.
-func (q *JobQueue) endAttempt(ctx context.Context, qtx *db.Queries, job db.Job, result attemptResult, retryAfter time.Duration) (queue.FailOutcome, error) {
+// the job back with a backoff, and that retry is the follow-up. A run record is stored as the
+// attempt's job_runs row in the same transaction.
+func (q *JobQueue) endAttempt(ctx context.Context, qtx *db.Queries, job db.Job, result attemptResult, retryAfter time.Duration, run *queue.RunRecord) (queue.FailOutcome, error) {
 	now := q.now().UTC()
 	used := job.Attempts + 1
 
@@ -568,7 +742,10 @@ func (q *JobQueue) endAttempt(ctx context.Context, qtx *db.Queries, job db.Job, 
 		outcome = queue.FailExhausted
 	default:
 		delay := max(q.cfg.Backoff(int(used), q.rand()), retryAfter)
-		if err := requeue(ctx, qtx, job.ID, used, now.Add(delay)); err != nil {
+		if err := requeue(ctx, qtx, job, used, now.Add(delay)); err != nil {
+			return "", err
+		}
+		if err := insertRun(ctx, qtx, job, used, queue.OutcomeFailed, retryAfter, run, now); err != nil {
 			return "", err
 		}
 		return queue.FailRequeued, nil
@@ -581,6 +758,13 @@ func (q *JobQueue) endAttempt(ctx context.Context, qtx *db.Queries, job db.Job, 
 	if n == 0 {
 		return "", queue.ErrLeaseLost
 	}
+	runOutcome := queue.OutcomeSucceeded
+	if result == attemptFailed {
+		runOutcome = queue.OutcomeFailed
+	}
+	if err := insertRun(ctx, qtx, job, used, runOutcome, retryAfter, run, now); err != nil {
+		return "", err
+	}
 	if job.RerunRequested == 1 {
 		if err := q.enqueueFollowUp(ctx, qtx, job, now); err != nil {
 			return "", err
@@ -589,8 +773,49 @@ func (q *JobQueue) endAttempt(ctx context.Context, qtx *db.Queries, job db.Job, 
 	return outcome, nil
 }
 
-func requeue(ctx context.Context, qtx *db.Queries, jobID string, attempts int64, runAfter time.Time) error {
-	n, err := qtx.RequeueJob(ctx, db.RequeueJobParams{ID: jobID, Attempts: attempts, RunAfter: formatTime(runAfter)})
+// insertRun stores the attempt's record as its job_runs row; without a record nothing is stored.
+func insertRun(ctx context.Context, qtx *db.Queries, job db.Job, attempt int64, outcome string, retryAfter time.Duration, run *queue.RunRecord, now time.Time) error {
+	if run == nil {
+		return nil
+	}
+	row := db.InsertJobRunParams{
+		ID:           newID(),
+		JobID:        job.ID,
+		Attempt:      attempt,
+		StartedAt:    formatTime(now),
+		FinishedAt:   nullString(formatTime(now)),
+		Outcome:      outcome,
+		ErrorCode:    nullString(run.ErrorCode),
+		ErrorMessage: nullString(run.ErrorMessage),
+		ReportStatus: nullString(run.ReportStatus),
+		LogExcerpt:   nullString(run.LogExcerpt),
+		Report:       nullString(run.Report),
+	}
+	if job.StartedAt.Valid {
+		row.StartedAt = job.StartedAt.String
+	}
+	if run.ExitCode != nil {
+		row.ExitCode = sql.NullInt64{Int64: int64(*run.ExitCode), Valid: true}
+	}
+	if retryAfter > 0 {
+		row.RetryAfter = nullString(strconv.FormatInt(int64(retryAfter/time.Second), 10))
+	}
+	return qtx.InsertJobRun(ctx, row)
+}
+
+// requeue puts the running job back in the queue. When a trigger arrived while it ran, the job
+// is the follow-up that trigger asked for and takes what the trigger recorded.
+func requeue(ctx context.Context, qtx *db.Queries, job db.Job, attempts int64, runAfter time.Time) error {
+	priority, trigger, markers, webhook := foldRerun(job, job.Priority, job.Trigger, job.MatchedMarkers, job.WebhookReceivedAt)
+	n, err := qtx.RequeueJob(ctx, db.RequeueJobParams{
+		ID:                job.ID,
+		Attempts:          attempts,
+		RunAfter:          formatTime(runAfter),
+		Priority:          priority,
+		Trigger:           trigger,
+		MatchedMarkers:    markers,
+		WebhookReceivedAt: webhook,
+	})
 	if err != nil {
 		return err
 	}
@@ -601,29 +826,38 @@ func requeue(ctx context.Context, qtx *db.Queries, jobID string, attempts int64,
 }
 
 // enqueueFollowUp queues the one high-priority job that follows a run during which a
-// high-priority trigger arrived. It carries the finished job's trigger and markers.
+// high-priority trigger arrived. It carries what those triggers recorded, and the finished
+// job's own trigger and markers when the trigger was requested before the columns existed.
 func (q *JobQueue) enqueueFollowUp(ctx context.Context, qtx *db.Queries, job db.Job, now time.Time) error {
 	queued, err := qtx.GetQueuedJobForRepository(ctx, job.RepositoryID)
 	switch {
 	case err == nil:
+		priority, trigger, markers, webhook := foldRerun(job, queued.Priority, queued.Trigger, queued.MatchedMarkers, queued.WebhookReceivedAt)
 		return qtx.CoalesceQueuedJob(ctx, db.CoalesceQueuedJobParams{
 			ID:                queued.ID,
-			Priority:          string(queue.PriorityHigh),
-			Trigger:           queued.Trigger,
-			MatchedMarkers:    queued.MatchedMarkers,
-			WebhookReceivedAt: queued.WebhookReceivedAt,
+			Priority:          priority,
+			Trigger:           trigger,
+			MatchedMarkers:    markers,
+			WebhookReceivedAt: webhook,
 		})
 	case !errors.Is(err, sql.ErrNoRows):
 		return err
 	}
-	return qtx.InsertJob(ctx, db.InsertJobParams{
-		ID:             newID(),
-		Kind:           job.Kind,
-		RepositoryID:   job.RepositoryID,
-		Priority:       string(queue.PriorityHigh),
-		RunAfter:       formatTime(now),
-		Trigger:        job.Trigger,
-		MatchedMarkers: job.MatchedMarkers,
-		CreatedAt:      formatTime(now),
-	})
+	follow := db.InsertJobParams{
+		ID:           newID(),
+		Kind:         job.Kind,
+		RepositoryID: job.RepositoryID,
+		Priority:     string(queue.PriorityHigh),
+		RunAfter:     formatTime(now),
+		Trigger:      job.Trigger,
+		CreatedAt:    formatTime(now),
+	}
+	if job.RerunTrigger.Valid {
+		follow.Trigger = job.RerunTrigger.String
+		follow.MatchedMarkers = job.RerunMarkers
+		follow.WebhookReceivedAt = job.RerunWebhookReceivedAt
+	} else {
+		follow.MatchedMarkers = job.MatchedMarkers
+	}
+	return qtx.InsertJob(ctx, follow)
 }

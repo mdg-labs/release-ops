@@ -65,10 +65,12 @@ pre code { background: none; border: none; padding: 0; color: var(--text); font-
 
 PRAGMA foreign_keys = ON;
 
+-- email and password_hash are NULL for a user who signs in with GitHub only (auth_identities);
+-- they go with the local accounts.
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
-  email TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
+  email TEXT UNIQUE,
+  password_hash TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 ) STRICT;
@@ -116,6 +118,16 @@ CREATE TABLE auth_identities (
 ) STRICT;
 
 CREATE INDEX idx_auth_identities_user_id ON auth_identities (user_id);
+
+-- Break-glass login links (specs.html § 3.6): the SHA-256 of the token, never the token. A link
+-- is redeemed once, by a guarded write that matches only an unconsumed, unexpired row.
+CREATE TABLE login_link_tokens (
+  id TEXT PRIMARY KEY,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  consumed_at TEXT,
+  created_at TEXT NOT NULL
+) STRICT;
 
 -- One-time tokens for invitations, password reset, email change and the first-start setup
 -- token (raw token never stored)
@@ -220,6 +232,19 @@ CREATE TABLE installation_settings (
   updated_at TEXT NOT NULL
 ) STRICT;
 
+-- GitHub's delivery GUIDs the webhook endpoint has accepted (specs.html § 2.10): a GUID seen again does
+-- nothing. A row is written in the transaction of the work the delivery caused, and rows are pruned after
+-- the retention of internal/store/webhook_deliveries.go. installation_id is NULL while the delivery's
+-- installation is not recorded.
+CREATE TABLE webhook_deliveries (
+  guid TEXT PRIMARY KEY,
+  event TEXT NOT NULL,
+  installation_id TEXT REFERENCES installations(id) ON DELETE SET NULL,
+  received_at TEXT NOT NULL
+) STRICT;
+
+CREATE INDEX idx_webhook_deliveries_received_at ON webhook_deliveries (received_at);
+
 -- The installed repositories. A repository that leaves the installation keeps its row and history
 -- (removed_at set).
 CREATE TABLE repositories (
@@ -237,6 +262,17 @@ CREATE TABLE repositories (
   updated_at TEXT NOT NULL,
   UNIQUE (installation_id, full_name)
 ) STRICT;
+
+-- The repository-access list of a viewer's session (specs.html § 3.9): the repositories the user
+-- can access, written at sign-in and never refreshed. Rows go with the session and with a deleted
+-- repository; an admin session has none, and a viewer session without rows sees no repository.
+CREATE TABLE session_repositories (
+  session_token TEXT NOT NULL REFERENCES sessions(token) ON DELETE CASCADE,
+  repository_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+  PRIMARY KEY (session_token, repository_id)
+) STRICT;
+
+CREATE INDEX idx_session_repositories_repository ON session_repositories (repository_id);
 
 -- One row per bot update PR of a repository.
 CREATE TABLE update_prs (
@@ -321,7 +357,15 @@ CREATE TABLE jobs (
   webhook_received_at TEXT,
   started_at TEXT,
   created_at TEXT NOT NULL,
-  finished_at TEXT
+  finished_at TEXT,
+  rerun_trigger TEXT CHECK (
+    rerun_trigger IS NULL OR rerun_trigger IN (
+      'dashboard_checkbox', 'pr_checkbox', 'pr_closed', 'push',
+      'repository_added', 'schedule', 'polling', 'run_now'
+    )
+  ),
+  rerun_markers TEXT CHECK (rerun_markers IS NULL OR json_valid(rerun_markers)),
+  rerun_webhook_received_at TEXT
 ) STRICT;
 
 CREATE UNIQUE INDEX idx_jobs_one_queued_per_repository ON jobs (repository_id) WHERE state = 'queued';

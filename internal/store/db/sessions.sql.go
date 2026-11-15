@@ -9,6 +9,20 @@ import (
 	"context"
 )
 
+const addSessionRepository = `-- name: AddSessionRepository :exec
+INSERT INTO session_repositories (session_token, repository_id) VALUES (?, ?)
+`
+
+type AddSessionRepositoryParams struct {
+	SessionToken string `json:"session_token"`
+	RepositoryID string `json:"repository_id"`
+}
+
+func (q *Queries) AddSessionRepository(ctx context.Context, arg AddSessionRepositoryParams) error {
+	_, err := q.db.ExecContext(ctx, addSessionRepository, arg.SessionToken, arg.RepositoryID)
+	return err
+}
+
 const deleteOtherSessionsByUserID = `-- name: DeleteOtherSessionsByUserID :exec
 DELETE FROM sessions
 WHERE user_id = ?
@@ -25,6 +39,15 @@ func (q *Queries) DeleteOtherSessionsByUserID(ctx context.Context, arg DeleteOth
 	return err
 }
 
+const deleteSessionRepositories = `-- name: DeleteSessionRepositories :exec
+DELETE FROM session_repositories WHERE session_token = ?
+`
+
+func (q *Queries) DeleteSessionRepositories(ctx context.Context, sessionToken string) error {
+	_, err := q.db.ExecContext(ctx, deleteSessionRepositories, sessionToken)
+	return err
+}
+
 const deleteSessionsByUserID = `-- name: DeleteSessionsByUserID :exec
 DELETE FROM sessions
 WHERE user_id = ?
@@ -33,6 +56,39 @@ WHERE user_id = ?
 func (q *Queries) DeleteSessionsByUserID(ctx context.Context, userID string) error {
 	_, err := q.db.ExecContext(ctx, deleteSessionsByUserID, userID)
 	return err
+}
+
+const listSessionRepositoryIDs = `-- name: ListSessionRepositoryIDs :many
+SELECT sr.repository_id
+FROM session_repositories sr
+JOIN repositories r ON r.id = sr.repository_id
+WHERE sr.session_token = ? AND r.removed_at IS NULL
+ORDER BY sr.repository_id
+`
+
+// A repository that has left the installation drops out of the list at once; the row itself
+// goes with the session or with the repository.
+func (q *Queries) ListSessionRepositoryIDs(ctx context.Context, sessionToken string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listSessionRepositoryIDs, sessionToken)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var repository_id string
+		if err := rows.Scan(&repository_id); err != nil {
+			return nil, err
+		}
+		items = append(items, repository_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setSessionUserID = `-- name: SetSessionUserID :exec

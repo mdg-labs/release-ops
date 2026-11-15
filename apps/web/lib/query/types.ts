@@ -1,19 +1,15 @@
+/** The role GitHub gives a user (docs/specs.html §3.7); the Go API enforces it. */
+export type UserRole = "admin" | "viewer";
+
 export type User = {
-  id: string;
-  email: string;
+  id: string | number;
+  login?: string;
+  role?: UserRole;
+  email?: string;
 };
 
 export type SessionResponse = {
   user: User | null;
-};
-
-export type LoginInput = {
-  email: string;
-  password: string;
-};
-
-export type LoginResponse = {
-  user: User;
 };
 
 export type SetupStatusResponse = {
@@ -48,55 +44,9 @@ export type StatusResponse = {
 
 export type Settings = {
   pollIntervalMinutes: number;
-  inviteTokenExpiryHours: number;
-  passwordResetTokenExpiryMinutes: number;
-  smtpConfigured?: boolean;
 };
 
 export type SettingsPatch = Partial<Settings>;
-
-export type UserListItem = {
-  id: string;
-  email: string;
-  createdAt: string;
-};
-
-export type ListUsersResponse = {
-  items: UserListItem[];
-};
-
-export type Invitation = {
-  id: string;
-  email: string;
-  expiresAt: string;
-  createdAt: string;
-  invitedByUserId: string | null;
-};
-
-export type ListInvitationsResponse = {
-  items: Invitation[];
-};
-
-export type CreateInvitationInput = {
-  email: string;
-};
-
-export type CreateInvitationResponse = {
-  id: string;
-  email: string;
-  expiresAt: string;
-  inviteUrl: string;
-};
-
-export type EmailChangeRequestInput = {
-  newEmail: string;
-  currentPassword: string;
-};
-
-export type PasswordChangeInput = {
-  currentPassword: string;
-  newPassword: string;
-};
 
 export type Integration = {
   id: string;

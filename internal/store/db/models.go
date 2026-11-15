@@ -97,23 +97,26 @@ type Integration struct {
 }
 
 type Job struct {
-	ID                string         `json:"id"`
-	Kind              string         `json:"kind"`
-	RepositoryID      string         `json:"repository_id"`
-	Priority          string         `json:"priority"`
-	State             string         `json:"state"`
-	RunAfter          string         `json:"run_after"`
-	Attempts          int64          `json:"attempts"`
-	LeaseOwner        sql.NullString `json:"lease_owner"`
-	LeaseExpiresAt    sql.NullString `json:"lease_expires_at"`
-	LastHeartbeatAt   sql.NullString `json:"last_heartbeat_at"`
-	RerunRequested    int64          `json:"rerun_requested"`
-	Trigger           string         `json:"trigger"`
-	MatchedMarkers    sql.NullString `json:"matched_markers"`
-	WebhookReceivedAt sql.NullString `json:"webhook_received_at"`
-	StartedAt         sql.NullString `json:"started_at"`
-	CreatedAt         string         `json:"created_at"`
-	FinishedAt        sql.NullString `json:"finished_at"`
+	ID                     string         `json:"id"`
+	Kind                   string         `json:"kind"`
+	RepositoryID           string         `json:"repository_id"`
+	Priority               string         `json:"priority"`
+	State                  string         `json:"state"`
+	RunAfter               string         `json:"run_after"`
+	Attempts               int64          `json:"attempts"`
+	LeaseOwner             sql.NullString `json:"lease_owner"`
+	LeaseExpiresAt         sql.NullString `json:"lease_expires_at"`
+	LastHeartbeatAt        sql.NullString `json:"last_heartbeat_at"`
+	RerunRequested         int64          `json:"rerun_requested"`
+	Trigger                string         `json:"trigger"`
+	MatchedMarkers         sql.NullString `json:"matched_markers"`
+	WebhookReceivedAt      sql.NullString `json:"webhook_received_at"`
+	StartedAt              sql.NullString `json:"started_at"`
+	CreatedAt              string         `json:"created_at"`
+	FinishedAt             sql.NullString `json:"finished_at"`
+	RerunTrigger           sql.NullString `json:"rerun_trigger"`
+	RerunMarkers           sql.NullString `json:"rerun_markers"`
+	RerunWebhookReceivedAt sql.NullString `json:"rerun_webhook_received_at"`
 }
 
 type JobEvent struct {
@@ -138,6 +141,15 @@ type JobRun struct {
 	RetryAfter   sql.NullString `json:"retry_after"`
 	ReportStatus sql.NullString `json:"report_status"`
 	LogExcerpt   sql.NullString `json:"log_excerpt"`
+	Report       sql.NullString `json:"report"`
+}
+
+type LoginLinkToken struct {
+	ID         string         `json:"id"`
+	TokenHash  string         `json:"token_hash"`
+	ExpiresAt  string         `json:"expires_at"`
+	ConsumedAt sql.NullString `json:"consumed_at"`
+	CreatedAt  string         `json:"created_at"`
 }
 
 type Repository struct {
@@ -160,6 +172,11 @@ type Session struct {
 	Data   []byte  `json:"data"`
 	Expiry float64 `json:"expiry"`
 	UserID string  `json:"user_id"`
+}
+
+type SessionRepository struct {
+	SessionToken string `json:"session_token"`
+	RepositoryID string `json:"repository_id"`
 }
 
 type TicketProject struct {
@@ -231,9 +248,16 @@ type UpdateTicket struct {
 }
 
 type User struct {
-	ID           string `json:"id"`
-	Email        string `json:"email"`
-	PasswordHash string `json:"password_hash"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
+	ID           string         `json:"id"`
+	Email        sql.NullString `json:"email"`
+	PasswordHash sql.NullString `json:"password_hash"`
+	CreatedAt    string         `json:"created_at"`
+	UpdatedAt    string         `json:"updated_at"`
+}
+
+type WebhookDelivery struct {
+	Guid           string         `json:"guid"`
+	Event          string         `json:"event"`
+	InstallationID sql.NullString `json:"installation_id"`
+	ReceivedAt     string         `json:"received_at"`
 }
