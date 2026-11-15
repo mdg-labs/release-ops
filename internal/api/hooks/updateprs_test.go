@@ -57,6 +57,7 @@ type prRig struct {
 	logs      *syncBuffer
 	fail      *atomic.Bool
 	failApply *atomic.Bool
+	bot       *flakyBot
 }
 
 // newPRRig serves the receiver with the Renovate handlers and, on top of them, the update PR
@@ -80,15 +81,15 @@ func newPRRig(t *testing.T, botID int64) *prRig {
 			t.Fatal(err)
 		}
 	}
-	r := &prRig{db: db, wake: updateprs.NewNotifier(), logs: &syncBuffer{}, fail: &atomic.Bool{}, failApply: &atomic.Bool{}}
+	r := &prRig{db: db, wake: updateprs.NewNotifier(), logs: &syncBuffer{}, fail: &atomic.Bool{}, failApply: &atomic.Bool{}, bot: &flakyBot{BotIdentities: st.GitHubApp()}}
 	logger := slog.New(slog.NewTextHandler(r.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	routes := hooks.NewRoutes()
 	hooks.RegisterInstallationHandlers(routes, st.InstallationSync(), nil)
 	hooks.RegisterRenovateHandlers(routes, hooks.RenovateTriggers{
-		Queue: failingEnqueuer{real: store.NewJobQueue(db, store.JobQueueOptions{}), fail: r.fail}, Repositories: st, Bot: st.GitHubApp(), Logger: logger,
+		Queue: failingEnqueuer{real: store.NewJobQueue(db, store.JobQueueOptions{}), fail: r.fail}, Repositories: st, Bot: r.bot, Logger: logger,
 	})
 	tracker := updateprs.NewTracker(st.UpdatePRs(), func() time.Time { return receivedAt }, r.wake)
-	hooks.RegisterUpdatePRHandler(routes, hooks.UpdatePRs{Tracker: failingTracker{UpdatePRTracker: tracker, failApply: r.failApply}, Repositories: st, Bot: st.GitHubApp(), Logger: logger})
+	hooks.RegisterUpdatePRHandler(routes, hooks.UpdatePRs{Tracker: failingTracker{UpdatePRTracker: tracker, failApply: r.failApply}, Repositories: st, Bot: r.bot, Logger: logger})
 	r.srv = httptest.NewServer(&hooks.Receiver{
 		Secrets: secrets{}, Deliveries: st.WebhookDeliveries(), Routes: routes, Now: func() time.Time { return receivedAt },
 	})
@@ -284,6 +285,24 @@ func TestNothingIsStoredWhileTheBotUserIdIsUnknown(t *testing.T) {
 	r.must(t, "g-1", "update_pr_opened.json")
 	if r.rows(t) != 0 || r.woken() {
 		t.Fatalf("rows = %d, want none while nothing can be told to be a bot PR", r.rows(t))
+	}
+}
+
+func TestAFailedBotLookupFailsTheDeliveryAndItsRedeliveryStoresThePR(t *testing.T) {
+	r := newPRRig(t, botUserID)
+
+	r.bot.fail.Store(true)
+	if got := r.deliver(t, "g-retry", "update_pr_opened.json"); got != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 so GitHub's redelivery is processed", got)
+	}
+	if r.rows(t) != 0 || r.woken() {
+		t.Fatalf("rows = %d, want none from a delivery that failed", r.rows(t))
+	}
+
+	r.bot.fail.Store(false)
+	r.must(t, "g-retry", "update_pr_opened.json")
+	if r.rows(t) != 1 || !r.woken() {
+		t.Fatalf("rows = %d, want the redelivery to store the PR", r.rows(t))
 	}
 }
 

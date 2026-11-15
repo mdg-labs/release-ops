@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -62,6 +63,22 @@ type trigConfig struct {
 	botID int64
 	// wrap replaces the enqueuer the handlers use.
 	wrap func(r *trigRig, real hooks.RunEnqueuer) hooks.RunEnqueuer
+	// bot replaces the source of the bot user the handlers use.
+	bot func(real hooks.BotIdentities) hooks.BotIdentities
+}
+
+// flakyBot reads the bot user through the real store and fails the read while fail is set,
+// as a database that errors transiently would.
+type flakyBot struct {
+	hooks.BotIdentities
+	fail atomic.Bool
+}
+
+func (f *flakyBot) BotIdentity(ctx context.Context) (store.GitHubAppBot, error) {
+	if f.fail.Load() {
+		return store.GitHubAppBot{}, errors.New("database is locked")
+	}
+	return f.BotIdentities.BotIdentity(ctx)
 }
 
 func newTrigRig(t *testing.T, cfg trigConfig) *trigRig {
@@ -89,10 +106,14 @@ func newTrigRig(t *testing.T, cfg trigConfig) *trigRig {
 	if cfg.wrap != nil {
 		enqueuer = cfg.wrap(r, enqueuer)
 	}
+	var bots hooks.BotIdentities = st.GitHubApp()
+	if cfg.bot != nil {
+		bots = cfg.bot(bots)
+	}
 	routes := hooks.NewRoutes()
 	hooks.RegisterInstallationHandlers(routes, st.InstallationSync(), nil)
 	hooks.RegisterRenovateHandlers(routes, hooks.RenovateTriggers{
-		Queue: enqueuer, Repositories: st, Bot: st.GitHubApp(),
+		Queue: enqueuer, Repositories: st, Bot: bots,
 		Logger: slog.New(slog.NewTextHandler(r.logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	})
 	r.srv = httptest.NewServer(&hooks.Receiver{
@@ -381,6 +402,44 @@ func TestNothingCountsAsTheBotWhileItsIdIsUnknown(t *testing.T) {
 	// Events that name no author still start a run.
 	r.mustDeliver(t, "push", "g-5", fixture(t, "push_default_branch.json"))
 	r.wantJobs(t, 1)
+}
+
+func TestAFailedBotLookupFailsTheDeliveryAndItsRedeliveryIsProcessed(t *testing.T) {
+	t.Parallel()
+
+	for _, c := range []struct {
+		name, event, file string
+		trigger           string
+	}{
+		{"dashboard checkbox", "issues", "issues_edited_dashboard_tick.json", "dashboard_checkbox"},
+		{"pull request checkbox", "pull_request", "pull_request_edited_rebase_tick.json", "pr_checkbox"},
+		{"pull request close", "pull_request", "pull_request_closed_merged.json", "pr_closed"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			var bot *flakyBot
+			r := newTrigRig(t, trigConfig{botID: botUserID, bot: func(real hooks.BotIdentities) hooks.BotIdentities {
+				bot = &flakyBot{BotIdentities: real}
+				return bot
+			}})
+			body := fixture(t, c.file)
+
+			bot.fail.Store(true)
+			if got := r.post(t, c.event, "g-retry", body); got != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500 so GitHub's redelivery is processed", got)
+			}
+			r.wantJobs(t, 0)
+			if got := r.deliveryCount(t); got != 1 {
+				t.Fatalf("deliveries = %d, want only the seed: a failed bot lookup leaves no dedupe row", got)
+			}
+
+			bot.fail.Store(false)
+			r.mustDeliver(t, c.event, "g-retry", body)
+			if j := r.wantJobs(t, 1)[0]; j.Trigger != c.trigger {
+				t.Errorf("job = %+v, want a %s job", j, c.trigger)
+			}
+		})
+	}
 }
 
 func TestClosedPullRequestEnqueuesWhetherMergedOrNotAndEvenFromTheBot(t *testing.T) {

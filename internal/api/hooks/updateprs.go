@@ -77,10 +77,9 @@ func (u UpdatePRs) pullRequest(ctx context.Context, tx *sql.Tx, d Delivery) erro
 	if !updatePRActions[p.Action] {
 		return nil
 	}
-	bot, err := u.Bot.BotIdentity(ctx)
-	if err != nil || !bot.Known {
-		u.Logger.Warn("webhook: the App's bot user id is not known; ignored", "event", d.Event, "delivery", d.GUID)
-		return nil
+	bot, ok, err := botUser(ctx, u.Bot, u.Logger, d)
+	if err != nil || !ok {
+		return err
 	}
 	repo, err := u.Repositories.RepositoryByGitHubID(ctx, tx, p.Repository.ID)
 	if errors.Is(err, store.ErrRepositoryNotFound) {

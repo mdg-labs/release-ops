@@ -121,9 +121,9 @@ func (t RenovateTriggers) pullRequest(ctx context.Context, tx *sql.Tx, d Deliver
 		return t.edited(ctx, tx, d, queue.TriggerPRCheckbox, p, p.PullRequest.User, p.PullRequest.Body)
 	case "closed":
 		// The bot's own close is not filtered: an automerge frees a slot a follow-up run needs.
-		bot, ok := t.bot(ctx, d)
-		if !ok || p.PullRequest.User.ID != bot.UserID {
-			return nil
+		bot, ok, err := t.bot(ctx, d)
+		if err != nil || !ok || p.PullRequest.User.ID != bot.UserID {
+			return err
 		}
 		return t.enqueue(ctx, tx, d, p.Repository.ID, queue.TriggerPRClosed, nil)
 	}
@@ -145,9 +145,9 @@ func (t RenovateTriggers) edited(ctx context.Context, tx *sql.Tx, d Delivery, tr
 	if len(markers) == 0 {
 		return nil
 	}
-	bot, ok := t.bot(ctx, d)
-	if !ok || author.ID != bot.UserID || p.Sender.ID == bot.UserID {
-		return nil
+	bot, ok, err := t.bot(ctx, d)
+	if err != nil || !ok || author.ID != bot.UserID || p.Sender.ID == bot.UserID {
+		return err
 	}
 	return t.enqueue(ctx, tx, d, p.Repository.ID, trigger, markers)
 }
@@ -214,16 +214,24 @@ func (t RenovateTriggers) decode(d Delivery, into any) bool {
 	return true
 }
 
-// bot returns the App's bot user. While its numeric id is not known nobody counts as the
-// bot: no object is bot-authored and no sender is the bot's own, so the caller enqueues
-// nothing for an edit or a close.
-func (t RenovateTriggers) bot(ctx context.Context, d Delivery) (store.GitHubAppBot, bool) {
-	bot, err := t.Bot.BotIdentity(ctx)
-	if err != nil || !bot.Known {
-		t.Logger.Warn("webhook: the App's bot user id is not known; ignored", "event", d.Event, "delivery", d.GUID)
-		return store.GitHubAppBot{}, false
+// bot returns the App's bot user. While no App is recorded or its numeric id is not known
+// nobody counts as the bot: no object is bot-authored and no sender is the bot's own, so the
+// caller enqueues nothing for an edit or a close. A failed read is an error, so the delivery
+// rolls back and its redelivery is processed.
+func (t RenovateTriggers) bot(ctx context.Context, d Delivery) (store.GitHubAppBot, bool, error) {
+	return botUser(ctx, t.Bot, t.Logger, d)
+}
+
+func botUser(ctx context.Context, bots BotIdentities, logger *slog.Logger, d Delivery) (store.GitHubAppBot, bool, error) {
+	bot, err := bots.BotIdentity(ctx)
+	if err != nil && !errors.Is(err, store.ErrGitHubAppNotFound) {
+		return store.GitHubAppBot{}, false, err
 	}
-	return bot, true
+	if err != nil || !bot.Known {
+		logger.Warn("webhook: the App's bot user id is not known; ignored", "event", d.Event, "delivery", d.GUID)
+		return store.GitHubAppBot{}, false, nil
+	}
+	return bot, true, nil
 }
 
 // enqueue asks for a high-priority run of the repository inside the delivery's transaction.
