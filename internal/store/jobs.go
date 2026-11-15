@@ -344,6 +344,8 @@ func marshalMarkers(markers []string) (sql.NullString, error) {
 	return nullString(string(raw)), nil
 }
 
+// unionMarkers is the markers of existing followed by those of added that are not in it, capped
+// by capMarkers, so the list a job stores stays bounded however many triggers coalesce into it.
 func unionMarkers(existing sql.NullString, added []string) []string {
 	var merged []string
 	seen := map[string]bool{}
@@ -359,7 +361,20 @@ func unionMarkers(existing sql.NullString, added []string) []string {
 			merged = append(merged, m)
 		}
 	}
-	return merged
+	return capMarkers(merged)
+}
+
+// capMarkers keeps the longest prefix of markers that holds at most queue.MaxMarkers entries and
+// queue.MaxMergedMarkerBytes bytes: the earliest markers stay, the rest are dropped.
+func capMarkers(markers []string) []string {
+	size := 0
+	for i, m := range markers {
+		size += len(m)
+		if i == queue.MaxMarkers || size > queue.MaxMergedMarkerBytes {
+			return markers[:i]
+		}
+	}
+	return markers
 }
 
 // Claim implements queue.Queue. The slot a claim names is the lowest one below the cap that

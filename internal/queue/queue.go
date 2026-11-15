@@ -63,6 +63,16 @@ var (
 	ErrRepositoryNotFound = errors.New("repository is not recorded")
 )
 
+const (
+	// MaxMarkerBytes and MaxMarkers bound the markers one trigger stores with a job. Renovate's
+	// markers are short names and branch names; anything longer is not one.
+	MaxMarkerBytes = 256
+	MaxMarkers     = 32
+	// MaxMergedMarkerBytes bounds the markers of one job however many triggers coalesce into
+	// it; together with MaxMarkers it is what a stored marker list may hold in total.
+	MaxMergedMarkerBytes = MaxMarkers * MaxMarkerBytes
+)
+
 // EnqueueParams describes one trigger for a repository.
 type EnqueueParams struct {
 	RepositoryID string

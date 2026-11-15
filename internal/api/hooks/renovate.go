@@ -258,12 +258,8 @@ func (t RenovateTriggers) enqueue(ctx context.Context, tx *sql.Tx, d Delivery, g
 	return nil
 }
 
-const (
-	// maxMarkerBytes and maxMarkers bound what one edit stores with a job. Renovate's markers
-	// are short names and branch names; anything longer is not one.
-	maxMarkerBytes = 256
-	maxMarkers     = 32
-)
+// One edit stores at most queue.MaxMarkers markers of queue.MaxMarkerBytes each; the queue
+// bounds the union of every edit that coalesces into one job.
 
 // checkboxLine matches a Renovate checkbox line, " - [ ] <!-- marker -->", ticked or not.
 var checkboxLine = regexp.MustCompile(`^\s*[-*+]\s+\[([ xX])\]\s+<!--\s*(.+?)\s*-->`)
@@ -290,7 +286,7 @@ func tickedMarkers(from, to string) []string {
 		}
 		seen[marker] = true
 		ticked = append(ticked, marker)
-		if len(ticked) == maxMarkers {
+		if len(ticked) == queue.MaxMarkers {
 			break
 		}
 	}
@@ -299,7 +295,7 @@ func tickedMarkers(from, to string) []string {
 
 func checkbox(line string) (state byte, marker string, ok bool) {
 	m := checkboxLine.FindStringSubmatch(strings.TrimSuffix(line, "\r"))
-	if m == nil || len(m[2]) > maxMarkerBytes {
+	if m == nil || len(m[2]) > queue.MaxMarkerBytes {
 		return 0, "", false
 	}
 	return m[1][0], m[2], true
