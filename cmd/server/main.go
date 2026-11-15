@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,6 +20,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/config"
 	"github.com/mdg-labs/release-ops/internal/crypto"
 	"github.com/mdg-labs/release-ops/internal/github"
+	"github.com/mdg-labs/release-ops/internal/logging"
 	"github.com/mdg-labs/release-ops/internal/mail"
 	"github.com/mdg-labs/release-ops/internal/metrics"
 	"github.com/mdg-labs/release-ops/internal/providers/integrationtester"
@@ -81,6 +82,8 @@ func (t integrationTargets) Target(ctx context.Context, integrationID string) (u
 const reapInterval = 15 * time.Second
 
 func main() {
+	logging.Install(os.Stderr)
+
 	if len(os.Args) > 1 {
 		var err error
 		switch os.Args[1] {
@@ -92,22 +95,42 @@ func main() {
 			err = fmt.Errorf("unknown command %q: the commands are worker and admin", os.Args[1])
 		}
 		if err != nil {
-			log.Fatal(err)
+			fatal(err)
 		}
 		return
 	}
 
 	cfg, err := config.LoadServer()
 	if err != nil {
-		log.Fatalf("config: %v", err)
+		fatal(fmt.Errorf("config: %w", err))
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	if err := run(ctx, cfg); err != nil {
-		log.Fatal(err)
+		fatal(err)
 	}
+}
+
+// fatal logs err, through the redacting handler, and ends the process with status 1.
+func fatal(err error) {
+	slog.Error("release-ops stopped", "err", err)
+	os.Exit(1)
+}
+
+// setupLogf is where setup.EnsureToken tells the operator how to open /setup. A generated
+// token is the call's second argument: it is printed in that one record, the only place the
+// token is shown, and every later line has it removed.
+func setupLogf(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	if len(args) == 2 {
+		if token, ok := args[1].(string); ok {
+			logging.PrintOnce(context.Background(), token, msg)
+			return
+		}
+	}
+	slog.Info(msg)
 }
 
 func run(ctx context.Context, cfg *config.Config) error {
@@ -116,7 +139,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("migrations: %w", err)
 	}
 	for _, m := range applied {
-		log.Printf("migrations: applied %s_%s", m.Version, m.Slug)
+		slog.Info("migrations: applied", "version", m.Version, "slug", m.Slug)
 	}
 
 	db, err := store.OpenPath(cfg.AppDBPath)
@@ -125,7 +148,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
-			log.Printf("database close: %v", err)
+			slog.Error("database close failed", "err", err)
 		}
 	}()
 
@@ -134,7 +157,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("bootstrap admin: %w", err)
 	}
 
-	if err := setup.EnsureToken(ctx, db.Writer, cfg.SetupToken, cfg.AppURL, log.Printf); err != nil {
+	if err := setup.EnsureToken(ctx, db.Writer, cfg.SetupToken, cfg.AppURL, setupLogf); err != nil {
 		return fmt.Errorf("setup token: %w", err)
 	}
 
@@ -194,7 +217,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		Repositories: appStore.UpdatePRs(),
 		Report: func(repositoryID string, err error) {
 			if err != nil {
-				log.Printf("update PR reconcile of repository %s: %v", repositoryID, err)
+				slog.Error("update PR reconcile failed", "repository", repositoryID, "err", err)
 			}
 		},
 	}
@@ -235,7 +258,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	defer cancel()
 	var background sync.WaitGroup
 	background.Go(func() {
-		queue.RunReaper(appCtx, jobs, reapInterval, func(err error) { log.Printf("job reaper: %v", err) })
+		queue.RunReaper(appCtx, jobs, reapInterval, func(err error) { slog.Error("job reaper failed", "err", err) })
 	})
 	background.Go(func() {
 		ticker := time.NewTicker(schedulerInterval)
@@ -244,10 +267,10 @@ func run(ctx context.Context, cfg *config.Config) error {
 		sched.AfterTick = func(ctx context.Context) { triggerReconciles(ctx, prRunner) }
 		sched.Run(appCtx, ticker.C, func(res scheduler.Result, err error) {
 			if err != nil {
-				log.Printf("scheduler: %v", err)
+				slog.Error("scheduler failed", "err", err)
 			}
 			if res.Enqueued > 0 {
-				log.Printf("scheduler: enqueued %d repository runs", res.Enqueued)
+				slog.Info("scheduler: enqueued repository runs", "count", res.Enqueued)
 			}
 		})
 	})
@@ -259,17 +282,17 @@ func run(ctx context.Context, cfg *config.Config) error {
 	syncEvery := installationSyncInterval
 	if cfg.PollingMode() {
 		syncEvery = pollingInterval
-		log.Printf("WEBHOOK_URL is not set: running in polling mode (degraded), re-reading installations and repositories from GitHub every %s; changes reach this instance with minutes of latency", pollingInterval)
+		slog.Warn("WEBHOOK_URL is not set: running in polling mode (degraded), re-reading installations and repositories from GitHub; changes reach this instance with minutes of latency", "interval", pollingInterval)
 	} else {
 		background.Go(func() {
 			ticker := time.NewTicker(redeliveryInterval)
 			defer ticker.Stop()
 			recovery.Run(appCtx, ticker.C, func(redelivered int, err error) {
 				if err != nil {
-					log.Printf("github redelivery: %v", err)
+					slog.Error("github redelivery failed", "err", err)
 				}
 				if redelivered > 0 {
-					log.Printf("github redelivery: asked GitHub to redeliver %d failed webhook deliveries", redelivered)
+					slog.Info("github redelivery: asked GitHub to redeliver failed webhook deliveries", "count", redelivered)
 				}
 			})
 		})
@@ -279,7 +302,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		defer ticker.Stop()
 		botResolver.Run(appCtx, ticker.C, func(err error) {
 			if err != nil {
-				log.Printf("github bot user id: %v", err)
+				slog.Error("github bot user id failed", "err", err)
 			}
 			startup.botPass(appCtx, err, appStore.GitHubApp())
 		})
@@ -289,7 +312,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		defer ticker.Stop()
 		syncer.Run(appCtx, ticker.C, func(err error) {
 			if err != nil {
-				log.Printf("github sync: %v", err)
+				slog.Error("github sync failed", "err", err)
 			}
 			startup.syncPass(appCtx, err, appStore.GitHubApp())
 		})
@@ -297,7 +320,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	var internalErr, metricsErr error
 	if cfg.MetricsAddr != "" {
 		background.Go(func() {
-			log.Printf("release-ops metrics listener on %s", cfg.MetricsAddr)
+			slog.Info("release-ops metrics listener", "addr", cfg.MetricsAddr)
 			if err := metrics.Serve(appCtx, cfg.MetricsAddr, registry); err != nil {
 				metricsErr = fmt.Errorf("metrics listener: %w", err)
 				cancel()
@@ -306,7 +329,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	}
 	if cfg.InternalAddr != "" {
 		background.Go(func() {
-			log.Printf("release-ops internal listener on %s", cfg.InternalAddr)
+			slog.Info("release-ops internal listener", "addr", cfg.InternalAddr)
 			if err := serveInternalWith(appCtx, cfg, jobs, appClient, prRunner.Trigger); err != nil {
 				internalErr = fmt.Errorf("internal listener: %w", err)
 				cancel()
@@ -315,7 +338,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	}
 
 	addr := cfg.GoListenAddr()
-	log.Printf("release-ops server listening on %s", addr)
+	slog.Info("release-ops server listening", "addr", addr)
 
 	serveErr := api.Serve(appCtx, addr, handler)
 	cancel()
@@ -349,6 +372,6 @@ func serveInternalWith(ctx context.Context, cfg *config.Config, q queue.Queue, t
 // triggerReconciles asks for a PR reconcile of every repository that takes part.
 func triggerReconciles(ctx context.Context, r *updateprs.Runner) {
 	if err := r.TriggerAll(ctx); err != nil && ctx.Err() == nil {
-		log.Printf("update PR reconcile: %v", err)
+		slog.Error("update PR reconcile failed", "err", err)
 	}
 }

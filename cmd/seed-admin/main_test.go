@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/mdg-labs/release-ops/internal/logging"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
@@ -115,5 +117,17 @@ func TestExitCodeReportsRuntimeErrorsOnceWithExitOne(t *testing.T) {
 	}
 	if got := errOut.String(); got != "seed-admin: users already exist\n" {
 		t.Errorf("stderr = %q, want the error once", got)
+	}
+}
+
+func TestExitCodeRemovesRegisteredSecretsFromTheErrorItPrints(t *testing.T) {
+	const secret = "opaque-secret-quoted-by-an-error-0001"
+	logging.Register(secret)
+	var errOut bytes.Buffer
+	if code := exitCode(fmt.Errorf("credentials: rejected %s", secret), &errOut); code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if got := errOut.String(); strings.Contains(got, secret) || !strings.Contains(got, "credentials: rejected") {
+		t.Errorf("stderr = %q, want the error without the secret", got)
 	}
 }

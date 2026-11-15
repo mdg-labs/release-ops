@@ -16,6 +16,7 @@ import (
 
 	"github.com/alexedwards/scs/v2"
 	"github.com/mdg-labs/release-ops/internal/github"
+	"github.com/mdg-labs/release-ops/internal/logging"
 	"github.com/mdg-labs/release-ops/internal/store"
 )
 
@@ -109,6 +110,7 @@ func (h *GitHubSignInHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, "INTERNAL_ERROR", "Sign-in is unavailable.", http.StatusInternalServerError)
 		return
 	}
+	logging.Register(string(app.ClientSecret))
 	clear(app.ClientSecret)
 
 	state, err := randomURLToken()
@@ -155,6 +157,7 @@ func (h *GitHubSignInHandlers) Callback(w http.ResponseWriter, r *http.Request) 
 		RedirectToLogin(w, r, LoginErrorGitHubUnavailable)
 		return
 	}
+	logging.Register(string(app.ClientSecret))
 	token, err := h.GitHub.ExchangeCode(ctx, github.ExchangeParams{
 		ClientID:     app.ClientID,
 		ClientSecret: string(app.ClientSecret),
@@ -350,7 +353,9 @@ func randomURLToken() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	token := base64.RawURLEncoding.EncodeToString(b)
+	logging.RegisterUnauthenticatedFor(oauthAttemptTTL, token)
+	return token, nil
 }
 
 // SafeRedirectPath returns p when it is a same-origin relative path (one leading slash, no

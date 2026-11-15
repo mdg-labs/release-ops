@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/mdg-labs/release-ops/internal/crypto"
+	"github.com/mdg-labs/release-ops/internal/logging"
 	"github.com/mdg-labs/release-ops/internal/store"
 	"github.com/mdg-labs/release-ops/internal/store/db"
 	"github.com/mdg-labs/release-ops/internal/store/storetest"
@@ -247,4 +248,30 @@ func TestMain(m *testing.M) {
 		_ = os.Unsetenv("APP_DB_PATH")
 	}
 	os.Exit(m.Run())
+}
+
+// A decrypted credential is registered for the logs where it is decrypted, so whichever caller
+// asked for it, an error that echoes it is written without it.
+func TestDecryptPayloadKeepsTheCredentialOutOfTheLogs(t *testing.T) {
+	t.Parallel()
+
+	s, _ := testStore(t)
+	ctx := context.Background()
+
+	created, err := s.Integrations().Create(ctx, store.CreateIntegrationInput{
+		Kind:   "linear",
+		Name:   "Linear",
+		Secret: []byte(`{"api_key":"opaque-decrypt-api-key-0001","team":"opaque-decrypt-team-0001"}`),
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := s.Integrations().DecryptPayload(ctx, created.ID); err != nil {
+		t.Fatalf("DecryptPayload: %v", err)
+	}
+
+	got := logging.Redact(`provider said opaque-decrypt-api-key-0001 and opaque-decrypt-team-0001`)
+	if strings.Contains(got, "opaque-decrypt-api-key-0001") || strings.Contains(got, "opaque-decrypt-team-0001") {
+		t.Fatalf("a decrypted credential reaches a log line: %q", got)
+	}
 }

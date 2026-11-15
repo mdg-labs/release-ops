@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"time"
 
+	"github.com/mdg-labs/release-ops/internal/logging"
 	"github.com/mdg-labs/release-ops/internal/store/db"
 )
 
@@ -147,8 +149,18 @@ func (r integrationRepo) DecryptPayload(ctx context.Context, id string) ([]byte,
 	if row.EncryptedPayload == "" {
 		return []byte{}, nil
 	}
-	return r.store.cipher.Decrypt(row.EncryptedPayload)
+	payload, err := r.store.cipher.Decrypt(row.EncryptedPayload)
+	if err != nil {
+		return nil, err
+	}
+	// Whichever caller asked, the credentials are out of the logs from here on. The
+	// registration is renewed at each decrypt, so a credential in use stays covered.
+	logging.RegisterJSONFor(credentialLogTTL, payload)
+	return payload, nil
 }
+
+// credentialLogTTL is how long a decrypted integration credential is kept out of the logs.
+const credentialLogTTL = time.Hour
 
 func integrationFromRow(row db.Integration) *Integration {
 	return &Integration{

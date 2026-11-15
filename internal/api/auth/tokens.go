@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mdg-labs/release-ops/internal/logging"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
 
@@ -23,6 +24,10 @@ const (
 )
 
 const tokenByteLength = 32
+
+// rawTokenLogTTL is how long a one-time token is kept out of the logs: as long as the longest
+// an invitation can be valid (settings cap it at 720 hours).
+const rawTokenLogTTL = 30 * 24 * time.Hour
 
 var (
 	// ErrTokenInvalid is returned when a token is missing, wrong kind, used, or expired.
@@ -41,6 +46,17 @@ func NewTokenService(queries *storedb.Queries) *TokenService {
 
 // GenerateRawToken returns a cryptographically random one-time secret.
 func GenerateRawToken() (string, error) {
+	raw, err := newRawToken()
+	if err != nil {
+		return "", err
+	}
+	logging.RegisterFor(rawTokenLogTTL, raw)
+	return raw, nil
+}
+
+// newRawToken returns a random one-time secret and registers nothing: the caller knows how long
+// the token lives and who can make it be minted.
+func newRawToken() (string, error) {
 	buf := make([]byte, tokenByteLength)
 	if _, err := rand.Read(buf); err != nil {
 		return "", fmt.Errorf("generate token: %w", err)

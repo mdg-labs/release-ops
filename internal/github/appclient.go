@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mdg-labs/release-ops/internal/logging"
 )
 
 const (
@@ -82,10 +84,12 @@ func (c *AppClient) appJWT(ctx context.Context) (jwt string, appID int64, err er
 		return "", 0, fmt.Errorf("github app credentials: %w", err)
 	}
 	defer clear(pem)
+	logging.Register(string(pem))
 	jwt, err = SignAppJWT(appID, pem, c.now())
 	if err != nil {
 		return "", 0, err
 	}
+	logging.RegisterFor(jwtLifetime, jwt)
 	return jwt, appID, nil
 }
 

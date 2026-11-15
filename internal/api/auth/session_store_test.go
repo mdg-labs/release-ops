@@ -3,11 +3,14 @@ package auth_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alexedwards/scs/v2"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
+	"github.com/mdg-labs/release-ops/internal/logging"
 )
 
 type sessionStoreRig struct {
@@ -191,5 +194,34 @@ func TestRevocationMarkersAreDroppedOnceTheirSessionCouldNotBeLive(t *testing.T)
 	var plain int
 	if err := r.db.QueryRow(`SELECT COUNT(*) FROM revoked_sessions WHERE token_hash = ?`, token).Scan(&plain); err != nil || plain != 0 {
 		t.Fatalf("a marker holds the plain token (%d rows, %v), want only its hash", plain, err)
+	}
+}
+
+// Sign-in starts are public: each one stores a session that has no user. However many of them
+// arrive, a credential that is registered for the logs is still removed from them afterwards.
+func TestAFloodOfSessionsWithoutAUserDoesNotPushALiveSecretOutOfTheLogRegistry(t *testing.T) {
+	rig := newSessionStoreRig(t)
+	// The flood is many commits; the database need not wait for the disk on each of them.
+	rig.db.SetMaxOpenConns(1)
+	if _, err := rig.db.Exec(`PRAGMA synchronous = OFF`); err != nil {
+		t.Fatalf("pragma: %v", err)
+	}
+	const credential = "opaque-flood-credential-0001"
+	logging.RegisterFor(time.Hour, credential)
+	signedIn := rig.signedIn()
+
+	for i := range 1100 {
+		ctx, err := rig.sm.Load(context.Background(), "")
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		rig.sm.Put(ctx, "oauth_state", fmt.Sprintf("flood-state-%06d-padding", i))
+		if _, _, err := rig.sm.Commit(ctx); err != nil {
+			t.Fatalf("commit: %v", err)
+		}
+	}
+
+	if got := logging.Redact("provider said " + credential + " and " + signedIn); strings.Contains(got, credential) || strings.Contains(got, signedIn) {
+		t.Fatalf("a live secret was pushed out of the registry by sign-in starts: %q", got)
 	}
 }

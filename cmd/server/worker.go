@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os/signal"
 	"sync"
 	"syscall"
@@ -31,7 +31,7 @@ func runWorkerCommand() error {
 	if err != nil {
 		return fmt.Errorf("renovate handler: %w", err)
 	}
-	log.Printf("release-ops worker claiming jobs from %s", cfg.InternalURL)
+	slog.Info("release-ops worker claiming jobs", "internal_url", cfg.InternalURL)
 	return runWorker(ctx, cfg, registry, worker.Options{})
 }
 
@@ -69,7 +69,7 @@ func runWorker(ctx context.Context, cfg *config.WorkerConfig, registry worker.Re
 		}
 		opts.Jobs = jobs
 		listener.Go(func() {
-			log.Printf("release-ops worker metrics listener on %s", cfg.MetricsAddr)
+			slog.Info("release-ops worker metrics listener", "addr", cfg.MetricsAddr)
 			if err := metrics.Serve(runCtx, cfg.MetricsAddr, reg); err != nil {
 				metricsErr = fmt.Errorf("metrics listener: %w", err)
 				cancel()

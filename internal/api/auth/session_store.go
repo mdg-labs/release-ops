@@ -10,6 +10,7 @@ import (
 
 	"github.com/alexedwards/scs/sqlite3store"
 	"github.com/alexedwards/scs/v2"
+	"github.com/mdg-labs/release-ops/internal/logging"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
 
@@ -33,8 +34,26 @@ func newUserBoundSQLiteStore(db *sql.DB, codec scs.Codec) *userBoundSQLiteStore 
 	}
 }
 
+// Find registers a token it finds, so a session that outlives a restart is kept out of the
+// logs before its first commit.
 func (s *userBoundSQLiteStore) Find(token string) ([]byte, bool, error) {
-	return s.inner.Find(token)
+	b, found, err := s.inner.Find(token)
+	if found {
+		s.registerToken(token, SessionLifetime, b)
+	}
+	return b, found, err
+}
+
+// registerToken keeps a session token out of the logs. A session that has no user is made by
+// any request, sign-in starts included, so its token goes in the registry's unauthenticated
+// budget: a flood of them can age out only other entries of that budget, never a signed-in
+// user's session or a credential.
+func (s *userBoundSQLiteStore) registerToken(token string, ttl time.Duration, data []byte) {
+	if extractSessionUserID(s.codec, data) == "" {
+		logging.RegisterUnauthenticatedFor(ttl, token)
+		return
+	}
+	logging.RegisterFor(ttl, token)
 }
 
 // Commit writes the session row and, when the session carries a repository scope
@@ -48,6 +67,7 @@ func (s *userBoundSQLiteStore) Find(token string) ([]byte, bool, error) {
 // no longer exists. The check and the write are one statement, so a Delete cannot land between
 // them.
 func (s *userBoundSQLiteStore) Commit(token string, b []byte, expiry time.Time) error {
+	s.registerToken(token, time.Until(expiry), b)
 	userID := extractSessionUserID(s.codec, b)
 	scope, hasScope, b, err := s.splitScope(b)
 	if err != nil {

@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/mdg-labs/release-ops/internal/logging"
 )
 
 const (
@@ -115,6 +117,7 @@ func NewClient(apiBaseURL string, timeout time.Duration) *Client {
 // ConvertManifest exchanges the temporary code GitHub redirected the browser back with for
 // the App it created. The call carries no credential: the code is the proof.
 func (c *Client) ConvertManifest(ctx context.Context, code string) (*ManifestConversion, error) {
+	logging.RegisterFor(oauthAttemptLogTTL, code)
 	if !ValidCode(code) {
 		return nil, ErrCodeRejected
 	}
@@ -149,7 +152,11 @@ func (c *Client) ConvertManifest(ctx context.Context, code string) (*ManifestCon
 		return nil, fmt.Errorf("%w: response too large", ErrConversionFailed)
 	}
 	var out ManifestConversion
-	if err := json.Unmarshal(body, &out); err != nil || !out.valid() {
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("%w: response is not a GitHub App", ErrConversionFailed)
+	}
+	logging.Register(out.ClientSecret, out.WebhookSecret, out.PEM)
+	if !out.valid() {
 		return nil, fmt.Errorf("%w: response is not a GitHub App", ErrConversionFailed)
 	}
 	return &out, nil

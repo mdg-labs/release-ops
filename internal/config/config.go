@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/mdg-labs/release-ops/internal/logging"
 )
 
 const (
@@ -95,6 +97,10 @@ func Load() (*Config, error) {
 		GlobalConfigRef:           strings.TrimSpace(os.Getenv("GLOBAL_CONFIG_REF")),
 		MetricsAddr:               envOrDefault("METRICS_ADDR", defaultMetricsAddr),
 	}
+
+	// The secrets are registered before anything can fail, so an error that quotes one is
+	// already covered.
+	logging.Register(cfg.SessionSecret, cfg.AppEncryptionKey, cfg.SetupToken, cfg.WorkerSecret, cfg.BootstrapAdminPassword)
 
 	var err error
 	if err = validateListenAddr(cfg.MetricsAddr); err != nil {

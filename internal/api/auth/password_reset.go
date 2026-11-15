@@ -13,6 +13,7 @@ import (
 
 	"github.com/alexedwards/scs/v2"
 	"github.com/google/uuid"
+	"github.com/mdg-labs/release-ops/internal/logging"
 	"github.com/mdg-labs/release-ops/internal/mail"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
@@ -189,10 +190,13 @@ func (h *PasswordResetHandlers) sendResetEmail(ctx context.Context, msg mail.Mes
 
 // CreatePasswordReset invalidates prior reset tokens and stores a new one.
 func (s *TokenService) CreatePasswordReset(ctx context.Context, email string, expiryMinutes int64) (string, error) {
-	raw, err := GenerateRawToken()
+	raw, err := newRawToken()
 	if err != nil {
 		return "", err
 	}
+	// Anyone can ask for a reset, so the token goes in the unauthenticated budget, for as long
+	// as it is valid.
+	logging.RegisterUnauthenticatedFor(time.Duration(expiryMinutes)*time.Minute, raw)
 
 	now := nowUTC()
 	if err := s.Queries.InvalidatePasswordResetTokensForEmail(ctx, storedb.InvalidatePasswordResetTokensForEmailParams{

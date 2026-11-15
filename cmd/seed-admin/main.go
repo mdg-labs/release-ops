@@ -7,19 +7,20 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/config"
+	"github.com/mdg-labs/release-ops/internal/logging"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
 
 func main() {
-	log.SetFlags(0)
+	logging.Install(os.Stderr)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -45,7 +46,7 @@ func exitCode(err error, stderr io.Writer) int {
 	case errors.As(err, &uerr):
 		return 2
 	default:
-		_, _ = fmt.Fprintln(stderr, err)
+		_, _ = fmt.Fprintln(stderr, logging.Redact(err.Error()))
 		return 1
 	}
 }
@@ -71,13 +72,14 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	if err != nil {
 		return fmt.Errorf("credentials: %w", err)
 	}
+	logging.Register(password)
 
 	applied, err := store.Migrate(ctx, cfg.AppDBPath)
 	if err != nil {
 		return fmt.Errorf("migrations: %w", err)
 	}
 	for _, m := range applied {
-		log.Printf("migrations: applied %s_%s", m.Version, m.Slug)
+		slog.Info("migrations: applied", "version", m.Version, "slug", m.Slug)
 	}
 
 	db, err := store.OpenPath(cfg.AppDBPath)
@@ -86,7 +88,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	}
 	defer func() {
 		if cerr := db.Close(); cerr != nil {
-			log.Printf("database close: %v", cerr)
+			slog.Error("database close failed", "err", cerr)
 		}
 	}()
 

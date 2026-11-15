@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mdg-labs/release-ops/internal/logging"
 	"github.com/mdg-labs/release-ops/internal/store"
 )
 
@@ -90,6 +91,7 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	logging.Register(string(secret))
 	valid := validSignature(secret, body, r.Header.Get("X-Hub-Signature-256"))
 	clear(secret)
 	if !valid {

@@ -17,6 +17,7 @@ import (
 
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/github"
+	"github.com/mdg-labs/release-ops/internal/logging"
 	"github.com/mdg-labs/release-ops/internal/store"
 )
 
@@ -295,7 +296,9 @@ func newState() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	state := base64.RawURLEncoding.EncodeToString(b)
+	logging.RegisterFor(StateTTL, state)
+	return state, nil
 }
 
 func writeValidationError(w http.ResponseWriter, message string) {

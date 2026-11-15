@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mdg-labs/release-ops/internal/logging"
 	"github.com/mdg-labs/release-ops/internal/queue"
 	"github.com/mdg-labs/release-ops/internal/queue/worker"
 	"github.com/mdg-labs/release-ops/internal/renovate/globalconfig"
@@ -225,6 +226,7 @@ func (h *Handler) execute(ctx context.Context, job queue.ClaimedJob, rec *queue.
 		return fail(CodeTokenUnavailable, "the installation token could not be obtained")
 	}
 	redactor := redact.New(tok.Token, h.opts.WorkerSecret)
+	logging.RegisterFor(max(time.Until(tok.ExpiresAt), 0), tok.Token)
 
 	now := h.opts.Now()
 	runBy := now.Add(h.opts.Deadline)

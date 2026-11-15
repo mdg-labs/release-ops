@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mdg-labs/release-ops/internal/logging"
 )
 
 var (
@@ -130,6 +132,7 @@ func (c *Client) CreateInstallationToken(ctx context.Context, appJWT string, ins
 	if err := json.Unmarshal(body, &out); err != nil || out.Token == "" || out.ExpiresAt.IsZero() {
 		return InstallationToken{}, fmt.Errorf("%w: response is not an installation token", ErrRequestFailed)
 	}
+	logging.RegisterFor(max(time.Until(out.ExpiresAt), 0), out.Token)
 	return InstallationToken{value: out.Token, ExpiresAt: out.ExpiresAt}, nil
 }
 

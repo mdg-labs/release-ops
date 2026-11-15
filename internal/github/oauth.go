@@ -12,6 +12,9 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
+
+	"github.com/mdg-labs/release-ops/internal/logging"
 )
 
 var (
@@ -62,6 +65,15 @@ func (u User) valid() bool {
 	return u.ID > 0 && validUserLogin(u.Login)
 }
 
+const (
+	// oauthAttemptLogTTL is how long an authorization code and its PKCE verifier are kept out
+	// of the logs: past the time GitHub honours a code.
+	oauthAttemptLogTTL = time.Hour
+	// userTokenLogTTL is how long a user access token is kept out of the logs. The token is used
+	// for the sign-in and dropped; GitHub's own lifetime for it is eight hours.
+	userTokenLogTTL = 24 * time.Hour
+)
+
 // ExchangeParams is what the token endpoint takes for an authorization code.
 type ExchangeParams struct {
 	ClientID     string
@@ -100,6 +112,8 @@ func (o *OAuthClient) AuthorizeURL(clientID, redirectURI, state, codeChallenge s
 // 200 with an error field for a refused code; that is ErrOAuthRejected. Nothing of GitHub's
 // response is carried in an error.
 func (o *OAuthClient) ExchangeCode(ctx context.Context, p ExchangeParams) (UserToken, error) {
+	logging.Register(p.ClientSecret)
+	logging.RegisterUnauthenticatedFor(oauthAttemptLogTTL, p.Code, p.CodeVerifier)
 	if !ValidCode(p.Code) {
 		return UserToken{}, ErrOAuthRejected
 	}
@@ -141,6 +155,7 @@ func (o *OAuthClient) ExchangeCode(ctx context.Context, p ExchangeParams) (UserT
 	if out.AccessToken == "" {
 		return UserToken{}, fmt.Errorf("%w: response carries no token", ErrRequestFailed)
 	}
+	logging.RegisterFor(userTokenLogTTL, out.AccessToken)
 	return UserToken{value: out.AccessToken}, nil
 }
 

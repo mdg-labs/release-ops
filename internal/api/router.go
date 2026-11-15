@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"time"
 
 	"github.com/alexedwards/scs/v2"
@@ -77,7 +78,7 @@ func newBaseRouter(deps *ServerDeps) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(requestLogger)
-	r.Use(middleware.Recoverer)
+	r.Use(recoverer)
 
 	r.Get("/healthz", Health)
 
@@ -211,6 +212,28 @@ func ListRoutes(r chi.Router) ([]string, error) {
 		return nil
 	})
 	return paths, err
+}
+
+// recoverer answers 500 to a request whose handler panicked and logs the panic and its stack
+// through the default logger, so they are redacted like every other line; chi's own recoverer
+// writes the stack to stderr directly.
+func recoverer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			rec := recover()
+			if rec == nil {
+				return
+			}
+			if rec == http.ErrAbortHandler {
+				panic(rec)
+			}
+			slog.Error("request: handler panicked", "panic", rec, "stack", string(debug.Stack()))
+			if r.Header.Get("Connection") != "Upgrade" {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 
 func requestLogger(next http.Handler) http.Handler {

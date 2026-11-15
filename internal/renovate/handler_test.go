@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mdg-labs/release-ops/internal/logging"
 	"github.com/mdg-labs/release-ops/internal/queue"
 	"github.com/mdg-labs/release-ops/internal/queue/worker"
 	"github.com/mdg-labs/release-ops/internal/renovate"
@@ -962,5 +963,24 @@ func TestTheSecondUserIsRequiredAndNeverTheWorkersOwn(t *testing.T) {
 				t.Error("a token was requested or Renovate ran without a second user")
 			}
 		})
+	}
+}
+
+type opaqueTokens struct{ token string }
+
+func (o opaqueTokens) Token(context.Context, string, string) (queue.TokenResponse, error) {
+	return queue.TokenResponse{Token: o.token, ExpiresAt: time.Now().Add(time.Hour)}, nil
+}
+
+// The job token the worker receives from the app is registered with the process's logger, so
+// a line the worker writes outside the job's own redactor cannot carry it either.
+func TestTheJobTokenIsKeptOutOfTheProcessLogs(t *testing.T) {
+	const token = "opaque-job-token-for-the-process-logs-0001"
+	e := newEnv(t, `echo '{"repositories":{}}' > "$RENOVATE_REPORT_PATH"`, func(o *renovate.Options) { o.Tokens = opaqueTokens{token} })
+	if res := e.h.Run(context.Background(), job(0)); res.Err != nil {
+		t.Fatalf("Run: %v", res.Err)
+	}
+	if got := logging.Redact("worker line with " + token); strings.Contains(got, token) {
+		t.Fatalf("the job token is not removed from log text: %q", got)
 	}
 }

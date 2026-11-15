@@ -19,6 +19,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/crypto"
 	"github.com/mdg-labs/release-ops/internal/github"
 	"github.com/mdg-labs/release-ops/internal/github/githubtest"
+	"github.com/mdg-labs/release-ops/internal/logging"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 	"github.com/mdg-labs/release-ops/internal/store/storetest"
@@ -195,6 +196,9 @@ func TestCallbackStateLifetimeAndMismatch(t *testing.T) {
 	}
 
 	state := startAttempt()
+	if got := logging.Redact("line " + state); strings.Contains(got, state) {
+		t.Errorf("the setup state is not removed from log text: %q", got)
+	}
 	if code, location := callback("abc", "nope"); code != http.StatusFound || location != "/setup?error=invalid_state" {
 		t.Fatalf("mismatching state = %d to %q, want 302 to the invalid_state error", code, location)
 	}
