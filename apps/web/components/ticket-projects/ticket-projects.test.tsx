@@ -145,6 +145,44 @@ describe("TicketProjectsView", () => {
     ).toHaveLength(2);
   });
 
+  it("shows the forbidden state, not the load error, when the projects request is refused with 403", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/ticket-projects", method: "GET" })
+      .reply(403, { error: { code: "FORBIDDEN", message: "admin only" } });
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, ticketIntegrations);
+
+    renderTicketProjectsPage();
+
+    expect(await screen.findByTestId("forbidden-state")).toHaveTextContent(
+      "You do not have access to this page",
+    );
+    expect(
+      screen.queryByText("Failed to load ticket projects."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the load error, not the forbidden state, when the projects request fails otherwise", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/ticket-projects", method: "GET" })
+      .reply(500, {
+        error: { code: "INTERNAL", message: "database is locked" },
+      });
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, ticketIntegrations);
+
+    renderTicketProjectsPage();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Failed to load ticket projects.",
+    );
+    expect(screen.queryByTestId("forbidden-state")).not.toBeInTheDocument();
+  });
+
   it("lists ticket projects grouped by integration", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool
