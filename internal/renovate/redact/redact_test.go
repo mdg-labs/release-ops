@@ -97,3 +97,20 @@ func TestStringConsumesTheWholeURLUserInfo(t *testing.T) {
 		}
 	}
 }
+
+func TestStringRedactsQuotedAndEscapedAssignmentValues(t *testing.T) {
+	for name, tc := range map[string]struct{ in, want string }{
+		"double quoted":      {`PASSWORD="correct horse battery staple" NEXT=1`, "PASSWORD=" + Placeholder + " NEXT=1"},
+		"escaped quote":      {`PASSWORD="a \" b c" NEXT=1`, "PASSWORD=" + Placeholder + " NEXT=1"},
+		"single quoted":      {`TOKEN='a b c' NEXT=1`, "TOKEN=" + Placeholder + " NEXT=1"},
+		"escaped spaces":     {`API_TOKEN=abc\ def ghi`, "API_TOKEN=" + Placeholder + " ghi"},
+		"unquoted":           {"APP_ENCRYPTION_KEY=short-but-secret rest", "APP_ENCRYPTION_KEY=" + Placeholder + " rest"},
+		"next assignment":    {"SECRET=abc OTHER_TOKEN=def", "SECRET=" + Placeholder + " OTHER_TOKEN=" + Placeholder},
+		"not a secret name":  {`PATH="/usr/bin"`, `PATH="/usr/bin"`},
+		"not a secret quote": {`NAME='a b c' MODE="x y"`, `NAME='a b c' MODE="x y"`},
+	} {
+		if got := Shapes(tc.in); got != tc.want {
+			t.Errorf("%s: %q -> %q, want %q", name, tc.in, got, tc.want)
+		}
+	}
+}

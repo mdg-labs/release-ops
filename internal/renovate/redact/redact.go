@@ -41,8 +41,10 @@ var shapes = []struct {
 	{regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://)[^/\s"']+@`), "${1}" + Placeholder + "@"},
 	// An Authorization header value.
 	{regexp.MustCompile(`(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}`), "${1} " + Placeholder},
-	// An environment dump or a log line of NAME=value for a secret-named variable.
-	{regexp.MustCompile(`(?i)\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY|ENCRYPTION_KEY)[A-Z0-9_]*)=[^\s"']+`), "${1}=" + Placeholder},
+	// An environment dump or a log line of NAME=value for a secret-named variable. The value is
+	// a double-quoted string (with \" escapes), a single-quoted one, or a word whose spaces may
+	// be backslash-escaped; it is replaced with its quotes and nothing after it.
+	{regexp.MustCompile(`(?i)\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY|ENCRYPTION_KEY)[A-Z0-9_]*)=(?:"(?:[^"\\]|\\.)*"|'[^']*'|(?:\\.|[^\s"'\\])+|\\)`), "${1}=" + Placeholder},
 }
 
 // Redactor replaces known secrets and secret-shaped text.
