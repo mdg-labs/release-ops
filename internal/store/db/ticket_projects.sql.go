@@ -9,6 +9,20 @@ import (
 	"context"
 )
 
+const countTicketProjectDefaultAndOverrideReferences = `-- name: CountTicketProjectDefaultAndOverrideReferences :one
+SELECT
+  (SELECT COUNT(*) FROM repositories WHERE ticket_project_id = CAST(?1 AS TEXT))
+  + (SELECT COUNT(*) FROM installation_settings WHERE default_ticket_project_id = CAST(?1 AS TEXT))
+  AS referenced
+`
+
+func (q *Queries) CountTicketProjectDefaultAndOverrideReferences(ctx context.Context, id string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countTicketProjectDefaultAndOverrideReferences, id)
+	var referenced int64
+	err := row.Scan(&referenced)
+	return referenced, err
+}
+
 const createTicketProject = `-- name: CreateTicketProject :one
 INSERT INTO ticket_projects (
   id,

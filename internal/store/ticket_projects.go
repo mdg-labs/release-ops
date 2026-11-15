@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/mdg-labs/release-ops/internal/store/db"
 )
@@ -138,9 +139,32 @@ func (r ticketProjectRepo) Update(ctx context.Context, id string, input UpdateTi
 	return ticketProjectFromRow(row), nil
 }
 
-// Delete removes a ticket project. It returns ErrInUse when an update ticket still references it.
+// Delete removes a ticket project. It returns ErrInUse, with nothing changed, when a repository
+// override, an installation default or an update ticket still references it. The foreign keys
+// of the first two clear the reference instead of refusing, so the check runs in the same
+// transaction as the delete.
 func (r ticketProjectRepo) Delete(ctx context.Context, id string) error {
-	return mapForeignKeyError(r.store.writes.DeleteTicketProject(ctx, id))
+	tx, err := r.store.db.Writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin ticket project delete: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	q := r.store.writes.WithTx(tx)
+
+	references, err := q.CountTicketProjectDefaultAndOverrideReferences(ctx, id)
+	if err != nil {
+		return fmt.Errorf("check ticket project references: %w", err)
+	}
+	if references > 0 {
+		return ErrInUse
+	}
+	if err := q.DeleteTicketProject(ctx, id); err != nil {
+		return mapForeignKeyError(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit ticket project delete: %w", err)
+	}
+	return nil
 }
 
 const defaultContentTemplatesJSON = `{"title":"","description":"","updateComment":"","supersedeComment":""}`

@@ -158,3 +158,9 @@ RETURNING
 -- name: DeleteTicketProject :exec
 DELETE FROM ticket_projects
 WHERE id = ?;
+
+-- name: CountTicketProjectDefaultAndOverrideReferences :one
+SELECT
+  (SELECT COUNT(*) FROM repositories WHERE ticket_project_id = CAST(sqlc.arg(id) AS TEXT))
+  + (SELECT COUNT(*) FROM installation_settings WHERE default_ticket_project_id = CAST(sqlc.arg(id) AS TEXT))
+  AS referenced;
