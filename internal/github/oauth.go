@@ -22,7 +22,17 @@ var (
 	ErrUserTokenRejected = errors.New("github rejected the user token")
 )
 
+// loginPattern is an account name that is also an organization name: up to 39 letters,
+// digits and hyphens, starting with a letter or a digit.
 var loginPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`)
+
+// userLoginPattern is a user's login: a loginPattern name, followed for an Enterprise
+// Managed User by an underscore and the short code of the enterprise (mona-cat_octo).
+var userLoginPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:_[A-Za-z0-9]{1,39})?$`)
+
+func validUserLogin(s string) bool {
+	return userLoginPattern.MatchString(s) && !strings.Contains(s, "--")
+}
 
 // UserToken is a GitHub user access token. It is held in memory for the length of one
 // sign-in; the type renders without the value when printed or logged.
@@ -44,7 +54,7 @@ type User struct {
 }
 
 func (u User) valid() bool {
-	return u.ID > 0 && loginPattern.MatchString(u.Login) && !strings.Contains(u.Login, "--")
+	return u.ID > 0 && validUserLogin(u.Login)
 }
 
 // ExchangeParams is what the token endpoint takes for an authorization code.

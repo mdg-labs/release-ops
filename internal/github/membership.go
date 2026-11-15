@@ -50,7 +50,7 @@ func (c *Client) UserLogin(ctx context.Context, bearer string, userID int64) (lo
 // OrganizationMembership is GET /orgs/{org}/memberships/{login}. found is false when the
 // user has no membership, which is an answer and not an error.
 func (c *Client) OrganizationMembership(ctx context.Context, bearer, org, login string) (Membership, bool, error) {
-	if !loginPattern.MatchString(org) || !loginPattern.MatchString(login) {
+	if !loginPattern.MatchString(org) || !validUserLogin(login) {
 		return Membership{}, false, nil
 	}
 	return c.membership(ctx, bearer, "/orgs/"+url.PathEscape(org)+"/memberships/"+url.PathEscape(login))
@@ -60,7 +60,7 @@ func (c *Client) OrganizationMembership(ctx context.Context, bearer, org, login 
 // members of child teams. found is false when the user is not in the team or GitHub does
 // not know the team.
 func (c *Client) TeamMembership(ctx context.Context, bearer, org, team, login string) (Membership, bool, error) {
-	if !loginPattern.MatchString(org) || !loginPattern.MatchString(login) || !slugPattern.MatchString(team) {
+	if !loginPattern.MatchString(org) || !validUserLogin(login) || !slugPattern.MatchString(team) {
 		return Membership{}, false, nil
 	}
 	return c.membership(ctx, bearer, "/orgs/"+url.PathEscape(org)+"/teams/"+url.PathEscape(team)+"/memberships/"+url.PathEscape(login))

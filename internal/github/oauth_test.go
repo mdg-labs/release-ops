@@ -120,13 +120,25 @@ func TestUserAndOrganizationOwner(t *testing.T) {
 			t.Fatalf("User = %+v, %v", u, err)
 		}
 	})
+	t.Run("managed user", func(t *testing.T) {
+		t.Parallel()
+		o, _ := newOAuthFixture(t, func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"id":583232,"login":"mona-cat_octo","type":"User"}`))
+		})
+		u, err := o.User(context.Background(), UserToken{value: "tok"})
+		if err != nil || u.ID != 583232 || u.Login != "mona-cat_octo" {
+			t.Fatalf("User = %+v, %v; want the managed user to sign in", u, err)
+		}
+	})
 	t.Run("rejected and malformed", func(t *testing.T) {
 		t.Parallel()
 		o, _ := newOAuthFixture(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnauthorized) })
 		if _, err := o.User(context.Background(), UserToken{value: "t"}); !errors.Is(err, ErrUserTokenRejected) {
 			t.Errorf("401: err = %v, want ErrUserTokenRejected", err)
 		}
-		for _, body := range []string{`{}`, `{"id":0,"login":"x"}`, `{"id":5,"login":"bad login"}`, `nope`} {
+		for _, body := range []string{`{}`, `{"id":0,"login":"x"}`, `{"id":5,"login":"bad login"}`, `nope`,
+			`{"id":5,"login":"mona/cat"}`, `{"id":5,"login":"_mona"}`, `{"id":5,"login":"mona_"}`, `{"id":5,"login":"mona_oc_to"}`,
+			`{"id":5,"login":"mo--na"}`, `{"id":5,"login":"mona/../cat_octo"}`} {
 			o, _ := newOAuthFixture(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) })
 			if _, err := o.User(context.Background(), UserToken{value: "t"}); !errors.Is(err, ErrRequestFailed) {
 				t.Errorf("body %q: err = %v, want ErrRequestFailed", body, err)
@@ -151,7 +163,12 @@ func TestUserAndOrganizationOwner(t *testing.T) {
 				t.Errorf("%s: owner = %v, %v; want %v", body, got, err, want)
 			}
 		}
-		o, _ := newOAuthFixture(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) })
+		var calls atomic.Int32
+		o, _ := newOAuthFixture(t, func(http.ResponseWriter, *http.Request) { calls.Add(1) })
+		if got, err := o.IsOrganizationOwner(context.Background(), UserToken{value: "t"}, "acme_corp"); err != nil || got || calls.Load() != 0 {
+			t.Errorf("an organization name with an underscore: owner = %v, %v, calls = %d; want false without a request", got, err, calls.Load())
+		}
+		o, _ = newOAuthFixture(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) })
 		if got, err := o.IsOrganizationOwner(context.Background(), UserToken{value: "t"}, "acme"); err != nil || got {
 			t.Errorf("404: owner = %v, %v; want false, nil", got, err)
 		}

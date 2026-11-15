@@ -48,6 +48,26 @@ func TestMembershipCallsUseTheInstallationToken(t *testing.T) {
 	}
 }
 
+func TestMembershipCallsAcceptAManagedUserLogin(t *testing.T) {
+	t.Parallel()
+	r := newRig(t)
+	r.fake.SetUser(43, "mona-cat_octo")
+	r.fake.SetOrganizationMember("acme", "mona-cat_octo", "active", "member")
+	r.fake.SetTeamMember("acme", "release-admins", "mona-cat_octo", "active", "member")
+	ctx := context.Background()
+
+	login, found, err := r.client.UserLogin(ctx, 1000, 43)
+	if err != nil || !found || login != "mona-cat_octo" {
+		t.Fatalf("UserLogin = %q, %v, %v; want the managed user's login", login, found, err)
+	}
+	if m, found, err := r.client.OrganizationMembership(ctx, 1000, "acme", login); err != nil || !found || !m.Active() {
+		t.Fatalf("OrganizationMembership = %+v, %v, %v; want an active membership", m, found, err)
+	}
+	if m, found, err := r.client.TeamMembership(ctx, 1000, "acme", "release-admins", login); err != nil || !found || !m.Active() {
+		t.Fatalf("TeamMembership = %+v, %v, %v; want an active membership", m, found, err)
+	}
+}
+
 func TestMembershipCallsAnswerNotFoundWithoutAnError(t *testing.T) {
 	t.Parallel()
 	r := newRig(t)
@@ -101,6 +121,22 @@ func TestMembershipCallsRefuseNamesThatAddPathSegments(t *testing.T) {
 	}
 	if _, found, err := r.client.OrganizationMembership(ctx, 1000, "acme", "../octocat"); err != nil || found {
 		t.Errorf("a bad login = found %v, err %v; want not found", found, err)
+	}
+	for _, login := range []string{"mona/cat", "mona/../cat_octo", "_mona", "mona_", "mona_oc_to", "mona cat_octo"} {
+		if _, found, err := r.client.OrganizationMembership(ctx, 1000, "acme", login); err != nil || found {
+			t.Errorf("login %q on the organization call = found %v, err %v; want not found", login, found, err)
+		}
+		if _, found, err := r.client.TeamMembership(ctx, 1000, "acme", "team", login); err != nil || found {
+			t.Errorf("login %q on the team call = found %v, err %v; want not found", login, found, err)
+		}
+	}
+	for _, org := range []string{"acme_corp", "acme_"} {
+		if _, found, err := r.client.OrganizationMembership(ctx, 1000, org, "octocat"); err != nil || found {
+			t.Errorf("organization %q = found %v, err %v; want not found", org, found, err)
+		}
+		if _, found, err := r.client.TeamMembership(ctx, 1000, org, "team", "octocat"); err != nil || found {
+			t.Errorf("organization %q on the team call = found %v, err %v; want not found", org, found, err)
+		}
 	}
 	for _, req := range r.fake.Requests()[before:] {
 		if strings.HasPrefix(req.Path, "/orgs/") {
