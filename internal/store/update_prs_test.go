@@ -1,0 +1,265 @@
+package store_test
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"reflect"
+	"testing"
+	"time"
+
+	"github.com/mdg-labs/release-ops/internal/store"
+	"github.com/mdg-labs/release-ops/internal/store/storetest"
+)
+
+var prEpoch = time.Date(2026, 11, 15, 10, 0, 0, 0, time.UTC)
+
+type prEnv struct {
+	db    *store.DB
+	repos store.UpdatePRRepository
+	repo  string
+}
+
+func newPREnv(t *testing.T) *prEnv {
+	t.Helper()
+	s, _ := testStore(t)
+	ids := storetest.SeedRepositories(t, s.DB(), 2)
+	return &prEnv{db: s.DB(), repos: s.UpdatePRs(), repo: ids[0]}
+}
+
+// upsert applies one report in its own transaction.
+func (e *prEnv) upsert(t *testing.T, in store.UpdatePRInput) bool {
+	t.Helper()
+	if in.RepositoryID == "" {
+		in.RepositoryID = e.repo
+	}
+	if in.Number == 0 {
+		in.Number = 21
+	}
+	if in.NodeID == "" {
+		in.NodeID, in.URL, in.HeadRef = "PR_node", "https://github.com/acme/repo-1/pull/21", "renovate/lodash-4.x"
+	}
+	if in.Title == "" {
+		in.Title = "chore(deps): update lodash"
+	}
+	if in.State == "" {
+		in.State = store.UpdatePROpen
+	}
+	in.Now = prEpoch.Add(time.Hour)
+	tx, err := e.db.Writer.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := e.repos.Upsert(context.Background(), tx, in)
+	if err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("Upsert: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	return changed
+}
+
+type prRow struct {
+	State, Title, HeadSHA, Labels, SeenAt string
+	SupersededBy                          sql.NullString
+	ClosedAt, MergedAt                    sql.NullString
+}
+
+func (e *prEnv) row(t *testing.T) prRow {
+	t.Helper()
+	var r prRow
+	var sha sql.NullString
+	if err := e.db.Reader.QueryRow(`SELECT state, title, head_sha, labels, last_seen_at, superseded_by_id, closed_at, merged_at
+		FROM update_prs WHERE repository_id = ? AND number = 21`, e.repo).
+		Scan(&r.State, &r.Title, &sha, &r.Labels, &r.SeenAt, &r.SupersededBy, &r.ClosedAt, &r.MergedAt); err != nil {
+		t.Fatalf("read row: %v", err)
+	}
+	r.HeadSHA = sha.String
+	return r
+}
+
+func (e *prEnv) count(t *testing.T) int {
+	t.Helper()
+	var n int
+	if err := e.db.Reader.QueryRow(`SELECT COUNT(*) FROM update_prs`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func at(minutes int) time.Time { return prEpoch.Add(time.Duration(minutes) * time.Minute) }
+
+func TestUpsertCreatesTheRowAndReportsAChange(t *testing.T) {
+	e := newPREnv(t)
+	if !e.upsert(t, store.UpdatePRInput{EventAt: at(0), OpenedAt: at(0), HeadSHA: "aaa", Labels: []string{"dependencies"}}) {
+		t.Fatal("creating a row reported no change")
+	}
+	got := e.row(t)
+	if got.State != "open" || got.HeadSHA != "aaa" || got.Labels != `["dependencies"]` || got.SeenAt != "2026-11-15T10:00:00.000Z" {
+		t.Fatalf("row = %+v", got)
+	}
+}
+
+func TestUpsertReplayChangesNothing(t *testing.T) {
+	e := newPREnv(t)
+	in := store.UpdatePRInput{EventAt: at(5), OpenedAt: at(0), HeadSHA: "aaa"}
+	e.upsert(t, in)
+	if e.upsert(t, in) {
+		t.Fatal("applying the same report again reported a change")
+	}
+	if e.count(t) != 1 {
+		t.Fatalf("%d rows, want one", e.count(t))
+	}
+}
+
+// A report older than the stored one never overwrites it: an edit that was generated before the
+// close but arrives after it must not reopen the row or rewrite its title.
+func TestUpsertStaleEditAfterCloseDoesNotReopen(t *testing.T) {
+	e := newPREnv(t)
+	e.upsert(t, store.UpdatePRInput{EventAt: at(0), OpenedAt: at(0)})
+	e.upsert(t, store.UpdatePRInput{EventAt: at(30), OpenedAt: at(0), State: store.UpdatePRMerged, MergedAt: at(30), ClosedAt: at(30)})
+
+	if e.upsert(t, store.UpdatePRInput{EventAt: at(25), OpenedAt: at(0), Title: "stale title"}) {
+		t.Fatal("a stale edit reported a change")
+	}
+	got := e.row(t)
+	if got.State != "merged" || got.Title != "chore(deps): update lodash" || got.SeenAt != "2026-11-15T10:30:00.000Z" {
+		t.Fatalf("row after the stale edit = %+v, want merged with the original title", got)
+	}
+}
+
+// GitHub stamps a close and an edit made in the same second alike; the close stays.
+func TestUpsertEditStampedAtTheCloseDoesNotReopen(t *testing.T) {
+	e := newPREnv(t)
+	e.upsert(t, store.UpdatePRInput{EventAt: at(0), OpenedAt: at(0)})
+	e.upsert(t, store.UpdatePRInput{EventAt: at(30), OpenedAt: at(0), State: store.UpdatePRClosed, ClosedAt: at(30)})
+	if e.upsert(t, store.UpdatePRInput{EventAt: at(30), OpenedAt: at(0)}) {
+		t.Fatal("an open report at the close's time reported a change")
+	}
+	if got := e.row(t); got.State != "closed" {
+		t.Fatalf("state = %q, want closed", got.State)
+	}
+}
+
+func TestUpsertReopenAfterCloseOpensTheRowAndClearsTheCloseTimes(t *testing.T) {
+	e := newPREnv(t)
+	e.upsert(t, store.UpdatePRInput{EventAt: at(0), OpenedAt: at(0)})
+	e.upsert(t, store.UpdatePRInput{EventAt: at(30), OpenedAt: at(0), State: store.UpdatePRClosed, ClosedAt: at(30)})
+	if !e.upsert(t, store.UpdatePRInput{EventAt: at(40), OpenedAt: at(0)}) {
+		t.Fatal("reopening reported no change")
+	}
+	got := e.row(t)
+	if got.State != "open" || got.ClosedAt.Valid || got.MergedAt.Valid {
+		t.Fatalf("row = %+v, want open without close times", got)
+	}
+}
+
+func TestUpsertOutOfOrderEditsLeaveTheNewestState(t *testing.T) {
+	e := newPREnv(t)
+	e.upsert(t, store.UpdatePRInput{EventAt: at(10), OpenedAt: at(0), Title: "second", HeadSHA: "bbb"})
+	e.upsert(t, store.UpdatePRInput{EventAt: at(5), OpenedAt: at(0), Title: "first", HeadSHA: "aaa"})
+	if got := e.row(t); got.Title != "second" || got.HeadSHA != "bbb" {
+		t.Fatalf("row = %+v, want the newer report", got)
+	}
+}
+
+func TestUpsertKeepsSupersededOnAClosedReportAndClearsItOnReopen(t *testing.T) {
+	e := newPREnv(t)
+	e.upsert(t, store.UpdatePRInput{EventAt: at(0), OpenedAt: at(0)})
+	if _, err := e.db.Writer.Exec(`INSERT INTO update_prs (id, repository_id, number, node_id, url, title, head_ref, state, last_seen_at, created_at, updated_at)
+		VALUES ('replacement', ?, 99, 'n', 'u', 't', 'h', 'open', '2026-11-15T10:00:00.000Z', '2026-11-15T10:00:00.000Z', '2026-11-15T10:00:00.000Z')`, e.repo); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.db.Writer.Exec(`UPDATE update_prs SET state = 'superseded', superseded_by_id = 'replacement' WHERE number = 21`); err != nil {
+		t.Fatal(err)
+	}
+
+	e.upsert(t, store.UpdatePRInput{EventAt: at(20), OpenedAt: at(0), State: store.UpdatePRClosed, ClosedAt: at(20), Title: "renamed"})
+	if got := e.row(t); got.State != "superseded" || got.SupersededBy.String != "replacement" || got.Title != "renamed" {
+		t.Fatalf("row after a closed report = %+v, want still superseded by the replacement", got)
+	}
+	e.upsert(t, store.UpdatePRInput{EventAt: at(30), OpenedAt: at(0)})
+	if got := e.row(t); got.State != "open" || got.SupersededBy.Valid {
+		t.Fatalf("row after a reopen = %+v, want open without a replacement", got)
+	}
+}
+
+func TestUpsertAReportThatOnlyAdvancesTheClockReportsNoChange(t *testing.T) {
+	e := newPREnv(t)
+	e.upsert(t, store.UpdatePRInput{EventAt: at(0), OpenedAt: at(0)})
+	if e.upsert(t, store.UpdatePRInput{EventAt: at(7), OpenedAt: at(0)}) {
+		t.Fatal("a report with nothing new reported a change")
+	}
+	if got := e.row(t); got.SeenAt != "2026-11-15T10:07:00.000Z" {
+		t.Fatalf("last_seen_at = %q, want the newer event time", got.SeenAt)
+	}
+}
+
+func TestUpsertRowsAreScopedToTheRepository(t *testing.T) {
+	e := newPREnv(t)
+	e.upsert(t, store.UpdatePRInput{EventAt: at(0), OpenedAt: at(0)})
+	e.upsert(t, store.UpdatePRInput{RepositoryID: "repo-2", EventAt: at(0), OpenedAt: at(0)})
+	if e.count(t) != 2 {
+		t.Fatalf("%d rows, want one per repository for the same number", e.count(t))
+	}
+}
+
+// The upsert is the transaction's: a rollback leaves no row.
+func TestUpsertRollsBackWithItsTransaction(t *testing.T) {
+	e := newPREnv(t)
+	tx, err := e.db.Writer.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.repos.Upsert(context.Background(), tx, store.UpdatePRInput{
+		RepositoryID: e.repo, Number: 21, NodeID: "n", URL: "u", Title: "t", HeadRef: "h", State: "open", EventAt: at(0), Now: at(0),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if e.count(t) != 0 {
+		t.Fatal("a rolled-back upsert left a row")
+	}
+}
+
+func TestOpenNumbersCountsAndReconcileRepositories(t *testing.T) {
+	e := newPREnv(t)
+	for number, state := range map[int64]string{21: "open", 22: "open", 23: "merged", 24: "closed"} {
+		e.upsert(t, store.UpdatePRInput{Number: number, State: state, EventAt: at(0), OpenedAt: at(0)})
+	}
+	ctx := context.Background()
+	numbers, err := e.repos.OpenNumbers(ctx, e.repo)
+	if err != nil || !reflect.DeepEqual(numbers, []int64{21, 22}) {
+		t.Fatalf("OpenNumbers = %v, %v, want [21 22]", numbers, err)
+	}
+	counts, err := e.repos.OpenCounts(ctx)
+	if err != nil || !reflect.DeepEqual(counts, map[string]int{"acme/repo-1": 2, "acme/repo-2": 0}) {
+		t.Fatalf("OpenCounts = %v, %v", counts, err)
+	}
+
+	if _, err := e.db.Writer.Exec(`UPDATE repositories SET enabled = 0 WHERE id = 'repo-2'`); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := e.repos.ReconcileRepositoryIDs(ctx)
+	if err != nil || !reflect.DeepEqual(ids, []string{"repo-1"}) {
+		t.Fatalf("ReconcileRepositoryIDs = %v, %v, want only the enabled repository", ids, err)
+	}
+	if _, err := e.repos.ReconcileRepository(ctx, "repo-2"); !errors.Is(err, store.ErrRepositoryNotFound) {
+		t.Fatalf("ReconcileRepository of a paused repository = %v, want ErrRepositoryNotFound", err)
+	}
+	got, err := e.repos.ReconcileRepository(ctx, "repo-1")
+	if err != nil || got.FullName != "acme/repo-1" || got.GitHubInstallationID != 1 {
+		t.Fatalf("ReconcileRepository = %+v, %v", got, err)
+	}
+	if _, err := e.db.Writer.Exec(`UPDATE repositories SET removed_at = '2026-11-15T10:00:00.000Z' WHERE id = 'repo-1'`); err != nil {
+		t.Fatal(err)
+	}
+	counts, _ = e.repos.OpenCounts(ctx)
+	if _, listed := counts["acme/repo-1"]; listed {
+		t.Fatalf("OpenCounts = %v, want a removed repository left out", counts)
+	}
+}

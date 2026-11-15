@@ -31,6 +31,10 @@ type Enqueuer interface {
 type Scheduler struct {
 	repos Repositories
 	queue Enqueuer
+	// AfterTick, when set, runs after every tick of Run, whether or not the tick failed: the
+	// PR reconcile of specs.html section 5.7 runs hourly with the safety net. It must not
+	// block.
+	AfterTick func(ctx context.Context)
 }
 
 // New returns a Scheduler over the repositories and the queue.
@@ -93,5 +97,8 @@ func (s *Scheduler) Run(ctx context.Context, ticks <-chan time.Time, report func
 			return
 		}
 		report(res, err)
+		if s.AfterTick != nil {
+			s.AfterTick(ctx)
+		}
 	}
 }

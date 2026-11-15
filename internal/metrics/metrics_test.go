@@ -165,3 +165,40 @@ func TestServeRefusesABusyAddress(t *testing.T) {
 		t.Fatal("Serve on a busy address succeeded")
 	}
 }
+
+type openCounts struct {
+	counts map[string]int
+	err    error
+}
+
+func (o openCounts) OpenCounts(context.Context) (map[string]int, error) { return o.counts, o.err }
+
+// The gauge is read at each scrape, so it follows the counts, labelled by repository name only.
+func TestOpenUpdatePRsGaugeFollowsTheCountsPerRepository(t *testing.T) {
+	reg := NewRegistry()
+	counts := &openCounts{counts: map[string]int{"acme/api": 2, "acme/web": 0}}
+	if err := RegisterOpenUpdatePRs(reg, counts); err != nil {
+		t.Fatal(err)
+	}
+	_, body := scrape(t, reg)
+	for _, want := range []string{`release_ops_open_update_prs{repository="acme/api"} 2`, `release_ops_open_update_prs{repository="acme/web"} 0`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics output lacks %q:\n%s", want, body)
+		}
+	}
+	counts.counts = map[string]int{"acme/api": 1}
+	_, body = scrape(t, reg)
+	if !strings.Contains(body, `release_ops_open_update_prs{repository="acme/api"} 1`) || strings.Contains(body, `repository="acme/web"`) {
+		t.Errorf("the gauge did not follow the counts:\n%s", body)
+	}
+}
+
+func TestOpenUpdatePRsScrapeFailsWhenTheCountsCannotBeRead(t *testing.T) {
+	reg := NewRegistry()
+	if err := RegisterOpenUpdatePRs(reg, openCounts{err: errors.New("database is closed")}); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := scrape(t, reg); code != http.StatusInternalServerError {
+		t.Fatalf("scrape = %d, want 500: %s", code, body)
+	}
+}

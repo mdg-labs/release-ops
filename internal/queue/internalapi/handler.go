@@ -52,6 +52,11 @@ type Options struct {
 	// fetches at job start; both are sent with every claimed job. Empty means the instance
 	// mounts the config into the worker.
 	GlobalConfigRepo, GlobalConfigRef string
+	// AfterResult, when set, is called with the repository's id once a posted result has been
+	// stored, whether the attempt succeeded or failed: Renovate may have changed the
+	// repository's PRs either way, and the PR reconcile follows (specs.html section 5.1). It
+	// runs on the request's goroutine and must not block.
+	AfterResult func(repositoryID string)
 }
 
 type handler struct {
@@ -64,7 +69,8 @@ type handler struct {
 	globalConfigRef   string
 	// redactor strips the worker secret and anything secret-shaped from a stored run record,
 	// as a second line behind the worker's own redaction.
-	redactor *redact.Redactor
+	redactor    *redact.Redactor
+	afterResult func(repositoryID string)
 }
 
 // NewHandler returns the worker routes over q. Every request, including one for a path no
@@ -74,7 +80,7 @@ func NewHandler(q queue.Queue, opts Options) http.Handler {
 		q: q, secretSum: sha256.Sum256([]byte(opts.Secret)), claimWait: opts.ClaimWait,
 		tokens: opts.Tokens, tokenRepositories: slices.Clone(opts.TokenRepositories),
 		globalConfigRepo: opts.GlobalConfigRepo, globalConfigRef: opts.GlobalConfigRef,
-		redactor: redact.New(opts.Secret),
+		redactor: redact.New(opts.Secret), afterResult: opts.AfterResult,
 	}
 	if h.claimWait <= 0 {
 		h.claimWait = DefaultClaimWait
@@ -203,6 +209,14 @@ func (h *handler) result(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
+	repositoryID := ""
+	if h.afterResult != nil {
+		if held, err := h.q.HeldJob(r.Context(), id, req.LeaseOwner); err == nil {
+			repositoryID = held.RepositoryID
+		} else if !errors.Is(err, queue.ErrLeaseLost) {
+			slog.Warn("internal api: the repository of a result could not be read; no PR reconcile follows", "job", id, "err", err)
+		}
+	}
 	var run *queue.RunRecord
 	if req.Run != nil {
 		rec, msg := h.checkedRun(*req.Run)
@@ -230,6 +244,9 @@ func (h *handler) result(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.finish(w, r, "result", err)
+	if err == nil && repositoryID != "" {
+		h.afterResult(repositoryID)
+	}
 }
 
 // checkedRun validates a posted run record against the caps and redacts it; msg is the reason

@@ -155,3 +155,41 @@ func (c *queueCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 	ch <- prometheus.MustNewConstMetric(c.age, prometheus.GaugeValue, stats.OldestAge.Seconds())
 }
+
+// OpenUpdatePRCounts reads the number of open update PRs of every repository.
+type OpenUpdatePRCounts interface {
+	// OpenCounts returns the count by repository full name; a repository without an open PR
+	// has 0.
+	OpenCounts(ctx context.Context) (map[string]int, error)
+}
+
+// openPRsCollector reads the counts at scrape time, so the gauge always equals the open rows.
+type openPRsCollector struct {
+	counts OpenUpdatePRCounts
+	desc   *prometheus.Desc
+}
+
+// RegisterOpenUpdatePRs registers release_ops_open_update_prs on r, read from counts at each
+// scrape and labelled by the repository's full name. When the read fails, the scrape fails.
+func RegisterOpenUpdatePRs(r *Registry, counts OpenUpdatePRCounts) error {
+	return r.Register(&openPRsCollector{
+		counts: counts,
+		desc: prometheus.NewDesc("release_ops_open_update_prs",
+			"Open update PRs (specs.html section 5.1), by repository.", []string{"repository"}, nil),
+	})
+}
+
+func (c *openPRsCollector) Describe(ch chan<- *prometheus.Desc) { ch <- c.desc }
+
+func (c *openPRsCollector) Collect(ch chan<- prometheus.Metric) {
+	ctx, cancel := context.WithTimeout(context.Background(), statsTimeout)
+	defer cancel()
+	counts, err := c.counts.OpenCounts(ctx)
+	if err != nil {
+		ch <- prometheus.NewInvalidMetric(c.desc, fmt.Errorf("open update PR counts unavailable: %w", err))
+		return
+	}
+	for repository, n := range counts {
+		ch <- prometheus.MustNewConstMetric(c.desc, prometheus.GaugeValue, float64(n), repository)
+	}
+}

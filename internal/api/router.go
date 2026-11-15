@@ -54,6 +54,9 @@ type ServerDeps struct {
 	// WebhookRoutes holds the handlers of the webhook events. When nil, the route serves
 	// the default table, which acknowledges the installation events and ignores the rest.
 	WebhookRoutes *hooks.Routes
+	// UpdatePRs stores the update PRs of pull_request deliveries and wakes the ticket engine.
+	// Without it those deliveries only start runs.
+	UpdatePRs hooks.UpdatePRTracker
 	// Queue is read by /readyz for the last worker contact. Without it the server is never
 	// ready.
 	Queue queue.Queue
@@ -105,6 +108,13 @@ func registerWebhook(r chi.Router, deps *ServerDeps) {
 	if jobs, ok := deps.Queue.(hooks.RunEnqueuer); ok {
 		hooks.RegisterRenovateHandlers(routes, hooks.RenovateTriggers{
 			Queue:        jobs,
+			Repositories: deps.Store,
+			Bot:          deps.Store.GitHubApp(),
+		})
+	}
+	if deps.UpdatePRs != nil {
+		hooks.RegisterUpdatePRHandler(routes, hooks.UpdatePRs{
+			Tracker:      deps.UpdatePRs,
 			Repositories: deps.Store,
 			Bot:          deps.Store.GitHubApp(),
 		})

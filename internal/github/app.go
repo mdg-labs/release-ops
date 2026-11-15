@@ -143,6 +143,12 @@ func (c *Client) do(ctx context.Context, method, path, bearer string, payload io
 // sendTo sends one authenticated request to rawURL, which the caller has built from the
 // configured API base, and returns the status, the headers and the body read through limit.
 func (c *Client) sendTo(ctx context.Context, method, rawURL, bearer string, payload io.Reader, limit int64) (int, http.Header, []byte, error) {
+	return c.sendWith(ctx, method, rawURL, bearer, payload, limit, nil)
+}
+
+// sendWith is sendTo with extra request headers, such as a conditional request's
+// If-None-Match.
+func (c *Client) sendWith(ctx context.Context, method, rawURL, bearer string, payload io.Reader, limit int64, extra http.Header) (int, http.Header, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, payload)
 	if err != nil {
 		return 0, nil, nil, ErrRequestFailed
@@ -151,6 +157,9 @@ func (c *Client) sendTo(ctx context.Context, method, rawURL, bearer string, payl
 	req.Header.Set("X-GitHub-Api-Version", apiVersion)
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Authorization", "Bearer "+bearer)
+	for name, values := range extra {
+		req.Header[name] = values
+	}
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

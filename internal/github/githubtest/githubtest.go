@@ -53,6 +53,8 @@ type Request struct {
 	Body   string
 	// Query is the raw query string.
 	Query string
+	// IfNoneMatch is the If-None-Match header of the request.
+	IfNoneMatch string
 	// JWTValid reports that the bearer was an App JWT signed by the fake's key, issued for
 	// AppID, not expired and valid for at most ten minutes.
 	JWTValid bool
@@ -99,10 +101,14 @@ type Fake struct {
 	userRepos      map[string]map[int64][]int64 // user token -> installation id -> repository ids
 	userRepoStatus int                          // status for the user's repository listing; 0 answers normally
 
-	deliveries       []Delivery         // newest first, as GitHub lists them
-	deliveryStatus   int                // status of GET /app/hook/deliveries; 0 answers the list
-	redeliveryStatus map[int64]int      // delivery id -> status for its redelivery; 0 answers 202
-	onRedelivery     func(Delivery) int // called for each accepted redelivery; returns the receiver's status
+	pulls            map[string]map[int64]PullRequest // owner/name -> number -> pull request
+	pullStatus       map[string]int                   // owner/name -> status for its pulls calls
+	notModifieds     int                              // pulls pages answered 304
+	pullFetchStatus  map[string]map[int64]int         // owner/name -> number -> status for fetching that pull request
+	deliveries       []Delivery                       // newest first, as GitHub lists them
+	deliveryStatus   int                              // status of GET /app/hook/deliveries; 0 answers the list
+	redeliveryStatus map[int64]int                    // delivery id -> status for its redelivery; 0 answers 202
+	onRedelivery     func(Delivery) int               // called for each accepted redelivery; returns the receiver's status
 }
 
 // Delivery is a webhook delivery of the App as GET /app/hook/deliveries lists it.
@@ -151,6 +157,8 @@ func New(t testing.TB, now func() time.Time) *Fake {
 		userRepos:   map[string]map[int64][]int64{},
 		files:       map[string][]string{},
 		fileStatus:  map[string]int{},
+		pulls:       map[string]map[int64]PullRequest{},
+		pullStatus:  map[string]int{},
 
 		redeliveryStatus: map[int64]int{},
 		tokenTTL:         time.Hour,
@@ -417,7 +425,7 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	valid := f.checkJWT(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 
 	f.mu.Lock()
-	f.requests = append(f.requests, Request{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: string(raw), JWTValid: valid})
+	f.requests = append(f.requests, Request{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, IfNoneMatch: r.Header.Get("If-None-Match"), Body: string(raw), JWTValid: valid})
 	f.mu.Unlock()
 
 	bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -673,6 +681,10 @@ func (f *Fake) serveWithToken(w http.ResponseWriter, r *http.Request, token stri
 		return
 	}
 	parts := strings.SplitN(rest, "/", 4)
+	if len(parts) >= 3 && parts[2] == "pulls" {
+		f.servePulls(w, r, parts[0]+"/"+parts[1], parts[3:])
+		return
+	}
 	if len(parts) < 3 || parts[2] != "contents" {
 		http.NotFound(w, r)
 		return

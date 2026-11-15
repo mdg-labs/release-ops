@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -342,5 +343,59 @@ func TestResultRefusesAnOversizedOrMalformedRunRecord(t *testing.T) {
 	full := queue.RunRecord{LogExcerpt: strings.Repeat("\"", queue.MaxLogExcerptBytes), Report: strings.Repeat("\"", queue.MaxReportBytes), ErrorMessage: "x"}
 	if status, body := e.post(t, path, "Bearer "+secret, queue.ResultRequest{LeaseOwner: job.LeaseOwner, Outcome: queue.OutcomeFailed, Run: &full}); status != http.StatusNoContent {
 		t.Errorf("a record at the caps = %d %s, want 204", status, body)
+	}
+}
+
+// A stored result, of a success or a failed attempt, tells AfterResult the job's repository once;
+// a result that is refused tells nothing.
+func TestResultCallsAfterResultWithTheRepositoryOfTheJobOnlyWhenStored(t *testing.T) {
+	db := storetest.OpenMigrated(t)
+	q := store.NewJobQueue(db, store.JobQueueOptions{})
+	repos := storetest.SeedRepositories(t, db, 2)
+	var mu sync.Mutex
+	var told []string
+	srv := httptest.NewServer(internalapi.NewHandler(q, internalapi.Options{
+		Secret: secret, ClaimWait: time.Second,
+		AfterResult: func(id string) { mu.Lock(); told = append(told, id); mu.Unlock() },
+	}))
+	t.Cleanup(srv.Close)
+	e := &env{srv: srv, q: q, db: db, repos: repos}
+	auth := "Bearer " + secret
+	claim := func() queue.ClaimedJob {
+		var job queue.ClaimedJob
+		status, body := e.post(t, queue.PathClaim, auth, struct{}{})
+		if status != http.StatusOK || json.Unmarshal(body, &job) != nil {
+			t.Fatalf("claim = %d %s", status, body)
+		}
+		return job
+	}
+	route := func(id string) string { return strings.Replace(queue.PathResult, "{id}", id, 1) }
+	got := func() []string { mu.Lock(); defer mu.Unlock(); return append([]string(nil), told...) }
+
+	e.enqueue(t, repos[0])
+	job := claim()
+	if status, _ := e.post(t, route(job.ID), auth, queue.ResultRequest{LeaseOwner: "0.other", Outcome: queue.OutcomeSucceeded}); status != http.StatusConflict {
+		t.Fatalf("foreign lease = %d, want 409", status)
+	}
+	if status, _ := e.post(t, route(job.ID), auth, queue.ResultRequest{LeaseOwner: job.LeaseOwner, Outcome: "maybe"}); status != http.StatusUnprocessableEntity {
+		t.Fatalf("unknown outcome = %d, want 422", status)
+	}
+	if len(got()) != 0 {
+		t.Fatalf("told %v for refused results, want nothing", got())
+	}
+	if status, _ := e.post(t, route(job.ID), auth, queue.ResultRequest{LeaseOwner: job.LeaseOwner, Outcome: queue.OutcomeSucceeded}); status != http.StatusNoContent {
+		t.Fatalf("result = %d, want 204", status)
+	}
+	if !reflect.DeepEqual(got(), []string{repos[0]}) {
+		t.Fatalf("told %v, want [%s]", got(), repos[0])
+	}
+
+	e.enqueue(t, repos[1])
+	job = claim()
+	if status, _ := e.post(t, route(job.ID), auth, queue.ResultRequest{LeaseOwner: job.LeaseOwner, Outcome: queue.OutcomeFailed}); status != http.StatusNoContent {
+		t.Fatalf("failed result = %d, want 204", status)
+	}
+	if !reflect.DeepEqual(got(), []string{repos[0], repos[1]}) {
+		t.Fatalf("told %v, want both repositories: a failed attempt may have changed PRs too", got())
 	}
 }

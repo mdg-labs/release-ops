@@ -43,9 +43,10 @@ func Acknowledge(context.Context, *sql.Tx, Delivery) error { return nil }
 // Routes maps an event name to its handler. An event without a handler is answered 202 and
 // ignored. Handlers are registered before the server starts and may be replaced.
 type Routes struct {
-	mu       sync.RWMutex
-	handlers map[string]Handler
-	renovate bool
+	mu        sync.RWMutex
+	handlers  map[string]Handler
+	renovate  bool
+	updatePRs bool
 }
 
 // NewRoutes returns the routing table with the installation events acknowledged. The

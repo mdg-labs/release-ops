@@ -233,3 +233,34 @@ func TestTicksOverTheStoreEnqueueOneJobPerEligibleRepositoryWithoutDuplicates(t 
 		t.Fatalf("Tick after the job ended = %+v, %v; want the finished repository enqueued again", res, err)
 	}
 }
+
+// AfterTick runs once after every tick, also after a failed one, so the PR reconcile follows the
+// safety net hourly.
+func TestRunCallsAfterTickAfterEveryTickIncludingAFailedOne(t *testing.T) {
+	q := &fakeQueue{}
+	repos := &flakyRepositories{ids: []string{"a"}}
+	s := scheduler.New(repos, q)
+	after := make(chan int, 4)
+	s.AfterTick = func(context.Context) { after <- len(q.enqueued()) }
+	ticks := make(chan time.Time)
+	reports := make(chan tickResult, 4)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.Run(ctx, ticks, func(res scheduler.Result, err error) { reports <- tickResult{res, err} })
+	}()
+	t.Cleanup(func() { cancel(); <-done })
+
+	repos.failNext()
+	ticks <- time.Time{}
+	<-reports
+	if n := <-after; n != 0 {
+		t.Fatalf("after a failed tick, %d jobs enqueued, want 0", n)
+	}
+	ticks <- time.Time{}
+	<-reports
+	if n := <-after; n != 1 {
+		t.Fatalf("after the second tick, %d jobs enqueued, want 1 (the hook runs after the tick)", n)
+	}
+}
