@@ -492,3 +492,45 @@ func TestRunnerReportsAFailedReconcileAndGoesOn(t *testing.T) {
 		t.Fatalf("rows = %v, want the PR stored by the second reconcile", got)
 	}
 }
+
+// A reconcile publishes the events of the PRs it applied after its transaction commits, and
+// nothing when it fails and applies nothing.
+func TestReconcilePublishesTheEventsOfAppliedPRsAfterTheCommit(t *testing.T) {
+	r := newRig(t, true)
+	var got []updateprs.Event
+	var storedWhenPublished int
+	r.tracker.Subscribe(func(events []updateprs.Event) {
+		got = append(got, events...)
+		if err := r.db.Reader.QueryRow(`SELECT COUNT(*) FROM update_prs`).Scan(&storedWhenPublished); err != nil {
+			t.Error(err)
+		}
+	})
+	r.bot(1)
+	r.bot(2)
+
+	r.fake.FailPulls("acme/repo-1", 500)
+	if err := r.rec.Reconcile(context.Background(), r.repo); err == nil {
+		t.Fatal("a failed listing returned no error")
+	}
+	if len(got) != 0 {
+		t.Fatalf("a failed reconcile published %+v", got)
+	}
+
+	r.fake.FailPulls("acme/repo-1", 0)
+	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
+		t.Fatal(err)
+	}
+	numbers := map[int64]bool{}
+	for _, e := range got {
+		if e.Kind != updateprs.EventDependenciesRecorded {
+			t.Fatalf("event %+v, want dependencies_recorded", e)
+		}
+		numbers[e.Number] = true
+	}
+	if len(got) != 2 || !numbers[1] || !numbers[2] {
+		t.Fatalf("events = %+v, want one dependencies_recorded event per applied PR", got)
+	}
+	if storedWhenPublished != 2 {
+		t.Fatalf("%d rows were visible when the events were published, want both committed", storedWhenPublished)
+	}
+}

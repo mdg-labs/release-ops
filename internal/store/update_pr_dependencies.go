@@ -56,7 +56,10 @@ type DependenciesInput struct {
 	HeadSHA string
 	// ReleaseNotes is the stored excerpt; empty stores NULL.
 	ReleaseNotes string
-	Now          time.Time
+	// Automerge is whether the PR is automerged; nil leaves the stored value, which is NULL
+	// (unknown) until something reports it.
+	Automerge *bool
+	Now       time.Time
 }
 
 // DependenciesResult says what RecordDependencies did.
@@ -67,7 +70,8 @@ type DependenciesResult struct {
 	// UpdatePRID and State are the stored row's.
 	UpdatePRID string
 	State      string
-	// Changed reports whether the dependency list or the release-notes excerpt changed.
+	// Changed reports whether the dependency list, the release-notes excerpt or the automerge
+	// flag changed.
 	Changed bool
 	// Dependencies is how many dependency rows the PR has after the call.
 	Dependencies int
@@ -141,6 +145,19 @@ func (r updatePRRepo) RecordDependencies(ctx context.Context, tx *sql.Tx, in Dep
 				if err != nil {
 					return DependenciesResult{}, fmt.Errorf("insert update PR dependency: %w", err)
 				}
+			}
+			res.Changed = true
+		}
+	}
+
+	if in.Automerge != nil {
+		value := sql.NullInt64{Int64: 0, Valid: true}
+		if *in.Automerge {
+			value.Int64 = 1
+		}
+		if row.Automerge != value {
+			if err := q.SetUpdatePRAutomerge(ctx, db.SetUpdatePRAutomergeParams{Automerge: value, UpdatedAt: formatTime(in.Now), ID: row.ID}); err != nil {
+				return DependenciesResult{}, fmt.Errorf("update automerge: %w", err)
 			}
 			res.Changed = true
 		}

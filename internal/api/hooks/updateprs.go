@@ -19,6 +19,8 @@ type UpdatePRTracker interface {
 	ApplyTx(ctx context.Context, tx *sql.Tx, repositoryID string, pr github.PullRequest, botUserID int64) (updateprs.Outcome, error)
 	// Wake is updateprs.Notifier.Wake, run once the transaction has committed.
 	Wake()
+	// Publish is updateprs.Tracker.Publish, run once the transaction has committed.
+	Publish(events []updateprs.Event)
 }
 
 // UpdatePRs keeps update_prs current from pull_request deliveries (specs.html section 5.1).
@@ -92,6 +94,9 @@ func (u UpdatePRs) pullRequest(ctx context.Context, tx *sql.Tx, d Delivery) erro
 	out, err := u.Tracker.ApplyTx(ctx, tx, repo.ID, p.PullRequest, bot.UserID)
 	if err != nil {
 		return err
+	}
+	if len(out.Events) > 0 {
+		d.AfterCommit(func() { u.Tracker.Publish(out.Events) })
 	}
 	if out.Changed {
 		d.AfterCommit(u.Tracker.Wake)

@@ -27,6 +27,7 @@ type Tracker struct {
 	store store.UpdatePRRepository
 	now   func() time.Time
 	wake  *Notifier
+	sink  func([]Event)
 }
 
 // NewTracker returns a Tracker over the update PR repository; now defaults to time.Now, and
@@ -41,6 +42,20 @@ func NewTracker(s store.UpdatePRRepository, now func() time.Time, wake *Notifier
 // Wake fires the notifier. A caller that applied a PR through a transaction runs it after the
 // commit, when the change is visible to the ticket engine.
 func (t *Tracker) Wake() { t.wake.Wake() }
+
+// Subscribe makes Publish hand the events it receives to sink. It is called once, before the
+// Tracker is used.
+func (t *Tracker) Subscribe(sink func([]Event)) { t.sink = sink }
+
+// Publish hands the events of applied PRs to the subscriber. A caller that applied PRs through a
+// transaction runs it after the commit, when the rows the events describe are final; with no
+// subscriber, or no events, it does nothing. The sink only queues the events: the work they
+// cause never runs in the caller.
+func (t *Tracker) Publish(events []Event) {
+	if t.sink != nil && len(events) > 0 {
+		t.sink(events)
+	}
+}
 
 // ApplyTx upserts a PR of the repository through tx when it is an update PR, then records its
 // dependencies and release notes and applies the superseded rule, all in tx. A PR is an update

@@ -4,5 +4,6 @@
 // missed webhook is repaired. Every PR that is applied also has its dependencies and release
 // notes recorded from the newest Renovate report or the PR body, and the superseded rule
 // applied, in the same transaction. A committed change wakes the ticket engine through a
-// Notifier.
+// Notifier, and the events of the applied PRs are published to it, with Tracker.Publish, once the
+// transaction has committed.
 package updateprs

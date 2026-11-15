@@ -59,3 +59,28 @@ WHERE github_installation_id = ? AND status <> 'removed';
 SELECT id, github_installation_id, account_id, account_login, account_type, status
 FROM installations
 WHERE status <> 'removed';
+
+-- The installations an admin reads: the live one and a removed one kept for history, newest
+-- first, with the count of their repositories that are not removed and their settings.
+-- name: ListInstallationsForAdmin :many
+SELECT i.id, i.account_login, i.account_type, i.status, i.repository_selection, i.permissions,
+       i.rate_limit_remaining, i.rate_limit_limit, i.rate_limit_reset_at,
+       s.default_ticket_project_id,
+       (SELECT COUNT(*) FROM repositories r WHERE r.installation_id = i.id AND r.removed_at IS NULL) AS repository_count
+FROM installations i
+LEFT JOIN installation_settings s ON s.installation_id = i.id
+ORDER BY i.created_at DESC, i.id;
+
+-- name: GetInstallationStatus :one
+SELECT status FROM installations WHERE id = ?;
+
+-- The settings row may not exist yet, so the first write creates it.
+-- name: UpsertInstallationDefaultTicketProject :exec
+INSERT INTO installation_settings (installation_id, default_ticket_project_id, updated_at)
+VALUES (?, ?, ?)
+ON CONFLICT (installation_id) DO UPDATE SET
+  default_ticket_project_id = excluded.default_ticket_project_id,
+  updated_at = excluded.updated_at;
+
+-- name: TicketProjectExists :one
+SELECT COUNT(*) FROM ticket_projects WHERE id = ?;

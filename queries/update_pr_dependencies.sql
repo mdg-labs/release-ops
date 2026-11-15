@@ -12,7 +12,7 @@ ORDER BY jr.started_at DESC, jr.attempt DESC
 LIMIT 1;
 
 -- name: GetUpdatePRForDependencies :one
-SELECT id, number, state, last_seen_at, release_notes, report_sha
+SELECT id, number, state, last_seen_at, release_notes, report_sha, automerge
 FROM update_prs
 WHERE repository_id = ? AND number = ?;
 
@@ -29,6 +29,11 @@ DELETE FROM update_pr_dependencies WHERE update_pr_id = ?;
 INSERT INTO update_pr_dependencies (
   id, update_pr_id, name, manager, datasource, from_version, to_version, update_type, source
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: SetUpdatePRAutomerge :exec
+UPDATE update_prs
+SET automerge = ?, updated_at = ?
+WHERE id = ?;
 
 -- name: SetUpdatePRNotes :exec
 UPDATE update_prs

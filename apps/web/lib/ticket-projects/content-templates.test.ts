@@ -33,7 +33,7 @@ function goConst(name: string): string {
 
 function specContentTemplates(): Record<string, string> {
   const section = specHtml.slice(
-    specHtml.indexOf("<h4><code>content_templates</code> JSON shape"),
+    specHtml.indexOf("<h4>v2 <code>content_templates</code> JSON shape"),
   );
   const block = /<pre><code>([\s\S]*?)<\/code><\/pre>/.exec(section);
   if (!block) {
@@ -47,28 +47,57 @@ function specContentTemplates(): Record<string, string> {
   ) as Record<string, string>;
 }
 
+function specVariables(): { path: string; worksIn: string }[] {
+  const section = specHtml.slice(
+    specHtml.indexOf("<h4>Template variables</h4>"),
+  );
+  const table = section.slice(0, section.indexOf("</table>"));
+  const rows: { path: string; worksIn: string }[] = [];
+  for (const row of table.matchAll(
+    /<tr><td>([\s\S]*?)<\/td><td>[\s\S]*?<\/td><td>([\s\S]*?)<\/td><\/tr>/g,
+  )) {
+    const codes = [...row[1].matchAll(/<code>(\.[A-Za-z.]+)<\/code>/g)].map(
+      (match) => match[1],
+    );
+    // A row may list siblings relative to its first path: .Supersede.NewPullRequest.URL, .Number
+    const parent = /^(\.Supersede\.NewPullRequest)\./.exec(codes[0])?.[1] ?? "";
+    codes.forEach((code, index) => {
+      rows.push({
+        path: index > 0 && parent ? parent + code : code,
+        worksIn: row[2].replace(/<\/?code>/g, ""),
+      });
+    });
+  }
+  return rows;
+}
+
 describe("integrationDefaultTemplates", () => {
   it("mirrors the Go default templates", () => {
     const markdown = integrationDefaultTemplates("kaneo");
-    expect(markdown.title).toBe(goConst("defaultTitleMarkdown"));
+    expect(markdown.title).toBe(goConst("defaultTitle"));
     expect(markdown.description).toBe(goConst("defaultDescriptionMarkdown"));
-    expect(markdown.supersedeComment).toBe(
-      goConst("defaultSupersedeCommentMarkdown"),
-    );
+    expect(markdown.updateComment).toBe(goConst("defaultUpdateComment"));
+    expect(markdown.supersedeComment).toBe(goConst("defaultSupersedeComment"));
 
     const plain = integrationDefaultTemplates("jira");
-    expect(plain.title).toBe(goConst("defaultTitleMarkdown"));
+    expect(plain.title).toBe(goConst("defaultTitle"));
     expect(plain.description).toBe(goConst("defaultDescriptionPlain"));
-    expect(plain.supersedeComment).toBe(
-      goConst("defaultSupersedeCommentPlain"),
-    );
+    expect(plain.updateComment).toBe(goConst("defaultUpdateComment"));
+    expect(plain.supersedeComment).toBe(goConst("defaultSupersedeComment"));
   });
 
   it("matches the defaults documented in specs.html §5.4", () => {
     const spec = specContentTemplates();
+    expect(Object.keys(spec).sort()).toEqual([
+      "description",
+      "supersedeComment",
+      "title",
+      "updateComment",
+    ]);
     const markdown = integrationDefaultTemplates("linear");
     expect(markdown.title).toBe(spec.title);
     expect(markdown.description).toBe(spec.description);
+    expect(markdown.updateComment).toBe(spec.updateComment);
     expect(markdown.supersedeComment).toBe(spec.supersedeComment);
   });
 
@@ -78,36 +107,49 @@ describe("integrationDefaultTemplates", () => {
     expect(integrationDefaultTemplates("linear").description).toContain("**");
     expect(integrationDefaultTemplates(undefined).description).toContain("**");
   });
+
+  it("uses only variables of the update-PR contract", () => {
+    for (const kind of ["kaneo", "jira"] as const) {
+      const defaults = integrationDefaultTemplates(kind);
+      for (const text of Object.values(defaults)) {
+        expect(text).not.toMatch(/\.(Release|Repo|Previous)\b/);
+        expect(text).not.toMatch(/OldTag|NewTag/);
+      }
+    }
+  });
 });
 
 describe("TEMPLATE_VARIABLES", () => {
   it("lists every variable of the specs.html §5.4 table", () => {
-    const table = specHtml.slice(
-      specHtml.indexOf("<h4>MVP template variables</h4>"),
-    );
-    const specPaths = [
-      ...table
-        .slice(0, table.indexOf("</table>"))
-        .matchAll(/<tr><td><code>(\.[A-Za-z.]+)<\/code>/g),
-    ].map((match) => match[1]);
     expect(TEMPLATE_VARIABLES.map((variable) => variable.path)).toEqual(
-      specPaths,
+      specVariables().map((variable) => variable.path),
     );
   });
 
-  it("limits the Supersede variables to the supersede comment", () => {
-    for (const variable of TEMPLATE_VARIABLES) {
-      expect(variable.worksIn).toEqual(
-        variable.path.startsWith(".Supersede.")
+  it("says where each variable works as the specs.html §5.4 table does", () => {
+    const labels: Record<string, string> = {
+      title: "title",
+      description: "description",
+      updateComment: "updateComment",
+      supersedeComment: "supersedeComment",
+    };
+    const fromSpec = (worksIn: string): string[] =>
+      worksIn === "all keys"
+        ? ["title", "description", "updateComment", "supersedeComment"]
+        : worksIn === "supersedeComment only"
           ? ["supersedeComment"]
-          : ["title", "description", "supersedeComment"],
+          : worksIn.split(", ").map((key) => labels[key]);
+    const spec = specVariables();
+    for (const variable of TEMPLATE_VARIABLES) {
+      const row = spec.find((candidate) => candidate.path === variable.path);
+      expect(row, variable.path).toBeDefined();
+      expect([...variable.worksIn], variable.path).toEqual(
+        fromSpec((row as { worksIn: string }).worksIn),
       );
     }
   });
 
   it("builds the insertable syntax with braces", () => {
-    expect(templateVariableSyntax(".Repo.SourceKind")).toBe(
-      "{{ .Repo.SourceKind }}",
-    );
+    expect(templateVariableSyntax(".Repository")).toBe("{{ .Repository }}");
   });
 });

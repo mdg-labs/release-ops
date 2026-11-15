@@ -81,7 +81,7 @@ func (q *Queries) GetReplacementOfClosedPR(ctx context.Context, arg GetReplaceme
 }
 
 const getUpdatePRForDependencies = `-- name: GetUpdatePRForDependencies :one
-SELECT id, number, state, last_seen_at, release_notes, report_sha
+SELECT id, number, state, last_seen_at, release_notes, report_sha, automerge
 FROM update_prs
 WHERE repository_id = ? AND number = ?
 `
@@ -98,6 +98,7 @@ type GetUpdatePRForDependenciesRow struct {
 	LastSeenAt   string         `json:"last_seen_at"`
 	ReleaseNotes sql.NullString `json:"release_notes"`
 	ReportSha    sql.NullString `json:"report_sha"`
+	Automerge    sql.NullInt64  `json:"automerge"`
 }
 
 func (q *Queries) GetUpdatePRForDependencies(ctx context.Context, arg GetUpdatePRForDependenciesParams) (GetUpdatePRForDependenciesRow, error) {
@@ -110,6 +111,7 @@ func (q *Queries) GetUpdatePRForDependencies(ctx context.Context, arg GetUpdateP
 		&i.LastSeenAt,
 		&i.ReleaseNotes,
 		&i.ReportSha,
+		&i.Automerge,
 	)
 	return i, err
 }
@@ -243,6 +245,23 @@ func (q *Queries) ListUpdatePRDependencies(ctx context.Context, updatePrID strin
 		return nil, err
 	}
 	return items, nil
+}
+
+const setUpdatePRAutomerge = `-- name: SetUpdatePRAutomerge :exec
+UPDATE update_prs
+SET automerge = ?, updated_at = ?
+WHERE id = ?
+`
+
+type SetUpdatePRAutomergeParams struct {
+	Automerge sql.NullInt64 `json:"automerge"`
+	UpdatedAt string        `json:"updated_at"`
+	ID        string        `json:"id"`
+}
+
+func (q *Queries) SetUpdatePRAutomerge(ctx context.Context, arg SetUpdatePRAutomergeParams) error {
+	_, err := q.db.ExecContext(ctx, setUpdatePRAutomerge, arg.Automerge, arg.UpdatedAt, arg.ID)
+	return err
 }
 
 const setUpdatePRNotes = `-- name: SetUpdatePRNotes :exec

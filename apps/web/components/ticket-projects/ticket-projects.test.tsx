@@ -674,7 +674,7 @@ describe("TicketProjectsView", () => {
       within(dialog)
         .getByLabelText("Description template")
         .getAttribute("placeholder"),
-    ).toMatch(/^Source: /);
+    ).toMatch(/^Repository: /);
   });
 
   it("saves edited content templates", async () => {

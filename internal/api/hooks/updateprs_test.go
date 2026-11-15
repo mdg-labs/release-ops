@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -50,7 +51,26 @@ func (f failingTracker) ApplyTx(ctx context.Context, tx *sql.Tx, repositoryID st
 	return out, err
 }
 
+// eventLog records the events the tracker publishes.
+type eventLog struct {
+	mu     sync.Mutex
+	events []updateprs.Event
+}
+
+func (l *eventLog) add(events []updateprs.Event) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.events = append(l.events, events...)
+}
+
+func (l *eventLog) all() []updateprs.Event {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]updateprs.Event(nil), l.events...)
+}
+
 type prRig struct {
+	events    *eventLog
 	srv       *httptest.Server
 	db        *store.DB
 	wake      *updateprs.Notifier
@@ -81,7 +101,7 @@ func newPRRig(t *testing.T, botID int64) *prRig {
 			t.Fatal(err)
 		}
 	}
-	r := &prRig{db: db, wake: updateprs.NewNotifier(), logs: &syncBuffer{}, fail: &atomic.Bool{}, failApply: &atomic.Bool{}, bot: &flakyBot{BotIdentities: st.GitHubApp()}}
+	r := &prRig{events: &eventLog{}, db: db, wake: updateprs.NewNotifier(), logs: &syncBuffer{}, fail: &atomic.Bool{}, failApply: &atomic.Bool{}, bot: &flakyBot{BotIdentities: st.GitHubApp()}}
 	logger := slog.New(slog.NewTextHandler(r.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	routes := hooks.NewRoutes()
 	hooks.RegisterInstallationHandlers(routes, st.InstallationSync(), nil)
@@ -89,6 +109,7 @@ func newPRRig(t *testing.T, botID int64) *prRig {
 		Queue: failingEnqueuer{real: store.NewJobQueue(db, store.JobQueueOptions{}), fail: r.fail}, Repositories: st, Bot: r.bot, Logger: logger,
 	})
 	tracker := updateprs.NewTracker(st.UpdatePRs(), func() time.Time { return receivedAt }, r.wake)
+	tracker.Subscribe(r.events.add)
 	hooks.RegisterUpdatePRHandler(routes, hooks.UpdatePRs{Tracker: failingTracker{UpdatePRTracker: tracker, failApply: r.failApply}, Repositories: st, Bot: r.bot, Logger: logger})
 	r.srv = httptest.NewServer(&hooks.Receiver{
 		Secrets: secrets{}, Deliveries: st.WebhookDeliveries(), Routes: routes, Now: func() time.Time { return receivedAt },
@@ -416,5 +437,32 @@ func TestUpdatePRLogsCarryNoPRText(t *testing.T) {
 	}
 	if !strings.Contains(logs, "update PR stored") {
 		t.Errorf("the log does not record the stored PR:\n%s", logs)
+	}
+}
+
+// The events of an applied PR reach the ticket engine only once the delivery's transaction has
+// committed: a delivery that fails and rolls back publishes nothing, a redelivery that succeeds
+// publishes its events once, and a GUID seen again publishes nothing.
+func TestPullRequestEventsArePublishedAfterTheDeliveryCommits(t *testing.T) {
+	r := newPRRig(t, botUserID)
+
+	r.failApply.Store(true)
+	if got := r.deliver(t, "g-opened", "update_pr_opened.json"); got == http.StatusAccepted {
+		t.Fatal("a delivery whose apply failed was accepted")
+	}
+	if n := len(r.events.all()); n != 0 {
+		t.Fatalf("%d events published by a delivery that rolled back", n)
+	}
+
+	r.failApply.Store(false)
+	r.must(t, "g-opened", "update_pr_opened.json")
+	events := r.events.all()
+	if len(events) != 1 || events[0].Kind != updateprs.EventDependenciesRecorded || events[0].Number != 21 || events[0].UpdatePRID == "" {
+		t.Fatalf("events = %+v, want one dependencies_recorded event of PR 21", events)
+	}
+
+	r.must(t, "g-opened", "update_pr_opened.json")
+	if n := len(r.events.all()); n != 1 {
+		t.Fatalf("%d events after a duplicate delivery, want still 1", n)
 	}
 }

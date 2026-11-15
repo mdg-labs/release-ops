@@ -6,9 +6,10 @@ import (
 	"strings"
 )
 
-const defaultContentTemplatesJSON = `{"title":"","description":"","supersedeComment":""}`
+const defaultContentTemplatesJSON = `{"title":"","description":"","updateComment":"","supersedeComment":""}`
 
-// ParseContentTemplates unmarshals ticket_projects.content_templates JSON.
+// ParseContentTemplates unmarshals ticket_projects.content_templates JSON. A key the stored
+// value lacks is empty, which selects the integration-kind default.
 func ParseContentTemplates(raw string) (ContentTemplates, error) {
 	if strings.TrimSpace(raw) == "" {
 		raw = defaultContentTemplatesJSON
@@ -16,6 +17,7 @@ func ParseContentTemplates(raw string) (ContentTemplates, error) {
 	var parsed struct {
 		Title            string `json:"title"`
 		Description      string `json:"description"`
+		UpdateComment    string `json:"updateComment"`
 		SupersedeComment string `json:"supersedeComment"`
 	}
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
@@ -24,6 +26,7 @@ func ParseContentTemplates(raw string) (ContentTemplates, error) {
 	return ContentTemplates{
 		Title:            parsed.Title,
 		Description:      parsed.Description,
+		UpdateComment:    parsed.UpdateComment,
 		SupersedeComment: parsed.SupersedeComment,
 	}, nil
 }

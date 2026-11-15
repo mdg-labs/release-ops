@@ -23,6 +23,7 @@ type reportBranch struct {
 	BranchName lenient   `json:"branchName"`
 	PrNo       lenient   `json:"prNo"`
 	SHA        lenient   `json:"sha"`
+	Automerge  lenient   `json:"automerge"`
 	Upgrades   []lenient `json:"upgrades"`
 }
 
@@ -67,7 +68,9 @@ func (l *lenient) UnmarshalJSON(b []byte) error {
 // reportEntry is what the report says about one PR.
 type reportEntry struct {
 	// SHA is the branch's head commit as of the run; empty when the report has none.
-	SHA          string
+	SHA string
+	// Automerge is the branch's automerge flag; nil when the report has none.
+	Automerge    *bool
 	Dependencies []store.UpdatePRDependency
 }
 
@@ -115,6 +118,13 @@ func fromReport(report, fullName string, number int64, headRef string) (reportEn
 
 func branchEntry(b reportBranch) (reportEntry, bool) {
 	e := reportEntry{SHA: capBytes(b.SHA.text, maxFieldBytes)}
+	switch string(bytes.TrimSpace(b.Automerge.raw)) {
+	case "true":
+		e.Automerge = new(bool)
+		*e.Automerge = true
+	case "false":
+		e.Automerge = new(bool)
+	}
 	for _, raw := range b.Upgrades {
 		var u reportUpgrade
 		if json.Unmarshal(raw.raw, &u) != nil {

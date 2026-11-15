@@ -9,8 +9,10 @@ INSERT INTO ticket_projects (
   content_templates,
   on_open_ticket_policy,
   created_at,
-  updated_at
+  updated_at,
+  filter
 ) VALUES (
+  ?,
   ?,
   ?,
   ?,
@@ -137,6 +139,7 @@ SET
   status_mapping = ?,
   content_templates = ?,
   on_open_ticket_policy = ?,
+  filter = ?,
   updated_at = ?
 WHERE id = ?
 RETURNING

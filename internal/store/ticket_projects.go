@@ -16,8 +16,10 @@ type TicketProject struct {
 	StatusMapping      string
 	ContentTemplates   string
 	OnOpenTicketPolicy string
-	CreatedAt          string
-	UpdatedAt          string
+	// Filter is the JSON of which update PRs get a ticket (specs.html section 5.2).
+	Filter    string
+	CreatedAt string
+	UpdatedAt string
 }
 
 // CreateTicketProjectInput holds fields for a new ticket project.
@@ -29,6 +31,9 @@ type CreateTicketProjectInput struct {
 	StatusMapping      string
 	ContentTemplates   string
 	OnOpenTicketPolicy string
+	// Filter is stored as given; empty stores the default, which lets every non-automerged PR
+	// through.
+	Filter string
 }
 
 // UpdateTicketProjectInput holds updatable ticket project fields.
@@ -38,6 +43,8 @@ type UpdateTicketProjectInput struct {
 	StatusMapping      string
 	ContentTemplates   string
 	OnOpenTicketPolicy string
+	// Filter is stored as given; empty stores the default.
+	Filter string
 }
 
 // TicketProjectRepository manages ticket_projects rows.
@@ -77,6 +84,7 @@ func (r ticketProjectRepo) Create(ctx context.Context, input CreateTicketProject
 		OnOpenTicketPolicy: policy,
 		CreatedAt:          now,
 		UpdatedAt:          now,
+		Filter:             orDefaultFilter(input.Filter),
 	})
 	if err != nil {
 		return nil, err
@@ -120,6 +128,7 @@ func (r ticketProjectRepo) Update(ctx context.Context, id string, input UpdateTi
 		StatusMapping:      input.StatusMapping,
 		ContentTemplates:   contentTemplates,
 		OnOpenTicketPolicy: input.OnOpenTicketPolicy,
+		Filter:             orDefaultFilter(input.Filter),
 		UpdatedAt:          nowUTC(),
 		ID:                 id,
 	})
@@ -134,7 +143,17 @@ func (r ticketProjectRepo) Delete(ctx context.Context, id string) error {
 	return mapForeignKeyError(r.store.writes.DeleteTicketProject(ctx, id))
 }
 
-const defaultContentTemplatesJSON = `{"title":"","description":"","supersedeComment":""}`
+const defaultContentTemplatesJSON = `{"title":"","description":"","updateComment":"","supersedeComment":""}`
+
+// defaultFilterJSON lets every non-automerged update PR through (specs.html section 4.3).
+const defaultFilterJSON = `{"updateTypes":[],"labels":[],"skipAutomerged":true}`
+
+func orDefaultFilter(filter string) string {
+	if filter == "" {
+		return defaultFilterJSON
+	}
+	return filter
+}
 
 func ticketProjectFromRow(row db.TicketProject) *TicketProject {
 	return &TicketProject{
@@ -146,6 +165,7 @@ func ticketProjectFromRow(row db.TicketProject) *TicketProject {
 		StatusMapping:      row.StatusMapping,
 		ContentTemplates:   row.ContentTemplates,
 		OnOpenTicketPolicy: row.OnOpenTicketPolicy,
+		Filter:             row.Filter,
 		CreatedAt:          row.CreatedAt,
 		UpdatedAt:          row.UpdatedAt,
 	}

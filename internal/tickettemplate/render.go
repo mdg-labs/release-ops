@@ -21,7 +21,9 @@ func NewRenderer(integrationKind string, templates ContentTemplates) *Renderer {
 	}
 }
 
-// Validate checks syntax for each non-empty custom template key (specs §5.4).
+// Validate checks each non-empty custom template key (specs §5.4): its syntax, and that it
+// uses only variables of the update-PR context, so a template written for releases is
+// refused with the variable to replace.
 func (r *Renderer) Validate() error {
 	checks := []struct {
 		name string
@@ -29,6 +31,7 @@ func (r *Renderer) Validate() error {
 	}{
 		{"title", r.templates.Title},
 		{"description", r.templates.Description},
+		{"updateComment", r.templates.UpdateComment},
 		{"supersedeComment", r.templates.SupersedeComment},
 	}
 	for _, check := range checks {
@@ -44,45 +47,33 @@ func (r *Renderer) Validate() error {
 
 // RenderTitle renders the ticket title template.
 func (r *Renderer) RenderTitle(ctx Context) (string, error) {
-	return r.render(r.resolveTitleTemplate(), ctx)
+	return r.render(orDefault(r.templates.Title, defaultTitle), ctx)
 }
 
 // RenderDescription renders the ticket description template.
 func (r *Renderer) RenderDescription(ctx Context) (string, error) {
-	return r.render(r.resolveDescriptionTemplate(), ctx)
+	return r.render(orDefault(r.templates.Description, defaultDescriptionTemplate(r.integrationKind)), ctx)
+}
+
+// RenderUpdateComment renders the note added to a ticket whose PR got a new version.
+func (r *Renderer) RenderUpdateComment(ctx Context) (string, error) {
+	return r.render(orDefault(r.templates.UpdateComment, defaultUpdateComment), ctx)
 }
 
 // RenderSupersedeComment renders the supersede comment template.
 func (r *Renderer) RenderSupersedeComment(ctx Context) (string, error) {
-	return r.render(r.resolveSupersedeCommentTemplate(), ctx)
+	return r.render(orDefault(r.templates.SupersedeComment, defaultSupersedeComment), ctx)
 }
 
-func (r *Renderer) resolveTitleTemplate() string {
-	if strings.TrimSpace(r.templates.Title) == "" {
-		return defaultTitleTemplate()
+func orDefault(custom, fallback string) string {
+	if strings.TrimSpace(custom) == "" {
+		return fallback
 	}
-	return r.templates.Title
-}
-
-func (r *Renderer) resolveDescriptionTemplate() string {
-	if strings.TrimSpace(r.templates.Description) == "" {
-		return defaultDescriptionTemplate(r.integrationKind)
-	}
-	return r.templates.Description
-}
-
-func (r *Renderer) resolveSupersedeCommentTemplate() string {
-	if strings.TrimSpace(r.templates.SupersedeComment) == "" {
-		return defaultSupersedeCommentTemplate(r.integrationKind)
-	}
-	return r.templates.SupersedeComment
+	return custom
 }
 
 func (r *Renderer) render(tmplStr string, ctx Context) (string, error) {
-	if err := validateTemplate(tmplStr); err != nil {
-		return "", err
-	}
-	tmpl, err := template.New("ticket").Funcs(templateFuncs()).Option("missingkey=zero").Parse(tmplStr)
+	tmpl, err := parseTemplate(tmplStr)
 	if err != nil {
 		return "", err
 	}
@@ -93,7 +84,18 @@ func (r *Renderer) render(tmplStr string, ctx Context) (string, error) {
 	return strings.TrimRight(buf.String(), "\n"), nil
 }
 
+func parseTemplate(tmplStr string) (*template.Template, error) {
+	tmpl, err := template.New("ticket").Funcs(templateFuncs()).Option("missingkey=zero").Parse(tmplStr)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkVariables(tmpl); err != nil {
+		return nil, err
+	}
+	return tmpl, nil
+}
+
 func validateTemplate(tmplStr string) error {
-	_, err := template.New("validate").Funcs(templateFuncs()).Option("missingkey=zero").Parse(tmplStr)
+	_, err := parseTemplate(tmplStr)
 	return err
 }

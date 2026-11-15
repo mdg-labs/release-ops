@@ -417,3 +417,53 @@ func TestTheReconcileAfterAJobResultRecordsTheDependenciesFromTheStoredReport(t 
 		t.Fatal("an unchanged reconcile woke the engine")
 	}
 }
+
+func (r *rig) automerge(t *testing.T, number int64) string {
+	t.Helper()
+	var v *int
+	if err := r.db.Reader.QueryRow(`SELECT automerge FROM update_prs WHERE number = ?`, number).Scan(&v); err != nil {
+		t.Fatal(err)
+	}
+	if v == nil {
+		return "unknown"
+	}
+	return fmt.Sprint(*v)
+}
+
+// Whether a PR is automerged is GitHub's auto_merge field of the payload, and the report's flag
+// for the PR's branch where the report has it; neither says: unknown.
+func TestAutomergeComesFromThePayloadAndTheReport(t *testing.T) {
+	r := newRig(t, true)
+	body := tableBody("| [vue](https://vue.dev) | major | `2` -> `3` |")
+
+	r.apply(t, prOf(21, botID, body), botID)
+	if got := r.automerge(t, 21); got != "unknown" {
+		t.Fatalf("a payload without auto_merge: automerge = %s, want unknown", got)
+	}
+	r.apply(t, prOf(22, botID, body, func(p *github.PullRequest) { p.AutoMerge = github.AutoMerge{Present: true} }), botID)
+	if got := r.automerge(t, 22); got != "0" {
+		t.Fatalf("auto_merge null: automerge = %s, want 0", got)
+	}
+	updated := at(5)
+	enabled := func(p *github.PullRequest) {
+		p.AutoMerge = github.AutoMerge{Present: true, Enabled: true}
+		p.UpdatedAt = &updated
+	}
+	r.apply(t, prOf(22, botID, body, enabled), botID)
+	if got := r.automerge(t, 22); got != "1" {
+		t.Fatalf("auto_merge set: automerge = %s, want 1", got)
+	}
+
+	// Renovate's own automerge of the branch, from the report, refines the payload.
+	r.report(t, `{"repositories":{"acme/repo-1":{"branches":[
+		{"branchName":"renovate/a","prNo":23,"sha":"sha","automerge":true,"upgrades":[{"depName":"a","currentVersion":"1","newVersion":"2","updateType":"minor"}]},
+		{"branchName":"renovate/b","prNo":24,"sha":"sha","automerge":false,"upgrades":[{"depName":"b","currentVersion":"1","newVersion":"2","updateType":"minor"}]}]}}}`)
+	r.apply(t, prOf(23, botID, renovateBody, func(p *github.PullRequest) { p.AutoMerge = github.AutoMerge{Present: true} }), botID)
+	if got := r.automerge(t, 23); got != "1" {
+		t.Fatalf("the report's automerge over an empty auto_merge: automerge = %s, want 1", got)
+	}
+	r.apply(t, prOf(24, botID, renovateBody, func(p *github.PullRequest) { p.AutoMerge = github.AutoMerge{Present: true, Enabled: true} }), botID)
+	if got := r.automerge(t, 24); got != "0" {
+		t.Fatalf("the report's automerge over an enabled auto_merge: automerge = %s, want 0", got)
+	}
+}

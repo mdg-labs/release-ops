@@ -23,7 +23,7 @@ const (
 	validCreateConfig      = `{"issueType":"Task","priority":"Medium"}`
 	validStatusMapping     = `{"open":["To Do","In Progress"],"done":["Done"],"cancelled":["Cancelled"],"superseded":"Cancelled"}`
 	validContentTemplates  = `{"title":"","description":"","supersedeComment":""}`
-	customContentTemplates = `{"title":"Release: {{ .Release.Tag }}","description":"Notes","supersedeComment":"Superseded"}`
+	customContentTemplates = `{"title":"Bump {{ .PullRequest.Title }}","description":"Notes","updateComment":"Updated","supersedeComment":"Superseded"}`
 )
 
 type mockTicketProjectRepo struct {
@@ -36,6 +36,13 @@ type mockTicketProjectRepo struct {
 	getErr      error
 	updateErr   error
 	deleteErr   error
+}
+
+func defaultFilter(filter string) string {
+	if filter == "" {
+		return `{"updateTypes":[],"labels":[],"skipAutomerged":true}`
+	}
+	return filter
 }
 
 func (m *mockTicketProjectRepo) Create(_ context.Context, input store.CreateTicketProjectInput) (*store.TicketProject, error) {
@@ -68,6 +75,7 @@ func (m *mockTicketProjectRepo) Create(_ context.Context, input store.CreateTick
 		StatusMapping:      input.StatusMapping,
 		ContentTemplates:   input.ContentTemplates,
 		OnOpenTicketPolicy: policy,
+		Filter:             defaultFilter(input.Filter),
 		CreatedAt:          "2026-08-07T10:00:00.000Z",
 		UpdatedAt:          "2026-08-07T10:00:00.000Z",
 	}
@@ -128,6 +136,7 @@ func (m *mockTicketProjectRepo) Update(_ context.Context, id string, input store
 	item.StatusMapping = input.StatusMapping
 	item.ContentTemplates = input.ContentTemplates
 	item.OnOpenTicketPolicy = input.OnOpenTicketPolicy
+	item.Filter = defaultFilter(input.Filter)
 	item.UpdatedAt = "2026-08-07T12:00:00.000Z"
 	return item, nil
 }
@@ -169,7 +178,7 @@ func ticketProjectResponseShape(t *testing.T, body []byte) map[string]any {
 	}
 	for _, key := range []string{
 		"id", "integrationId", "externalProjectId", "name",
-		"createConfig", "statusMapping", "contentTemplates", "onOpenTicketPolicy", "createdAt", "updatedAt",
+		"createConfig", "statusMapping", "contentTemplates", "filter", "onOpenTicketPolicy", "createdAt", "updatedAt",
 	} {
 		if _, ok := resp[key]; !ok {
 			t.Fatalf("response missing %q: %s", key, body)
@@ -854,7 +863,7 @@ func TestPatchTicketProjectMergesPartialContentTemplates(t *testing.T) {
 		t.Fatal("expected Update to be called")
 	}
 
-	expected := `{"title":"New title","description":"Notes","supersedeComment":"Superseded"}`
+	expected := `{"title":"New title","description":"Notes","updateComment":"Updated","supersedeComment":"Superseded"}`
 	if repo.updateInput.ContentTemplates != expected {
 		t.Fatalf("contentTemplates = %q, want %q", repo.updateInput.ContentTemplates, expected)
 	}
@@ -911,7 +920,177 @@ func TestListTicketProjectsIncludesContentTemplates(t *testing.T) {
 	if !ok {
 		t.Fatalf("contentTemplates = %T, want map", items[0]["contentTemplates"])
 	}
-	if ct["title"] != "Release: {{ .Release.Tag }}" {
+	if ct["title"] != "Bump {{ .PullRequest.Title }}" || ct["updateComment"] != "Updated" {
 		t.Fatalf("title = %v, want template string", ct["title"])
+	}
+}
+
+func postTicketProject(t *testing.T, repo *mockTicketProjectRepo, extra string) *httptest.ResponseRecorder {
+	t.Helper()
+	router, sm := newTicketProjectsTestRouter(t, repo)
+	cookie := seedSession(t, sm)
+	body := fmt.Sprintf(`{"integrationId":"int-1","externalProjectId":"DEV","name":"Jira DEV","createConfig":%s,"statusMapping":%s%s}`,
+		validCreateConfig, validStatusMapping, extra)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/ticket-projects", strings.NewReader(body))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func patchTicketProject(t *testing.T, repo *mockTicketProjectRepo, extra string) *httptest.ResponseRecorder {
+	t.Helper()
+	router, sm := newTicketProjectsTestRouter(t, repo)
+	cookie := seedSession(t, sm)
+	body := fmt.Sprintf(`{"name":"Renamed","createConfig":%s,"statusMapping":%s,"onOpenTicketPolicy":"supersede"%s}`, validCreateConfig, validStatusMapping, extra)
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/ticket-projects/tp-1", strings.NewReader(body))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func repoWithProject(templates, filter string) *mockTicketProjectRepo {
+	return &mockTicketProjectRepo{items: map[string]*store.TicketProject{"tp-1": {
+		ID: "tp-1", IntegrationID: "int-1", ExternalProjectID: "DEV", Name: "Old", CreateConfig: validCreateConfig, StatusMapping: validStatusMapping,
+		ContentTemplates: templates, OnOpenTicketPolicy: "supersede", Filter: filter,
+	}}}
+}
+
+func TestCreateTicketProjectStoresAndReturnsTheUpdateCommentAndTheFilter(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockTicketProjectRepo{}
+	rec := postTicketProject(t, repo, `,"contentTemplates":`+customContentTemplates+`,"filter":{"updateTypes":["major","minor"],"labels":["deps"],"skipAutomerged":false}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d; body = %s", rec.Code, rec.Body.String())
+	}
+	if repo.createInput.ContentTemplates != customContentTemplates {
+		t.Fatalf("contentTemplates = %q", repo.createInput.ContentTemplates)
+	}
+	if want := `{"updateTypes":["major","minor"],"labels":["deps"],"skipAutomerged":false}`; repo.createInput.Filter != want {
+		t.Fatalf("filter = %q, want %q", repo.createInput.Filter, want)
+	}
+	resp := ticketProjectResponseShape(t, rec.Body.Bytes())
+	if ct := resp["contentTemplates"].(map[string]any); ct["updateComment"] != "Updated" {
+		t.Fatalf("contentTemplates = %v, want updateComment returned", ct)
+	}
+	filter := resp["filter"].(map[string]any)
+	if filter["skipAutomerged"] != false || len(filter["updateTypes"].([]any)) != 2 {
+		t.Fatalf("filter = %v", filter)
+	}
+}
+
+func TestCreateTicketProjectWithoutAFilterOrAnUpdateCommentUsesTheDefaults(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockTicketProjectRepo{}
+	rec := postTicketProject(t, repo, `,"contentTemplates":`+validContentTemplates)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d; body = %s", rec.Code, rec.Body.String())
+	}
+	if repo.createInput.Filter != "" {
+		t.Fatalf("filter = %q, want none passed so the store applies the default", repo.createInput.Filter)
+	}
+	resp := ticketProjectResponseShape(t, rec.Body.Bytes())
+	filter := resp["filter"].(map[string]any)
+	if filter["skipAutomerged"] != true || len(filter["updateTypes"].([]any)) != 0 || len(filter["labels"].([]any)) != 0 {
+		t.Fatalf("filter = %v, want the default that skips automerged PRs only", filter)
+	}
+	if ct := resp["contentTemplates"].(map[string]any); ct["updateComment"] != "" {
+		t.Fatalf("contentTemplates = %v, want an empty updateComment", ct)
+	}
+}
+
+func TestCreateTicketProjectRefusesAFilterOutsideSection52(t *testing.T) {
+	t.Parallel()
+
+	for name, filter := range map[string]string{
+		"an update type outside the five": `{"updateTypes":["other"]}`,
+		"a misspelled update type":        `{"updateTypes":["majr"]}`,
+		"labels that are not strings":     `{"labels":[1]}`,
+		"a non-boolean skipAutomerged":    `{"skipAutomerged":"no"}`,
+		"an unknown key":                  `{"authors":["a"]}`,
+		"a filter that is no object":      `[]`,
+	} {
+		repo := &mockTicketProjectRepo{}
+		rec := postTicketProject(t, repo, `,"contentTemplates":`+validContentTemplates+`,"filter":`+filter)
+		if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "VALIDATION_ERROR") {
+			t.Errorf("%s: status = %d, want 422 VALIDATION_ERROR; body = %s", name, rec.Code, rec.Body.String())
+		}
+		if repo.createInput != nil {
+			t.Errorf("%s: the project was created", name)
+		}
+	}
+}
+
+func TestTemplatesOfTheReleaseContractAreRefusedOnSave(t *testing.T) {
+	t.Parallel()
+
+	v1 := `{"title":"Release {{ .Release.Tag }}","description":"","updateComment":"","supersedeComment":""}`
+	broken := `{"title":"{{ .PullRequest.Title ","description":"","updateComment":"","supersedeComment":""}`
+	badUpdateComment := `{"title":"","description":"","updateComment":"{{ .Previous.Tag }}","supersedeComment":""}`
+	for name, templates := range map[string]string{"a release variable": v1, "a syntax error": broken, "a release variable in updateComment": badUpdateComment} {
+		repo := &mockTicketProjectRepo{}
+		rec := postTicketProject(t, repo, `,"contentTemplates":`+templates)
+		if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "VALIDATION_ERROR") {
+			t.Errorf("POST with %s: status = %d, want 422 VALIDATION_ERROR; body = %s", name, rec.Code, rec.Body.String())
+		}
+		if repo.createInput != nil {
+			t.Errorf("POST with %s created the project", name)
+		}
+
+		existing := repoWithProject(validContentTemplates, "")
+		rec = patchTicketProject(t, existing, `,"contentTemplates":`+templates)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("PATCH with %s: status = %d, want 422; body = %s", name, rec.Code, rec.Body.String())
+		}
+		if existing.updateInput != nil {
+			t.Errorf("PATCH with %s updated the project", name)
+		}
+	}
+	rec := postTicketProject(t, &mockTicketProjectRepo{}, `,"contentTemplates":`+v1)
+	if !strings.Contains(rec.Body.String(), ".Release.Tag") || !strings.Contains(rec.Body.String(), ".Dependencies") {
+		t.Errorf("the message should name the variable and its replacement: %s", rec.Body.String())
+	}
+}
+
+func TestPatchTicketProjectSetsTheFilterAndKeepsItWhenOmitted(t *testing.T) {
+	t.Parallel()
+
+	stored := `{"updateTypes":["patch"],"labels":[],"skipAutomerged":true}`
+	repo := repoWithProject(validContentTemplates, stored)
+	if rec := patchTicketProject(t, repo, ``); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; body = %s", rec.Code, rec.Body.String())
+	}
+	if repo.updateInput.Filter != stored {
+		t.Fatalf("filter = %q, want the stored one kept", repo.updateInput.Filter)
+	}
+
+	rec := patchTicketProject(t, repo, `,"filter":{"labels":["security"],"skipAutomerged":false}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; body = %s", rec.Code, rec.Body.String())
+	}
+	if want := `{"updateTypes":[],"labels":["security"],"skipAutomerged":false}`; repo.updateInput.Filter != want {
+		t.Fatalf("filter = %q, want %q", repo.updateInput.Filter, want)
+	}
+
+	repo = repoWithProject(validContentTemplates, stored)
+	if rec := patchTicketProject(t, repo, `,"filter":{"updateTypes":["other"]}`); rec.Code != http.StatusUnprocessableEntity || repo.updateInput != nil {
+		t.Fatalf("status = %d, updated = %v, want 422 and nothing stored", rec.Code, repo.updateInput != nil)
+	}
+}
+
+func TestPatchTicketProjectAcceptsTheUpdateComment(t *testing.T) {
+	t.Parallel()
+
+	repo := repoWithProject(`{"title":"","description":"","supersedeComment":"S"}`, "")
+	rec := patchTicketProject(t, repo, `,"contentTemplates":{"updateComment":"{{ range .Dependencies }}{{ .Name }}{{ end }}"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; body = %s", rec.Code, rec.Body.String())
+	}
+	want := `{"title":"","description":"","updateComment":"{{ range .Dependencies }}{{ .Name }}{{ end }}","supersedeComment":"S"}`
+	if repo.updateInput.ContentTemplates != want {
+		t.Fatalf("contentTemplates = %q, want %q", repo.updateInput.ContentTemplates, want)
 	}
 }

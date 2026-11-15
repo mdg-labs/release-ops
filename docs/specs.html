@@ -136,7 +136,6 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
       <li><a href="#ci">CI/CD (GitHub Actions)</a></li>
       <li><a href="#mvp">MVP Acceptance Criteria</a></li>
       <li><a href="#future">Post-MVP</a></li>
-      <li><a href="#v1-templates">Appendix A. v1 template contract (transitional)</a></li>
     </ol>
   </nav>
 
@@ -998,16 +997,14 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
     <code>ticket_projects.content_templates</code>. Templates use Go <code>text/template</code> syntax with dot paths
     (e.g. <code>{{ .PullRequest.Title }}</code>). Renderer uses <code>missingkey=zero</code>.
   </p>
-  <p>The release-based template contract that the code still implements until #213 is kept in <a href="#v1-templates">Appendix A</a>; it is not the contract of this section.</p>
-
   <p><strong>Content is data, never template source.</strong> The PR's title, body, labels, dependency names, versions and release notes come from GitHub and Renovate, which repository owners and package authors control. They reach the renderer only as <strong>plain-string values of the context</strong> (no methods, no nested templates): a value is never parsed as a template, so <code>{{ ... }}</code> inside a PR title or a release note is output literally. Only the admin-authored template string is parsed. The web UI shows all of it through React escaping, and link URLs are built server-side.</p>
 
   <h4>v2 <code>content_templates</code> JSON shape</h4>
   <pre><code>{
   "title": "{{ .PullRequest.Title }} ({{ .Repository }})",
-  "description": "**Repository:** {{ .Repository }}\n**Pull request:** [#{{ .PullRequest.Number }} {{ .PullRequest.Title }}]({{ .PullRequest.URL }})\n\n**Dependencies:**\n{{ range .Dependencies }}- {{ .Name }}: {{ .From }} → {{ .To }} ({{ .UpdateType }})\n{{ end }}\n**Release notes:**\n{{ .ReleaseNotes }}",
-  "updateComment": "Pull request updated:\n{{ range .Dependencies }}- {{ .Name }}: {{ .From }} → {{ .To }} ({{ .UpdateType }})\n{{ end }}{{ .PullRequest.URL }}",
-  "supersedeComment": "Superseded by {{ .Supersede.NewPullRequest.URL }}\nNew ticket: {{ .Supersede.NewTicketURL }}"
+  "description": "**Repository:** {{ .Repository }}\n**Pull request:** [#{{ .PullRequest.Number }} {{ .PullRequest.Title }}]({{ .PullRequest.URL }})\n\n**Dependencies:**\n{{ range .Dependencies }}- {{ .Name }}: {{ .From }} → {{ .To }}{{ if .UpdateType }} ({{ .UpdateType }}){{ end }}\n{{ end }}\n**Release notes:**\n{{ .ReleaseNotes }}",
+  "updateComment": "Pull request updated:\n{{ range .Dependencies }}- {{ .Name }}: {{ .From }} → {{ .To }}{{ if .UpdateType }} ({{ .UpdateType }}){{ end }}\n{{ end }}{{ .PullRequest.URL }}",
+  "supersedeComment": "Superseded by {{ .Supersede.NewPullRequest.URL }}\n{{ if .Supersede.NewTicketURL }}New ticket: {{ .Supersede.NewTicketURL }}{{ end }}"
 }</code></pre>
   <table>
     <tr><th>Key</th><th>Used on</th><th>Description</th></tr>
@@ -1942,52 +1939,6 @@ jobs:
     <li>A generic error webhook for operators without Prometheus (§5.5).</li>
     <li>An "updates pending approval" view built on Renovate's Dependency Dashboard approvals.</li>
   </ul>
-
-  <h2 id="v1-templates">Appendix A. v1 template contract (transitional)</h2>
-  <p>
-    <strong>This appendix is not the v2 contract.</strong> It records the ticket template contract that the code still
-    implements today (<code>internal/tickettemplate/</code> and <code>apps/web/lib/ticket-projects/content-templates.ts</code>):
-    release-based templates with <code>.Repo</code>, <code>.Release</code>, <code>.Previous</code> and <code>.Supersede</code> variables.
-    The v2 ticket content is specified in <a href="#ticket-content">§5.4</a>. The template code moves to the v2 contract in
-    #213, which removes this appendix and points the template tests at §5.4.
-  </p>
-
-  <h4><code>content_templates</code> JSON shape</h4>
-  <pre><code>{
-  "title": "Release: {{ .Repo.SourceKind }} {{ .Repo.ProjectPath }} {{ .Release.Tag }}",
-  "description": "**Source:** {{ .Repo.SourceKind }}\n**Repository:** {{ .Repo.ProjectPath }} ({{ .Repo.URL }})\n\n**Release:** {{ .Release.Tag }} — {{ .Release.Name }}\n**URL:** {{ .Release.URL }}\n**Published:** {{ .Release.PublishedAt }}\n**Pre-release:** {{ yesNo .Release.IsPrerelease }}\n\n**Previous tag:** {{ .Previous.Tag }}\n\n**Release notes:**\n{{ .Release.Notes }}",
-  "supersedeComment": "Superseded: {{ .Supersede.OldTag }} → {{ .Supersede.NewTag }}\n{{ .Release.URL }}\n\nNew ticket: {{ .Supersede.NewTicketURL }}"
-}</code></pre>
-  <table>
-    <tr><th>Key</th><th>Used on</th><th>Description</th></tr>
-    <tr><td><code>title</code></td><td><code>create</code>, <code>merge</code>, <code>supersede</code> (new ticket)</td><td>Ticket title sent to provider</td></tr>
-    <tr><td><code>description</code></td><td><code>create</code>, <code>merge</code>, <code>supersede</code> (new ticket)</td><td>Ticket body (markdown for Kaneo/Linear; plain text for Jira)</td></tr>
-    <tr><td><code>supersedeComment</code></td><td><code>supersede</code> (comment on old ticket)</td><td>Comment body after new ticket exists</td></tr>
-  </table>
-  <p>
-    Empty string for a key → use integration-kind default template (Go constants — not DB seed).
-    Kaneo and Linear defaults use markdown; Jira defaults use plain text (existing ADF path).
-    Invalid template syntax at render time → poll <code>error</code> for that repo; no silent fallback.
-  </p>
-
-  <h4>MVP template variables</h4>
-  <table>
-    <tr><th>Template path</th><th>Description</th><th>Available on</th></tr>
-    <tr><td><code>.Repo.SourceKind</code></td><td><code>monitored_repos.source_kind</code></td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Repo.ProjectPath</code></td><td><code>monitored_repos.project_path</code></td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Repo.URL</code></td><td>Repository web URL (derived from source kind + integration base URL + path)</td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Release.Tag</code></td><td>Latest release tag</td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Release.Name</code></td><td>Release name/title from source API</td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Release.URL</code></td><td>Release page URL</td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Release.Notes</code></td><td>Release body/changelog text from source API</td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Release.PublishedAt</code></td><td>Release timestamp (RFC3339 UTC string in templates)</td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Release.IsPrerelease</code></td><td>Whether the release is a pre-release (<code>true</code>/<code>false</code>)</td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Previous.Tag</code></td><td><code>last_known_tag</code> before this poll action</td><td>create, merge, supersede</td></tr>
-    <tr><td><code>.Supersede.OldTag</code></td><td>Tag on the open ticket being superseded</td><td>supersede comment; also populated on supersede new-ticket render (use <code>.Previous.Tag</code> for create/merge)</td></tr>
-    <tr><td><code>.Supersede.NewTag</code></td><td>New release tag</td><td>supersede comment only</td></tr>
-    <tr><td><code>.Supersede.NewTicketURL</code></td><td>Provider web URL for the ticket created during supersede</td><td>supersede comment only (after the new ticket is created)</td></tr>
-  </table>
-  <p>Template helper functions (MVP): <code>formatRFC3339</code>, <code>formatDate</code>, <code>yesNo</code> (for booleans in plain text).</p>
 
   <p class="docnav"><a href="index.html">Docs</a> · <a href="specs.html">Spec</a> · <a href="stack.html">Stack</a> · <a href="schema.html">Schema</a></p>
 </div>

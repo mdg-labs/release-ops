@@ -19,9 +19,9 @@ const (
 )
 
 // Event is a domain event of an update PR. It is produced inside the transaction that wrote
-// the rows it describes and returned to the caller in Outcome.Events, so a consumer that acts on
-// it after that transaction commits sees the rows final. The ticket engine that consumes the
-// events is wired separately; until then the callers do not forward them.
+// the rows it describes and returned to the caller in Outcome.Events. The caller hands them to
+// Tracker.Publish after that transaction commits, so the ticket engine that consumes them sees
+// the rows final; a transaction that rolls back publishes nothing.
 type Event struct {
 	Kind         string
 	RepositoryID string
@@ -45,7 +45,9 @@ type Outcome struct {
 }
 
 // recordDependencies derives the dependencies and release notes of the stored PR and records
-// them. A PR is derived from the repository's newest Renovate report when it has an entry for
+// them, with whether the PR is automerged: the report's flag for its branch when the report is
+// the source, otherwise GitHub's auto_merge field of the payload, and unknown when neither says.
+// A PR is derived from the repository's newest Renovate report when it has an entry for
 // the PR that was read at the PR's head commit, and otherwise from the updates table of its
 // body; with neither it has no dependencies. A list already stored from a report read at the
 // PR's current head is kept, so a newer report that lacks the PR does not replace it. A report that is missing, unreadable or of an
@@ -54,6 +56,10 @@ type Outcome struct {
 func (t *Tracker) recordDependencies(ctx context.Context, tx *sql.Tx, repositoryID string, pr github.PullRequest, in store.UpdatePRInput) ([]Event, bool, error) {
 	var deps []store.UpdatePRDependency
 	reportSHA := ""
+	var automerge *bool
+	if pr.AutoMerge.Present {
+		automerge = &pr.AutoMerge.Enabled
+	}
 	rep, haveReport, err := t.store.LatestReport(ctx, tx, repositoryID)
 	if err != nil {
 		return nil, false, err
@@ -61,6 +67,9 @@ func (t *Tracker) recordDependencies(ctx context.Context, tx *sql.Tx, repository
 	if haveReport {
 		if e, ok := fromReport(rep.Report, rep.FullName, pr.Number, pr.Head.Ref); ok && (e.SHA == "" || pr.Head.SHA == "" || e.SHA == pr.Head.SHA) {
 			deps, reportSHA = e.Dependencies, e.SHA
+			if e.Automerge != nil {
+				automerge = e.Automerge
+			}
 		}
 	}
 	body := ""
@@ -74,7 +83,7 @@ func (t *Tracker) recordDependencies(ctx context.Context, tx *sql.Tx, repository
 	res, err := t.store.RecordDependencies(ctx, tx, store.DependenciesInput{
 		RepositoryID: repositoryID, Number: pr.Number, EventAt: in.EventAt,
 		Dependencies: deps, KeepEmpty: in.State != store.UpdatePROpen,
-		ReportSHA: reportSHA, HeadSHA: pr.Head.SHA, ReleaseNotes: releaseNotes(body), Now: in.Now,
+		ReportSHA: reportSHA, HeadSHA: pr.Head.SHA, ReleaseNotes: releaseNotes(body), Automerge: automerge, Now: in.Now,
 	})
 	if err != nil || !res.Applied {
 		return nil, false, err

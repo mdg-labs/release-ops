@@ -152,10 +152,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, repositoryID string) error {
 		listed = append(listed, pr)
 	}
 
-	changed, err := r.apply(ctx, repo.ID, bot.UserID, listed, gone)
+	changed, events, err := r.apply(ctx, repo.ID, bot.UserID, listed, gone)
 	if err != nil {
 		return err
 	}
+	r.Tracker.Publish(events)
 	if len(vanished) > 0 {
 		r.cursors[repo.ID] = vanished[len(vanished)-1]
 	}
@@ -188,27 +189,30 @@ func (r *Reconciler) nextFetches(repositoryID string, vanished []int64) []int64 
 }
 
 // apply upserts the PRs and closes the gone ones in one transaction and returns how many rows
-// changed.
-func (r *Reconciler) apply(ctx context.Context, repositoryID string, botUserID int64, prs []github.PullRequest, gone []int64) (int, error) {
+// changed and the events of the PRs it applied; the caller publishes them once the commit
+// succeeded.
+func (r *Reconciler) apply(ctx context.Context, repositoryID string, botUserID int64, prs []github.PullRequest, gone []int64) (int, []Event, error) {
 	tx, err := r.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, fmt.Errorf("begin reconcile: %w", err)
+		return 0, nil, fmt.Errorf("begin reconcile: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	changed := 0
+	var events []Event
 	for _, pr := range prs {
 		out, err := r.Tracker.ApplyTx(ctx, tx, repositoryID, pr, botUserID)
 		if err != nil {
-			return 0, err
+			return 0, nil, err
 		}
 		if out.Changed {
 			changed++
 		}
+		events = append(events, out.Events...)
 	}
 	for _, number := range gone {
 		c, err := r.Store.CloseGone(ctx, tx, repositoryID, number, r.Tracker.now())
 		if err != nil {
-			return 0, err
+			return 0, nil, err
 		}
 		if c {
 			r.logger().Warn("update PR reconcile: a stored open pull request is not known to GitHub, stored closed", "repository", repositoryID, "number", number)
@@ -216,9 +220,9 @@ func (r *Reconciler) apply(ctx context.Context, repositoryID string, botUserID i
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit reconcile: %w", err)
+		return 0, nil, fmt.Errorf("commit reconcile: %w", err)
 	}
-	return changed, nil
+	return changed, events, nil
 }
 
 // list returns the open PRs of the repository that the bot authored and that carry Renovate's

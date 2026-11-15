@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -22,12 +23,14 @@ import (
 	"github.com/mdg-labs/release-ops/internal/mail"
 	"github.com/mdg-labs/release-ops/internal/metrics"
 	"github.com/mdg-labs/release-ops/internal/providers/integrationtester"
+	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 	"github.com/mdg-labs/release-ops/internal/queue"
 	"github.com/mdg-labs/release-ops/internal/queue/internalapi"
 	"github.com/mdg-labs/release-ops/internal/scheduler"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 	"github.com/mdg-labs/release-ops/internal/updateprs"
+	"github.com/mdg-labs/release-ops/internal/updatetickets"
 )
 
 // The intervals of the periodic jobs are variables only so a test can shorten them.
@@ -46,6 +49,33 @@ var (
 	// docs/specs.html §5.7 fixes it. There is no setting for it.
 	schedulerInterval = scheduler.Interval
 )
+
+// ticketRequestTimeout bounds each call to a ticket system, as for the connection test.
+const ticketRequestTimeout = 30 * time.Second
+
+// integrationTargets builds the provider of a ticket integration from its stored, decrypted
+// credentials each time a ticket is created, so a changed credential applies at once. The
+// credentials stay in this call: they are never logged or stored beside the provider.
+type integrationTargets struct {
+	integrations store.IntegrationRepository
+	client       *http.Client
+}
+
+func (t integrationTargets) Target(ctx context.Context, integrationID string) (updatetickets.Target, error) {
+	integration, err := t.integrations.Get(ctx, integrationID)
+	if err != nil {
+		return updatetickets.Target{}, fmt.Errorf("read integration: %w", err)
+	}
+	secret, err := t.integrations.DecryptPayload(ctx, integrationID)
+	if err != nil {
+		return updatetickets.Target{}, fmt.Errorf("read integration credentials: %w", err)
+	}
+	provider, err := ticket.NewProviderFromIntegration(integration.Kind, integration.BaseURL, secret, t.client)
+	if err != nil {
+		return updatetickets.Target{}, err
+	}
+	return updatetickets.Target{Provider: provider, Kind: integration.Kind}, nil
+}
 
 // reapInterval is how often the app requeues jobs whose lease has expired.
 const reapInterval = 15 * time.Second
@@ -144,10 +174,18 @@ func run(ctx context.Context, cfg *config.Config) error {
 	if err := metrics.RegisterOpenUpdatePRs(registry, appStore.UpdatePRs()); err != nil {
 		return fmt.Errorf("metrics: %w", err)
 	}
-	// ticketWake is what the ticket engine of epic E6 receives from: every committed change of
-	// an update PR fires it.
+	// ticketWake starts the ticket engine's pass over the PRs without a ticket: every committed
+	// change of an update PR fires it. The engine also receives the tracker's events once the
+	// transaction that wrote them has committed, from the webhook and from the reconcile alike.
 	ticketWake := updateprs.NewNotifier()
+	ticketEngine := &updatetickets.Engine{
+		Tickets:  appStore.UpdateTickets(),
+		Projects: appStore.TicketProjects(),
+		Targets:  integrationTargets{integrations: appStore.Integrations(), client: &http.Client{Timeout: ticketRequestTimeout}},
+		Wake:     ticketWake,
+	}
 	prTracker := updateprs.NewTracker(appStore.UpdatePRs(), nil, ticketWake)
+	prTracker.Subscribe(ticketEngine.Handle)
 	prRunner := &updateprs.Runner{
 		Reconciler: &updateprs.Reconciler{
 			Store: appStore.UpdatePRs(), Tracker: prTracker, API: githubClient, Tokens: appClient,
@@ -214,6 +252,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		})
 	})
 	background.Go(func() { prRunner.Run(appCtx) })
+	background.Go(func() { ticketEngine.Run(appCtx) })
 	// The start-up reconcile needs the bot user id, which is what tells a bot PR, and the
 	// repositories of the first sync, so it waits for both.
 	startup := &startupReconcile{trigger: func() { triggerReconciles(appCtx, prRunner) }}

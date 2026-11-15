@@ -20,8 +20,10 @@ INSERT INTO ticket_projects (
   content_templates,
   on_open_ticket_policy,
   created_at,
-  updated_at
+  updated_at,
+  filter
 ) VALUES (
+  ?,
   ?,
   ?,
   ?,
@@ -58,6 +60,7 @@ type CreateTicketProjectParams struct {
 	OnOpenTicketPolicy string `json:"on_open_ticket_policy"`
 	CreatedAt          string `json:"created_at"`
 	UpdatedAt          string `json:"updated_at"`
+	Filter             string `json:"filter"`
 }
 
 func (q *Queries) CreateTicketProject(ctx context.Context, arg CreateTicketProjectParams) (TicketProject, error) {
@@ -72,6 +75,7 @@ func (q *Queries) CreateTicketProject(ctx context.Context, arg CreateTicketProje
 		arg.OnOpenTicketPolicy,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.Filter,
 	)
 	var i TicketProject
 	err := row.Scan(
@@ -250,6 +254,7 @@ SET
   status_mapping = ?,
   content_templates = ?,
   on_open_ticket_policy = ?,
+  filter = ?,
   updated_at = ?
 WHERE id = ?
 RETURNING
@@ -272,6 +277,7 @@ type UpdateTicketProjectParams struct {
 	StatusMapping      string `json:"status_mapping"`
 	ContentTemplates   string `json:"content_templates"`
 	OnOpenTicketPolicy string `json:"on_open_ticket_policy"`
+	Filter             string `json:"filter"`
 	UpdatedAt          string `json:"updated_at"`
 	ID                 string `json:"id"`
 }
@@ -283,6 +289,7 @@ func (q *Queries) UpdateTicketProject(ctx context.Context, arg UpdateTicketProje
 		arg.StatusMapping,
 		arg.ContentTemplates,
 		arg.OnOpenTicketPolicy,
+		arg.Filter,
 		arg.UpdatedAt,
 		arg.ID,
 	)

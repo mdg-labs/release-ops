@@ -80,8 +80,9 @@ func (s *prServer) waitStates(t *testing.T, what, want string) {
 }
 
 // startPRServer starts the real server on a database that already holds an installation, one
-// repository (acme/repo-1) and a stale open row for PR 9, which GitHub reports merged.
-func startPRServer(t *testing.T) *prServer {
+// repository (acme/repo-1) and a stale open row for PR 9, which GitHub reports merged. Each seed
+// runs on the database before the server starts.
+func startPRServer(t *testing.T, seeds ...func(t *testing.T, st *store.Store)) *prServer {
 	t.Helper()
 	fake := githubtest.New(t, time.Now)
 	fake.AddInstallation(1, githubtest.AppID)
@@ -107,6 +108,9 @@ func startPRServer(t *testing.T) *prServer {
 		t.Fatal(err)
 	}
 	app := store.New(db, cipher).GitHubApp()
+	for _, seed := range seeds {
+		seed(t, store.New(db, cipher))
+	}
 	if err := app.Create(context.Background(), store.NewGitHubApp{
 		AppID: githubtest.AppID, Slug: "release-ops-acme", ClientID: "cid", HTMLURL: "https://github.com/apps/release-ops-acme",
 		OwnerLogin: "acme", OwnerType: "Organization", PrivateKey: string(fake.PEM), ClientSecret: "client-secret-value", WebhookSecret: "ws",

@@ -115,9 +115,7 @@ export function ContentTemplateForm({
       <section className="flex min-w-0 flex-col gap-2">
         <p className="font-medium text-sm">{t("templates.variablesTitle")}</p>
         <p className="text-muted-foreground text-sm">
-          {t("templates.variablesDescription", {
-            previousTag: templateVariableSyntax(".Previous.Tag"),
-          })}
+          {t("templates.variablesDescription")}
         </p>
         <Table>
           <TableHeader>

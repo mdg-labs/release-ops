@@ -34,16 +34,16 @@ describe("ContentTemplateForm", () => {
 
     expect(screen.getByLabelText("Title template")).toHaveAttribute(
       "placeholder",
-      "Release: {{ .Repo.SourceKind }} {{ .Repo.ProjectPath }} {{ .Release.Tag }}",
+      "{{ .PullRequest.Title }} ({{ .Repository }})",
     );
     expect(
       screen.getByLabelText("Description template").getAttribute("placeholder"),
-    ).toMatch(/^\*\*Source:\*\* \{\{ \.Repo\.SourceKind \}\}\n/);
+    ).toMatch(/^\*\*Repository:\*\* \{\{ \.Repository \}\}\n/);
     expect(
       screen
         .getByLabelText("Supersede comment template")
         .getAttribute("placeholder"),
-    ).toMatch(/^Superseded: \{\{ \.Supersede\.OldTag \}\}/);
+    ).toMatch(/^Superseded by \{\{ \.Supersede\.NewPullRequest\.URL \}\}/);
   });
 
   it("uses the plain-text description default for Jira", () => {
@@ -53,26 +53,38 @@ describe("ContentTemplateForm", () => {
       .getByLabelText("Description template")
       .getAttribute("placeholder");
     expect(placeholder).toBe(integrationDefaultTemplates("jira").description);
-    expect(placeholder).toMatch(/^Source: \{\{ \.Repo\.SourceKind \}\}\n/);
+    expect(placeholder).toMatch(/^Repository: \{\{ \.Repository \}\}\n/);
     expect(placeholder).not.toContain("**");
   });
 
   it("shows the insertable syntax and where each variable works", () => {
     renderForm("kaneo");
 
-    const tagRow = screen.getByText("{{ .Release.Tag }}").closest("tr");
-    expect(tagRow).not.toBeNull();
+    const urlRow = screen.getByText("{{ .PullRequest.URL }}").closest("tr");
+    expect(urlRow).not.toBeNull();
     expect(
-      within(tagRow as HTMLElement).getByText(
-        "Title, Description, Supersede comment",
+      within(urlRow as HTMLElement).getByText(
+        "Title, Description, Update comment, Supersede comment",
       ),
     ).toBeInTheDocument();
 
-    const newTagRow = screen.getByText("{{ .Supersede.NewTag }}").closest("tr");
+    const notesRow = screen.getByText("{{ .ReleaseNotes }}").closest("tr");
     expect(
-      within(newTagRow as HTMLElement).getByText("Supersede comment"),
+      within(notesRow as HTMLElement).getByText(
+        "Title, Description, Update comment",
+      ),
     ).toBeInTheDocument();
-    expect(screen.queryByText(".Repo.SourceKind")).not.toBeInTheDocument();
+
+    const newPrRow = screen
+      .getByText("{{ .Supersede.NewPullRequest.URL }}")
+      .closest("tr");
+    expect(
+      within(newPrRow as HTMLElement).getByText("Supersede comment"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("{{ .Release.Tag }}")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("{{ .Repo.SourceKind }}"),
+    ).not.toBeInTheDocument();
   });
 
   it("copies the full syntax with a success toast", async () => {
@@ -84,12 +96,12 @@ describe("ContentTemplateForm", () => {
     const add = vi.spyOn(toastManager, "add").mockReturnValue("toast-id");
 
     renderForm("kaneo");
-    fireEvent.click(screen.getByRole("button", { name: "Copy .Release.Tag" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy .Repository" }));
 
     await vi.waitFor(() => {
       expect(add).toHaveBeenCalled();
     });
-    expect(writeText).toHaveBeenCalledWith("{{ .Release.Tag }}");
+    expect(writeText).toHaveBeenCalledWith("{{ .Repository }}");
     expect(add).toHaveBeenCalledWith(
       expect.objectContaining({ type: "success" }),
     );
@@ -104,7 +116,7 @@ describe("ContentTemplateForm", () => {
     const add = vi.spyOn(toastManager, "add").mockReturnValue("toast-id");
 
     renderForm("kaneo");
-    fireEvent.click(screen.getByRole("button", { name: "Copy .Release.Tag" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy .Repository" }));
 
     await vi.waitFor(() => {
       expect(add).toHaveBeenCalled();
