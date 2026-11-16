@@ -347,7 +347,7 @@ func (h *GitHubSignInHandlers) takeAttempt(r *http.Request, presented string) (v
 	if subtle.ConstantTimeCompare([]byte(presented), []byte(stored)) != 1 {
 		return "", "", false
 	}
-	if !h.spent.claim(stored, now, time.Unix(expires, 0)) {
+	if !h.spent.claim(stored, h.now, time.Unix(expires, 0)) {
 		return "", "", false
 	}
 	return verifier, SafeRedirectPath(redirect), true

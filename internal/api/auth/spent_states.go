@@ -17,12 +17,19 @@ type spentStates struct {
 }
 
 // claim records state as spent until expires and reports whether this call was the first to.
-func (s *spentStates) claim(state string, now, expires time.Time) bool {
+// It reads the clock under the lock and refuses a state that has expired by then, so a request
+// that checked the expiry earlier and waited for the lock cannot claim a state whose spent
+// marker a later claim already pruned.
+func (s *spentStates) claim(state string, now func() time.Time, expires time.Time) bool {
 	sum := sha256.Sum256([]byte(state))
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	at := now()
+	if !at.Before(expires) {
+		return false
+	}
 	for k, t := range s.until {
-		if !now.Before(t) {
+		if !at.Before(t) {
 			delete(s.until, k)
 		}
 	}
