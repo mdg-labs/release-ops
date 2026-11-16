@@ -124,7 +124,10 @@ func parseRetryAfter(v string, now time.Time) time.Duration {
 		if secs <= 0 {
 			return 0
 		}
-		return min(time.Duration(secs)*time.Second, MaxUpstreamDelay)
+		if secs > int64(MaxUpstreamDelay/time.Second) {
+			return MaxUpstreamDelay
+		}
+		return time.Duration(secs) * time.Second
 	}
 	if at, err := http.ParseTime(v); err == nil {
 		return min(max(at.Sub(now), 0), MaxUpstreamDelay)

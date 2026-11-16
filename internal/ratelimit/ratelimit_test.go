@@ -28,12 +28,15 @@ func TestParseRetryAfterAsSecondsAndAsHTTPDate(t *testing.T) {
 		h      http.Header
 		want   time.Duration
 	}{
-		"seconds":   {http.StatusTooManyRequests, header("Retry-After", "120"), 2 * time.Minute},
-		"http date": {http.StatusForbidden, header("Retry-After", now.Add(90*time.Second).Format(http.TimeFormat)), 90 * time.Second},
-		"past date": {http.StatusTooManyRequests, header("Retry-After", now.Add(-time.Hour).Format(http.TimeFormat)), 0},
-		"garbage":   {http.StatusTooManyRequests, header("Retry-After", "soon"), 0},
-		"negative":  {http.StatusTooManyRequests, header("Retry-After", "-5"), 0},
-		"huge":      {http.StatusTooManyRequests, header("Retry-After", "99999999"), ratelimit.MaxUpstreamDelay},
+		"seconds":     {http.StatusTooManyRequests, header("Retry-After", "120"), 2 * time.Minute},
+		"http date":   {http.StatusForbidden, header("Retry-After", now.Add(90*time.Second).Format(http.TimeFormat)), 90 * time.Second},
+		"past date":   {http.StatusTooManyRequests, header("Retry-After", now.Add(-time.Hour).Format(http.TimeFormat)), 0},
+		"garbage":     {http.StatusTooManyRequests, header("Retry-After", "soon"), 0},
+		"negative":    {http.StatusTooManyRequests, header("Retry-After", "-5"), 0},
+		"huge":        {http.StatusTooManyRequests, header("Retry-After", "99999999"), ratelimit.MaxUpstreamDelay},
+		"overflowing": {http.StatusTooManyRequests, header("Retry-After", "100000000000000000"), ratelimit.MaxUpstreamDelay},
+		"int64 max":   {http.StatusTooManyRequests, header("Retry-After", "9223372036854775807"), ratelimit.MaxUpstreamDelay},
+		"at the cap":  {http.StatusTooManyRequests, header("Retry-After", "86400"), ratelimit.MaxUpstreamDelay},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
