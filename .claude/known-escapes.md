@@ -33,6 +33,7 @@ existing line by adding its PR number.
 - **atomicity** — values that must belong together read in separate queries (an integration's host and its credential; a PR row, its dependencies and its ticket), so a write between the reads pairs two revisions; read them from one row or one read transaction — PR 271
 - **atomicity** — a conditional write or claim decided from a read or a clock taken before the lock or transaction it runs in (a gone PR closed after a webhook updated it; a state's expiry checked before the claim lock); re-check the version, or read the clock, inside it — PR 271
 - **atomicity** — a step that runs after a gate without checking the gate's verdict (dependencies and release notes recorded for a payload the upsert rejected) — PR 271
+- **data-safety** — a forced ref update (branch reset) on a branch assumed to hold only the app's own commit, without checking its contents first, so a person's pushes to it are destroyed; compare first, fail closed, answer a conflict — PR 286
 
 ## Fail-open and error handling
 - **fail-open** — a failed fetch or ticket call recorded as a successful run (engine error actions not counted), so the run status hides the failure — PR 112
@@ -63,6 +64,8 @@ existing line by adding its PR number.
 - **docs** — a name or command in prose that differs from the canonical file it describes (Compose service names vs `docker-compose.yml`), or two policy documents that state contradicting rules (SECURITY.md vs threat-model §7) — PR 246, PR 286
 - **docs** — an operational procedure that discards data it should keep (a restore step that deletes a volume snapshot's WAL) — PR 246
 - **docs** — a README or overview that presents planned features as available — PR 246
+- **docs** — an operator guide that omits a step the code requires to work (no global Renovate config, so every job fails) or one value of a coupled set (`APP_URL` without the App's callback URL; a Renovate version pinned in three places), or that states a guard broader than implemented (owned keys "removed" for a JavaScript config; any hand move ends ticket sync) — PR 286
+- **docs** — a procedure whose order or prerequisites cannot be followed (signed in before the App that provides sign-in exists; the old bot stopped only after installing the new App already started runs) — PR 286
 
 ## UI states
 - **ui** — rate-limited (429) and server (5xx) responses shown as "invalid credentials" — PR 112
@@ -72,13 +75,17 @@ existing line by adding its PR number.
 - **ui** — a "cannot check right now" answer (503 from the session check) treated as "no session", sending a signed-in user to the login page — PR 255
 - **ui** — a form control left enabled while its save is pending, so the success message describes a value that was not saved; a late async result (a slower file read, an in-flight GET) overwriting a newer one — PR 271
 - **ui** — an unedited field re-parsed through a lossy text form on save (labels joined with `, ` and split on `,`), so an unrelated edit rewrites stored data — PR 271
+- **ui** — a paged list with no recovery when its current page comes back empty under a shrinking result set (no pagination, a "no matches" text); filter options built from the rows on screen or one page of a paged list; an empty-state swap with no live region mounted before the change — PR 286
+- **ui** — state initialised once from URL search params (`useState` initialiser), so in-app navigation that only changes the params is ignored — PR 286
 
 ## Tests
 - **test** — a rejection test whose input fails an earlier validation, so it passes with the guard it claims to cover removed; a test that uses a listener started in a goroutine before waiting for it to answer — PR 246
 - **test** — a test that depends on the row order of random ids or on variables leaking in from the process environment, or a filtered-deletion test with no similar-but-distinct record asserted to survive; a privileged-only fixture step run on the unprivileged path — PR 255
 - **test** — a test whose failure fires before the code path it claims to cover (an error injected before the publication callback is registered); a helper that calls `t.Fatal` from a goroutine, or a held handler never released when the test fails; a leak check missing the encoded forms a secret is logged in; a third-party log fixture guessed instead of taken from its serializer (Renovate's `err.options.url`); an input guard without a rejection case for each malformed shape — PR 271
+- **test** — a test guarded by "the newest migration is X" that silently skips once a later one lands (find the target by name, fail if missing); a test fake that builds a response by ranging over a map, so identical requests get different bodies and ETags — PR 286
 
 ## Release and CI
 - **ci** — a release workflow that builds from the branch head at publish time instead of the release tag, so the tagged image and the tag differ — PR 112
 - **ci** — a retry of a release job refused because an earlier attempt already pushed the tag — PR 112
 - **runtime** — a container entrypoint that keeps running when one of its two processes (Go, Next.js) dies, with no health check to notice — PR 112
+- **ci** — a CI job that can hang with no `timeout-minutes`; a check that samples asynchronous cleanup once (zombie reaping) instead of polling for a bound — PR 286
