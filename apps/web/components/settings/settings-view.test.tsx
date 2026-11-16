@@ -442,6 +442,42 @@ describe("SettingsView", () => {
     ).toBeInTheDocument();
   });
 
+  it("locks the default ticket project select while it saves", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    replyAll(pool);
+    pool
+      .intercept({
+        path: `${V1}/installations/inst-1`,
+        method: "PATCH",
+        body: JSON.stringify({ defaultTicketProjectId: "tp-2" }),
+      })
+      .reply(
+        200,
+        { ...installation, defaultTicketProjectId: "tp-2" },
+        JSON_HEADERS,
+      )
+      .delay(150);
+    renderView();
+
+    const trigger = await screen.findByTestId("default-ticket-project-select");
+    await pick(trigger, "OPS");
+    const section = trigger.closest("[data-slot='settings-section']");
+    fireEvent.click(
+      within(section as HTMLElement).getByRole("button", {
+        name: messages.common.save,
+      }),
+    );
+
+    await waitFor(() => expect(trigger).toBeDisabled());
+    expect(
+      screen.queryByText(messages.settings.defaultProject.saved),
+    ).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(messages.settings.defaultProject.saved),
+    ).toBeInTheDocument();
+    expect(trigger).toBeEnabled();
+  });
+
   it("clears the default ticket project with null", async () => {
     const pool = mockAgent.get(ORIGIN);
     replyAll(pool, {

@@ -71,6 +71,7 @@ function Form({
       <Field>
         <FieldLabel>{t("label")}</FieldLabel>
         <Select
+          disabled={setDefaultTicketProject.isPending}
           itemToStringValue={(item) => item.value}
           items={options}
           onValueChange={(next) => {
