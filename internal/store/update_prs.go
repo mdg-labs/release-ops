@@ -50,19 +50,30 @@ type ReconcileRepository struct {
 	GitHubInstallationID int64
 }
 
+// UpsertResult says what Upsert did with a report.
+type UpsertResult struct {
+	// Accepted is false for a report the row's state outranks, a stale one or one that would
+	// reopen a PR GitHub closed at the same EventAt; nothing was written then, and nothing
+	// derived from that report may be either.
+	Accepted bool
+	// Changed reports whether the row changed in anything but its last_seen_at.
+	Changed bool
+}
+
 // UpdatePRRepository reads and writes the update_prs rows.
 type UpdatePRRepository interface {
 	// Tracked reports whether the repository has a row for the PR number, read through tx.
 	Tracked(ctx context.Context, tx *sql.Tx, repositoryID string, number int64) (bool, error)
-	// Upsert stores the PR through tx and reports whether the row changed in anything but its
-	// last_seen_at, so a caller wakes the ticket engine only for a change. The row's last_seen_at
+	// Upsert stores the PR through tx and reports whether the report was accepted and whether
+	// the row changed in anything but its last_seen_at, so a caller wakes the ticket engine only
+	// for a change. The row's last_seen_at
 	// holds the EventAt of the newest report applied, and a report older than it changes
 	// nothing; at the same EventAt a report that reopens a merged, closed or superseded PR
 	// changes nothing either, because GitHub stamps a close and an earlier edit alike. A PR
 	// closed by CloseGone carries no such stamp, so an open report at its EventAt reopens it. A
 	// closed report keeps the superseded state of a row, and an open one clears its
-	// replacement.
-	Upsert(ctx context.Context, tx *sql.Tx, in UpdatePRInput) (changed bool, err error)
+	// replacement. A report that changes nothing for either reason is not Accepted.
+	Upsert(ctx context.Context, tx *sql.Tx, in UpdatePRInput) (UpsertResult, error)
 	// CloseGone stores the repository's open PR with the number as closed, stamped closed at
 	// now, through tx, for a PR GitHub no longer knows, and reports whether it did. A row that
 	// is not open, or absent, is left as it is. It keeps last_seen_at, and a later report that
@@ -112,10 +123,10 @@ func (r updatePRRepo) Tracked(ctx context.Context, tx *sql.Tx, repositoryID stri
 	return true, nil
 }
 
-func (r updatePRRepo) Upsert(ctx context.Context, tx *sql.Tx, in UpdatePRInput) (bool, error) {
+func (r updatePRRepo) Upsert(ctx context.Context, tx *sql.Tx, in UpdatePRInput) (UpsertResult, error) {
 	labels, err := json.Marshal(append([]string{}, in.Labels...))
 	if err != nil {
-		return false, fmt.Errorf("encode labels: %w", err)
+		return UpsertResult{}, fmt.Errorf("encode labels: %w", err)
 	}
 	q := r.store.writes.WithTx(tx)
 	row, err := q.GetUpdatePR(ctx, db.GetUpdatePRParams{RepositoryID: in.RepositoryID, Number: in.Number})
@@ -127,23 +138,23 @@ func (r updatePRRepo) Upsert(ctx context.Context, tx *sql.Tx, in UpdatePRInput) 
 			LastSeenAt: formatTime(in.EventAt), CreatedAt: formatTime(in.Now), UpdatedAt: formatTime(in.Now),
 		})
 		if err != nil {
-			return false, fmt.Errorf("insert update PR: %w", err)
+			return UpsertResult{}, fmt.Errorf("insert update PR: %w", err)
 		}
-		return true, nil
+		return UpsertResult{Accepted: true, Changed: true}, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("read update PR: %w", err)
+		return UpsertResult{}, fmt.Errorf("read update PR: %w", err)
 	}
 
 	seen, err := time.Parse(timeLayout, row.LastSeenAt)
 	if err != nil {
-		return false, fmt.Errorf("stored last_seen_at %q: %w", row.LastSeenAt, err)
+		return UpsertResult{}, fmt.Errorf("stored last_seen_at %q: %w", row.LastSeenAt, err)
 	}
 	if in.EventAt.Before(seen) {
-		return false, nil
+		return UpsertResult{}, nil
 	}
 	if in.EventAt.Equal(seen) && in.State == UpdatePROpen && row.State != UpdatePROpen && !closedAsGone(row, seen) {
-		return false, nil
+		return UpsertResult{}, nil
 	}
 
 	state, supersededBy := in.State, row.SupersededByID
@@ -163,12 +174,12 @@ func (r updatePRRepo) Upsert(ctx context.Context, tx *sql.Tx, in UpdatePRInput) 
 		row.HeadSha != next.HeadSha || row.State != next.State || row.SupersededByID != next.SupersededByID ||
 		row.Labels != next.Labels || row.OpenedAt != next.OpenedAt || row.MergedAt != next.MergedAt || row.ClosedAt != next.ClosedAt
 	if !changed && row.LastSeenAt == next.LastSeenAt {
-		return false, nil
+		return UpsertResult{Accepted: true}, nil
 	}
 	if err := q.UpdateUpdatePR(ctx, next); err != nil {
-		return false, fmt.Errorf("update update PR: %w", err)
+		return UpsertResult{}, fmt.Errorf("update update PR: %w", err)
 	}
-	return changed, nil
+	return UpsertResult{Accepted: true, Changed: changed}, nil
 }
 
 // closedAsGone reports whether the row was closed by CloseGone and not by a report from GitHub:

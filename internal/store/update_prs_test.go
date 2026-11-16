@@ -27,8 +27,13 @@ func newPREnv(t *testing.T) *prEnv {
 	return &prEnv{db: s.DB(), repos: s.UpdatePRs(), repo: ids[0]}
 }
 
-// upsert applies one report in its own transaction.
+// upsert applies one report in its own transaction and reports whether the row changed.
 func (e *prEnv) upsert(t *testing.T, in store.UpdatePRInput) bool {
+	t.Helper()
+	return e.upsertResult(t, in).Changed
+}
+
+func (e *prEnv) upsertResult(t *testing.T, in store.UpdatePRInput) store.UpsertResult {
 	t.Helper()
 	if in.RepositoryID == "" {
 		in.RepositoryID = e.repo
@@ -50,7 +55,7 @@ func (e *prEnv) upsert(t *testing.T, in store.UpdatePRInput) bool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	changed, err := e.repos.Upsert(context.Background(), tx, in)
+	res, err := e.repos.Upsert(context.Background(), tx, in)
 	if err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("Upsert: %v", err)
@@ -58,7 +63,7 @@ func (e *prEnv) upsert(t *testing.T, in store.UpdatePRInput) bool {
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	return changed
+	return res
 }
 
 type prRow struct {
@@ -127,6 +132,30 @@ func TestUpsertStaleEditAfterCloseDoesNotReopen(t *testing.T) {
 	got := e.row(t)
 	if got.State != "merged" || got.Title != "chore(deps): update lodash" || got.SeenAt != "2026-11-15T10:30:00.000Z" {
 		t.Fatalf("row after the stale edit = %+v, want merged with the original title", got)
+	}
+}
+
+// Upsert says whether it accepted a report apart from whether the row changed: an applied replay
+// is accepted and changes nothing, a stale report or an open one at a close's EventAt is not
+// accepted.
+func TestUpsertReportsWhetherTheReportWasAccepted(t *testing.T) {
+	e := newPREnv(t)
+	in := store.UpdatePRInput{EventAt: at(5), OpenedAt: at(0), HeadSHA: "aaa"}
+	if got := e.upsertResult(t, in); got != (store.UpsertResult{Accepted: true, Changed: true}) {
+		t.Fatalf("creating = %+v", got)
+	}
+	if got := e.upsertResult(t, in); got != (store.UpsertResult{Accepted: true}) {
+		t.Fatalf("replay = %+v", got)
+	}
+	e.upsert(t, store.UpdatePRInput{EventAt: at(30), OpenedAt: at(0), State: store.UpdatePRClosed, ClosedAt: at(30)})
+	if got := e.upsertResult(t, store.UpdatePRInput{EventAt: at(25), OpenedAt: at(0)}); got.Accepted || got.Changed {
+		t.Fatalf("stale report = %+v", got)
+	}
+	if got := e.upsertResult(t, store.UpdatePRInput{EventAt: at(30), OpenedAt: at(0)}); got.Accepted || got.Changed {
+		t.Fatalf("open report at the close's EventAt = %+v", got)
+	}
+	if got := e.upsertResult(t, store.UpdatePRInput{EventAt: at(31), OpenedAt: at(0)}); got != (store.UpsertResult{Accepted: true, Changed: true}) {
+		t.Fatalf("later open report = %+v", got)
 	}
 }
 

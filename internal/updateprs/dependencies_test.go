@@ -270,6 +270,33 @@ func TestAStaleEventChangesNeitherRowsNorNotes(t *testing.T) {
 	}
 }
 
+// GitHub stamps a close and an earlier edit alike, so an open payload at the close's EventAt is
+// rejected by the upsert; it must not rewrite the closed PR's dependencies or release notes.
+func TestAnOpenPayloadRejectedAtTheClosesEventAtChangesNeitherRowsNorNotes(t *testing.T) {
+	r := newRig(t, true)
+	closedAt := at(10)
+	closed := func(p *github.PullRequest) { p.State, p.ClosedAt, p.UpdatedAt = "closed", &closedAt, &closedAt }
+	r.apply(t, prOf(21, botID, tableBody("| [lodash](https://l) | patch | `1` -> `2` |")+"### Release Notes\n\nfresh\n\n---\n", closed), botID)
+	if got := r.deps(t, 21); len(got) != 1 || got[0].Name != "lodash" {
+		t.Fatalf("dependencies after the close = %+v", got)
+	}
+
+	reopen := func(p *github.PullRequest) { p.UpdatedAt = &closedAt }
+	out := r.applyOutcome(t, prOf(21, botID, tableBody("| [other](https://l) | patch | `1` -> `2` |")+"### Release Notes\n\nrewritten\n---\n", reopen), botID)
+	if got := r.deps(t, 21); len(got) != 1 || got[0].Name != "lodash" {
+		t.Fatalf("dependencies = %+v", got)
+	}
+	if notes, _, _ := r.notes(t, 21); notes != "fresh" {
+		t.Fatalf("release notes = %q", notes)
+	}
+	if got := r.states(t); got[21] != "closed" {
+		t.Fatalf("states = %v", got)
+	}
+	if out.Changed || len(out.Events) != 0 {
+		t.Fatalf("a rejected payload produced %+v", out)
+	}
+}
+
 func TestReleaseNotesAreStoredTruncatedAndRefreshedWhenThePRChanges(t *testing.T) {
 	r := newRig(t, true)
 	withNotes := func(notes string) string {

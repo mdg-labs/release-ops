@@ -63,8 +63,9 @@ func (t *Tracker) Publish(events []Event) {
 // branch name and title decide nothing. A PR that is already tracked stays tracked while the
 // bot is its author, so an edit that drops the markers does not freeze its state. A PR that
 // lacks what tracking needs, or whose bot id is not known (botUserID 0), is ignored. The
-// Outcome says whether anything changed and carries the events of the step; a report that is
-// older than the stored row changes nothing and has no events.
+// Outcome says whether anything changed and carries the events of the step; a report the
+// stored row outranks (an older one, or an open one at the EventAt of a close) changes nothing,
+// records nothing and has no events.
 func (t *Tracker) ApplyTx(ctx context.Context, tx *sql.Tx, repositoryID string, pr github.PullRequest, botUserID int64) (Outcome, error) {
 	if botUserID == 0 || pr.User.ID != botUserID || !pr.Valid() {
 		return Outcome{}, nil
@@ -76,15 +77,15 @@ func (t *Tracker) ApplyTx(ctx context.Context, tx *sql.Tx, repositoryID string, 
 		}
 	}
 	in := input(repositoryID, pr, t.now())
-	changed, err := t.store.Upsert(ctx, tx, in)
-	if err != nil {
+	up, err := t.store.Upsert(ctx, tx, in)
+	if err != nil || !up.Accepted {
 		return Outcome{}, err
 	}
 	events, depsChanged, err := t.recordDependencies(ctx, tx, repositoryID, pr, in)
 	if err != nil {
 		return Outcome{}, err
 	}
-	return Outcome{Changed: changed || depsChanged, Events: events}, nil
+	return Outcome{Changed: up.Changed || depsChanged, Events: events}, nil
 }
 
 // input maps a valid PR to the row it is stored as.
