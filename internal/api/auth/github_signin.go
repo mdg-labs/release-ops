@@ -82,6 +82,9 @@ type GitHubSignInHandlers struct {
 	BootstrapAdminLogin string
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+
+	// spent is the OAuth states already redeemed; GitHubSignInHandlers is used by pointer only.
+	spent spentStates
 }
 
 func (h *GitHubSignInHandlers) now() time.Time {
@@ -135,7 +138,7 @@ func (h *GitHubSignInHandlers) Login(w http.ResponseWriter, r *http.Request) {
 
 // Callback answers GET /auth/github/callback. A missing, mismatched, expired or spent state
 // is refused before GitHub is called, and the attempt is spent by the first request that
-// presents it. The browser arrives here from GitHub, so every failure, that one included,
+// presents it, also when several arrive at once. The browser arrives here from GitHub, so every failure, that one included,
 // redirects (302) to /login with a fixed error code and leaves no session. The user token lives in this function only.
 func (h *GitHubSignInHandlers) Callback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -322,7 +325,10 @@ func exchangeErrorCode(err error) string {
 // takeAttempt spends the sign-in attempt bound to the session: the state, the verifier, the
 // expiry and the requested path are removed by the first request that reaches it, match or
 // not. It reports ok only for a present, unexpired attempt whose state equals the presented
-// one, compared in constant time.
+// one, compared in constant time, and only to the one request that claims the state in the
+// process-wide spent set under its lock: the session a request reads is its own copy, so two
+// requests carrying the same session can both match, and the loser of the claim is refused.
+// A request that does not match never claims the state.
 func (h *GitHubSignInHandlers) takeAttempt(r *http.Request, presented string) (verifier, redirect string, ok bool) {
 	ctx := r.Context()
 	stored := h.Sessions.GetString(ctx, oauthStateKey)
@@ -334,10 +340,14 @@ func (h *GitHubSignInHandlers) takeAttempt(r *http.Request, presented string) (v
 	h.Sessions.Remove(ctx, oauthExpiresKey)
 	h.Sessions.Remove(ctx, oauthRedirectKey)
 
-	if stored == "" || verifier == "" || presented == "" || expires == 0 || !h.now().Before(time.Unix(expires, 0)) {
+	now := h.now()
+	if stored == "" || verifier == "" || presented == "" || expires == 0 || !now.Before(time.Unix(expires, 0)) {
 		return "", "", false
 	}
 	if subtle.ConstantTimeCompare([]byte(presented), []byte(stored)) != 1 {
+		return "", "", false
+	}
+	if !h.spent.claim(stored, now, time.Unix(expires, 0)) {
 		return "", "", false
 	}
 	return verifier, SafeRedirectPath(redirect), true
