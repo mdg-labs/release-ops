@@ -113,10 +113,10 @@ func (o *OAuthClient) AuthorizeURL(clientID, redirectURI, state, codeChallenge s
 // response is carried in an error.
 func (o *OAuthClient) ExchangeCode(ctx context.Context, p ExchangeParams) (UserToken, error) {
 	logging.Register(p.ClientSecret)
-	logging.RegisterUnauthenticatedFor(oauthAttemptLogTTL, p.Code, p.CodeVerifier)
 	if !ValidCode(p.Code) {
 		return UserToken{}, ErrOAuthRejected
 	}
+	logging.RegisterUnauthenticatedFor(oauthAttemptLogTTL, p.Code, p.CodeVerifier)
 	payload, err := json.Marshal(map[string]string{
 		"client_id":     p.ClientID,
 		"client_secret": p.ClientSecret,
