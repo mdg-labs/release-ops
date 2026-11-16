@@ -1,6 +1,7 @@
 package renovate
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -301,6 +302,11 @@ func (h *Handler) execute(ctx context.Context, job queue.ClaimedJob, rec *queue.
 	for _, key := range removed {
 		h.log.Warn("renovate: the global config sets a key Release Ops owns; it is ignored", "job", job.ID, "key", key)
 	}
+	cfgPath, err = withDefaults(cfgPath, scratch)
+	if err != nil {
+		h.log.Warn("renovate: global config defaults", "job", job.ID, "err", redactor.String(err.Error()))
+		return fail(CodeGlobalConfig, globalConfigDefaultsReason(err))
+	}
 
 	bin, err := exec.LookPath(h.opts.Binary)
 	if err != nil {
@@ -446,6 +452,95 @@ func globalConfigReason(err error) string {
 	default:
 		return "the global Renovate config could not be fetched or read"
 	}
+}
+
+// configDefaults are the settings Release Ops applies beneath the global config file
+// (specs.html § 2.5): the file keeps any of them it sets. They cannot go in the child's
+// environment, which Renovate reads over the file.
+var configDefaults = map[string]any{
+	"onboarding":     false,
+	"requireConfig":  "required",
+	"platformCommit": "enabled",
+	"binarySource":   "install",
+}
+
+var errConfigNotJSON = errors.New("the global config is not parseable JSON")
+
+func globalConfigDefaultsReason(err error) string {
+	if errors.Is(err, errConfigNotJSON) {
+		return "the global Renovate config is not valid JSON, so the Release Ops defaults cannot be applied beneath it"
+	}
+	return "the Release Ops defaults could not be applied beneath the global Renovate config"
+}
+
+// withDefaults returns the path of the config at path with configDefaults beneath it, written
+// into dir. A JSON config gets each default it does not set itself at the top level. A
+// JavaScript config is not evaluated by the worker: it is wrapped by a module in dir that
+// loads it in Renovate's own process and merges the defaults beneath what it exports, which
+// may be an object or a function. A config that already sets every default is returned as it is.
+func withDefaults(path, dir string) (string, error) {
+	if filepath.Ext(path) != ".json" {
+		return wrapWithDefaults(path, dir)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	var doc map[string]json.RawMessage
+	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&doc); err != nil {
+		return "", errConfigNotJSON
+	}
+	added := false
+	for key, value := range configDefaults {
+		if _, ok := doc[key]; ok {
+			continue
+		}
+		enc, err := json.Marshal(value)
+		if err != nil {
+			return "", err
+		}
+		doc[key] = enc
+		added = true
+	}
+	if !added {
+		return path, nil
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return "", err
+	}
+	p := filepath.Join(dir, "config-with-defaults.json")
+	if err := os.WriteFile(p, out, 0o644); err != nil {
+		return "", fmt.Errorf("write global config: %w", err)
+	}
+	return p, nil
+}
+
+// wrapWithDefaults writes the module that stands in for the JavaScript config at path.
+func wrapWithDefaults(path, dir string) (string, error) {
+	defaults, err := json.Marshal(configDefaults)
+	if err != nil {
+		return "", err
+	}
+	target, err := json.Marshal(path)
+	if err != nil {
+		return "", err
+	}
+	src := "const defaults = " + string(defaults) + ";\n" +
+		"const loaded = require(" + string(target) + ");\n" +
+		"const config = loaded.default ? loaded.default : loaded;\n" +
+		"const merge = (c) => ({ ...defaults, ...c });\n" +
+		"module.exports = typeof config === 'function'\n" +
+		"  ? (...args) => {\n" +
+		"      const out = config(...args);\n" +
+		"      return out && typeof out.then === 'function' ? out.then(merge) : merge(out);\n" +
+		"    }\n" +
+		"  : merge(config);\n"
+	p := filepath.Join(dir, "config-with-defaults.js")
+	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+		return "", fmt.Errorf("write global config: %w", err)
+	}
+	return p, nil
 }
 
 // environment is the child's whole environment: nothing of the worker's own is inherited, so

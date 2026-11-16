@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -216,7 +217,7 @@ func TestRunGivesRenovateExactlyTheListedEnvironment(t *testing.T) {
 		"PATH": os.Getenv("PATH"), "HOME": os.Getenv("HOME"), "LOG_FORMAT": "json", "LOG_LEVEL": "info",
 		"RENOVATE_PLATFORM": "github", "RENOVATE_TOKEN": jobToken, "RENOVATE_REPOSITORIES": "acme/repo-1",
 		"RENOVATE_GIT_AUTHOR": gitAuthor, "RENOVATE_ENDPOINT": "https://api.github.example/v3/",
-		"RENOVATE_CONFIG_FILE": filepath.Join(e.cfgMount, "config.json"), "RENOVATE_CACHE_DIR": cacheDir,
+		"RENOVATE_CACHE_DIR":        cacheDir,
 		"RENOVATE_REPOSITORY_CACHE": "enabled", "RENOVATE_PERSIST_REPO_DATA": "true", "RENOVATE_ALLOW_SCRIPTS": "false",
 		"RENOVATE_REPORT_TYPE": "file",
 	}
@@ -227,8 +228,13 @@ func TestRunGivesRenovateExactlyTheListedEnvironment(t *testing.T) {
 	if base != filepath.Join(e.cacheRoot, "slot-1", "base") {
 		t.Errorf("base dir %q is not the slot's own directory on the cache volume", base)
 	}
+	if cfg := got["RENOVATE_CONFIG_FILE"]; filepath.Dir(cfg) != filepath.Dir(report) || filepath.Base(cfg) != "config-with-defaults.json" {
+		t.Errorf("config file %q is not the per-job copy with the defaults", cfg)
+	}
 	delete(got, "RENOVATE_REPORT_PATH")
 	delete(got, "RENOVATE_BASE_DIR")
+	delete(got, "RENOVATE_CONFIG_FILE")
+	delete(want, "RENOVATE_CONFIG_FILE")
 
 	if !slices.Equal(sortedKeys(got), sortedKeys(want)) {
 		t.Errorf("environment variables = %v\nwant              %v", sortedKeys(got), sortedKeys(want))
@@ -243,6 +249,155 @@ func TestRunGivesRenovateExactlyTheListedEnvironment(t *testing.T) {
 		if strings.Contains(dump, v) {
 			t.Errorf("the host's %s reached the child", k)
 		}
+	}
+}
+
+// handedConfig is the global config Renovate was handed, copied to $OUT/config by the fake.
+func (e *env) handedConfig() map[string]any {
+	e.t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(e.read("config")), &doc); err != nil {
+		e.t.Fatalf("the config handed to Renovate is not JSON: %v", err)
+	}
+	return doc
+}
+
+var safetyDefaults = map[string]any{
+	"onboarding": false, "requireConfig": "required", "platformCommit": "enabled", "binarySource": "install",
+}
+
+func TestTheSafetyDefaultsApplyBeneathAGlobalConfigThatSetsNoneOfThem(t *testing.T) {
+	e := newEnv(t, `cp "$RENOVATE_CONFIG_FILE" "$OUT/config"`)
+	if err := os.WriteFile(filepath.Join(e.cfgMount, "config.json"), []byte(`{"prConcurrentLimit": 3}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if res := e.h.Run(context.Background(), job(0)); res.Err != nil {
+		t.Fatalf("Run: %v", res.Err)
+	}
+	got := e.handedConfig()
+	for key, want := range safetyDefaults {
+		if got[key] != want {
+			t.Errorf("%s = %v, want the default %v", key, got[key], want)
+		}
+	}
+	if got["prConcurrentLimit"] != float64(3) {
+		t.Errorf("prConcurrentLimit = %v, want the file's value kept", got["prConcurrentLimit"])
+	}
+	if res := e.h.Run(context.Background(), job(0)); res.Err != nil || res.Run.GlobalConfig.Content != `{"prConcurrentLimit": 3}` {
+		t.Errorf("the record's config is the file as it was, not the copy with defaults: %+v", res.Run)
+	}
+}
+
+func TestAGlobalConfigValueWinsOverTheSafetyDefault(t *testing.T) {
+	e := newEnv(t, `cp "$RENOVATE_CONFIG_FILE" "$OUT/config"`)
+	file := `{"onboarding": true, "requireConfig": "optional", "platformCommit": "disabled", "binarySource": "global"}`
+	if err := os.WriteFile(filepath.Join(e.cfgMount, "config.json"), []byte(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if res := e.h.Run(context.Background(), job(0)); res.Err != nil {
+		t.Fatalf("Run: %v", res.Err)
+	}
+	got := e.handedConfig()
+	want := map[string]any{"onboarding": true, "requireConfig": "optional", "platformCommit": "disabled", "binarySource": "global"}
+	for key, v := range want {
+		if got[key] != v {
+			t.Errorf("%s = %v, want the file's %v", key, got[key], v)
+		}
+	}
+	// A key set in the file wins one by one: the rest still get their defaults.
+	if err := os.WriteFile(filepath.Join(e.cfgMount, "config.json"), []byte(`{"binarySource": "global"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if res := e.h.Run(context.Background(), job(0)); res.Err != nil {
+		t.Fatalf("Run: %v", res.Err)
+	}
+	got = e.handedConfig()
+	if got["binarySource"] != "global" || got["onboarding"] != false || got["requireConfig"] != "required" || got["platformCommit"] != "enabled" {
+		t.Errorf("config = %v", got)
+	}
+}
+
+func TestAGlobalConfigThatIsNotJSONIsRefusedBeforeRenovateStarts(t *testing.T) {
+	e := newEnv(t, `touch "$OUT/started"`)
+	if err := os.WriteFile(filepath.Join(e.cfgMount, "config.json"), []byte(`{"onboarding": `), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := e.h.Run(context.Background(), job(0))
+	wantFailure(t, res, renovate.CodeGlobalConfig)
+	if !strings.Contains(res.Err.Error(), "defaults cannot be applied") {
+		t.Errorf("reason = %q", res.Err)
+	}
+	if e.exists("started") || len(e.jobDirs()) != 0 {
+		t.Error("Renovate started, or a scratch directory was left, after a refused global config")
+	}
+}
+
+// A JavaScript config is not evaluated by the worker: the module handed to Renovate loads it
+// and puts the defaults beneath it. Node runs that module here as Renovate would load it.
+func TestTheSafetyDefaultsApplyBeneathAJavaScriptGlobalConfig(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	for name, file := range map[string]string{
+		"an object":         `module.exports = { onboarding: true, prConcurrentLimit: 3 };`,
+		"a function":        `module.exports = () => ({ onboarding: true, prConcurrentLimit: 3 });`,
+		"an async function": `module.exports = async () => ({ onboarding: true, prConcurrentLimit: 3 });`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t, `cp "$RENOVATE_CONFIG_FILE" "$OUT/config.path"`)
+			if err := os.Remove(filepath.Join(e.cfgMount, "config.json")); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(e.cfgMount, "config.js"), []byte(file), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			// The fake copies the module itself, which requires the original by absolute path.
+			if res := e.h.Run(context.Background(), job(0)); res.Err != nil {
+				t.Fatalf("Run: %v", res.Err)
+			}
+			wrapper := filepath.Join(e.out, "wrapper.js")
+			if err := os.Rename(filepath.Join(e.out, "config.path"), wrapper); err != nil {
+				t.Fatal(err)
+			}
+			script := `Promise.resolve(require(process.argv[1])).then(c => typeof c === 'function' ? c() : c).then(c => console.log(JSON.stringify(c)))`
+			out, err := exec.Command(node, "-e", script, wrapper).Output()
+			if err != nil {
+				t.Fatalf("node: %v", err)
+			}
+			var got map[string]any
+			if err := json.Unmarshal(out, &got); err != nil {
+				t.Fatalf("output %q: %v", out, err)
+			}
+			if got["onboarding"] != true || got["prConcurrentLimit"] != float64(3) {
+				t.Errorf("config = %v, want the file's values kept", got)
+			}
+			for _, key := range []string{"requireConfig", "platformCommit", "binarySource"} {
+				if got[key] != safetyDefaults[key] {
+					t.Errorf("%s = %v, want the default %v", key, got[key], safetyDefaults[key])
+				}
+			}
+		})
+	}
+}
+
+func TestAllowScriptsStaysFixedWhateverTheGlobalConfigSays(t *testing.T) {
+	e := newEnv(t, `env > "$OUT/env"; cp "$RENOVATE_CONFIG_FILE" "$OUT/config"`)
+	if err := os.WriteFile(filepath.Join(e.cfgMount, "config.json"), []byte(`{"allowScripts": true, "force": {"allowScripts": true}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if res := e.h.Run(context.Background(), job(0)); res.Err != nil {
+		t.Fatalf("Run: %v", res.Err)
+	}
+	got := e.handedConfig()
+	if _, ok := got["allowScripts"]; ok {
+		t.Error("the config handed to Renovate still sets allowScripts")
+	}
+	if !strings.Contains(e.read("env"), "RENOVATE_ALLOW_SCRIPTS=false\n") {
+		t.Errorf("env = %s", e.read("env"))
+	}
+	if got["onboarding"] != false {
+		t.Errorf("the defaults are missing beside the owned-key removal: %v", got)
 	}
 }
 
@@ -779,8 +934,8 @@ hello.sh > "$OUT/tool"`, gh)
 	if res.Err != nil {
 		t.Fatalf("Run: %v\n%+v", res.Err, res.Run)
 	}
-	if got := e.read("config"); got != `{"onboarding": false}` {
-		t.Errorf("config = %q", got)
+	if got := e.handedConfig(); got["onboarding"] != false {
+		t.Errorf("config = %v", got)
 	}
 	if got := strings.TrimSpace(e.read("tool")); got != "hello" {
 		t.Errorf("the fetched tool printed %q: it is not runnable from PATH", got)
@@ -812,8 +967,8 @@ func TestAMountOverridesTheFetch(t *testing.T) {
 	if res := e.h.Run(context.Background(), j); res.Err != nil {
 		t.Fatal(res.Err)
 	}
-	if got := e.read("config"); got != `{"from":"mount"}` {
-		t.Errorf("config = %q", got)
+	if got := e.handedConfig(); got["from"] != "mount" {
+		t.Errorf("config = %v, want the mount's", got)
 	}
 	if len(gh.auth) != 0 {
 		t.Errorf("the repository was fetched with a mount present: %v", gh.auth)
