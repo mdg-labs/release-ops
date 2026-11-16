@@ -30,7 +30,10 @@ Two URLs matter:
 | `APP_URL` | The address your browser uses to open Release Ops, without a trailing slash, for example `https://release-ops.example.com`. GitHub sends your browser back to it during setup and sign-in. | Yes |
 | `WEBHOOK_URL` | The public URL GitHub delivers webhooks to. It ends in `/hooks/github`, for example `https://release-ops.example.com/hooks/github`. | No |
 
-Release Ops reads both at every start, and uses them to build the GitHub App's manifest when you create the App. Changing them later does not change the App that already exists: you edit the App's webhook URL and activation in the App's settings on GitHub.
+Release Ops reads both at every start, and uses them to build the GitHub App's manifest when you create the App. Changing them later does not change the App that already exists. Edit the App's settings on GitHub to match:
+
+- After you change `WEBHOOK_URL`, edit the App's webhook URL and its activation.
+- After you change `APP_URL`, edit the App's callback URL (the user authorization callback) to `<APP_URL>/api/go/api/v1/auth/github/callback`. GitHub accepts a sign-in redirect only when it matches a registered callback URL, so sign-in fails until you do.
 
 GitHub itself calls only the webhook, and only the path `/hooks/github` of it. Your browser follows the setup and sign-in redirects, so GitHub never calls those addresses:
 

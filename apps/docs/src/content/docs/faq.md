@@ -12,7 +12,7 @@ They are two different addresses with two different jobs.
 - `APP_URL` is the address your browser uses to open Release Ops. GitHub sends your browser back to it during setup and sign-in. GitHub itself never calls it, so it only has to be reachable from the browsers of the people who sign in. It is required.
 - `WEBHOOK_URL` is the address GitHub calls to deliver events: a ticked checkbox, a closed PR, a push. It must be reachable from GitHub over HTTPS and it ends in `/hooks/github`. It is optional.
 
-With a webhook, a run starts within seconds of the event. Release Ops reads both addresses when you create the GitHub App, and changing them later does not change the App. See [Getting started](../getting-started/#1-choose-your-urls).
+With a webhook, a run starts within seconds of the event. Release Ops reads both addresses when you create the GitHub App, and changing them later does not change the App: after a new `WEBHOOK_URL`, edit the App's webhook URL on GitHub, and after a new `APP_URL`, edit its callback URL, or sign-in fails. See [Getting started](../getting-started/#1-choose-your-urls).
 
 ### What happens if I have no public webhook URL?
 
