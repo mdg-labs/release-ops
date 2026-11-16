@@ -148,6 +148,7 @@ func ageSession(t *testing.T, deps *ServerDeps, evaluatedAt time.Time) {
 var viewerRoutes = []string{
 	"GET /api/v1/status",
 	"GET /api/v1/about",
+	"GET /api/v1/update-prs",
 	"POST /api/v1/auth/logout", // last: it ends the session
 }
 

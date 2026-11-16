@@ -30,6 +30,7 @@ var expectedAPIRoutes = []string{
 	"POST /api/v1/auth/login-link",
 	"POST /api/v1/auth/logout",
 	"GET /api/v1/status",
+	"GET /api/v1/update-prs",
 	"GET /api/v1/settings",
 	"PATCH /api/v1/settings",
 	"GET /api/v1/integrations",

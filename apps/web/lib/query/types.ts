@@ -204,3 +204,51 @@ export type UpdateTicketProjectInput = {
   contentTemplates: ContentTemplates;
   filter: TicketProjectFilter;
 };
+
+export type UpdatePrState = "open" | "merged" | "closed" | "superseded";
+
+export type UpdatePrType =
+  "major" | "minor" | "patch" | "digest" | "lockfile" | "other";
+
+export type UpdatePrSort = "openedAt" | "-openedAt" | "mergedAt" | "-mergedAt";
+
+export type UpdatePrTicketState =
+  "pending" | "open" | "done" | "cancelled" | "superseded";
+
+export type UpdatePrDependency = {
+  name: string;
+  from: string | null;
+  to: string | null;
+  updateType: UpdatePrType | null;
+};
+
+/** The ticket as Release Ops last recorded it (docs/specs.html §7.6). */
+export type UpdatePrTicket = {
+  state: UpdatePrTicketState;
+  externalId: string | null;
+  url: string | null;
+  hasError: boolean;
+};
+
+export type UpdatePr = {
+  id: string;
+  repository: { id: string; fullName: string };
+  number: number;
+  url: string;
+  title: string;
+  state: UpdatePrState;
+  openedAt: string | null;
+  mergedAt: string | null;
+  closedAt: string | null;
+  supersededBy: { id: string; number: number; url: string } | null;
+  updateTypes: UpdatePrType[];
+  dependencies: UpdatePrDependency[];
+  ticket: UpdatePrTicket | null;
+};
+
+export type UpdatePrsResponse = {
+  items: UpdatePr[];
+  page: number;
+  pageSize: number;
+  total: number;
+};

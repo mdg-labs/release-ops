@@ -11,6 +11,7 @@ export const queryKeys = {
   githubApp: () => ["github-app"] as const,
   installations: () => ["installations"] as const,
   about: () => ["about"] as const,
+  updatePrs: (params: object) => ["update-prs", params] as const,
   ticketMetadata: (
     integrationId: string | null | undefined,
     resource: string,

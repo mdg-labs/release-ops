@@ -72,8 +72,62 @@
   },
   "dashboard": {
     "title": "Dashboard",
-    "emptyTitle": "Nothing to show yet",
-    "emptyDescription": "Update and release information will appear here once it is available."
+    "description": "Open and recently merged dependency update pull requests.",
+    "filters": {
+      "repository": "Repository",
+      "allRepositories": "All repositories",
+      "updateType": "Update type",
+      "allUpdateTypes": "All update types"
+    },
+    "open": {
+      "title": "Open update pull requests",
+      "empty": "No open update pull requests.",
+      "emptyFiltered": "No open update pull requests match these filters."
+    },
+    "merged": {
+      "title": "Recently merged",
+      "emptyFiltered": "No merged update pull requests match these filters.",
+      "empty": "Nothing has been merged yet."
+    },
+    "columns": {
+      "repository": "Repository",
+      "title": "Pull request",
+      "updateTypes": "Update type",
+      "age": "Age",
+      "mergedAt": "Merged",
+      "ticket": "Ticket"
+    },
+    "updateTypes": {
+      "major": "Major",
+      "minor": "Minor",
+      "patch": "Patch",
+      "digest": "Digest",
+      "lockfile": "Lockfile",
+      "other": "Other",
+      "unknown": "Unknown"
+    },
+    "ticketStates": {
+      "pending": "Pending",
+      "open": "Open",
+      "done": "Done",
+      "cancelled": "Cancelled",
+      "superseded": "Superseded"
+    },
+    "ticketError": "Ticket error",
+    "noTicket": "No ticket",
+    "noDate": "Unknown",
+    "loadFailed": "Could not load the update pull requests.",
+    "retry": "Try again",
+    "emptyTitle": "No update pull requests yet",
+    "emptyDescription": "Update pull requests appear here once Renovate opens them in a repository that has Release Ops enabled.",
+    "emptyAction": "View repositories",
+    "pagination": {
+      "summary": "{from}–{to} of {total}",
+      "pageSize": "Rows per page",
+      "pageSizeOption": "{count} per page",
+      "previous": "Previous",
+      "next": "Next"
+    }
   },
   "integrations": {
     "title": "Integrations",
