@@ -29,7 +29,7 @@ Leave the repositories' `renovate.json` files and your shared presets as they ar
 
 Release Ops uses the global (self-hosted) configuration that you already have. Prepare the file first:
 
-1. Remove `repositories`, `platform` and `token` from it. Release Ops sets them for every job, and it ignores them if they are still there. The same goes for `allowScripts`, which Release Ops always sets to `false`.
+1. Remove `repositories`, `platform`, `token` and `allowScripts` from it, including inside `force`. Release Ops sets them for every job, `allowScripts` always to `false`. A JSON file that still has them gets them removed before Renovate reads it, but a JavaScript file is passed on as it is, and a value under its `force` wins over Release Ops' settings. See [What Release Ops owns](../../concepts/global-renovate-config/#what-release-ops-owns).
 2. Keep `onboarding: false` and `requireConfig: "required"`, so Renovate opens no onboarding PR and skips repositories without their own Renovate configuration.
 3. Keep your other global settings, such as `platformCommit`, `prConcurrentLimit`, schedules and presets.
 4. Make sure the file contains no secrets. The **Settings** page shows its contents to admins.
