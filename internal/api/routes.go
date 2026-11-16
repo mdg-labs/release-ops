@@ -24,7 +24,8 @@ import (
 //     integrations, ticket-projects, update-tickets (clearing a pending marker), repositories
 //     (the list with ticket projects, run now, pause, enable and the ticket-project override)
 //     and users for an admin only
-//     (RequireAdmin), a viewer getting 403
+//     (RequireAdmin), a viewer getting 403; the GitHub App's private key rotation
+//     (PUT /github-app/private-key, only with a GitHub client) is one of them
 func RegisterAll(api chi.Router, deps *ServerDeps) {
 	if deps == nil || deps.Session == nil {
 		return
@@ -167,6 +168,14 @@ func registerAdminRoutes(protected chi.Router, deps *ServerDeps, appURL string, 
 	protected.Get("/repositories", repositoryHandlers.List)
 	protected.Patch("/repositories/{id}", repositoryHandlers.Patch)
 	protected.Post("/repositories/{id}/run", repositoryHandlers.Run)
+
+	if deps.GitHub != nil {
+		githubAppHandlers := &handlers.GitHubAppHandlers{
+			Verifier: github.NewAppClient(deps.GitHub, st.GitHubApp(), github.AppClientOptions{}),
+			Apps:     st.GitHubApp(),
+		}
+		protected.Put("/github-app/private-key", githubAppHandlers.RotatePrivateKey)
+	}
 
 	protected.Get("/users", userHandlers.List)
 	protected.Delete("/users/{id}", userHandlers.Delete)

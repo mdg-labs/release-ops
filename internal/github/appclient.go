@@ -32,6 +32,13 @@ type CredentialsSource interface {
 	SigningKey(ctx context.Context) (appID int64, privateKeyPEM []byte, err error)
 }
 
+// KeyVersioner is implemented by a CredentialsSource whose private key can be replaced while
+// the process runs. AppClient serves a cached installation token only when it was minted
+// under the current version, so a replaced key never leaves a token of the old one in use.
+type KeyVersioner interface {
+	KeyVersion() int64
+}
+
 // AppClientOptions configures an AppClient.
 type AppClientOptions struct {
 	// Now is the clock; nil means time.Now.
@@ -66,6 +73,8 @@ type tokenKey struct {
 type tokenEntry struct {
 	mu    sync.Mutex
 	token InstallationToken
+	// version is the key version the token was minted under.
+	version int64
 }
 
 // NewAppClient returns an AppClient that calls GitHub through api.
@@ -91,6 +100,33 @@ func (c *AppClient) appJWT(ctx context.Context) (jwt string, appID int64, err er
 	}
 	logging.RegisterFor(jwtLifetime, jwt)
 	return jwt, appID, nil
+}
+
+// VerifyKey checks a candidate private key (PEM) against GitHub without storing anything: it
+// signs an App JWT for this instance's App id and calls GET /app with it. It returns the App
+// id on success. ErrInvalidPrivateKey means the PEM is not an RSA key, ErrAppRejected that
+// GitHub does not accept the key for this App, ErrAppMismatch that GitHub answered for
+// another App, and ErrRequestFailed that GitHub could not be asked.
+func (c *AppClient) VerifyKey(ctx context.Context, candidate []byte) (int64, error) {
+	appID, current, err := c.creds.SigningKey(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("github app credentials: %w", err)
+	}
+	clear(current)
+	jwt, err := SignAppJWT(appID, candidate, c.now())
+	if err != nil {
+		return 0, err
+	}
+	logging.Register(string(candidate))
+	logging.RegisterFor(jwtLifetime, jwt)
+	app, err := c.api.GetApp(ctx, jwt)
+	if err != nil {
+		return 0, err
+	}
+	if app.ID != appID {
+		return 0, ErrAppMismatch
+	}
+	return appID, nil
 }
 
 // Installation fetches the installation with the App JWT, so what the caller learns about it
@@ -184,15 +220,25 @@ func (c *AppClient) cached(key tokenKey, minLife time.Duration, mint func() (Ins
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 
-	if entry.token.value != "" && c.fresh(entry.token, minLife) {
+	version := c.keyVersion()
+	if entry.token.value != "" && entry.version == version && c.fresh(entry.token, minLife) {
 		return entry.token, nil
 	}
 	tok, err := mint()
 	if err != nil {
 		return InstallationToken{}, err
 	}
-	entry.token = tok
+	entry.token, entry.version = tok, version
 	return tok, nil
+}
+
+// keyVersion is read before a mint starts, so a token minted while the key is being replaced
+// carries the older version and is replaced on its next use.
+func (c *AppClient) keyVersion() int64 {
+	if v, ok := c.creds.(KeyVersioner); ok {
+		return v.KeyVersion()
+	}
+	return 0
 }
 
 func (c *AppClient) fresh(t InstallationToken, minLife time.Duration) bool {

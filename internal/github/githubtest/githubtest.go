@@ -67,10 +67,14 @@ type Fake struct {
 	// PEM is the App's private key, PKCS#1.
 	PEM []byte
 
-	key *rsa.PrivateKey
 	srv *httptest.Server
 
 	mu sync.Mutex
+	// keys are the public keys of the private keys GitHub accepts for the App, the generated
+	// one first.
+	keys []*rsa.PublicKey
+	// appDocID is the id GET /app answers with; 0 answers AppID.
+	appDocID int64
 	// now is the fake's clock for JWT expiry and token lifetimes.
 	now          func() time.Time
 	installs     map[int64]int64 // installation id -> app id answered
@@ -142,7 +146,7 @@ func New(t testing.TB, now func() time.Time) *Fake {
 		t.Fatalf("generate key: %v", err)
 	}
 	f := &Fake{
-		key:         key,
+		keys:        []*rsa.PublicKey{&key.PublicKey},
 		now:         now,
 		installs:    map[int64]int64{},
 		tokenFor422: map[string]bool{},
@@ -168,6 +172,48 @@ func New(t testing.TB, now func() time.Time) *Fake {
 	t.Cleanup(f.srv.Close)
 	f.URL = f.srv.URL
 	return f
+}
+
+// Close stops the fake, so calls to its URL fail as they do when GitHub is unreachable.
+func (f *Fake) Close() { f.srv.Close() }
+
+// AddKey generates another private key for the App, accepts JWTs signed with it from now on
+// and returns it as a PKCS#1 PEM, the way a second key generated in the App's settings is
+// valid beside the first.
+func (f *Fake) AddKey(t testing.TB) []byte {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.keys = append(f.keys, &key.PublicKey)
+	return pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+}
+
+// RevokeKey stops accepting JWTs signed with the private key in keyPEM, as GitHub does once a
+// key is deleted from the App's settings.
+func (f *Fake) RevokeKey(t testing.TB, keyPEM []byte) {
+	t.Helper()
+	block, _ := pem.Decode(keyPEM)
+	if block == nil {
+		t.Fatal("revoke key: not a PEM")
+	}
+	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		t.Fatalf("revoke key: %v", err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.keys = slices.DeleteFunc(f.keys, func(k *rsa.PublicKey) bool { return k.Equal(&key.PublicKey) })
+}
+
+// AnswerAppID makes GET /app answer with another App's id; 0 answers AppID again.
+func (f *Fake) AnswerAppID(id int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.appDocID = id
 }
 
 // SetBotUser makes the public GET /users/{slug}[bot] answer the bot user of the App with that
@@ -445,6 +491,10 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
+	if r.URL.Path == "/app" && r.Method == http.MethodGet {
+		f.serveApp(w)
+		return
+	}
 	if r.URL.Path == "/app/installations" {
 		f.serveInstallationList(w, r)
 		return
@@ -510,6 +560,16 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func (f *Fake) serveApp(w http.ResponseWriter) {
+	f.mu.Lock()
+	id := f.appDocID
+	f.mu.Unlock()
+	if id == 0 {
+		id = AppID
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "slug": "release-ops-fixture"})
 }
 
 func (f *Fake) deliveryDoc(d Delivery) map[string]any {
@@ -827,7 +887,12 @@ func (f *Fake) checkJWT(token string) bool {
 		return false
 	}
 	digest := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
-	if rsa.VerifyPKCS1v15(&f.key.PublicKey, crypto.SHA256, digest[:], sig) != nil {
+	f.mu.Lock()
+	signed := slices.ContainsFunc(f.keys, func(k *rsa.PublicKey) bool {
+		return rsa.VerifyPKCS1v15(k, crypto.SHA256, digest[:], sig) == nil
+	})
+	f.mu.Unlock()
+	if !signed {
 		return false
 	}
 	payload, err := enc.DecodeString(parts[1])

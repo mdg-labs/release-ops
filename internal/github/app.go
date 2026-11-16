@@ -23,6 +23,9 @@ var (
 	// ErrAppRejected is returned when GitHub refuses the App's credentials or the request
 	// (401, 403).
 	ErrAppRejected = errors.New("github rejected the app credentials")
+	// ErrAppMismatch is returned when GitHub answers a JWT for this instance's App id with a
+	// different App.
+	ErrAppMismatch = errors.New("github answered for another app than this instance's")
 	// ErrRepositoriesRejected is returned when GitHub refuses an installation token because
 	// a requested repository is not covered by the installation (422).
 	ErrRepositoriesRejected = errors.New("github refused the repositories requested for the token")
@@ -37,6 +40,12 @@ type Account struct {
 	ID    int64  `json:"id"`
 	Login string `json:"login"`
 	Type  string `json:"type"`
+}
+
+// App is GET /app: the App the JWT authenticates as.
+type App struct {
+	ID   int64  `json:"id"`
+	Slug string `json:"slug"`
 }
 
 // Installation is GET /app/installations/{id}.
@@ -74,6 +83,27 @@ func (t InstallationToken) GoString() string { return t.String() }
 // LogValue omits the token.
 func (t InstallationToken) LogValue() slog.Value {
 	return slog.GroupValue(slog.Time("expires_at", t.ExpiresAt))
+}
+
+// GetApp fetches the App that appJWT authenticates as. It answers ErrAppRejected when GitHub
+// does not accept the JWT.
+func (c *Client) GetApp(ctx context.Context, appJWT string) (*App, error) {
+	status, body, err := c.do(ctx, http.MethodGet, "/app", appJWT, nil)
+	if err != nil {
+		return nil, err
+	}
+	switch status {
+	case http.StatusOK:
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, ErrAppRejected
+	default:
+		return nil, fmt.Errorf("%w: status %d", ErrRequestFailed, status)
+	}
+	var out App
+	if err := json.Unmarshal(body, &out); err != nil || out.ID <= 0 {
+		return nil, fmt.Errorf("%w: response is not an app", ErrRequestFailed)
+	}
+	return &out, nil
 }
 
 // GetInstallation fetches an installation of the App that appJWT authenticates.

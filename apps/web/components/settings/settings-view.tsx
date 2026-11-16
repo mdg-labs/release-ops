@@ -9,6 +9,7 @@ import {
   isForbiddenError,
 } from "@/components/common/forbidden-state";
 import { PageHeader } from "@/components/common/page-header";
+import { GitHubAppKeySection } from "@/components/settings/github-app-key-section";
 import { SettingsNav } from "@/components/settings/settings-nav";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -165,6 +166,7 @@ export function SettingsView(): React.ReactElement {
               {tCommon("save")}
             </Button>
           </SettingsSection>
+          {isError ? null : <GitHubAppKeySection />}
         </div>
       )}
     </div>

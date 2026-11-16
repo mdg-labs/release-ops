@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MockAgent, setGlobalDispatcher } from "undici";
-import { DELETE, GET, PATCH, POST } from "./route";
+import { DELETE, GET, PATCH, POST, PUT } from "./route";
 
 const GO_ORIGIN = "http://127.0.0.1:8080";
 
@@ -166,6 +166,33 @@ describe("Go API proxy route", () => {
     expect(response.headers.get("set-cookie")).toContain(
       "release_ops_session=abc",
     );
+  });
+
+  it("forwards PUT with the session cookie", async () => {
+    const pool = mockAgent.get(GO_ORIGIN);
+    pool
+      .intercept({
+        path: "/api/v1/github-app/private-key",
+        method: "PUT",
+        headers: { cookie: "session=abc" },
+      })
+      .reply(204);
+
+    const response = await PUT(
+      makeRequest(
+        "http://localhost:3000/api/go/api/v1/github-app/private-key",
+        {
+          method: "PUT",
+          headers: {
+            "content-type": "application/json",
+            cookie: "session=abc",
+          },
+          body: JSON.stringify({ privateKey: "k" }),
+        },
+      ),
+      routeContext(["api", "v1", "github-app", "private-key"]),
+    );
+    expect(response.status).toBe(204);
   });
 
   it("forwards PATCH and DELETE methods", async () => {

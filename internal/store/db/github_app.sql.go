@@ -155,6 +155,30 @@ func (q *Queries) GetGitHubAppWebhookSecret(ctx context.Context) (string, error)
 	return encrypted_webhook_secret, err
 }
 
+const replaceGitHubAppPrivateKey = `-- name: ReplaceGitHubAppPrivateKey :execrows
+UPDATE github_app SET encrypted_private_key = ?, key_id = ?, updated_at = ? WHERE id = 1 AND app_id = ?
+`
+
+type ReplaceGitHubAppPrivateKeyParams struct {
+	EncryptedPrivateKey string `json:"encrypted_private_key"`
+	KeyID               string `json:"key_id"`
+	UpdatedAt           string `json:"updated_at"`
+	AppID               int64  `json:"app_id"`
+}
+
+func (q *Queries) ReplaceGitHubAppPrivateKey(ctx context.Context, arg ReplaceGitHubAppPrivateKeyParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, replaceGitHubAppPrivateKey,
+		arg.EncryptedPrivateKey,
+		arg.KeyID,
+		arg.UpdatedAt,
+		arg.AppID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const setGitHubAppBotUserID = `-- name: SetGitHubAppBotUserID :execrows
 UPDATE github_app SET bot_user_id = ?, updated_at = ? WHERE id = 1 AND bot_user_id IS NULL
 `

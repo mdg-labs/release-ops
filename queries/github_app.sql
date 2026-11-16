@@ -49,3 +49,6 @@ SELECT client_id, encrypted_client_secret, owner_login, owner_type FROM github_a
 
 -- name: SetGitHubAppBotUserID :execrows
 UPDATE github_app SET bot_user_id = ?, updated_at = ? WHERE id = 1 AND bot_user_id IS NULL;
+
+-- name: ReplaceGitHubAppPrivateKey :execrows
+UPDATE github_app SET encrypted_private_key = ?, key_id = ?, updated_at = ? WHERE id = 1 AND app_id = ?;

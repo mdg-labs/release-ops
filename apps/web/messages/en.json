@@ -318,6 +318,29 @@
       "minInterval": "Poll interval must be at least 5 minutes."
     }
   },
+  "githubAppKey": {
+    "title": "GitHub App private key",
+    "description": "Replace the private key the App signs with. The new key is checked against GitHub before it replaces the current one, and it is never shown again.",
+    "fileLabel": "Key file (.pem)",
+    "keyLabel": "Private key (PEM)",
+    "keyPlaceholder": "-----BEGIN RSA PRIVATE KEY-----",
+    "keyHint": "Generate the key in the App's settings on GitHub, then paste it here or choose the downloaded file. Delete the old key on GitHub afterwards.",
+    "submit": "Verify and replace key",
+    "verifying": "Verifying with GitHub",
+    "rotated": "Private key replaced",
+    "rotatedDescription": "GitHub accepted the new key and it is now in use. The previous key is discarded.",
+    "failed": "The key was not replaced",
+    "unconfirmed": "The result could not be confirmed",
+    "errors": {
+      "keyRejected": "This key could not be verified for this App. The current key is unchanged. Use a PEM-encoded key generated in this App's settings.",
+      "githubUnavailable": "GitHub could not be reached to check the key. The current key is unchanged; try again.",
+      "notConfigured": "The GitHub App is not set up yet.",
+      "forbidden": "Only an admin can replace the private key.",
+      "network": "The request did not finish, so it is not known whether the key was replaced. Submitting the same key again is safe.",
+      "unknown": "Something went wrong, so it is not known whether the key was replaced. Submitting the same key again is safe.",
+      "fileUnreadable": "The file could not be read."
+    }
+  },
   "nav": {
     "dashboard": "Dashboard",
     "integrations": "Integrations",
