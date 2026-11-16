@@ -119,6 +119,7 @@ type Fake struct {
 	onRedelivery     func(Delivery) int               // called for each accepted redelivery; returns the receiver's status
 
 	comments commentState
+	watch    watchState
 
 	rateHeaders http.Header // added to every answer
 	limitStatus int         // answers every request with this status instead; 0 answers normally
@@ -789,6 +790,14 @@ func (f *Fake) serveWithToken(w http.ResponseWriter, r *http.Request, token stri
 	parts := strings.SplitN(rest, "/", 5)
 	if len(parts) >= 3 && parts[2] == "pulls" {
 		f.servePulls(w, r, parts[0]+"/"+parts[1], parts[3:])
+		return
+	}
+	if len(parts) == 3 && parts[2] == "issues" {
+		f.serveIssues(w, r, parts[0]+"/"+parts[1])
+		return
+	}
+	if len(parts) == 5 && parts[2] == "git" && strings.HasPrefix(parts[3]+"/"+parts[4], "ref/heads/") {
+		f.serveBranchRef(w, r, parts[0]+"/"+parts[1], strings.TrimPrefix(parts[4], "heads/"))
 		return
 	}
 	if len(parts) >= 4 && parts[2] == "issues" {
