@@ -17,7 +17,7 @@ You are done when the old schedule is off, the new bot has opened the update PRs
 
 ## Prerequisites
 
-- Release Ops is running and you have signed in as an admin. See [Getting started](../../getting-started/).
+- Release Ops is running, no GitHub App exists yet and you have the setup token. See [Getting started](../../getting-started/) up to [the setup token](../../getting-started/#4-start-the-services-and-find-the-setup-token). You sign in once the App is installed.
 - You know where the old setup's global configuration file, its tools directory and its shared presets live.
 - You can close PRs and issues, and delete branches, in the repositories you migrate.
 
@@ -49,7 +49,7 @@ If the old setup used a tools directory for those commands, bring it along with 
 
 ## 4. Create a new App
 
-Create the App through the setup page, as in [Getting started](../../getting-started/#5-open-the-setup-page-and-create-the-github-app). You cannot adopt an existing GitHub App or a hand-made one: Release Ops creates its own with the permissions it needs, and one instance has exactly one App and one installation.
+Create the App through the setup page, as in [Getting started](../../getting-started/#5-open-the-setup-page-and-create-the-github-app). You cannot adopt an existing GitHub App or a hand-made one: Release Ops creates its own with the permissions it needs, and one instance has exactly one App and one installation. When GitHub has created the App, it sends you to the installation page, which is the next step. Signing in comes after that.
 
 ## 5. Install it on the same repositories
 
