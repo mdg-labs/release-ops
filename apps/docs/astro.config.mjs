@@ -26,6 +26,34 @@ export default defineConfig({
           label: "Start here",
           items: [{ label: "Getting started", slug: "getting-started" }],
         },
+        {
+          label: "Concepts",
+          items: [
+            {
+              label: "How runs are triggered",
+              slug: "concepts/how-runs-are-triggered",
+            },
+            {
+              label: "Update PRs and tickets",
+              slug: "concepts/update-prs-and-tickets",
+            },
+            { label: "Status mapping", slug: "concepts/status-mapping" },
+            { label: "Roles", slug: "concepts/roles" },
+            {
+              label: "The global Renovate config",
+              slug: "concepts/global-renovate-config",
+            },
+          ],
+        },
+        {
+          label: "User guide",
+          items: [
+            {
+              label: "Migrating from Renovate",
+              slug: "guide/migrating-from-renovate",
+            },
+          ],
+        },
       ],
       head: [
         {
