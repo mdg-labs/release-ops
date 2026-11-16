@@ -36,16 +36,16 @@ Release Ops uses the global (self-hosted) configuration that you already have. P
 
 Then give the instance the file in one of two ways. See [The global Renovate config](../../concepts/global-renovate-config/).
 
-- **From a repository.** Commit the file to a repository, and set the instance's global config repository and ref. The worker fetches it at the start of every job, with the job's GitHub token.
-- **From the host.** Mount the file read-only into the worker container.
+- **From a repository.** Commit the file as `renovate-global/config.js` (or `renovate-global/config.json`) to a repository, and set the instance's global config repository and ref. The worker fetches it at the start of every job, with the job's GitHub token.
+- **From the host.** Mount the file read-only into the worker container as `/config/config.js` (or `/config/config.json`). A mounted file wins over the repository.
 
-The release you run lists the exact file location in the repository and the mount paths in its `.env.example` and `docker-compose.yml`. Restart the services after you change the instance's environment.
+Restart the services after you change the instance's environment.
 
 ## 3. Allow your commands and provide the tools directory
 
 If your old setup runs commands through `postUpgradeTasks`, keep `allowedCommands` in the global configuration file. It is only read from that file. A repository's own config cannot add to it, and the web interface cannot change it.
 
-If the old setup used a tools directory for those commands, bring it along with the global configuration: it is fetched together with the file, or you mount it read-only into the worker next to the file. Renovate cannot modify it.
+If the old setup used a tools directory for those commands, bring it along with the global configuration: put it in `renovate-global/tools` in the same repository, where it is fetched together with the file, or mount it read-only into the worker at `/opt/renovate-tools`. Renovate cannot modify it.
 
 ## 4. Stop the old schedule
 

@@ -14,7 +14,14 @@ Pick one of two ways. Both are set by the operator.
 | Way | How it works |
 | --- | ------------ |
 | **A repository** | The worker fetches the file at the start of every job from a repository and a ref (a branch, tag or commit) you configure for the instance. It reads the repository with the job's GitHub token. The same fetch brings the tools directory. |
-| **A mounted file** | You mount the file and the tools directory into the worker container from the host, read-only. Nothing is fetched. |
+| **A mounted file** | You mount the file and the tools directory into the worker container from the host, read-only. Nothing is fetched. A mounted file wins over a configured repository. |
+
+The paths are fixed:
+
+| | In the repository | Mounted into the worker |
+| --- | ----------------- | ----------------------- |
+| Global configuration | `renovate-global/config.js`, or `renovate-global/config.json` when there is no `config.js` | `/config/config.js`, or `/config/config.json` when there is no `config.js` |
+| Tools directory (optional) | `renovate-global/tools` | `/opt/renovate-tools` |
 
 If the fetch fails, the job fails before Renovate starts. The App must be installed on the configuration repository, so the job's token can read it.
 
