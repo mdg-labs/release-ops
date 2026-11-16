@@ -1,6 +1,7 @@
 package githubtest
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -99,9 +100,18 @@ func (f *Fake) serveIssues(w http.ResponseWriter, r *http.Request, fullName stri
 			"user": map[string]any{"id": issue.AuthorID},
 		})
 	}
-	// The issues API lists pull requests among the issues.
-	for _, pr := range f.pulls[fullName] {
-		if pr.State == "open" && n == 1 {
+	// The issues API lists pull requests among the issues. They follow the first page's issues,
+	// newest first like the issues, so the body, and the ETag hashed from it, does not depend on
+	// the map's iteration order.
+	if n == 1 {
+		var openPulls []PullRequest
+		for _, pr := range f.pulls[fullName] {
+			if pr.State == "open" {
+				openPulls = append(openPulls, pr)
+			}
+		}
+		slices.SortFunc(openPulls, func(a, b PullRequest) int { return cmp.Compare(b.Number, a.Number) })
+		for _, pr := range openPulls {
 			docs = append(docs, map[string]any{
 				"number": pr.Number, "title": pr.Title, "body": pr.Body, "state": pr.State,
 				"user": map[string]any{"id": pr.AuthorID}, "pull_request": map[string]any{},
