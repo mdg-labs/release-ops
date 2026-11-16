@@ -186,6 +186,7 @@ func TestTheBodyTableFillsTheRowsWhenTheReportHasNoEntryOrIsForAnotherCommit(t *
 		"a report of no PR":      func(r *rig) { r.report(t, `{"repositories":{"acme/repo-1":{"branches":[]}}}`) },
 		"an unreadable report":   func(r *rig) { r.report(t, `{"repositories":"changed"}`) },
 		"a report of an old sha": func(r *rig) { r.report(t, strings.Replace(groupReport, `"sha":"sha"`, `"sha":"older"`, 1)) },
+		"a report without a sha": func(r *rig) { r.report(t, strings.Replace(groupReport, `"sha":"sha",`, ``, 1)) },
 	} {
 		r := newRig(t, true)
 		setup(r)
@@ -350,15 +351,15 @@ func TestAnOpenPRThatReplacesAClosedOneSupersedesItOnceAndNeverAMergedOrUnrelate
 func TestASupersedeNeedsTheSameManagerWhereBothAreKnownAndAHigherNumber(t *testing.T) {
 	r := newRig(t, true)
 	r.report(t, `{"repositories":{"acme/repo-1":{"branches":[
-		{"prNo":1,"upgrades":[{"depName":"lodash","manager":"npm","datasource":"npm"}]},
-		{"prNo":2,"upgrades":[{"depName":"lodash","manager":"pip_requirements","datasource":"pypi"}]},
-		{"prNo":9,"upgrades":[{"depName":"lodash","manager":"npm","datasource":"npm"}]}]}}}`)
+		{"prNo":1,"sha":"sha","upgrades":[{"depName":"lodash","manager":"npm","datasource":"npm"}]},
+		{"prNo":2,"sha":"sha","upgrades":[{"depName":"lodash","manager":"pip_requirements","datasource":"pypi"}]},
+		{"prNo":9,"sha":"sha","upgrades":[{"depName":"lodash","manager":"npm","datasource":"npm"}]}]}}}`)
 	closedAt := at(3)
 	for _, n := range []int64{1, 2, 9} {
 		r.apply(t, prOf(n, botID, renovateBody, func(p *github.PullRequest) { p.State, p.ClosedAt, p.UpdatedAt = "closed", &closedAt, &closedAt }), botID)
 	}
 	// 9 is closed too, so it replaces nothing; 5 is open with lodash from npm.
-	r.report(t, `{"repositories":{"acme/repo-1":{"branches":[{"prNo":5,"upgrades":[{"depName":"lodash","manager":"npm","datasource":"npm"}]}]}}}`)
+	r.report(t, `{"repositories":{"acme/repo-1":{"branches":[{"prNo":5,"sha":"sha","upgrades":[{"depName":"lodash","manager":"npm","datasource":"npm"}]}]}}}`)
 	r.apply(t, prOf(5, botID, renovateBody), botID)
 	if got := r.states(t); got[1] != "superseded" || got[2] != "closed" || got[9] != "closed" {
 		t.Fatalf("states = %v", got)

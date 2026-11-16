@@ -48,7 +48,8 @@ type Outcome struct {
 // them, with whether the PR is automerged: the report's flag for its branch when the report is
 // the source, otherwise GitHub's auto_merge field of the payload, and unknown when neither says.
 // A PR is derived from the repository's newest Renovate report when it has an entry for
-// the PR that was read at the PR's head commit, and otherwise from the updates table of its
+// the PR that was read at the PR's head commit (an entry without a commit is no proof of it
+// when the head is known), and otherwise from the updates table of its
 // body; with neither it has no dependencies. A list already stored from a report read at the
 // PR's current head is kept, so a newer report that lacks the PR does not replace it. A report that is missing, unreadable or of an
 // unknown shape is no report. The PR's release notes are its body's section, whatever the
@@ -65,7 +66,7 @@ func (t *Tracker) recordDependencies(ctx context.Context, tx *sql.Tx, repository
 		return nil, false, err
 	}
 	if haveReport {
-		if e, ok := fromReport(rep.Report, rep.FullName, pr.Number, pr.Head.Ref); ok && (e.SHA == "" || pr.Head.SHA == "" || e.SHA == pr.Head.SHA) {
+		if e, ok := fromReport(rep.Report, rep.FullName, pr.Number, pr.Head.Ref); ok && (pr.Head.SHA == "" || e.SHA == pr.Head.SHA) {
 			deps, reportSHA = e.Dependencies, e.SHA
 			if e.Automerge != nil {
 				automerge = e.Automerge
