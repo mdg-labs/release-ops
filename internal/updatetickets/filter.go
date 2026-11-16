@@ -59,7 +59,7 @@ func ValidateFilter(raw json.RawMessage) (string, error) {
 		case key == "updateTypes":
 			err = json.Unmarshal(value, &f.UpdateTypes)
 		case key == "labels":
-			err = json.Unmarshal(value, &f.Labels)
+			f.Labels, err = decodeLabels(value)
 		default:
 			err = json.Unmarshal(value, &f.SkipAutomerged)
 		}
@@ -77,6 +77,23 @@ func ValidateFilter(raw json.RawMessage) (string, error) {
 		return "", errors.New("filter must be valid JSON")
 	}
 	return string(out), nil
+}
+
+// decodeLabels reads an array whose every element is a JSON string: a null element would
+// decode to "" and be stored as a label no PR carries.
+func decodeLabels(value json.RawMessage) ([]string, error) {
+	var elems []*string
+	if err := json.Unmarshal(value, &elems); err != nil {
+		return nil, err
+	}
+	labels := make([]string, 0, len(elems))
+	for _, e := range elems {
+		if e == nil {
+			return nil, errors.New("null label")
+		}
+		labels = append(labels, *e)
+	}
+	return labels, nil
 }
 
 // Allows reports whether the PR passes the filter. An unknown automerge counts as not

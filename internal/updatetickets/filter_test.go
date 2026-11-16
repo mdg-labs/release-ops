@@ -63,6 +63,8 @@ func TestValidateFilter(t *testing.T) {
 		`{}`: `{"updateTypes":[],"labels":[],"skipAutomerged":true}`,
 		`{"updateTypes":["major","lockfile"],"labels":["deps"],"skipAutomerged":false}`: `{"updateTypes":["major","lockfile"],"labels":["deps"],"skipAutomerged":false}`,
 		`{"skipAutomerged":false}`: `{"updateTypes":[],"labels":[],"skipAutomerged":false}`,
+		`{"labels":["a","b"]}`:     `{"updateTypes":[],"labels":["a","b"],"skipAutomerged":true}`,
+		`{"labels":[]}`:            `{"updateTypes":[],"labels":[],"skipAutomerged":true}`,
 	}
 	for in, want := range ok {
 		got, err := updatetickets.ValidateFilter(json.RawMessage(in))
@@ -76,6 +78,8 @@ func TestValidateFilter(t *testing.T) {
 		`{"updateTypes":"major"}`:   "updateTypes",
 		`{"updateTypes":null}`:      "updateTypes",
 		`{"labels":[1]}`:            "labels",
+		`{"labels":["x",null]}`:     "labels",
+		`{"labels":[null]}`:         "labels",
 		`{"labels":"deps"}`:         "labels",
 		`{"skipAutomerged":"yes"}`:  "skipAutomerged",
 		`{"skipAutomerged":null}`:   "skipAutomerged",
