@@ -12,10 +12,15 @@ import (
 	"github.com/mdg-labs/release-ops/internal/renovate"
 )
 
-// responseLine is a Renovate error record in the JSON log: the failed response, with its
-// status, headers and the URL of the request, under err.response. The format is the one of
-// Renovate's error serializer; the real log of a rate-limited run has not been recorded here.
+// responseLine is a Renovate error record in the JSON log, in the fields of Renovate's error
+// serializer for an HTTP error: err.response holds the statusCode and headers but no URL, and
+// the request's URL is under err.options.url beside it.
 func responseLine(url string, status int, headers string) string {
+	return fmt.Sprintf(`{"name":"renovate","level":40,"msg":"GitHub failure: rate limit","err":{"message":"Response code %d","options":{"url":"%s","method":"GET"},"response":{"statusCode":%d,"headers":{%s}}}}`, status, url, status, headers)
+}
+
+// responseWithURLLine carries the URL on the response object itself.
+func responseWithURLLine(url string, status int, headers string) string {
 	return fmt.Sprintf(`{"name":"renovate","level":40,"msg":"GitHub failure: rate limit","err":{"message":"Response code %d","response":{"statusCode":%d,"url":"%s","headers":{%s}}}}`, status, status, url, headers)
 }
 
@@ -51,6 +56,10 @@ func TestARunStoppedByTheRateLimitIsReportedWithItsHeaders(t *testing.T) {
 			responseLine(githubAPI, 429, fmt.Sprintf(`"retry-after":"%s"`, now.Add(3*time.Minute).Format("Mon, 02 Jan 2006 15:04:05 GMT"))),
 			1, 3 * time.Minute, 0,
 		},
+		"response that carries its own url": {
+			responseWithURLLine(githubAPI, 403, fmt.Sprintf(`"x-ratelimit-remaining":"0","x-ratelimit-reset":"%d"`, reset.Unix())),
+			1, 10 * time.Minute, reset.Unix(),
+		},
 		"Renovate gives up on the repository and exits cleanly": {
 			responseLine(githubAPI, 403, fmt.Sprintf(`"x-ratelimit-remaining":"0","x-ratelimit-reset":"%d"`, reset.Unix())),
 			0, 10 * time.Minute, reset.Unix(),
@@ -78,6 +87,15 @@ func TestARunStoppedByTheRateLimitIsReportedWithItsHeaders(t *testing.T) {
 // their headers must not hold back the installation.
 func TestRateLimitHeadersOfAnotherHostAreIgnored(t *testing.T) {
 	e := newEnv(t, shellEcho(responseLine("https://registry.npmjs.org/left-pad", 429, `"retry-after":"3600"`), 1))
+	res := e.h.Run(context.Background(), job(0))
+	wantFailure(t, res, renovate.CodeRenovateExit)
+	if res.RateLimit != nil || res.RetryAfter != 0 {
+		t.Fatalf("result = %+v, want the registry's 429 ignored", res)
+	}
+}
+
+func TestRateLimitHeadersOfAnotherHostAreIgnoredWhateverShapeCarriesTheURL(t *testing.T) {
+	e := newEnv(t, shellEcho(responseWithURLLine("https://registry.npmjs.org/left-pad", 429, `"retry-after":"3600"`), 1))
 	res := e.h.Run(context.Background(), job(0))
 	wantFailure(t, res, renovate.CodeRenovateExit)
 	if res.RateLimit != nil || res.RetryAfter != 0 {

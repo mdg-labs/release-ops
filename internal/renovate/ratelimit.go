@@ -19,7 +19,8 @@ const maxLogDepth = 6
 // rateLimitFromLog reads the last rate-limit state GitHub's API gave Renovate during a run, from
 // Renovate's JSON log (one object per line). Renovate's own calls are not intercepted, so what
 // it logs of a failed request is the only record: an error record carries the response that
-// caused it as an object with a numeric statusCode, a headers object and the url of the request.
+// caused it as an object with a numeric statusCode and a headers object, and the url of the
+// request beside it under options (the shape of a serialized HTTP error) or on the object itself.
 // Only a response from apiHost counts, so the headers of a package registry or any other host
 // Renovate talks to never reach the installation's budget. nil when the log holds none.
 func rateLimitFromLog(log, apiHost string, now time.Time) *queue.RateLimitReport {
@@ -81,7 +82,9 @@ type loggedResponse struct {
 }
 
 // responsesIn finds the responses inside a log record: every object with a numeric statusCode and
-// a headers object, with the url of the object itself or of the nearest one above it.
+// a headers object. Its url is the object's own, the options.url beside it in the parent (the
+// request a serialized HTTP error carries next to its response), or that of the nearest object
+// above it.
 func responsesIn(v any, inheritedURL string, depth int) []loggedResponse {
 	if depth > maxLogDepth {
 		return nil
@@ -100,8 +103,16 @@ func responsesIn(v any, inheritedURL string, depth int) []loggedResponse {
 		if headers, ok := v["headers"].(map[string]any); ok && hasStatus {
 			out = append(out, loggedResponse{status: int(status), headers: toHeader(headers), url: u})
 		}
-		for _, child := range v {
-			out = append(out, responsesIn(child, u, depth+1)...)
+		requestURL := ""
+		if options, ok := v["options"].(map[string]any); ok {
+			requestURL, _ = options["url"].(string)
+		}
+		for key, child := range v {
+			childURL := u
+			if key == "response" && requestURL != "" {
+				childURL = requestURL
+			}
+			out = append(out, responsesIn(child, childURL, depth+1)...)
 		}
 	case []any:
 		for _, child := range v {
