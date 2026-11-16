@@ -221,16 +221,16 @@ func (c *apiClient) do(method, path string, body any) (int, []byte) {
 func TestServerStartsOnFreshDatabase(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "app.db")
 
+	// Only the v2 environment: no SMTP and no bootstrap password.
+	cfg := &config.Config{
+		SessionSecret:    strings.Repeat("s", 32),
+		AppEncryptionKey: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+		AppDBPath:        dbPath,
+		AppURL:           "https://release-ops.example.com",
+	}
 	var base string
 	withFreePorts(t, 1, func(ports []int) error {
-		cfg := &config.Config{
-			SessionSecret:          strings.Repeat("s", 32),
-			AppEncryptionKey:       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
-			AppDBPath:              dbPath,
-			GoInternalPort:         ports[0],
-			BootstrapAdminEmail:    "admin@example.com",
-			BootstrapAdminPassword: "correct-horse-battery",
-		}
+		cfg.GoInternalPort = ports[0]
 		base = fmt.Sprintf("http://127.0.0.1:%d", ports[0])
 		return launch(t, func(ctx context.Context) error { return run(ctx, cfg) }, probe{url: base + "/healthz", status: http.StatusOK})
 	})
@@ -241,11 +241,7 @@ func TestServerStartsOnFreshDatabase(t *testing.T) {
 	}
 	c := &apiClient{t: t, base: base, http: &http.Client{Jar: jar}}
 
-	if code, body := c.do(http.MethodPost, "/api/v1/auth/login", map[string]string{
-		"email": "admin@example.com", "password": "correct-horse-battery",
-	}); code != http.StatusOK {
-		t.Fatalf("login = %d %s", code, body)
-	}
+	signInAsAdmin(t, cfg, c)
 
 	// The migrations ran: the v2 tables exist and the v1 tables do not.
 	verify, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=busy_timeout(5000)")
@@ -267,8 +263,20 @@ func TestServerStartsOnFreshDatabase(t *testing.T) {
 		t.Fatalf("status = %d %s, want 200 with only version", code, body)
 	}
 
-	// Removed endpoints are gone.
+	// Removed endpoints are gone: the v1 local-account routes and the release-monitoring ones.
 	for _, route := range []struct{ method, path string }{
+		{http.MethodPost, "/api/v1/auth/login"},
+		{http.MethodPost, "/api/v1/auth/accept-invitation"},
+		{http.MethodPost, "/api/v1/auth/forgot-password"},
+		{http.MethodPost, "/api/v1/auth/reset-password"},
+		{http.MethodPost, "/api/v1/auth/confirm-email-change"},
+		{http.MethodDelete, "/api/v1/users/someone"},
+		{http.MethodPost, "/api/v1/users/me/password-change"},
+		{http.MethodPost, "/api/v1/users/me/email-change-request"},
+		{http.MethodGet, "/api/v1/users/invitations"},
+		{http.MethodPost, "/api/v1/users/invitations"},
+		{http.MethodDelete, "/api/v1/users/invitations/someone"},
+		{http.MethodPost, "/api/v1/users/invitations/someone/send-email"},
 		{http.MethodGet, "/api/v1/repos"},
 		{http.MethodGet, "/api/v1/notification-targets"},
 		{http.MethodGet, "/api/v1/poll/runs"},
@@ -431,12 +439,10 @@ func TestServerRefusesV1Database(t *testing.T) {
 
 	before := snapshotDir(t, filepath.Dir(dbPath))
 	cfg := &config.Config{
-		SessionSecret:          strings.Repeat("s", 32),
-		AppEncryptionKey:       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
-		AppDBPath:              dbPath,
-		GoInternalPort:         0,
-		BootstrapAdminEmail:    "admin@example.com",
-		BootstrapAdminPassword: "correct-horse-battery",
+		SessionSecret:    strings.Repeat("s", 32),
+		AppEncryptionKey: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+		AppDBPath:        dbPath,
+		GoInternalPort:   0,
 	}
 
 	err = run(ctx, cfg)
@@ -445,6 +451,79 @@ func TestServerRefusesV1Database(t *testing.T) {
 	}
 	if after := snapshotDir(t, filepath.Dir(dbPath)); after != before {
 		t.Fatalf("data directory changed by the refused start:\nbefore %s\nafter  %s", before, after)
+	}
+}
+
+// A database that still holds local accounts, their sessions and their one-time tokens, as an
+// instance that ran before the accounts were removed has it, is upgraded by the server's start:
+// the server comes up with no mail and no bootstrap password and keeps the users, identities and
+// sessions that survive.
+func TestServerStartUpgradesADatabaseWithLocalAccounts(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "app.db")
+
+	all, err := sqlitemigrate.LoadDir(ctx, migrations.FS, ".")
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	// Later migrations may follow remove_local_accounts: seed the database as it stood just
+	// before it, and let the server's start apply the complete set.
+	removeAt := -1
+	for i, m := range all {
+		if strings.HasSuffix(m.Slug, "remove_local_accounts") {
+			removeAt = i
+			break
+		}
+	}
+	if removeAt < 0 {
+		t.Fatalf("no migration with a slug ending in remove_local_accounts among %d migrations", len(all))
+	}
+	runner := &sqlitemigrate.Runner{DBPath: dbPath}
+	if _, err := runner.Apply(ctx, all[:removeAt]); err != nil {
+		t.Fatalf("apply the earlier migrations: %v", err)
+	}
+	seed, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	for _, stmt := range []string{
+		`INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES ('u-local', 'admin@example.com', 'bcrypt-hash', 't', 't')`,
+		`INSERT INTO users (id, created_at, updated_at) VALUES ('u-gh', 't', 't')`,
+		`INSERT INTO auth_identities (id, user_id, provider, subject, login, created_at) VALUES ('ai-1', 'u-gh', 'github', '583231', 'octocat', 't')`,
+		`INSERT INTO sessions (token, data, expiry, user_id) VALUES ('tok-local', x'00', 2461000.5, 'u-local')`,
+		`INSERT INTO app_settings (id, updated_at) VALUES (1, 't')`,
+		`INSERT INTO auth_tokens (id, kind, email, token_hash, expires_at, created_at) VALUES ('t-invite', 'invitation', 'i@example.com', 'h', '9999-12-31T23:59:59.000Z', 't')`,
+		`INSERT INTO auth_tokens (id, kind, email, token_hash, expires_at, created_at) VALUES ('t-reset', 'password_reset', 'admin@example.com', 'h2', '9999-12-31T23:59:59.000Z', 't')`,
+	} {
+		if _, err := seed.Exec(stmt); err != nil {
+			t.Fatalf("seed %q: %v", stmt, err)
+		}
+	}
+	if err := seed.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	c := startServer(t, &config.Config{AppDBPath: dbPath})
+	if code, body := c.do(http.MethodGet, "/api/v1/auth/session", nil); code != http.StatusOK || !strings.Contains(string(body), `"user":null`) {
+		t.Fatalf("session = %d %s, want 200 with no user", code, body)
+	}
+
+	check, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = check.Close() })
+	for query, want := range map[string]int{
+		`SELECT COUNT(*) FROM users`:                                     2,
+		`SELECT COUNT(*) FROM auth_identities WHERE login = 'octocat'`:   1,
+		`SELECT COUNT(*) FROM sessions WHERE token = 'tok-local'`:        1,
+		`SELECT COUNT(*) FROM auth_tokens WHERE kind <> 'setup'`:         0,
+		`SELECT COUNT(*) FROM sqlite_master WHERE name = 'app_settings'`: 0,
+	} {
+		var n int
+		if err := check.QueryRow(query).Scan(&n); err != nil || n != want {
+			t.Errorf("%s = %d, %v; want %d", query, n, err, want)
+		}
 	}
 }
 
@@ -485,6 +564,37 @@ func (b *lockedBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.String()
+}
+
+// signInAsAdmin pins a bootstrap admin in the database of the running server and signs the
+// client in with a login link, the way an operator does with `release-ops admin login-link`.
+func signInAsAdmin(t *testing.T, cfg *config.Config, c *apiClient) {
+	t.Helper()
+
+	db, err := store.OpenPath(cfg.AppDBPath)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	cipher, err := crypto.NewCipherFromHex(cfg.AppEncryptionKey)
+	if err != nil {
+		t.Fatalf("cipher: %v", err)
+	}
+	if _, err := store.New(db, cipher).SignIn().SignIn(context.Background(), store.GitHubUser{ID: 583231, Login: "octocat"}, true); err != nil {
+		t.Fatalf("pin the bootstrap admin: %v", err)
+	}
+	var out bytes.Buffer
+	if err := printLoginLink(context.Background(), cfg, &out); err != nil {
+		t.Fatalf("printLoginLink: %v", err)
+	}
+	_, link, _ := strings.Cut(out.String(), "\n")
+	_, token, ok := strings.Cut(strings.TrimSpace(link), "token=")
+	if !ok {
+		t.Fatalf("login link output = %q, want a link with a token", out.String())
+	}
+	if code, body := c.do(http.MethodPost, "/api/v1/auth/login-link", map[string]string{"token": token}); code != http.StatusOK {
+		t.Fatalf("redeem login link = %d %s", code, body)
+	}
 }
 
 // startServer runs the server entry point against a fresh database and returns an API client

@@ -104,3 +104,22 @@ WHERE status <> 'removed'
   AND rate_limit_remaining IS NOT NULL
   AND rate_limit_reset_at IS NOT NULL
 ORDER BY github_installation_id;
+
+-- What the installation-level problems (rate_limited, permissions_lost; specs.html section 7.7)
+-- are derived from: the stored state and permissions, the budget, and the end of the latest
+-- finished attempt of the installation's repositories with its error code. The live installation
+-- is listed before a removed one.
+-- name: ListInstallationProblemInputs :many
+SELECT i.id, i.status, i.permissions, i.rate_limit_remaining, i.rate_limit_reset_at, i.updated_at,
+       (SELECT jr.error_code FROM job_runs jr
+          JOIN jobs j ON j.id = jr.job_id
+          JOIN repositories r ON r.id = j.repository_id
+          WHERE r.installation_id = i.id AND jr.finished_at IS NOT NULL
+          ORDER BY jr.finished_at DESC, jr.id DESC LIMIT 1) AS latest_attempt_error_code,
+       (SELECT jr.finished_at FROM job_runs jr
+          JOIN jobs j ON j.id = jr.job_id
+          JOIN repositories r ON r.id = j.repository_id
+          WHERE r.installation_id = i.id AND jr.finished_at IS NOT NULL
+          ORDER BY jr.finished_at DESC, jr.id DESC LIMIT 1) AS latest_attempt_finished_at
+FROM installations i
+ORDER BY CASE WHEN i.status = 'removed' THEN 1 ELSE 0 END, i.created_at DESC, i.id;

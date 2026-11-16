@@ -6,12 +6,9 @@
 
 PRAGMA foreign_keys = ON;
 
--- email and password_hash are NULL for a user who signs in with GitHub only (auth_identities);
--- they go with the local accounts.
+-- A user is a GitHub sign-in; who they are is in auth_identities.
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
-  email TEXT UNIQUE,
-  password_hash TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 ) STRICT;
@@ -26,18 +23,6 @@ CREATE TABLE sessions (
 
 CREATE INDEX idx_sessions_expiry ON sessions (expiry);
 CREATE INDEX idx_sessions_user_id ON sessions (user_id);
-
--- Legacy local-account settings (invitation and password-reset windows); removed with local accounts.
-CREATE TABLE app_settings (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  invite_token_expiry_hours INTEGER NOT NULL DEFAULT 168 CHECK (
-    invite_token_expiry_hours >= 1 AND invite_token_expiry_hours <= 720
-  ),
-  password_reset_token_expiry_minutes INTEGER NOT NULL DEFAULT 60 CHECK (
-    password_reset_token_expiry_minutes >= 5 AND password_reset_token_expiry_minutes <= 1440
-  ),
-  updated_at TEXT NOT NULL
-) STRICT;
 
 -- Settings of the whole instance (singleton).
 CREATE TABLE instance_settings (
@@ -70,17 +55,11 @@ CREATE TABLE login_link_tokens (
   created_at TEXT NOT NULL
 ) STRICT;
 
--- One-time tokens for invitations, password reset, email change and the first-start setup
--- token (raw token never stored)
+-- The first-start setup token (specs.html § 4.0.2): the SHA-256 of the token, never the token.
 CREATE TABLE auth_tokens (
   id TEXT PRIMARY KEY,
-  kind TEXT NOT NULL CHECK (
-    kind IN ('invitation', 'password_reset', 'email_change', 'setup')
-  ),
-  email TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('setup')),
   token_hash TEXT NOT NULL,
-  new_email TEXT,
-  invited_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
   expires_at TEXT NOT NULL,
   used_at TEXT,
   created_at TEXT NOT NULL
@@ -285,7 +264,12 @@ CREATE TABLE update_tickets (
   -- stop between the two is recognised on the next look (specs.html section 5.2.1).
   target_state TEXT CHECK (target_state IN ('done', 'cancelled', 'superseded')),
   -- Set when the ticket was found changed outside Release Ops; no operation touches it after.
-  hands_off_at TEXT
+  hands_off_at TEXT,
+  -- The dependencies hash whose content is about to be sent to the tracker, recorded before the
+  -- tracker is called and cleared when synced_hash follows it (the update note included), so an
+  -- update that stopped half-way stays due even when the PR changes back to synced_hash
+  -- (specs.html section 5.2.1).
+  pending_content_hash TEXT
 ) STRICT;
 
 -- The persistent job queue (specs.html § 2.8): at most one queued and one running job per repository.

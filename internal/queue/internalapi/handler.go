@@ -36,8 +36,8 @@ const (
 	// outcome and retry delay.
 	resultEnvelopeBytes = 4 << 10
 	// maxResultBytes bounds a result: every capped string of a run record, escaped as widely as
-	// JSON allows, plus the rest of the request.
-	maxResultBytes = maxJSONEscapeFactor*(queue.MaxLogExcerptBytes+queue.MaxReportBytes+queue.MaxErrorMessageBytes+maxErrorCodeBytes) + resultEnvelopeBytes
+	// JSON allows, and the global config, plus the rest of the request.
+	maxResultBytes = maxJSONEscapeFactor*(queue.MaxLogExcerptBytes+queue.MaxReportBytes+queue.MaxErrorMessageBytes+maxErrorCodeBytes+queue.MaxGlobalConfigBytes) + resultEnvelopeBytes
 )
 
 // TokenIssuer mints the installation access token of a job.
@@ -353,11 +353,18 @@ func (h *handler) checkedRun(run queue.RunRecord) (rec queue.RunRecord, msg stri
 		return rec, "report is too large"
 	case len(run.ErrorMessage) > queue.MaxErrorMessageBytes || len(run.ErrorCode) > maxErrorCodeBytes:
 		return rec, "error_code or error_message is too large"
+	case run.GlobalConfig != nil && run.GlobalConfig.Source != queue.GlobalConfigSourceRepository && run.GlobalConfig.Source != queue.GlobalConfigSourceMounted:
+		return rec, "global_config.source must be repository or mounted"
+	case run.GlobalConfig != nil && len(run.GlobalConfig.Content) > queue.MaxGlobalConfigBytes:
+		return rec, "global_config.content is too large"
 	}
 	run.ErrorCode = h.redactor.String(run.ErrorCode)
 	run.ErrorMessage = h.redactor.String(run.ErrorMessage)
 	run.LogExcerpt = h.redactor.String(run.LogExcerpt)
 	run.Report = h.redactor.String(run.Report)
+	if run.GlobalConfig != nil {
+		run.GlobalConfig = &queue.GlobalConfigCapture{Source: run.GlobalConfig.Source, Content: h.redactor.String(run.GlobalConfig.Content)}
+	}
 	return run, ""
 }
 

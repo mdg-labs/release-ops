@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -104,6 +105,10 @@ func (f *Fake) servePulls(w http.ResponseWriter, r *http.Request, fullName strin
 		return
 	}
 	all := f.pulls[fullName]
+	if r.Method == http.MethodPost && len(rest) == 0 {
+		f.createPull(w, r, fullName)
+		return
+	}
 	if len(rest) == 1 {
 		number, err := strconv.ParseInt(rest[0], 10, 64)
 		if status := f.pullFetchStatus[fullName][number]; status != 0 {
@@ -123,9 +128,11 @@ func (f *Fake) servePulls(w http.ResponseWriter, r *http.Request, fullName strin
 		return
 	}
 
+	// A head of owner:branch keeps the pull requests from that branch, as GitHub does.
+	_, headBranch, filtered := strings.Cut(r.URL.Query().Get("head"), ":")
 	var open []PullRequest
 	for _, pr := range all {
-		if pr.State == "open" {
+		if pr.State == "open" && (!filtered || pr.HeadRef == headBranch) {
 			open = append(open, pr)
 		}
 	}

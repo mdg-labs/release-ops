@@ -74,7 +74,6 @@ func seedSession(t *testing.T, sm *scs.SessionManager) *http.Cookie {
 	rec := httptest.NewRecorder()
 	sm.LoadAndSave(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sm.Put(r.Context(), auth.SessionUserIDKey, "user-123")
-		sm.Put(r.Context(), auth.SessionUserEmailKey, "admin@example.com")
 	})).ServeHTTP(rec, req)
 
 	for _, c := range rec.Result().Cookies() {

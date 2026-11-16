@@ -119,9 +119,12 @@ type Fake struct {
 	onRedelivery     func(Delivery) int               // called for each accepted redelivery; returns the receiver's status
 
 	comments commentState
+	writes   writeState
+	watch    watchState
 
 	rateHeaders http.Header // added to every answer
 	limitStatus int         // answers every request with this status instead; 0 answers normally
+	limitBody   string      // the body of those answers
 }
 
 // Delivery is a webhook delivery of the App as GET /app/hook/deliveries lists it.
@@ -240,6 +243,15 @@ func (f *Fake) RefuseAll(status int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.limitStatus = status
+	f.limitBody = ""
+}
+
+// RefuseAllWithBody is RefuseAll with a response body, such as GitHub's JSON error message.
+func (f *Fake) RefuseAllWithBody(status int, body string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.limitStatus = status
+	f.limitBody = body
 }
 
 // SetBotUser makes the public GET /users/{slug}[bot] answer the bot user of the App with that
@@ -492,6 +504,35 @@ func (f *Fake) TokenRequests() [][]string {
 	return out
 }
 
+// TokenGrant is what one token request asked for.
+type TokenGrant struct {
+	// Repositories are the repository names the token was scoped to; nil for every repository.
+	Repositories []string
+	// Permissions are the permissions the token was narrowed to; nil for the installation's own.
+	Permissions map[string]string
+}
+
+// TokenGrants returns what every token request asked for, in order.
+func (f *Fake) TokenGrants() []TokenGrant {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []TokenGrant
+	for _, r := range f.requests {
+		if r.Method != http.MethodPost || !strings.HasSuffix(r.Path, "/access_tokens") {
+			continue
+		}
+		var body TokenGrant
+		var raw struct {
+			Repositories []string          `json:"repositories"`
+			Permissions  map[string]string `json:"permissions"`
+		}
+		_ = json.Unmarshal([]byte(r.Body), &raw)
+		body.Repositories, body.Permissions = raw.Repositories, raw.Permissions
+		out = append(out, body)
+	}
+	return out
+}
+
 func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	r.Body = io.NopCloser(bytes.NewReader(raw))
@@ -499,13 +540,14 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 
 	f.mu.Lock()
 	f.requests = append(f.requests, Request{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, IfNoneMatch: r.Header.Get("If-None-Match"), Body: string(raw), JWTValid: valid})
-	rateHeaders, limitStatus := f.rateHeaders, f.limitStatus
+	rateHeaders, limitStatus, limitBody := f.rateHeaders, f.limitStatus, f.limitBody
 	f.mu.Unlock()
 	for name, values := range rateHeaders {
 		w.Header()[name] = values
 	}
 	if limitStatus != 0 {
 		w.WriteHeader(limitStatus)
+		_, _ = io.WriteString(w, limitBody)
 		return
 	}
 
@@ -778,6 +820,26 @@ func (f *Fake) serveWithToken(w http.ResponseWriter, r *http.Request, token stri
 	parts := strings.SplitN(rest, "/", 5)
 	if len(parts) >= 3 && parts[2] == "pulls" {
 		f.servePulls(w, r, parts[0]+"/"+parts[1], parts[3:])
+		return
+	}
+	if len(parts) == 3 && parts[2] == "issues" {
+		f.serveIssues(w, r, parts[0]+"/"+parts[1])
+		return
+	}
+	if len(parts) >= 4 && parts[2] == "git" && parts[3] == "refs" {
+		f.serveRefs(w, r, parts[0]+"/"+parts[1], parts[4:])
+		return
+	}
+	if len(parts) >= 4 && parts[2] == "compare" {
+		f.serveCompare(w, r, parts[0]+"/"+parts[1], strings.Join(parts[3:], "/"))
+		return
+	}
+	if len(parts) >= 4 && parts[2] == "contents" && r.Method == http.MethodPut {
+		f.servePutContents(w, r, parts[0]+"/"+parts[1], strings.Join(parts[3:], "/"))
+		return
+	}
+	if len(parts) == 5 && parts[2] == "git" && strings.HasPrefix(parts[3]+"/"+parts[4], "ref/heads/") {
+		f.serveBranchRef(w, r, parts[0]+"/"+parts[1], strings.TrimPrefix(parts[4], "heads/"))
 		return
 	}
 	if len(parts) >= 4 && parts[2] == "issues" {

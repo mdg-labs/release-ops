@@ -1,61 +1,57 @@
 ---
 title: Release Ops
-description: Self-hosted release monitor that turns new upstream releases into tickets and notifications.
+description: Self-hosted dependency-update bot that runs Renovate through a GitHub App and turns every update pull request into a ticket.
 template: splash
 hero:
-  tagline: Know when the projects you depend on ship a new release, and get a ticket for it automatically.
+  tagline: Keep your dependencies current with Renovate, and track every update PR as a ticket in the system your team already uses.
   actions:
     - text: Get started
       link: /release-ops/getting-started/
       icon: right-arrow
       variant: primary
-    - text: First steps
-      link: /release-ops/guide/first-steps/
-      icon: right-arrow
-      variant: secondary
-    - text: View on GitHub
+    - text: View the source
       link: https://github.com/mdg-labs/release-ops
       icon: external
-      variant: minimal
+      variant: secondary
 ---
 
 ## What Release Ops is
 
-Release Ops is a self-hosted release monitor. You list the repositories you care about. Release Ops checks them on a schedule and creates a ticket when a new release ships.
+Release Ops is a self-hosted dependency-update bot. One GitHub App runs the unmodified, open-source Renovate engine for every repository it is installed on, and opens the update pull requests as its own bot user. Release Ops creates a ticket in Kaneo, Jira or Linear for each update PR and keeps the ticket in step with the PR.
 
-- **Sources:** GitHub, GitLab, Gitea, Forgejo and Codeberg.
-- **Tickets:** Kaneo, Jira or Linear. You can combine any source with any ticket system, and send tickets to several projects or teams.
-- **Notifications:** Send a message to any Shoutrrr target, such as Slack or ntfy, when a ticket is created, when a check fails, or when a ticket is superseded.
-- **Status at a glance:** The web UI shows the last check, errors and an overview of your repos.
+- **Updates:** Renovate opens and updates the PRs. Ticking a checkbox in a PR or in the Dependency Dashboard starts a run for that repository straight away when GitHub can reach your webhook.
+- **Tickets:** One ticket per update PR, in the Kaneo, Jira or Linear project you choose. Each project has its own status mapping.
+- **Sign-in:** People sign in with GitHub through the same App and get an admin or viewer role from their GitHub organization and team membership.
 
-You configure everything in the web UI. Release Ops runs as a single Docker container that you host yourself.
+You run it yourself with Docker Compose: one service for the app and one for the worker that runs Renovate.
 
 ## How it works
 
 ```text
-Source repository  →  Poll  →  Ticket + notification
-GitHub, GitLab,       Latest     Kaneo, Jira or Linear,
-Gitea, Forgejo,       stable     plus Shoutrrr targets
-Codeberg              release
+GitHub                    Release Ops                  Your ticket system
+Repositories with   →     Worker runs Renovate    →    One ticket per
+a Renovate config         and opens update PRs         update PR, kept in
+                          App tracks each PR           step with the PR
 ```
 
-1. **Source:** You add a repository from one of the supported sources.
-2. **Poll:** Release Ops checks the latest stable release at the interval you set. The first check of a new repo only records the current release, so adding a repo does not create a ticket for the release that already exists.
-3. **Ticket and notification:** When the release changes, Release Ops creates a ticket in the ticket project you chose and notifies your targets. If an earlier ticket for the same repo is still open, the default is to supersede it. You can merge instead, or skip the new ticket.
+1. **Install:** You create the GitHub App from Release Ops' setup page and install it on your repositories.
+2. **Run:** A webhook, a Renovate checkbox, a push or an hourly run starts a job. The worker runs Renovate for that repository, and Renovate opens or updates the update PRs.
+3. **Track:** Release Ops creates a ticket for each update PR and moves it as the PR is merged or closed.
 
 ## Who it is for
 
-Release Ops is for small self-hosting dev and ops teams, and for individuals, who want new releases of the projects they depend on turned into tickets automatically. If you track upstream versions by hand or by watching release feeds, Release Ops puts those releases where you already plan your work.
+Release Ops is for small self-hosting dev and ops teams, and for individuals, who already use or want Renovate and want its update PRs to show up as work in their ticket system. It removes the manual step of turning each update into a ticket.
 
 ## What it is not
 
 Release Ops keeps a deliberately small scope:
 
-- **No other sources.** Only the five sources above are supported. Bitbucket and Azure DevOps, for example, are not.
-- **No roles or permissions.** Everyone who is signed in has the same access.
-- **No public sign-up.** The first account is created during setup, and everyone else joins through an invitation.
-- **Not a multi-service deployment.** There is one container and one public port, with no separate web and worker services to run.
+- **GitHub only.** The platform is github.com. Renovate still reads releases, tags and packages of other hosts as sources of updates.
+- **No release monitoring.** It does not watch upstream projects for new releases. Tickets follow update PRs.
+- **No notification channels.** Your ticket system and GitHub already notify you.
+- **No local accounts.** There are no passwords, no mail and no invitations. GitHub is the only sign-in.
+- **One installation per instance.** An instance has one GitHub App with one installation.
 
 ## Next steps
 
-Follow [Getting started](/release-ops/getting-started/) to run Release Ops with Docker Compose and sign in for the first time. Then work through [First steps](/release-ops/guide/first-steps/) to get your first ticket, and browse the [User guide](/release-ops/guide/dashboard/) for every page of the app. The [Product overview](/release-ops/concepts/product-overview/) explains the ideas behind it. The code lives on [GitHub](https://github.com/mdg-labs/release-ops).
+Follow [Getting started](/release-ops/getting-started/) to run Release Ops with Docker Compose, create and install the GitHub App and sign in. The same page covers backups, restores, upgrades and the network access the services need. The code lives on [GitHub](https://github.com/mdg-labs/release-ops).

@@ -162,7 +162,7 @@ func TestEnsureTokenGeneratesAndStoresOnlyTheHash(t *testing.T) {
 		t.Errorf("log %q does not point at %s/setup", logs.joined(), appURL)
 	}
 
-	rows, err := db.Query(`SELECT id, kind, email, token_hash, COALESCE(new_email, ''), COALESCE(invited_by_user_id, ''), expires_at, COALESCE(used_at, ''), created_at FROM auth_tokens`)
+	rows, err := db.Query(`SELECT id, kind, token_hash, expires_at, COALESCE(used_at, ''), created_at FROM auth_tokens`)
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -170,15 +170,15 @@ func TestEnsureTokenGeneratesAndStoresOnlyTheHash(t *testing.T) {
 	n := 0
 	for rows.Next() {
 		n++
-		cols := make([]string, 9)
-		ptrs := make([]any, 9)
+		cols := make([]string, 6)
+		ptrs := make([]any, 6)
 		for i := range cols {
 			ptrs[i] = &cols[i]
 		}
 		if err := rows.Scan(ptrs...); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
-		if cols[1] != "setup" || cols[3] != auth.HashToken(raw) {
+		if cols[1] != "setup" || cols[2] != auth.HashToken(raw) {
 			t.Errorf("row kind %q hash %q, want a setup row holding the token's SHA-256", cols[1], cols[3])
 		}
 		for _, c := range cols {

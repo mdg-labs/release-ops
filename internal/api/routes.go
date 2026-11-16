@@ -13,19 +13,20 @@ import (
 //
 // Route order:
 //  1. Session LoadAndSave middleware (all /api/v1/*)
-//  2. Public auth: POST /auth/login, GET /auth/session, and the GitHub sign-in: GET
-//     /auth/github/login, GET /auth/github/callback and POST /auth/login-link
+//  2. Public auth: GET /auth/session, and the GitHub sign-in: GET /auth/github/login,
+//     GET /auth/github/callback and POST /auth/login-link
 //  3. Setup: GET /setup/status and POST /setup/session are public; GET /setup/session,
 //     POST /setup/manifest and GET /setup/callback require a setup session, which opens
 //     only the setup routes; GET /setup/installed is public
 //  4. Logout, behind a session alone, so a user whose role cannot be evaluated can still end it
 //  5. Protected group (Authenticate: a session with a role, re-evaluated every 15 minutes):
-//     status and about for any role; settings (the concurrency cap, the global Renovate
+//     status, about, the update PR list, the repository list and detail, the job list and detail
+//     and the problems for any role (the data limited to the caller's repositories); settings (the concurrency cap, the global Renovate
 //     config), github-app (its metadata and role mapping), installations (the default ticket
 //     project),
 //     integrations, ticket-projects, update-tickets (clearing a pending marker), repositories
-//     (the list with ticket projects, run now, pause, enable and the ticket-project override)
-//     and users for an admin only
+//     (run now, pause, enable, the ticket-project override and, with a GitHub client, "Enable
+//     repo") and users for an admin only
 //     (RequireAdmin), a viewer getting 403; the GitHub App's private key rotation
 //     (PUT /github-app/private-key, only with a GitHub client) is one of them
 func RegisterAll(api chi.Router, deps *ServerDeps) {
@@ -36,31 +37,11 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 	api.Use(deps.Session.LoadAndSave)
 
 	authorizer := &auth.Authorizer{Sessions: deps.Session, Roles: deps.Roles}
-	authHandlers := &auth.Handlers{
-		SessionManager: deps.Session,
-		Queries:        deps.Queries,
-		TokenService:   auth.NewTokenService(deps.Queries),
-		Authorizer:     authorizer,
-	}
+	authHandlers := &auth.Handlers{SessionManager: deps.Session, Authorizer: authorizer}
 
 	rateLimiter := apimw.NewRateLimiter()
 
-	appURL := deps.AppURL
-
-	api.With(rateLimiter.Login).Post("/auth/login", authHandlers.Login)
 	api.Get("/auth/session", authHandlers.Session)
-	api.With(rateLimiter.AcceptInvitation).Post("/auth/accept-invitation", authHandlers.AcceptInvitation)
-	api.With(rateLimiter.ConfirmEmailChange).Post("/auth/confirm-email-change", authHandlers.ConfirmEmailChange)
-
-	passwordResetHandlers := &auth.PasswordResetHandlers{
-		SessionManager: deps.Session,
-		Queries:        deps.Queries,
-		TokenService:   auth.NewTokenService(deps.Queries),
-		Mailer:         deps.Mailer,
-		AppPublicURL:   appURL,
-	}
-	api.With(rateLimiter.ForgotPassword).Post("/auth/forgot-password", passwordResetHandlers.ForgotPassword)
-	api.With(rateLimiter.ResetPassword).Post("/auth/reset-password", passwordResetHandlers.ResetPassword)
 
 	if deps.Store != nil {
 		registerGitHubSignIn(api, deps, rateLimiter)
@@ -69,7 +50,7 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 	setupHandlers := &setup.Handlers{
 		Sessions:      deps.Session,
 		Queries:       deps.Queries,
-		AppURL:        appURL,
+		AppURL:        deps.AppURL,
 		WebhookURL:    deps.WebhookURL,
 		GitHubBaseURL: deps.GitHubBaseURL,
 	}
@@ -95,25 +76,50 @@ func RegisterAll(api chi.Router, deps *ServerDeps) {
 	}
 	api.Group(func(protected chi.Router) {
 		protected.Use(apimw.Authenticate(authorizer, deps.Store.Access()))
-		registerProtectedAPIRoutes(protected, deps, appURL, rateLimiter)
+		registerProtectedAPIRoutes(protected, deps)
 	})
 }
 
-func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appURL string, rateLimiter *apimw.RateLimiter) {
+func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps) {
 	statusHandlers := &handlers.StatusHandlers{}
 
 	protected.Get("/status", statusHandlers.Get)
 	protected.Get("/about", (&handlers.AboutHandlers{}).Get)
+	protected.Get("/update-prs", (&handlers.UpdatePRHandlers{PRs: deps.Store.UpdatePRList()}).List)
+	repositoryHandlers := newRepositoryHandlers(deps)
+	protected.Get("/repositories", repositoryHandlers.List)
+	protected.Get("/repositories/{id}", repositoryHandlers.Get)
+	jobHandlers := &handlers.JobHandlers{Jobs: deps.Store.JobList()}
+	protected.Get("/jobs", jobHandlers.List)
+	protected.Get("/jobs/{id}", jobHandlers.Get)
+	protected.Get("/problems", (&handlers.ProblemHandlers{
+		Problems:            deps.Store.Problems(),
+		RequiredPermissions: setup.BuildManifest("", "", "").DefaultPermissions,
+	}).List)
 
 	protected.Group(func(admin chi.Router) {
 		admin.Use(apimw.RequireAdmin)
-		registerAdminRoutes(admin, deps, appURL, rateLimiter)
+		registerAdminRoutes(admin, deps, repositoryHandlers)
 	})
+}
+
+func newRepositoryHandlers(deps *ServerDeps) *handlers.RepositoryHandlers {
+	st := deps.Store
+	h := &handlers.RepositoryHandlers{
+		Repositories:       st.Repositories(),
+		Queue:              deps.Queue,
+		PresetRepositories: func() []string { return st.InstanceConfig().PresetRepositories },
+		DashboardBaseURL:   deps.GitHubBaseURL,
+	}
+	if deps.GitHub != nil && deps.GitHubApp != nil {
+		h.Enabler = github.NewRenovateEnabler(deps.GitHub, deps.GitHubApp)
+	}
+	return h
 }
 
 // registerAdminRoutes registers the routes only an admin may call. Every route added to the
 // protected API that is not meant for a viewer belongs here, behind RequireAdmin.
-func registerAdminRoutes(protected chi.Router, deps *ServerDeps, appURL string, rateLimiter *apimw.RateLimiter) {
+func registerAdminRoutes(protected chi.Router, deps *ServerDeps, repositoryHandlers *handlers.RepositoryHandlers) {
 	st := deps.Store
 	settingsHandlers := &handlers.SettingsHandlers{
 		Settings:    st.InstanceSettings(),
@@ -131,20 +137,7 @@ func registerAdminRoutes(protected chi.Router, deps *ServerDeps, appURL string, 
 	ticketProjectHandlers := &handlers.TicketProjectHandlers{
 		TicketProjects: st.TicketProjects(),
 	}
-	tokenService := auth.NewTokenService(deps.Queries)
-	userHandlers := &handlers.UsersHandlers{
-		Queries:        deps.Queries,
-		SessionManager: deps.Session,
-		TokenService:   tokenService,
-		Mailer:         deps.Mailer,
-		AppPublicURL:   appURL,
-	}
-	invitationHandlers := &handlers.InvitationHandlers{
-		Queries:      deps.Queries,
-		TokenService: tokenService,
-		Mailer:       deps.Mailer,
-		AppPublicURL: appURL,
-	}
+	userHandlers := &handlers.UsersHandlers{Queries: deps.Queries}
 
 	protected.Get("/settings", settingsHandlers.Get)
 	protected.Patch("/settings", settingsHandlers.Patch)
@@ -173,10 +166,11 @@ func registerAdminRoutes(protected chi.Router, deps *ServerDeps, appURL string, 
 	protected.Get("/installations", installationHandlers.List)
 	protected.Patch("/installations/{id}", installationHandlers.Patch)
 
-	repositoryHandlers := &handlers.RepositoryHandlers{Repositories: st.Repositories(), Queue: deps.Queue}
-	protected.Get("/repositories", repositoryHandlers.List)
 	protected.Patch("/repositories/{id}", repositoryHandlers.Patch)
 	protected.Post("/repositories/{id}/run", repositoryHandlers.Run)
+	if repositoryHandlers.Enabler != nil {
+		protected.Post("/repositories/{id}/enable-renovate", repositoryHandlers.EnableRenovate)
+	}
 
 	githubAppHandlers := &handlers.GitHubAppHandlers{
 		Info:                st.GitHubAppInfo(),
@@ -192,13 +186,6 @@ func registerAdminRoutes(protected chi.Router, deps *ServerDeps, appURL string, 
 	}
 
 	protected.Get("/users", userHandlers.List)
-	protected.Delete("/users/{id}", userHandlers.Delete)
-	protected.Post("/users/me/email-change-request", userHandlers.EmailChangeRequest)
-	protected.With(rateLimiter.ResetPassword).Post("/users/me/password-change", userHandlers.PasswordChange)
-	protected.Get("/users/invitations", invitationHandlers.List)
-	protected.Post("/users/invitations", invitationHandlers.Create)
-	protected.Delete("/users/invitations/{id}", invitationHandlers.Delete)
-	protected.Post("/users/invitations/{id}/send-email", invitationHandlers.SendEmail)
 }
 
 // registerGitHubSignIn mounts the GitHub OAuth sign-in and the break-glass redemption. The

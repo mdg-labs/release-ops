@@ -57,7 +57,8 @@ WHERE installation_id = ? AND removed_at IS NULL;
 
 -- A repository an admin can act on: not removed, and of an installation that is not removed.
 -- name: GetManageableRepository :one
-SELECT r.id, r.full_name, r.default_branch, r.enabled, r.config_state, i.status AS installation_status
+SELECT r.id, r.full_name, r.default_branch, r.enabled, r.config_state, i.status AS installation_status,
+       i.github_installation_id
 FROM repositories r
 JOIN installations i ON i.id = r.installation_id
 WHERE r.id = ?
@@ -94,19 +95,27 @@ SELECT id, full_name, default_branch, enabled, removed_at
 FROM repositories
 WHERE github_repository_id = ?;
 
--- The repositories an admin can act on, with the ticket project of the repository and the one
--- it effectively uses: its own, else the installation's default. search is a substring of the
--- full name, matched without case; empty arguments filter nothing.
+-- The repositories of the caller's scope (every one, or those whose ids are in scope_ids), with
+-- the ticket project of the repository and the one it effectively uses: its own, else the
+-- installation's default, the number of its open update PRs and its latest job. search is a
+-- substring of the full name, matched without case; empty arguments filter nothing.
 -- name: ListManageableRepositories :many
 SELECT r.id, r.full_name, r.default_branch, r.enabled, r.config_state, r.ticket_project_id, i.status AS installation_status,
        CASE WHEN r.ticket_project_id IS NOT NULL THEN r.ticket_project_id ELSE s.default_ticket_project_id END AS effective_ticket_project_id,
-       tp.name AS effective_ticket_project_name
+       tp.name AS effective_ticket_project_name,
+       r.dashboard_issue_number,
+       (SELECT COUNT(*) FROM update_prs p WHERE p.repository_id = r.id AND p.state = 'open') AS open_update_prs,
+       lj.id AS last_job_id, lj.state AS last_job_state, lj.finished_at AS last_job_finished_at
 FROM repositories r
 JOIN installations i ON i.id = r.installation_id
 LEFT JOIN installation_settings s ON s.installation_id = r.installation_id
 LEFT JOIN ticket_projects tp ON tp.id = CASE WHEN r.ticket_project_id IS NOT NULL THEN r.ticket_project_id ELSE s.default_ticket_project_id END
+LEFT JOIN jobs lj ON lj.id = (
+  SELECT j.id FROM jobs j WHERE j.repository_id = r.id ORDER BY j.created_at DESC, j.rowid DESC LIMIT 1
+)
 WHERE r.removed_at IS NULL
   AND i.status <> 'removed'
+  AND (sqlc.arg(all_repositories) = 1 OR r.id IN (SELECT j.value FROM json_each(sqlc.arg(scope_ids)) j))
   AND (sqlc.arg(search) = '' OR instr(lower(r.full_name), lower(sqlc.arg(search))) > 0)
   AND (sqlc.narg(enabled) IS NULL OR r.enabled = sqlc.narg(enabled))
   AND (sqlc.arg(config_state) = '' OR r.config_state = sqlc.arg(config_state))
@@ -119,6 +128,7 @@ FROM repositories r
 JOIN installations i ON i.id = r.installation_id
 WHERE r.removed_at IS NULL
   AND i.status <> 'removed'
+  AND (sqlc.arg(all_repositories) = 1 OR r.id IN (SELECT j.value FROM json_each(sqlc.arg(scope_ids)) j))
   AND (sqlc.arg(search) = '' OR instr(lower(r.full_name), lower(sqlc.arg(search))) > 0)
   AND (sqlc.narg(enabled) IS NULL OR r.enabled = sqlc.narg(enabled))
   AND (sqlc.arg(config_state) = '' OR r.config_state = sqlc.arg(config_state));
@@ -133,11 +143,17 @@ WHERE repositories.id = sqlc.arg(id)
 -- name: GetManageableRepositoryListing :one
 SELECT r.id, r.full_name, r.default_branch, r.enabled, r.config_state, r.ticket_project_id, i.status AS installation_status,
        CASE WHEN r.ticket_project_id IS NOT NULL THEN r.ticket_project_id ELSE s.default_ticket_project_id END AS effective_ticket_project_id,
-       tp.name AS effective_ticket_project_name
+       tp.name AS effective_ticket_project_name,
+       r.dashboard_issue_number,
+       (SELECT COUNT(*) FROM update_prs p WHERE p.repository_id = r.id AND p.state = 'open') AS open_update_prs,
+       lj.id AS last_job_id, lj.state AS last_job_state, lj.finished_at AS last_job_finished_at
 FROM repositories r
 JOIN installations i ON i.id = r.installation_id
 LEFT JOIN installation_settings s ON s.installation_id = r.installation_id
 LEFT JOIN ticket_projects tp ON tp.id = CASE WHEN r.ticket_project_id IS NOT NULL THEN r.ticket_project_id ELSE s.default_ticket_project_id END
+LEFT JOIN jobs lj ON lj.id = (
+  SELECT j.id FROM jobs j WHERE j.repository_id = r.id ORDER BY j.created_at DESC, j.rowid DESC LIMIT 1
+)
 WHERE r.id = ?
   AND r.removed_at IS NULL
   AND i.status <> 'removed';

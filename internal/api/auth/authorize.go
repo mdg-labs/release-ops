@@ -14,7 +14,8 @@ const RoleRecheckInterval = 15 * time.Minute
 
 var (
 	// ErrUnauthenticated means the request has no usable session: none, one that carries no
-	// role this code knows, or one whose user lost access, which is destroyed on the way.
+	// role this code knows or no GitHub identity, or one whose user lost access, which is
+	// destroyed on the way.
 	ErrUnauthenticated = errors.New("no valid session")
 	// ErrRoleUnavailable means the session's role is older than RoleRecheckInterval and
 	// could not be evaluated again. The session is neither extended nor deleted.
@@ -29,14 +30,15 @@ type Principal struct {
 	SessionToken string
 }
 
-// Authorizer turns a request's session into a Principal. For a GitHub session it first
-// re-evaluates the role when the last evaluation is older than RoleRecheckInterval:
-// a user with no access any more has the session destroyed, and a role that cannot be
-// evaluated is not served.
+// Authorizer turns a request's session into a Principal. Only a GitHub session has one: a
+// session without the GitHub id is destroyed, whatever role it carries. The role is
+// re-evaluated when the last evaluation is older than RoleRecheckInterval: a user with no
+// access any more has the session destroyed, and a role that cannot be evaluated is not
+// served.
 type Authorizer struct {
 	Sessions *scs.SessionManager
-	// Roles re-evaluates GitHub sessions. Without it, a GitHub session whose role is due for
-	// a re-check is refused.
+	// Roles re-evaluates the role. Without it, a session whose role is due for a re-check is
+	// refused.
 	Roles RoleEvaluator
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
@@ -61,11 +63,13 @@ func (a *Authorizer) Authorize(ctx context.Context) (Principal, error) {
 		return Principal{}, a.refuse(ctx)
 	}
 
-	if githubID, ok := a.Sessions.Get(ctx, SessionGitHubIDKey).(int64); ok && githubID > 0 {
-		var err error
-		if role, err = a.recheck(ctx, githubID, role); err != nil {
-			return Principal{}, err
-		}
+	githubID, ok := a.Sessions.Get(ctx, SessionGitHubIDKey).(int64)
+	if !ok || githubID <= 0 {
+		return Principal{}, a.refuse(ctx)
+	}
+	role, err := a.recheck(ctx, githubID, role)
+	if err != nil {
+		return Principal{}, err
 	}
 	return Principal{UserID: userID, Role: role, SessionToken: a.Sessions.Token(ctx)}, nil
 }

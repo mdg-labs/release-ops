@@ -22,6 +22,12 @@ import (
 
 const secret = "0123456789abcdef0123456789abcdef-test-secret"
 
+func (c *clock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
 type clock struct {
 	mu  sync.Mutex
 	now time.Time
@@ -34,6 +40,7 @@ func (c *clock) Now() time.Time {
 }
 
 type env struct {
+	clock *clock
 	srv   *httptest.Server
 	q     *store.JobQueue
 	db    *store.DB
@@ -48,7 +55,7 @@ func newEnv(t *testing.T, claimWait time.Duration) *env {
 	q := store.NewJobQueue(db, store.JobQueueOptions{Now: c.Now})
 	srv := httptest.NewServer(internalapi.NewHandler(q, internalapi.Options{Secret: secret, ClaimWait: claimWait}))
 	t.Cleanup(srv.Close)
-	return &env{srv: srv, q: q, db: db, repos: storetest.SeedRepositories(t, db, 2)}
+	return &env{clock: c, srv: srv, q: q, db: db, repos: storetest.SeedRepositories(t, db, 2)}
 }
 
 func (e *env) post(t *testing.T, path, auth string, body any) (int, []byte) {
@@ -272,7 +279,7 @@ func TestResultBodyIsSizeLimited(t *testing.T) {
 	e := newEnv(t, time.Second)
 
 	// A result holds a run record, so its limit is larger than the other routes'.
-	big := queue.ResultRequest{LeaseOwner: strings.Repeat("a", 900<<10), Outcome: queue.OutcomeFailed}
+	big := queue.ResultRequest{LeaseOwner: strings.Repeat("a", 8<<20), Outcome: queue.OutcomeFailed}
 	if status, _ := e.post(t, strings.Replace(queue.PathResult, "{id}", "x", 1), "Bearer "+secret, big); status != http.StatusRequestEntityTooLarge {
 		t.Fatalf("oversized body = %d, want 413", status)
 	}
@@ -357,10 +364,13 @@ func TestResultRefusesAnOversizedOrMalformedRunRecord(t *testing.T) {
 	path := strings.Replace(queue.PathResult, "{id}", job.ID, 1)
 
 	for name, run := range map[string]queue.RunRecord{
-		"a log excerpt over the cap": {LogExcerpt: strings.Repeat("x", queue.MaxLogExcerptBytes+1)},
-		"a report over the cap":      {Report: strings.Repeat("x", queue.MaxReportBytes+1)},
-		"an error message too long":  {ErrorMessage: strings.Repeat("x", queue.MaxErrorMessageBytes+1)},
-		"an unknown report status":   {ReportStatus: "great"},
+		"a log excerpt over the cap":           {LogExcerpt: strings.Repeat("x", queue.MaxLogExcerptBytes+1)},
+		"a report over the cap":                {Report: strings.Repeat("x", queue.MaxReportBytes+1)},
+		"an error message too long":            {ErrorMessage: strings.Repeat("x", queue.MaxErrorMessageBytes+1)},
+		"an unknown report status":             {ReportStatus: "great"},
+		"a global config over the cap":         {GlobalConfig: &queue.GlobalConfigCapture{Source: queue.GlobalConfigSourceMounted, Content: strings.Repeat("x", queue.MaxGlobalConfigBytes+1)}},
+		"a global config of an unknown source": {GlobalConfig: &queue.GlobalConfigCapture{Source: "elsewhere", Content: "{}"}},
+		"a global config without a source":     {GlobalConfig: &queue.GlobalConfigCapture{Content: "{}"}},
 	} {
 		status, body := e.post(t, path, "Bearer "+secret, queue.ResultRequest{LeaseOwner: job.LeaseOwner, Outcome: queue.OutcomeFailed, Run: &run})
 		if status != http.StatusUnprocessableEntity {
@@ -372,9 +382,53 @@ func TestResultRefusesAnOversizedOrMalformedRunRecord(t *testing.T) {
 		t.Errorf("job = %q (%v) after refused results, want still running", state, err)
 	}
 	// A record at the caps is accepted: the request body limit holds one of each.
-	full := queue.RunRecord{LogExcerpt: strings.Repeat("\"", queue.MaxLogExcerptBytes), Report: strings.Repeat("\"", queue.MaxReportBytes), ErrorMessage: "x"}
+	full := queue.RunRecord{
+		LogExcerpt: strings.Repeat("\"", queue.MaxLogExcerptBytes), Report: strings.Repeat("\"", queue.MaxReportBytes), ErrorMessage: "x",
+		GlobalConfig: &queue.GlobalConfigCapture{Source: queue.GlobalConfigSourceRepository, Content: strings.Repeat("\"", queue.MaxGlobalConfigBytes)},
+	}
 	if status, body := e.post(t, path, "Bearer "+secret, queue.ResultRequest{LeaseOwner: job.LeaseOwner, Outcome: queue.OutcomeFailed, Run: &full}); status != http.StatusNoContent {
 		t.Errorf("a record at the caps = %d %s, want 204", status, body)
+	}
+}
+
+// The global config the worker used is stored for the job's installation, redacted again by the
+// app, and is what GlobalConfig returns; a result without one leaves it.
+func TestResultStoresTheGlobalConfigRedactedAndLeavesItWhenAbsent(t *testing.T) {
+	e := newEnv(t, 50*time.Millisecond)
+	e.enqueue(t, e.repos[0])
+	job := e.claimJob(t)
+	path := strings.Replace(queue.PathResult, "{id}", job.ID, 1)
+	token := "ghs_" + strings.Repeat("Q", 36)
+
+	status, body := e.post(t, path, "Bearer "+secret, queue.ResultRequest{
+		LeaseOwner: job.LeaseOwner, Outcome: queue.OutcomeFailed,
+		Run: &queue.RunRecord{GlobalConfig: &queue.GlobalConfigCapture{
+			Source: queue.GlobalConfigSourceRepository, Content: "module.exports = { token: '" + token + "', secret: '" + secret + "' };\n",
+		}},
+	})
+	if status != http.StatusNoContent {
+		t.Fatalf("result = %d %s", status, body)
+	}
+	var content, source string
+	if err := e.db.Reader.QueryRow(`SELECT global_config_content, global_config_source FROM installation_settings WHERE installation_id = 'inst-1'`).Scan(&content, &source); err != nil {
+		t.Fatalf("no captured config: %v", err)
+	}
+	if source != "repository" || !strings.HasPrefix(content, "module.exports = { token: '") || strings.Contains(content, "ghs_QQQQ") || strings.Contains(content, secret) {
+		t.Errorf("stored config = %q from %q", content, source)
+	}
+
+	// The retried job's next result carries none: the copy stays.
+	e.clock.Advance(time.Hour)
+	job = e.claimJob(t)
+	status, body = e.post(t, strings.Replace(queue.PathResult, "{id}", job.ID, 1), "Bearer "+secret, queue.ResultRequest{
+		LeaseOwner: job.LeaseOwner, Outcome: queue.OutcomeSucceeded, Run: &queue.RunRecord{ReportStatus: queue.ReportOK},
+	})
+	if status != http.StatusNoContent {
+		t.Fatalf("second result = %d %s", status, body)
+	}
+	var after string
+	if err := e.db.Reader.QueryRow(`SELECT global_config_content FROM installation_settings WHERE installation_id = 'inst-1'`).Scan(&after); err != nil || after != content {
+		t.Errorf("stored config after a result without one = %q (%v), want it unchanged", after, err)
 	}
 }
 

@@ -140,3 +140,37 @@ func TestParseCapsTheResetTime(t *testing.T) {
 		})
 	}
 }
+
+func TestSecondaryLimitBodyMatchesOnlyTheMessageOfAJSONError(t *testing.T) {
+	t.Parallel()
+	for body, want := range map[string]bool{
+		`{"message":"You have exceeded a secondary rate limit. Please wait a few minutes before you try again."}`: true,
+		`{"message":"You have exceeded a Secondary Rate Limit and have been temporarily blocked."}`:               true,
+		`{"message":"Resource not accessible by integration"}`:                                                    false,
+		`{"message":"API rate limit exceeded"}`:                                                                   false,
+		`{"documentation_url":"https://docs.github.com/#about-secondary-rate-limits"}`:                            false,
+		`{"message":["secondary rate limit"]}`:                                                                    false,
+		`secondary rate limit`:                                                                                    false,
+		``:                                                                                                        false,
+	} {
+		if got := ratelimit.SecondaryLimitBody([]byte(body)); got != want {
+			t.Errorf("SecondaryLimitBody(%q) = %v, want %v", body, got, want)
+		}
+	}
+}
+
+func TestWithSecondaryLimitHoldsForAtLeastTheDefaultBlock(t *testing.T) {
+	t.Parallel()
+
+	s := ratelimit.Parse(http.StatusForbidden, header("X-RateLimit-Remaining", "12"), now)
+	if s.Limited {
+		t.Fatal("a 403 with requests remaining is limited by its headers")
+	}
+	s = s.WithSecondaryLimit()
+	if !s.Limited || !s.Until(now).Equal(now.Add(time.Minute)) {
+		t.Errorf("signal = %+v, until %v, want limited for one minute", s, s.Until(now))
+	}
+	if long := (ratelimit.Signal{RetryAfter: 5 * time.Minute}).WithSecondaryLimit(); !long.Until(now).Equal(now.Add(5 * time.Minute)) {
+		t.Errorf("a longer Retry-After = %v, want it kept", long.Until(now))
+	}
+}

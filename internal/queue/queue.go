@@ -170,8 +170,28 @@ const (
 	MaxErrorMessageBytes = 1 << 10
 )
 
+// MaxGlobalConfigBytes caps the global config text a result carries: the size the worker
+// accepts a config file at.
+const MaxGlobalConfigBytes = 1 << 20
+
+// Sources of a global Renovate config, as GlobalConfigCapture names them.
+const (
+	GlobalConfigSourceRepository = "repository"
+	GlobalConfigSourceMounted    = "mounted"
+)
+
+// GlobalConfigCapture is the global Renovate config text an attempt ran with: the file as
+// found, never parsed, with token-shaped strings already replaced.
+type GlobalConfigCapture struct {
+	// Source is GlobalConfigSourceRepository or GlobalConfigSourceMounted. The repository and
+	// ref of the first are the instance's own configuration, which the app knows.
+	Source  string `json:"source"`
+	Content string `json:"content"`
+}
+
 // RunRecord is what the worker reports of one attempt; the app stores it as a job_runs row in
-// the transaction that ends the attempt. Every string is redacted before it is sent and again
+// the transaction that ends the attempt, and the global config it carries on the settings of
+// the job's installation in the same one. Every string is redacted before it is sent and again
 // before it is stored.
 type RunRecord struct {
 	// ExitCode is Renovate's exit status; nil when the process did not run to an exit.
@@ -185,6 +205,9 @@ type RunRecord struct {
 	LogExcerpt string `json:"log_excerpt,omitempty"`
 	// Report is Renovate's report file as written, when it is valid JSON.
 	Report string `json:"report,omitempty"`
+	// GlobalConfig is the global config the attempt ran with, when it got as far as reading
+	// one. Without it the stored copy stays as it is.
+	GlobalConfig *GlobalConfigCapture `json:"global_config,omitempty"`
 }
 
 // FailParams describes a failed attempt.

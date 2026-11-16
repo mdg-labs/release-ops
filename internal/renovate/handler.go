@@ -293,6 +293,7 @@ func (h *Handler) execute(ctx context.Context, job queue.ClaimedJob, rec *queue.
 		h.log.Warn("renovate: global config", "job", job.ID, "err", redactor.String(err.Error()))
 		return fail(CodeGlobalConfig, globalConfigReason(err))
 	}
+	rec.GlobalConfig = h.captureGlobalConfig(job, cfg, redactor)
 	cfgPath, removed, err := cfg.WithoutOwnedKeys(scratch)
 	if err != nil {
 		return fail(CodeSetup, "the global Renovate config could not be prepared")
@@ -354,6 +355,22 @@ func (h *Handler) execute(ctx context.Context, job queue.ClaimedJob, rec *queue.
 		return fail(CodeCacheScrub, "the slot's working copies could not be cleared of credentials")
 	}
 	return nil
+}
+
+// captureGlobalConfig is the config as the result carries it: the file's own text, never
+// parsed, with the job's secrets and token-shaped strings replaced. A text that is still over
+// the cap the app accepts is left out, so the app keeps the copy it has.
+func (h *Handler) captureGlobalConfig(job queue.ClaimedJob, cfg *globalconfig.Config, redactor *redact.Redactor) *queue.GlobalConfigCapture {
+	content := redactor.String(cfg.Raw)
+	if len(content) > queue.MaxGlobalConfigBytes {
+		h.log.Warn("renovate: the global config is too large to report", "job", job.ID)
+		return nil
+	}
+	source := queue.GlobalConfigSourceRepository
+	if cfg.Source == globalconfig.SourceMounted {
+		source = queue.GlobalConfigSourceMounted
+	}
+	return &queue.GlobalConfigCapture{Source: source, Content: content}
 }
 
 func (h *Handler) runAs() (User, error) {

@@ -32,7 +32,6 @@ func testStore(t *testing.T) (*store.Store, *crypto.Cipher) {
 		t.Fatalf("NewCipherFromHex: %v", err)
 	}
 
-	seedAppSettings(t, sqlDB)
 	return store.New(sqlDB, cipher), cipher
 }
 
@@ -46,68 +45,6 @@ func openMigratedDB(t *testing.T, dbPath string) *store.DB {
 		t.Fatalf("OpenPath: %v", err)
 	}
 	return sqlDB
-}
-
-func seedAppSettings(t *testing.T, sqlDB *store.DB) {
-	t.Helper()
-
-	_, err := sqlDB.Writer.Exec(
-		`INSERT INTO app_settings (id, updated_at) VALUES (1, ?)`,
-		"2026-08-06T12:00:00.000Z",
-	)
-	if err != nil {
-		t.Fatalf("seed app_settings: %v", err)
-	}
-}
-
-func TestEnsureDefaultAppSettings(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "app.db")
-	sqlDB := openMigratedDB(t, dbPath)
-	t.Cleanup(func() {
-		_ = sqlDB.Close()
-	})
-
-	cipher, err := crypto.NewCipherFromHex(testKeyHex)
-	if err != nil {
-		t.Fatalf("NewCipherFromHex: %v", err)
-	}
-
-	s := store.New(sqlDB, cipher)
-	ctx := context.Background()
-
-	if err := s.Settings().EnsureDefault(ctx); err != nil {
-		t.Fatalf("EnsureDefault: %v", err)
-	}
-
-	got, err := s.Settings().Get(ctx)
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if got.ID != 1 || got.InviteTokenExpiryHours != 168 || got.PasswordResetTokenExpiryMinutes != 60 {
-		t.Fatalf("settings = %+v, want id=1 with the default token windows 168h and 60m", got)
-	}
-
-	if err := s.Settings().EnsureDefault(ctx); err != nil {
-		t.Fatalf("EnsureDefault second call: %v", err)
-	}
-}
-
-func TestSettingsGetReturnsIDOne(t *testing.T) {
-	t.Parallel()
-
-	s, _ := testStore(t)
-	ctx := context.Background()
-
-	got, err := s.Settings().Get(ctx)
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if got.ID != 1 {
-		t.Fatalf("ID = %d, want 1", got.ID)
-	}
 }
 
 func TestIntegrationCreateEncryptsPayload(t *testing.T) {
@@ -199,7 +136,6 @@ func TestRepositoryInterfacesMockable(t *testing.T) {
 
 	s, _ := testStore(t)
 
-	var _ = s.Settings()
 	var _ = s.Integrations()
 	var _ = s.TicketProjects()
 }

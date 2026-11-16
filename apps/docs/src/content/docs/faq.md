@@ -1,60 +1,98 @@
 ---
 title: "FAQ"
-description: "Short answers to the questions people ask most often."
+description: "Answers to common questions about running Release Ops: URLs and webhooks, duplicate PRs, permissions, sign-in and what is not supported yet."
 ---
 
-## Why did adding a repo not create a ticket?
+## Setup and network
 
-The first release Release Ops sees for a repo is recorded as a baseline and creates no ticket. The next release creates one. See [How release detection works](../concepts/release-detection/).
+### Why does Release Ops need a public `WEBHOOK_URL` and an `APP_URL`?
 
-## How often does Release Ops check for releases?
+They are two different addresses with two different jobs.
 
-Every 360 minutes (6 hours) by default. Change the interval, minimum 5 minutes, under [Settings](../guide/settings/). To check right away, click **Run poll now** on the [Dashboard](../guide/dashboard/). Release Ops does not poll when it starts.
+- `APP_URL` is the address your browser uses to open Release Ops. GitHub sends your browser back to it during setup and sign-in. GitHub itself never calls it, so it only has to be reachable from the browsers of the people who sign in. It is required.
+- `WEBHOOK_URL` is the address GitHub calls to deliver events: a ticked checkbox, a closed PR, a push. It must be reachable from GitHub over HTTPS and it ends in `/hooks/github`. It is optional.
 
-## Does Release Ops notice pre-releases?
+With a webhook, a run starts within seconds of the event. Release Ops reads both addresses when you create the GitHub App, and changing them later does not change the App: after a new `WEBHOOK_URL`, edit the App's webhook URL on GitHub, and after a new `APP_URL`, edit its callback URL, or sign-in fails. See [Getting started](../getting-started/#1-choose-your-urls).
 
-Not by default. It follows the latest stable release. Switch on **Include pre-releases** when you edit a [repo](../guide/repos/) to treat pre-releases as new releases too.
+### What happens if I have no public webhook URL?
 
-## Which sources and ticket systems are supported?
+Release Ops still works, in a degraded polling mode. Leave `WEBHOOK_URL` unset, for example at home or behind NAT. GitHub then sends no events, and Release Ops checks GitHub every few minutes for ticked checkboxes, closed PRs and pushes. Reactions take minutes, not seconds, and a tick made while a run is already going can be missed. The hourly run and an admin's run now work as usual. The **Settings** page shows **Polling mode**. See [Without a public URL: polling mode](../getting-started/#without-a-public-url-polling-mode).
 
-Sources: GitHub, GitLab, Gitea, Forgejo and Codeberg. Ticket systems: Kaneo, Jira and Linear. Any source can be combined with any ticket system, per repo. Other sources, such as Bitbucket and Azure DevOps, are not supported.
+### Why do I get two update PRs for the same dependency?
 
-## Can tickets go to different projects or teams?
+Renovate's hosted app from Mend is probably installed on the same repositories as Release Ops. Both bots read the same `renovate.json`, so each opens its own update PR for the same update. Release Ops tracks and creates tickets only for the PRs of its own App. The other bot's PRs get no ticket.
 
-Yes. Add one [ticket project](../guide/ticket-projects/) for each Kaneo project, Jira project or Linear team. A repo picks the ticket project that receives its tickets.
+Pick one of these:
 
-## What happens when a new release ships and the last ticket is still open?
+- Remove those repositories from the Mend app in your GitHub organization's or account's installed apps. Release Ops then keeps the update PRs.
+- Or turn Release Ops off for them: remove the repositories from the Release Ops App's installation on GitHub.
 
-That depends on the ticket project's policy: **Supersede** (the default), **Merge** or **Skip if open**. See [Open-ticket policy](../concepts/open-ticket-policy/).
+Close the duplicate PRs of the bot you stop using and delete their branches. The same happens with a Renovate GitHub Action or another Renovate that is still running: see [Migrating from a Renovate GitHub Action or self-hosted Renovate](../guide/migrating-from-renovate/).
 
-## A repo shows an error about an unknown ticket status. What now?
+## The GitHub App
 
-The ticket's status is not in any of the status lists of its ticket project, so Release Ops cannot tell whether the ticket is open. Add the status to the right list. See [Status mapping](../concepts/status-mapping/).
+### Which permissions does the App request?
 
-## Are my tokens and URLs safe?
+The App requests the permissions Renovate documents for a GitHub App, plus one for sign-in. You see all of them on GitHub's confirmation page before the App exists.
 
-Release Ops stores integration tokens and notification URLs encrypted and never shows them again after you save them. The integrations list only shows whether a token is set: **Configured** or **Missing**. **Missing** means no token is set, which is fine for public repos on GitHub, Gitea, Forgejo and Codeberg.
+| Permission | Access |
+| ---------- | ------ |
+| Administration | Read |
+| Checks | Read and write |
+| Commit statuses | Read and write |
+| Contents | Read and write |
+| Dependabot alerts | Read |
+| Issues | Read and write |
+| Metadata | Read |
+| Pull requests | Read and write |
+| Workflows | Read and write |
+| Merge queues | Read and write |
+| Organization members | Read |
 
-## Can I give users different permissions?
+**Organization members** is the one that Renovate does not need: Release Ops uses it to work out who may sign in and with which role. **Workflows** lets Renovate update files under `.github/workflows`. The App subscribes to push, pull request, issues and installation events. The App is private, so only its owner can install it, and an instance has one installation.
 
-No. Everyone who is signed in has the same access, and there are no roles. Any user can invite and remove others. See [Users](../guide/users/).
+### Why are the update PRs authored by the bot?
 
-## Can people sign up on their own?
+The App is the bot. Renovate runs with the App's installation token, so the branches, PRs and PR comments come from the App's bot user, shown on GitHub as `<app name>[bot]`. Release Ops identifies its update PRs and the Dependency Dashboard by that author. It does not use the branch prefix or the PR title, which your Renovate configuration can change. Commits that Renovate creates through the GitHub API are signed by GitHub as the App.
 
-No. The first account is created during setup. Everyone else joins through an invitation from an existing user. See [Users](../guide/users/).
+### Why is there no local login?
 
-## I forgot my password
+GitHub is the only identity provider. You sign in with GitHub through the instance's own App, and your role is derived from your GitHub membership: admin or viewer. There are no passwords, no registration, no invitations and no email, so there is nothing to reset and no second user list to keep in step. See [Roles](../concepts/roles/).
 
-Click **Forgot password?** on the sign-in page. Release Ops emails you a reset link if outgoing email is set up on your instance. See [Signing in](../guide/signing-in/).
+### I cannot sign in because GitHub sign-in is broken. How do I get back in?
 
-## Why do the times in the UI differ from my local time?
+Use the break-glass login link. You need shell access to the app container, which already implies admin rights over the instance. Run:
 
-Release Ops shows times in the time zone your administrator configured. The default is UTC. Times use the 24-hour clock.
+```bash
+docker compose exec app release-ops admin login-link
+```
 
-## How do I upgrade Release Ops?
+The command prints a one-time link to your terminal. Open it in your browser. The link:
 
-Pull the newer image and recreate the container. Your data stays in the volume, and pending database migrations run on start. Read the upgrade notes before you upgrade: [Upgrading in Getting started](../getting-started/#upgrading) and [Upgrading in the README](https://github.com/mdg-labs/release-ops/blob/dev/README.md#upgrading).
+- signs you in as the bootstrap admin, with the admin role,
+- works once and expires after 15 minutes,
+- opens a session that ends after 8 hours, like any other.
 
-## Where do I report a problem or ask for a feature?
+The command refuses while no bootstrap admin has signed in yet, so pin one with `BOOTSTRAP_ADMIN_GITHUB_LOGIN` and sign in once with it before you need the link. See [Getting started](../getting-started/#8-sign-in).
 
-Open an issue on [GitHub](https://github.com/mdg-labs/release-ops/issues).
+## What Release Ops does and does not do
+
+### Why were release polling and notifications removed?
+
+Release Ops 2 does not watch upstream releases. Renovate discovers updates and opens the PRs, and Release Ops creates a ticket for each update PR. A ticket exists because an update PR exists.
+
+It also sends no notifications of its own: no email, chat or webhook messages. Your ticket system already notifies people when a ticket is created or assigned, and GitHub notifies them about PRs. To be alerted when Release Ops itself fails, scrape its metrics and use the [example alert rules](../metrics/#example-alert-rules).
+
+### Does Release Ops support private registries?
+
+Not yet. Renovate needs credentials to read a private registry, the global Renovate config must not hold secrets, and Release Ops has no other place for registry credentials yet. Support is planned for a later version.
+
+### Does Release Ops support GitLab?
+
+Not yet. Release Ops works with github.com and one GitHub App. Other platforms are planned for later versions.
+
+## Related pages
+
+- [Getting started](../getting-started/)
+- [How runs are triggered](../concepts/how-runs-are-triggered/)
+- [Metrics and alert rules](../metrics/)

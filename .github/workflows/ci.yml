@@ -142,3 +142,66 @@ jobs:
           cache-to: type=gha,scope=worker-image,mode=max
       - name: Smoke test as the renovate user
         run: docker/worker-smoke.sh release-ops-worker:smoke
+
+  renovate-pin:
+    name: Renovate pin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: The worker image names Renovate by tag and digest
+        run: node scripts/ci/check-renovate-pin.mjs
+      - name: Tests of the Renovate fixture and worker smoke scripts
+        run: node --test "scripts/ci/**/*.test.mjs" "docker/**/*.test.mjs"
+
+  renovate-fixtures:
+    name: Renovate fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: worker
+          load: true
+          push: false
+          tags: release-ops-worker:fixtures
+          cache-from: type=gha,scope=worker-image
+      - name: Extract and look up the fixture repositories as the renovate user
+        env:
+          RENOVATE_FIXTURES_RESULTS: ${{ runner.temp }}/renovate-fixtures
+        run: scripts/ci/renovate-fixtures.sh release-ops-worker:fixtures
+      - name: Keep the reports and logs of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: renovate-fixtures
+          path: ${{ runner.temp }}/renovate-fixtures
+
+  worker-run-smoke:
+    name: Worker run smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: worker
+          load: true
+          push: false
+          tags: release-ops-worker:run-smoke
+          cache-from: type=gha,scope=worker-image
+      - name: Run a renovate_run job through release-ops worker
+        run: docker/worker-run-smoke.sh release-ops-worker:run-smoke
+        timeout-minutes: 15

@@ -1,77 +1,13 @@
--- A user who signs in with GitHub only has no email and no password_hash, so the queries of
--- the local-account code read both through COALESCE and keep plain strings. The writes return
--- only what they generate: sqlc cannot give a COALESCE in RETURNING a name.
-
--- name: CreateUser :one
-INSERT INTO users (
-  id,
-  email,
-  password_hash,
-  created_at,
-  updated_at
-) VALUES (
-  sqlc.arg(id),
-  CAST(sqlc.arg(email) AS TEXT),
-  CAST(sqlc.arg(password_hash) AS TEXT),
-  sqlc.arg(created_at),
-  sqlc.arg(updated_at)
-)
-RETURNING id, created_at, updated_at;
-
--- name: GetUserByEmail :one
-SELECT
-  id,
-  CAST(COALESCE(email, '') AS TEXT) AS email,
-  CAST(COALESCE(password_hash, '') AS TEXT) AS password_hash,
-  created_at,
-  updated_at
-FROM users
-WHERE lower(email) = lower(sqlc.arg(email))
-LIMIT 1;
-
--- name: CountUsers :one
-SELECT COUNT(*) AS count
-FROM users;
-
 -- name: ListUsers :many
 SELECT
-  id,
-  CAST(email AS TEXT) AS email,
-  created_at
-FROM users
-WHERE email IS NOT NULL
-ORDER BY created_at ASC;
-
--- name: GetUserByID :one
-SELECT
-  id,
-  CAST(COALESCE(email, '') AS TEXT) AS email,
-  CAST(COALESCE(password_hash, '') AS TEXT) AS password_hash,
-  created_at,
-  updated_at
-FROM users
-WHERE id = ?
-LIMIT 1;
-
--- name: UpdateUserEmail :one
-UPDATE users
-SET
-  email = CAST(sqlc.arg(email) AS TEXT),
-  updated_at = sqlc.arg(updated_at)
-WHERE id = sqlc.arg(id)
-RETURNING id, created_at, updated_at;
-
--- name: UpdateUserPassword :one
-UPDATE users
-SET
-  password_hash = CAST(sqlc.arg(password_hash) AS TEXT),
-  updated_at = sqlc.arg(updated_at)
-WHERE id = sqlc.arg(id)
-RETURNING id, created_at, updated_at;
-
--- name: DeleteUser :exec
-DELETE FROM users
-WHERE id = ?;
+  u.id,
+  ai.login,
+  u.created_at
+FROM users u
+JOIN auth_identities ai
+  ON ai.user_id = u.id
+ AND ai.provider = 'github'
+ORDER BY u.created_at ASC, u.id ASC;
 
 -- name: CreateGitHubUser :exec
 INSERT INTO users (id, created_at, updated_at)

@@ -12,7 +12,7 @@ export default defineConfig({
     starlight({
       title: "Release Ops",
       description:
-        "Self-hosted release monitor — poll GitHub, GitLab, Gitea, Forgejo, and Codeberg; create tickets when releases ship.",
+        "Self-hosted dependency-update bot — a GitHub App runs Renovate on your repositories, and every update PR becomes a ticket in Kaneo, Jira or Linear.",
       social: [
         {
           icon: "github",
@@ -30,35 +30,36 @@ export default defineConfig({
           ],
         },
         {
-          label: "User guide",
+          label: "Concepts",
           items: [
-            { label: "First steps", slug: "guide/first-steps" },
-            { label: "Dashboard", slug: "guide/dashboard" },
-            { label: "Integrations", slug: "guide/integrations" },
-            { label: "Ticket projects", slug: "guide/ticket-projects" },
-            { label: "Repos", slug: "guide/repos" },
-            { label: "Poll runs", slug: "guide/poll-runs" },
-            { label: "Notifications", slug: "guide/notifications" },
-            { label: "Settings", slug: "guide/settings" },
-            { label: "Users", slug: "guide/users" },
-            { label: "Profile", slug: "guide/profile" },
-            { label: "Signing in", slug: "guide/signing-in" },
+            {
+              label: "How runs are triggered",
+              slug: "concepts/how-runs-are-triggered",
+            },
+            {
+              label: "Update PRs and tickets",
+              slug: "concepts/update-prs-and-tickets",
+            },
+            { label: "Status mapping", slug: "concepts/status-mapping" },
+            { label: "Roles", slug: "concepts/roles" },
+            {
+              label: "The global Renovate config",
+              slug: "concepts/global-renovate-config",
+            },
           ],
         },
         {
-          label: "Concepts",
+          label: "User guide",
           items: [
-            { label: "Product overview", slug: "concepts/product-overview" },
             {
-              label: "How release detection works",
-              slug: "concepts/release-detection",
-            },
-            { label: "Status mapping", slug: "concepts/status-mapping" },
-            {
-              label: "Open-ticket policy",
-              slug: "concepts/open-ticket-policy",
+              label: "Migrating from Renovate",
+              slug: "guide/migrating-from-renovate",
             },
           ],
+        },
+        {
+          label: "Reference",
+          items: [{ label: "Metrics and alert rules", slug: "metrics" }],
         },
       ],
       head: [

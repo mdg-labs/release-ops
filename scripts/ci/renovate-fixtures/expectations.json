@@ -1,0 +1,94 @@
+{
+  "dockerfile": {
+    "manager": "dockerfile",
+    "packageFile": "Dockerfile",
+    "extract": [{ "depName": "fixture/base", "currentValue": "3.1.0", "datasource": "docker" }],
+    "lookup": [
+      {
+        "depName": "fixture/base",
+        "currentVersion": "3.1.0",
+        "updates": [{ "newVersion": "3.1.4", "newValue": "3.1.4", "updateType": "patch" }]
+      }
+    ]
+  },
+  "docker-compose": {
+    "manager": "docker-compose",
+    "packageFile": "docker-compose.yml",
+    "extract": [{ "depName": "fixture/web", "currentValue": "1.4.0", "datasource": "docker" }],
+    "lookup": [
+      {
+        "depName": "fixture/web",
+        "currentVersion": "1.4.0",
+        "updates": [
+          { "newVersion": "1.5.0", "newValue": "1.5.0", "updateType": "minor" },
+          { "newVersion": "2.0.0", "newValue": "2.0.0", "updateType": "major" }
+        ]
+      }
+    ]
+  },
+  "github-actions": {
+    "manager": "github-actions",
+    "packageFile": ".github/workflows/ci.yml",
+    "ignoreDatasources": ["github-runners"],
+    "allowSkipReasons": ["github-token-required"],
+    "extract": [
+      {
+        "depName": "actions/checkout",
+        "currentValue": "v4",
+        "datasource": "github-tags",
+        "skipReason": "github-token-required"
+      },
+      {
+        "depName": "actions/setup-node",
+        "currentValue": "v4.1.0",
+        "datasource": "github-tags",
+        "skipReason": "github-token-required"
+      }
+    ],
+    "lookup": null
+  },
+  "gomod": {
+    "manager": "gomod",
+    "packageFile": "go.mod",
+    "extract": [{ "depName": "github.com/fixture-org/golib", "currentValue": "v1.0.0", "datasource": "go" }],
+    "lookup": [
+      {
+        "depName": "github.com/fixture-org/golib",
+        "currentVersion": "v1.0.0",
+        "updates": [{ "newVersion": "v1.1.1", "newValue": "v1.1.1", "updateType": "minor" }]
+      }
+    ]
+  },
+  "npm": {
+    "manager": "npm",
+    "packageFile": "package.json",
+    "extract": [
+      { "depName": "fixture-lib", "currentValue": "1.0.0", "datasource": "npm" },
+      { "depName": "fixture-dev-lib", "currentValue": "2.3.0", "datasource": "npm" }
+    ],
+    "lookup": [
+      {
+        "depName": "fixture-lib",
+        "currentVersion": "1.0.0",
+        "updates": [{ "newVersion": "1.0.1", "newValue": "1.0.1", "updateType": "patch" }]
+      },
+      {
+        "depName": "fixture-dev-lib",
+        "currentVersion": "2.3.0",
+        "updates": [{ "newVersion": "2.4.0", "newValue": "2.4.0", "updateType": "minor" }]
+      }
+    ]
+  },
+  "regex": {
+    "manager": "regex",
+    "packageFile": "versions.env",
+    "extract": [{ "depName": "fixture-tool", "currentValue": "3.2.0", "datasource": "npm" }],
+    "lookup": [
+      {
+        "depName": "fixture-tool",
+        "currentVersion": "3.2.0",
+        "updates": [{ "newVersion": "3.3.0", "newValue": "3.3.0", "updateType": "minor" }]
+      }
+    ]
+  }
+}

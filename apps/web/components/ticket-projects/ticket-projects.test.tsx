@@ -603,6 +603,56 @@ describe("TicketProjectsView", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("names each status checkbox by its status and each group by its label", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/ticket-projects", method: "GET" })
+      .reply(200, sampleProjects);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, ticketIntegrations);
+    pool
+      .intercept({
+        path: /\/api\/go\/api\/v1\/integrations\/int-jira\/ticket-metadata\/.*/,
+        method: "GET",
+      })
+      .reply(200, {
+        items: [
+          { id: "To Do", name: "To Do" },
+          { id: "Done", name: "Done" },
+        ],
+      })
+      .persist();
+
+    renderTicketProjectsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit Jira — DEV" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(dialog).getByRole("tab", { name: "Status mapping" }),
+    );
+
+    for (const groupName of [
+      "Open statuses",
+      "Done statuses",
+      "Cancelled statuses",
+    ]) {
+      const group = await within(dialog).findByRole("group", {
+        name: groupName,
+      });
+      expect(
+        within(group).getByRole("checkbox", { name: "To Do" }),
+      ).toBeInTheDocument();
+      expect(
+        within(group).getByRole("checkbox", { name: "Done" }),
+      ).toBeInTheDocument();
+      expect(within(group).getAllByRole("checkbox")).toHaveLength(2);
+    }
+  });
+
   it("pre-fills edit drawer values", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool

@@ -162,6 +162,33 @@ func (q *Queries) CountEligibleQueuedJobs(ctx context.Context, runAfter string) 
 	return items, nil
 }
 
+const countScopedJobs = `-- name: CountScopedJobs :one
+SELECT COUNT(*)
+FROM jobs j
+WHERE (?1 = 1 OR j.repository_id IN (SELECT s.value FROM json_each(?2) s))
+  AND (?3 = '' OR j.repository_id = ?3)
+  AND (?4 = '' OR j.state = ?4)
+`
+
+type CountScopedJobsParams struct {
+	AllRepositories interface{} `json:"all_repositories"`
+	ScopeIds        interface{} `json:"scope_ids"`
+	RepositoryID    interface{} `json:"repository_id"`
+	State           interface{} `json:"state"`
+}
+
+func (q *Queries) CountScopedJobs(ctx context.Context, arg CountScopedJobsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countScopedJobs,
+		arg.AllRepositories,
+		arg.ScopeIds,
+		arg.RepositoryID,
+		arg.State,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteQueuedJobsForRepository = `-- name: DeleteQueuedJobsForRepository :execrows
 DELETE FROM jobs
 WHERE repository_id = ?
@@ -441,6 +468,60 @@ func (q *Queries) GetRunningJobForRepository(ctx context.Context, repositoryID s
 	return i, err
 }
 
+const getScopedJob = `-- name: GetScopedJob :one
+SELECT j.id, j.repository_id, r.full_name AS repository_full_name, j.kind, j.state, j.priority, j."trigger",
+       j.matched_markers, j.attempts, j.created_at, j.started_at, j.finished_at, j.webhook_received_at
+FROM jobs j
+JOIN repositories r ON r.id = j.repository_id
+WHERE j.id = ?1
+  AND (?2 = 1 OR j.repository_id IN (SELECT s.value FROM json_each(?3) s))
+`
+
+type GetScopedJobParams struct {
+	ID              string      `json:"id"`
+	AllRepositories interface{} `json:"all_repositories"`
+	ScopeIds        interface{} `json:"scope_ids"`
+}
+
+type GetScopedJobRow struct {
+	ID                 string         `json:"id"`
+	RepositoryID       string         `json:"repository_id"`
+	RepositoryFullName string         `json:"repository_full_name"`
+	Kind               string         `json:"kind"`
+	State              string         `json:"state"`
+	Priority           string         `json:"priority"`
+	Trigger            string         `json:"trigger"`
+	MatchedMarkers     sql.NullString `json:"matched_markers"`
+	Attempts           int64          `json:"attempts"`
+	CreatedAt          string         `json:"created_at"`
+	StartedAt          sql.NullString `json:"started_at"`
+	FinishedAt         sql.NullString `json:"finished_at"`
+	WebhookReceivedAt  sql.NullString `json:"webhook_received_at"`
+}
+
+// One job of the caller's scope; a job of another repository is not found, exactly as an unknown
+// id is.
+func (q *Queries) GetScopedJob(ctx context.Context, arg GetScopedJobParams) (GetScopedJobRow, error) {
+	row := q.db.QueryRowContext(ctx, getScopedJob, arg.ID, arg.AllRepositories, arg.ScopeIds)
+	var i GetScopedJobRow
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.RepositoryFullName,
+		&i.Kind,
+		&i.State,
+		&i.Priority,
+		&i.Trigger,
+		&i.MatchedMarkers,
+		&i.Attempts,
+		&i.CreatedAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.WebhookReceivedAt,
+	)
+	return i, err
+}
+
 const heartbeatJob = `-- name: HeartbeatJob :one
 UPDATE jobs
 SET last_heartbeat_at = ?1,
@@ -636,6 +717,94 @@ func (q *Queries) ListExpiredJobs(ctx context.Context, leaseExpiresAt sql.NullSt
 	return items, nil
 }
 
+const listJobEventsForJob = `-- name: ListJobEventsForJob :many
+SELECT at, kind, message
+FROM job_events
+WHERE job_id = ?
+ORDER BY at, rowid
+`
+
+type ListJobEventsForJobRow struct {
+	At      string         `json:"at"`
+	Kind    string         `json:"kind"`
+	Message sql.NullString `json:"message"`
+}
+
+func (q *Queries) ListJobEventsForJob(ctx context.Context, jobID string) ([]ListJobEventsForJobRow, error) {
+	rows, err := q.db.QueryContext(ctx, listJobEventsForJob, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListJobEventsForJobRow
+	for rows.Next() {
+		var i ListJobEventsForJobRow
+		if err := rows.Scan(&i.At, &i.Kind, &i.Message); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listJobRunsForJob = `-- name: ListJobRunsForJob :many
+SELECT attempt, started_at, finished_at, outcome, exit_code, error_code, error_message, report_status, log_excerpt
+FROM job_runs
+WHERE job_id = ?
+ORDER BY attempt
+`
+
+type ListJobRunsForJobRow struct {
+	Attempt      int64          `json:"attempt"`
+	StartedAt    string         `json:"started_at"`
+	FinishedAt   sql.NullString `json:"finished_at"`
+	Outcome      string         `json:"outcome"`
+	ExitCode     sql.NullInt64  `json:"exit_code"`
+	ErrorCode    sql.NullString `json:"error_code"`
+	ErrorMessage sql.NullString `json:"error_message"`
+	ReportStatus sql.NullString `json:"report_status"`
+	LogExcerpt   sql.NullString `json:"log_excerpt"`
+}
+
+func (q *Queries) ListJobRunsForJob(ctx context.Context, jobID string) ([]ListJobRunsForJobRow, error) {
+	rows, err := q.db.QueryContext(ctx, listJobRunsForJob, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListJobRunsForJobRow
+	for rows.Next() {
+		var i ListJobRunsForJobRow
+		if err := rows.Scan(
+			&i.Attempt,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.Outcome,
+			&i.ExitCode,
+			&i.ErrorCode,
+			&i.ErrorMessage,
+			&i.ReportStatus,
+			&i.LogExcerpt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRunningJobLeaseOwners = `-- name: ListRunningJobLeaseOwners :many
 SELECT lease_owner
 FROM jobs
@@ -656,6 +825,156 @@ func (q *Queries) ListRunningJobLeaseOwners(ctx context.Context) ([]sql.NullStri
 			return nil, err
 		}
 		items = append(items, lease_owner)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listScopedJobProblems = `-- name: ListScopedJobProblems :many
+SELECT j.id AS job_id, j.repository_id, r.full_name AS repository_full_name,
+       CAST(j.finished_at AS TEXT) AS finished_at,
+       (SELECT jr.error_message FROM job_runs jr WHERE jr.job_id = j.id ORDER BY jr.attempt DESC LIMIT 1) AS error_message
+FROM jobs j
+JOIN repositories r ON r.id = j.repository_id
+JOIN installations i ON i.id = r.installation_id
+WHERE r.removed_at IS NULL
+  AND i.status <> 'removed'
+  AND (?1 = 1 OR j.repository_id IN (SELECT s.value FROM json_each(?2) s))
+  AND j.state = 'failed'
+  AND j.id = (
+    SELECT l.id FROM jobs l
+    WHERE l.repository_id = j.repository_id AND l.state IN ('succeeded', 'failed')
+    ORDER BY l.finished_at DESC, l.id DESC
+    LIMIT 1
+  )
+ORDER BY j.finished_at DESC, j.id DESC
+`
+
+type ListScopedJobProblemsParams struct {
+	AllRepositories interface{} `json:"all_repositories"`
+	ScopeIds        interface{} `json:"scope_ids"`
+}
+
+type ListScopedJobProblemsRow struct {
+	JobID              string         `json:"job_id"`
+	RepositoryID       string         `json:"repository_id"`
+	RepositoryFullName string         `json:"repository_full_name"`
+	FinishedAt         string         `json:"finished_at"`
+	ErrorMessage       sql.NullString `json:"error_message"`
+}
+
+// The repositories whose latest finished job failed (the job_failed problem, specs.html section
+// 7.7), with the error of that job's last attempt. A repository that left its installation has
+// no problem.
+func (q *Queries) ListScopedJobProblems(ctx context.Context, arg ListScopedJobProblemsParams) ([]ListScopedJobProblemsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listScopedJobProblems, arg.AllRepositories, arg.ScopeIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListScopedJobProblemsRow
+	for rows.Next() {
+		var i ListScopedJobProblemsRow
+		if err := rows.Scan(
+			&i.JobID,
+			&i.RepositoryID,
+			&i.RepositoryFullName,
+			&i.FinishedAt,
+			&i.ErrorMessage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listScopedJobs = `-- name: ListScopedJobs :many
+SELECT j.id, j.repository_id, r.full_name AS repository_full_name, j.kind, j.state, j.priority, j."trigger",
+       j.matched_markers, j.attempts, j.created_at, j.started_at, j.finished_at, j.webhook_received_at
+FROM jobs j
+JOIN repositories r ON r.id = j.repository_id
+WHERE (?1 = 1 OR j.repository_id IN (SELECT s.value FROM json_each(?2) s))
+  AND (?3 = '' OR j.repository_id = ?3)
+  AND (?4 = '' OR j.state = ?4)
+ORDER BY j.created_at DESC, j.id DESC
+LIMIT ?6 OFFSET ?5
+`
+
+type ListScopedJobsParams struct {
+	AllRepositories interface{} `json:"all_repositories"`
+	ScopeIds        interface{} `json:"scope_ids"`
+	RepositoryID    interface{} `json:"repository_id"`
+	State           interface{} `json:"state"`
+	PageOffset      int64       `json:"page_offset"`
+	PageSize        int64       `json:"page_size"`
+}
+
+type ListScopedJobsRow struct {
+	ID                 string         `json:"id"`
+	RepositoryID       string         `json:"repository_id"`
+	RepositoryFullName string         `json:"repository_full_name"`
+	Kind               string         `json:"kind"`
+	State              string         `json:"state"`
+	Priority           string         `json:"priority"`
+	Trigger            string         `json:"trigger"`
+	MatchedMarkers     sql.NullString `json:"matched_markers"`
+	Attempts           int64          `json:"attempts"`
+	CreatedAt          string         `json:"created_at"`
+	StartedAt          sql.NullString `json:"started_at"`
+	FinishedAt         sql.NullString `json:"finished_at"`
+	WebhookReceivedAt  sql.NullString `json:"webhook_received_at"`
+}
+
+// The jobs of the caller's scope, newest first (specs.html section 7.7): all_repositories is 1 for
+// the admin scope, and otherwise a job needs a repository in scope_ids, a JSON array of
+// repository ids where an empty one matches none. Empty repository_id and state arguments filter
+// nothing. The history of a repository that left its installation is kept and listed.
+func (q *Queries) ListScopedJobs(ctx context.Context, arg ListScopedJobsParams) ([]ListScopedJobsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listScopedJobs,
+		arg.AllRepositories,
+		arg.ScopeIds,
+		arg.RepositoryID,
+		arg.State,
+		arg.PageOffset,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListScopedJobsRow
+	for rows.Next() {
+		var i ListScopedJobsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepositoryID,
+			&i.RepositoryFullName,
+			&i.Kind,
+			&i.State,
+			&i.Priority,
+			&i.Trigger,
+			&i.MatchedMarkers,
+			&i.Attempts,
+			&i.CreatedAt,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.WebhookReceivedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

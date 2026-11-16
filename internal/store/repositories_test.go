@@ -230,3 +230,59 @@ func TestPausingKeepsAJobWaitingForARetryThatLeftNoWorkerRecord(t *testing.T) {
 		})
 	}
 }
+
+func TestListRestrictedToAScopeReadsOnlyThoseRepositoriesAndNeverCountsTheRest(t *testing.T) {
+	e := newJobEnv(t, 3)
+	repos := newRepoStore(t, e)
+	ctx := context.Background()
+
+	items, total, err := repos.List(ctx, store.RepositoryFilter{Restrict: true, RepositoryIDs: []string{e.repos[2], "unknown"}, Page: 1, PageSize: 10})
+	if err != nil || total != 1 || len(items) != 1 || items[0].ID != e.repos[2] {
+		t.Fatalf("List(scope of repo 3) = %+v, %d, %v; want that repository alone", items, total, err)
+	}
+	for name, ids := range map[string][]string{"an empty scope": {}, "no scope list": nil} {
+		items, total, err = repos.List(ctx, store.RepositoryFilter{Restrict: true, RepositoryIDs: ids, Page: 1, PageSize: 10})
+		if err != nil || total != 0 || len(items) != 0 {
+			t.Errorf("List with %s = %+v, %d, %v; want none", name, items, total, err)
+		}
+	}
+	items, total, err = repos.List(ctx, store.RepositoryFilter{Page: 1, PageSize: 10})
+	if err != nil || total != 3 || len(items) != 3 {
+		t.Errorf("List without a scope = %d items, %d, %v; want all three", len(items), total, err)
+	}
+}
+
+func TestListingCountsOpenUpdatePRsAndNamesTheLatestJobAndTheDashboardIssue(t *testing.T) {
+	e := newJobEnv(t, 2)
+	repos := newRepoStore(t, e)
+	ctx := context.Background()
+	e.exec(t, `INSERT INTO update_prs (id, repository_id, number, node_id, url, title, head_ref, state, last_seen_at, created_at, updated_at)
+		VALUES ('a', ?1, 1, 'n', 'u', 't', 'h', 'open', 't', 't', 't'), ('b', ?1, 2, 'n', 'u', 't', 'h', 'merged', 't', 't', 't'), ('c', ?2, 3, 'n', 'u', 't', 'h', 'open', 't', 't', 't')`, e.repos[0], e.repos[1])
+	e.exec(t, `UPDATE repositories SET dashboard_issue_number = 12 WHERE id = ?`, e.repos[0])
+	first := e.enqueue(t, e.repos[0], queue.PriorityHigh)
+	e.claim(t)
+	e.exec(t, `UPDATE jobs SET state = 'succeeded', finished_at = '2026-11-14T12:30:00.000Z' WHERE id = ?`, first.JobID)
+	second := e.enqueue(t, e.repos[0], queue.PriorityHigh)
+
+	got, err := repos.GetListing(ctx, e.repos[0])
+	if err != nil {
+		t.Fatalf("GetListing: %v", err)
+	}
+	if got.OpenUpdatePRs != 1 || got.DashboardIssueNumber != 12 {
+		t.Errorf("listing = %d open PRs, dashboard issue %d; want 1 and 12", got.OpenUpdatePRs, got.DashboardIssueNumber)
+	}
+	if got.LastJob == nil || got.LastJob.ID != second.JobID || got.LastJob.State != "queued" || got.LastJob.FinishedAt != "" {
+		t.Errorf("last job = %+v, want the queued job %s", got.LastJob, second.JobID)
+	}
+	other, err := repos.GetListing(ctx, e.repos[1])
+	if err != nil || other.LastJob != nil || other.DashboardIssueNumber != 0 || other.OpenUpdatePRs != 1 {
+		t.Errorf("repo 2 listing = %+v, %v; want one open PR, no job, no dashboard issue", other, err)
+	}
+	if _, err := repos.GetListing(ctx, "unknown"); !errors.Is(err, store.ErrRepositoryNotFound) {
+		t.Errorf("GetListing(unknown) = %v, want ErrRepositoryNotFound", err)
+	}
+	repo, err := repos.Get(ctx, e.repos[0])
+	if err != nil || repo.GitHubInstallationID != 1 {
+		t.Errorf("Get = %+v, %v; want the GitHub installation id 1", repo, err)
+	}
+}

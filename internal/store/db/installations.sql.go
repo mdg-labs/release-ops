@@ -67,6 +67,69 @@ func (q *Queries) GetLiveInstallation(ctx context.Context) (GetLiveInstallationR
 	return i, err
 }
 
+const listInstallationProblemInputs = `-- name: ListInstallationProblemInputs :many
+SELECT i.id, i.status, i.permissions, i.rate_limit_remaining, i.rate_limit_reset_at, i.updated_at,
+       (SELECT jr.error_code FROM job_runs jr
+          JOIN jobs j ON j.id = jr.job_id
+          JOIN repositories r ON r.id = j.repository_id
+          WHERE r.installation_id = i.id AND jr.finished_at IS NOT NULL
+          ORDER BY jr.finished_at DESC, jr.id DESC LIMIT 1) AS latest_attempt_error_code,
+       (SELECT jr.finished_at FROM job_runs jr
+          JOIN jobs j ON j.id = jr.job_id
+          JOIN repositories r ON r.id = j.repository_id
+          WHERE r.installation_id = i.id AND jr.finished_at IS NOT NULL
+          ORDER BY jr.finished_at DESC, jr.id DESC LIMIT 1) AS latest_attempt_finished_at
+FROM installations i
+ORDER BY CASE WHEN i.status = 'removed' THEN 1 ELSE 0 END, i.created_at DESC, i.id
+`
+
+type ListInstallationProblemInputsRow struct {
+	ID                      string         `json:"id"`
+	Status                  string         `json:"status"`
+	Permissions             string         `json:"permissions"`
+	RateLimitRemaining      sql.NullInt64  `json:"rate_limit_remaining"`
+	RateLimitResetAt        sql.NullString `json:"rate_limit_reset_at"`
+	UpdatedAt               string         `json:"updated_at"`
+	LatestAttemptErrorCode  sql.NullString `json:"latest_attempt_error_code"`
+	LatestAttemptFinishedAt sql.NullString `json:"latest_attempt_finished_at"`
+}
+
+// What the installation-level problems (rate_limited, permissions_lost; specs.html section 7.7)
+// are derived from: the stored state and permissions, the budget, and the end of the latest
+// finished attempt of the installation's repositories with its error code. The live installation
+// is listed before a removed one.
+func (q *Queries) ListInstallationProblemInputs(ctx context.Context) ([]ListInstallationProblemInputsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listInstallationProblemInputs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInstallationProblemInputsRow
+	for rows.Next() {
+		var i ListInstallationProblemInputsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Status,
+			&i.Permissions,
+			&i.RateLimitRemaining,
+			&i.RateLimitResetAt,
+			&i.UpdatedAt,
+			&i.LatestAttemptErrorCode,
+			&i.LatestAttemptFinishedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listInstallationRateLimits = `-- name: ListInstallationRateLimits :many
 SELECT github_installation_id, rate_limit_remaining, rate_limit_limit, rate_limit_reset_at
 FROM installations

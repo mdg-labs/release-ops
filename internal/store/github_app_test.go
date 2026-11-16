@@ -37,8 +37,8 @@ func sampleApp() store.NewGitHubApp {
 
 func seedSetupToken(t *testing.T, db *store.DB) {
 	t.Helper()
-	if _, err := db.Writer.Exec(`INSERT INTO auth_tokens (id, kind, email, token_hash, expires_at, created_at)
-		VALUES ('t1', 'setup', '', 'hash', '9999-12-31T23:59:59.000Z', '2026-11-14T12:00:00.000Z')`); err != nil {
+	if _, err := db.Writer.Exec(`INSERT INTO auth_tokens (id, kind, token_hash, expires_at, created_at)
+		VALUES ('t1', 'setup', 'hash', '9999-12-31T23:59:59.000Z', '2026-11-14T12:00:00.000Z')`); err != nil {
 		t.Fatalf("seed setup token: %v", err)
 	}
 }

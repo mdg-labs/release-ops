@@ -63,10 +63,8 @@ type Config struct {
 	// AdminTeam and ViewerTeam are ADMIN_TEAM and VIEWER_TEAM as org/team-slug, empty when
 	// unset: the members of AdminTeam are admins, and with ViewerTeam set only its members
 	// (and admins) may sign in as viewers (docs/specs.html § 3.7).
-	AdminTeam              string
-	ViewerTeam             string
-	BootstrapAdminEmail    string
-	BootstrapAdminPassword string
+	AdminTeam  string
+	ViewerTeam string
 	// InternalAddr is where the internal listener for the worker binds (INTERNAL_ADDR); empty
 	// means no internal listener. WorkerSecret authenticates the worker to it and is set
 	// together with it.
@@ -102,8 +100,6 @@ func Load() (*Config, error) {
 		BootstrapAdminGitHubLogin: strings.TrimSpace(os.Getenv("BOOTSTRAP_ADMIN_GITHUB_LOGIN")),
 		AdminTeam:                 strings.TrimSpace(os.Getenv("ADMIN_TEAM")),
 		ViewerTeam:                strings.TrimSpace(os.Getenv("VIEWER_TEAM")),
-		BootstrapAdminEmail:       strings.TrimSpace(os.Getenv("BOOTSTRAP_ADMIN_EMAIL")),
-		BootstrapAdminPassword:    os.Getenv("BOOTSTRAP_ADMIN_PASSWORD"),
 		InternalAddr:              strings.TrimSpace(os.Getenv("INTERNAL_ADDR")),
 		WorkerSecret:              strings.TrimSpace(os.Getenv("WORKER_SECRET")),
 		GlobalConfigRepo:          strings.TrimSpace(os.Getenv("GLOBAL_CONFIG_REPO")),
@@ -113,7 +109,7 @@ func Load() (*Config, error) {
 
 	// The secrets are registered before anything can fail, so an error that quotes one is
 	// already covered.
-	logging.Register(cfg.SessionSecret, cfg.AppEncryptionKey, cfg.SetupToken, cfg.WorkerSecret, cfg.BootstrapAdminPassword)
+	logging.Register(cfg.SessionSecret, cfg.AppEncryptionKey, cfg.SetupToken, cfg.WorkerSecret)
 
 	var err error
 	if err = validateListenAddr(cfg.MetricsAddr); err != nil {
@@ -175,11 +171,6 @@ func (c *Config) PollingMode() bool {
 	return c.WebhookURL == ""
 }
 
-// BootstrapAdminConfigured reports whether one-time admin bootstrap env is set.
-func (c *Config) BootstrapAdminConfigured() bool {
-	return c.BootstrapAdminEmail != "" || c.BootstrapAdminPassword != ""
-}
-
 // Placeholder values shipped in .env.example. They are public, so starting with them
 // would sign sessions and encrypt stored credentials with a key anyone can read.
 const (
@@ -225,12 +216,6 @@ func (c *Config) validate() error {
 		if team != "" && !validTeam(team) {
 			return fmt.Errorf("%s must be org/team-slug, e.g. acme/release-ops-admins", name)
 		}
-	}
-	if c.BootstrapAdminEmail != "" && c.BootstrapAdminPassword == "" {
-		return fmt.Errorf("BOOTSTRAP_ADMIN_PASSWORD is required when BOOTSTRAP_ADMIN_EMAIL is set")
-	}
-	if c.BootstrapAdminPassword != "" && c.BootstrapAdminEmail == "" {
-		return fmt.Errorf("BOOTSTRAP_ADMIN_EMAIL is required when BOOTSTRAP_ADMIN_PASSWORD is set")
 	}
 	if c.GlobalConfigRepo != "" && !validRepository(c.GlobalConfigRepo) {
 		return fmt.Errorf("GLOBAL_CONFIG_REPO must be owner/repo")

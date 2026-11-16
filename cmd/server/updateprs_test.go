@@ -33,6 +33,8 @@ type prServer struct {
 	repo     string
 	internal string
 	metrics  string
+	public   string
+	cfg      *config.Config
 }
 
 func prAt(minutes int) time.Time {
@@ -134,7 +136,6 @@ func startPRServer(t *testing.T, seeds ...func(t *testing.T, st *store.Store)) *
 	s.botPR(2)
 	s.botPR(3, func(p *githubtest.PullRequest) { p.AuthorID = 1 }) // a person's PR with the bot's body
 
-	var public string
 	withFreePorts(t, 3, func(ports []int) error {
 		cfg := &config.Config{
 			SessionSecret:    strings.Repeat("s", 32),
@@ -147,11 +148,12 @@ func startPRServer(t *testing.T, seeds ...func(t *testing.T, st *store.Store)) *
 			WorkerSecret:     testWorkerSecret,
 			MetricsAddr:      fmt.Sprintf("127.0.0.1:%d", ports[2]),
 		}
-		public = fmt.Sprintf("http://127.0.0.1:%d", ports[0])
+		s.public = fmt.Sprintf("http://127.0.0.1:%d", ports[0])
+		s.cfg = cfg
 		s.internal = fmt.Sprintf("http://127.0.0.1:%d", ports[1])
 		s.metrics = fmt.Sprintf("http://127.0.0.1:%d", ports[2])
 		return launch(t, func(ctx context.Context) error { return run(ctx, cfg) },
-			probe{url: public + "/healthz", status: http.StatusOK},
+			probe{url: s.public + "/healthz", status: http.StatusOK},
 			probe{url: s.internal + "/internal/v1/jobs/x/heartbeat", status: http.StatusMethodNotAllowed, bearer: true},
 			probe{url: s.metrics + "/metrics", status: http.StatusOK})
 	})
@@ -216,4 +218,13 @@ func TestServerReconcilesUpdatePRsOnEverySchedulerTick(t *testing.T) {
 		p.State, p.ClosedAt, p.UpdatedAt = "closed", prAt(9), prAt(9)
 	})
 	s.waitStates(t, "a tick's reconcile", "1:closed 2:open 5:open 9:merged")
+}
+
+// enqueueRun queues a Renovate run of the seeded repository.
+func (s *prServer) enqueueRun(t *testing.T) {
+	t.Helper()
+	jobs := store.NewJobQueue(s.db, store.JobQueueOptions{})
+	if _, err := jobs.Enqueue(context.Background(), queue.EnqueueParams{RepositoryID: s.repo, Kind: queue.KindRenovateRun, Priority: queue.PriorityHigh, Trigger: queue.TriggerPush}); err != nil {
+		t.Fatal(err)
+	}
 }

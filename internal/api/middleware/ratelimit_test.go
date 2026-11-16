@@ -20,19 +20,19 @@ func (c *fixedClock) Now() time.Time {
 	return c.now
 }
 
-func TestRateLimiterEnforcesLoginLimit(t *testing.T) {
+func TestRateLimiterEnforcesLoginLinkLimit(t *testing.T) {
 	t.Parallel()
 
 	clock := &fixedClock{now: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)}
 	rl := apimw.NewRateLimiterForTest(clock)
 
-	handler := rl.Login(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := rl.LoginLink(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	for i := 0; i < apimw.LoginLimit; i++ {
+	for i := 0; i < apimw.LoginLinkLimit; i++ {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-link", nil)
 		req.RemoteAddr = "203.0.113.1:12345"
 		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
@@ -41,7 +41,7 @@ func TestRateLimiterEnforcesLoginLimit(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-link", nil)
 	req.RemoteAddr = "203.0.113.1:12345"
 	handler.ServeHTTP(rec, req)
 
@@ -69,13 +69,13 @@ func TestRateLimiterUsesXForwardedForLastHopFromLoopbackProxy(t *testing.T) {
 	clock := &fixedClock{now: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)}
 	rl := apimw.NewRateLimiterForTest(clock)
 
-	handler := rl.Login(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := rl.LoginLink(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	for i := 0; i < apimw.LoginLimit; i++ {
+	for i := 0; i < apimw.LoginLinkLimit; i++ {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-link", nil)
 		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set("X-Forwarded-For", "198.51.100.42, 203.0.113.9")
 		handler.ServeHTTP(rec, req)
@@ -85,7 +85,7 @@ func TestRateLimiterUsesXForwardedForLastHopFromLoopbackProxy(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-link", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("X-Forwarded-For", "198.51.100.42, 203.0.113.9")
 	handler.ServeHTTP(rec, req)
@@ -96,7 +96,7 @@ func TestRateLimiterUsesXForwardedForLastHopFromLoopbackProxy(t *testing.T) {
 
 	// A different proxy-supplied address gets its own bucket.
 	rec2 := httptest.NewRecorder()
-	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-link", nil)
 	req2.RemoteAddr = "127.0.0.1:12345"
 	req2.Header.Set("X-Forwarded-For", "198.51.100.99")
 	handler.ServeHTTP(rec2, req2)
@@ -111,16 +111,16 @@ func TestRateLimiterIgnoresClientSuppliedXForwardedForHopsFromLoopbackProxy(t *t
 	clock := &fixedClock{now: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)}
 	rl := apimw.NewRateLimiterForTest(clock)
 
-	handler := rl.Login(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := rl.LoginLink(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
 	// Every request reaches Go through the same proxy hop; the hops in front of it are
 	// whatever the client sent, so rotating them must keep one bucket.
 	var last int
-	for i := 0; i <= apimw.LoginLimit; i++ {
+	for i := 0; i <= apimw.LoginLinkLimit; i++ {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-link", nil)
 		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set("X-Forwarded-For", fmt.Sprintf("198.51.100.%d, 203.0.113.9", i))
 		handler.ServeHTTP(rec, req)
@@ -137,14 +137,14 @@ func TestRateLimiterFallsBackToPeerOnUnusableForwardedAddress(t *testing.T) {
 	clock := &fixedClock{now: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)}
 	rl := apimw.NewRateLimiterForTest(clock)
 
-	handler := rl.Login(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := rl.LoginLink(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
 	var last int
-	for i := 0; i <= apimw.LoginLimit; i++ {
+	for i := 0; i <= apimw.LoginLinkLimit; i++ {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-link", nil)
 		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set("X-Forwarded-For", fmt.Sprintf("198.51.100.%d, not-an-ip-%d", i, i))
 		handler.ServeHTTP(rec, req)
@@ -161,15 +161,15 @@ func TestRateLimiterIgnoresXForwardedForFromNonLoopbackPeer(t *testing.T) {
 	clock := &fixedClock{now: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)}
 	rl := apimw.NewRateLimiterForTest(clock)
 
-	handler := rl.Login(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := rl.LoginLink(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
 	// A direct caller rotating X-Forwarded-For must still share one bucket.
 	var last int
-	for i := 0; i <= apimw.LoginLimit; i++ {
+	for i := 0; i <= apimw.LoginLinkLimit; i++ {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-link", nil)
 		req.RemoteAddr = "203.0.113.7:12345"
 		req.Header.Set("X-Forwarded-For", fmt.Sprintf("198.51.100.%d", i))
 		handler.ServeHTTP(rec, req)
@@ -187,12 +187,12 @@ func TestRateLimiterEvictsStaleBuckets(t *testing.T) {
 	clock := &fixedClock{now: start}
 	rl := apimw.NewRateLimiterForTest(clock)
 
-	handler := rl.Login(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := rl.LoginLink(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
 	for i := 0; i < 50; i++ {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-link", nil)
 		req.RemoteAddr = fmt.Sprintf("203.0.113.%d:12345", i)
 		handler.ServeHTTP(httptest.NewRecorder(), req)
 	}
@@ -200,8 +200,8 @@ func TestRateLimiterEvictsStaleBuckets(t *testing.T) {
 		t.Fatalf("buckets = %d, want 50", got)
 	}
 
-	clock.now = start.Add(2 * apimw.LoginWindow)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+	clock.now = start.Add(2 * apimw.LoginLinkWindow)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-link", nil)
 	req.RemoteAddr = "198.51.100.1:12345"
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 	if got := rl.Len(); got != 1 {
@@ -216,62 +216,33 @@ func TestRateLimiterWindowResetAllowsRetry(t *testing.T) {
 	clock := &fixedClock{now: start}
 	rl := apimw.NewRateLimiterForTest(clock)
 
-	handler := rl.Login(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := rl.LoginLink(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	for i := 0; i < apimw.LoginLimit; i++ {
+	for i := 0; i < apimw.LoginLinkLimit; i++ {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-link", nil)
 		req.RemoteAddr = "203.0.113.5:12345"
 		handler.ServeHTTP(rec, req)
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-link", nil)
 	req.RemoteAddr = "203.0.113.5:12345"
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("blocked status = %d, want %d", rec.Code, http.StatusTooManyRequests)
 	}
 
-	clock.now = start.Add(apimw.LoginWindow + time.Second)
+	clock.now = start.Add(apimw.LoginLinkWindow + time.Second)
 
 	rec2 := httptest.NewRecorder()
-	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-link", nil)
 	req2.RemoteAddr = "203.0.113.5:12345"
 	handler.ServeHTTP(rec2, req2)
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("after window reset status = %d, want %d", rec2.Code, http.StatusOK)
-	}
-}
-
-func TestRateLimiterForgotPasswordLimit(t *testing.T) {
-	t.Parallel()
-
-	clock := &fixedClock{now: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)}
-	rl := apimw.NewRateLimiterForTest(clock)
-
-	handler := rl.ForgotPassword(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	for i := 0; i < apimw.ForgotPasswordLimit; i++ {
-		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/forgot-password", nil)
-		req.RemoteAddr = "203.0.113.2:12345"
-		handler.ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("request %d status = %d, want %d", i+1, rec.Code, http.StatusOK)
-		}
-	}
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/forgot-password", nil)
-	req.RemoteAddr = "203.0.113.2:12345"
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusTooManyRequests)
 	}
 }
 

@@ -124,13 +124,13 @@ ORDER BY name;
 -- name: UpdateTicketProject :one
 UPDATE ticket_projects
 SET
-  name = ?,
-  create_config = ?,
-  status_mapping = ?,
-  content_templates = ?,
-  filter = ?,
-  updated_at = ?
-WHERE id = ?
+  name = sqlc.arg(name),
+  create_config = sqlc.arg(create_config),
+  status_mapping = sqlc.arg(status_mapping),
+  content_templates = COALESCE(sqlc.narg(content_templates), content_templates),
+  filter = COALESCE(sqlc.narg(filter), filter),
+  updated_at = sqlc.arg(updated_at)
+WHERE id = sqlc.arg(id)
 RETURNING
   id,
   integration_id,

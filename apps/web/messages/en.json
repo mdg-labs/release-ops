@@ -72,8 +72,263 @@
   },
   "dashboard": {
     "title": "Dashboard",
-    "emptyTitle": "Nothing to show yet",
-    "emptyDescription": "Update and release information will appear here once it is available."
+    "description": "Open and recently merged dependency update pull requests.",
+    "filters": {
+      "repository": "Repository",
+      "allRepositories": "All repositories",
+      "updateType": "Update type",
+      "allUpdateTypes": "All update types"
+    },
+    "open": {
+      "title": "Open update pull requests",
+      "empty": "No open update pull requests.",
+      "emptyFiltered": "No open update pull requests match these filters."
+    },
+    "merged": {
+      "title": "Recently merged",
+      "emptyFiltered": "No merged update pull requests match these filters.",
+      "empty": "Nothing has been merged yet."
+    },
+    "columns": {
+      "repository": "Repository",
+      "title": "Pull request",
+      "updateTypes": "Update type",
+      "age": "Age",
+      "mergedAt": "Merged",
+      "ticket": "Ticket"
+    },
+    "updateTypes": {
+      "major": "Major",
+      "minor": "Minor",
+      "patch": "Patch",
+      "digest": "Digest",
+      "lockfile": "Lockfile",
+      "other": "Other",
+      "unknown": "Unknown"
+    },
+    "ticketStates": {
+      "pending": "Pending",
+      "open": "Open",
+      "done": "Done",
+      "cancelled": "Cancelled",
+      "superseded": "Superseded"
+    },
+    "ticketError": "Ticket error",
+    "noTicket": "No ticket",
+    "noDate": "Unknown",
+    "loadFailed": "Could not load the update pull requests.",
+    "retry": "Try again",
+    "emptyTitle": "No update pull requests yet",
+    "emptyDescription": "Update pull requests appear here once Renovate opens them in a repository that has Release Ops enabled.",
+    "emptyAction": "View repositories",
+    "pagination": {
+      "summary": "{from}–{to} of {total}",
+      "pageSize": "Rows per page",
+      "pageSizeOption": "{count} per page",
+      "previous": "Previous",
+      "next": "Next"
+    }
+  },
+  "repositories": {
+    "title": "Repositories",
+    "description": "The repositories the GitHub App is installed on and what Release Ops does with them.",
+    "searchLabel": "Search repositories",
+    "searchPlaceholder": "Search by name",
+    "loadFailed": "Could not load the repositories.",
+    "retry": "Try again",
+    "emptyTitle": "No repositories yet",
+    "emptyDescription": "The GitHub App has no repository installed. Install it on the repositories Renovate should update.",
+    "emptyDescriptionViewer": "There are no repositories you can see yet.",
+    "emptyAction": "Install the GitHub App on repositories",
+    "emptySearch": "No repositories match this search.",
+    "columns": {
+      "repository": "Repository",
+      "config": "Renovate config",
+      "openPrs": "Open update PRs",
+      "lastJob": "Last job",
+      "dashboard": "Dependency Dashboard",
+      "enabled": "Enabled",
+      "ticketProject": "Ticket project",
+      "actions": "Actions"
+    },
+    "configStates": {
+      "present": "Present",
+      "missing": "Missing",
+      "unknown": "Unknown"
+    },
+    "jobStates": {
+      "queued": "Queued",
+      "running": "Running",
+      "succeeded": "Succeeded",
+      "failed": "Failed"
+    },
+    "noJob": "No job yet",
+    "dashboardLink": "Open",
+    "noDashboard": "Unknown",
+    "paused": "Paused",
+    "enabledSwitch": "Run Renovate for {repository}",
+    "toggleFailed": "Could not change {repository}: {message}",
+    "ticketProjectLabel": "Ticket project of {repository}",
+    "installationDefault": "Installation default ({project})",
+    "installationDefaultNone": "none",
+    "noTicketProject": "No ticket project: its update pull requests get no tickets.",
+    "ticketProjectSaveFailed": "Could not set the ticket project of {repository}: {message}",
+    "ticketProjectsUnavailable": "The ticket projects could not be loaded.",
+    "runNow": "Run now",
+    "runNowQueued": "Run queued for {repository}",
+    "runNowView": "View jobs",
+    "runNowFailed": "Could not start a run for {repository}: {message}",
+    "enableRepo": "Enable repo",
+    "enableRepoTitle": "Open a pull request that adds renovate.json?",
+    "enableRepoDescription": "{repository} has no Renovate config. Release Ops opens a pull request that adds a renovate.json extending {preset}. It never merges the pull request.",
+    "enableRepoPresetUnavailable": "The preset could not be loaded, so the pull request cannot be opened right now.",
+    "enableRepoConfirm": "Open pull request",
+    "enableRepoOpened": "Pull request #{number} is open for {repository}",
+    "enableRepoFailed": "The pull request could not be opened: {message}",
+    "enableRepoBranchExists": "The branch {branch} already exists with commits that Release Ops did not make, so it was left as it is. Delete or merge that branch, then try again.",
+    "enableRepoLink": "Pull request #{number}",
+    "actionFailedUnknown": "the request did not finish",
+    "pagination": {
+      "summary": "{from}–{to} of {total}",
+      "pageSize": "Rows per page",
+      "pageSizeOption": "{count} per page",
+      "previous": "Previous",
+      "next": "Next"
+    }
+  },
+  "jobs": {
+    "title": "Jobs",
+    "description": "What Release Ops ran for your repositories, and what needs attention.",
+    "tabsLabel": "Jobs views",
+    "tabs": {
+      "jobs": "Jobs",
+      "problems": "Problems"
+    },
+    "loadFailed": "Could not load the jobs.",
+    "retry": "Try again",
+    "empty": {
+      "title": "No jobs yet",
+      "description": "Jobs appear here once Renovate has run for a repository.",
+      "filtered": "No jobs match these filters.",
+      "action": "Go to repositories"
+    },
+    "filters": {
+      "repository": "Repository",
+      "state": "State",
+      "allRepositories": "All repositories",
+      "allStates": "All states"
+    },
+    "columns": {
+      "repository": "Repository",
+      "state": "State",
+      "priority": "Priority",
+      "trigger": "Trigger",
+      "attempts": "Attempts",
+      "created": "Created",
+      "started": "Started",
+      "finished": "Finished",
+      "duration": "Duration",
+      "latency": "Start latency",
+      "actions": "Details"
+    },
+    "states": {
+      "queued": "Queued",
+      "running": "Running",
+      "succeeded": "Succeeded",
+      "failed": "Failed"
+    },
+    "priorities": {
+      "high": "High",
+      "normal": "Normal"
+    },
+    "triggers": {
+      "dashboard_checkbox": "Dependency Dashboard checkbox",
+      "pr_checkbox": "Pull request checkbox",
+      "pr_closed": "Pull request closed",
+      "push": "Push",
+      "repository_added": "Repository added",
+      "schedule": "Schedule",
+      "polling": "Polling",
+      "run_now": "Run now"
+    },
+    "markers": "Markers: {markers}",
+    "notYet": "Not yet",
+    "noDuration": "—",
+    "duration": {
+      "seconds": "{seconds}s",
+      "minutes": "{minutes}m {seconds}s",
+      "hours": "{hours}h {minutes}m",
+      "milliseconds": "{ms} ms"
+    },
+    "viewDetails": "View job {repository}",
+    "detail": {
+      "title": "Job {repository}",
+      "loadFailed": "Could not load this job.",
+      "notFound": "This job does not exist or is not one of your repositories.",
+      "runs": "Attempts",
+      "noRuns": "No attempt has finished yet.",
+      "attempt": "Attempt {attempt}",
+      "outcome": "Outcome",
+      "exitCode": "Exit code",
+      "errorCode": "Error code",
+      "error": "Error",
+      "report": "Report",
+      "logExcerpt": "Log excerpt",
+      "noLog": "No log was stored for this attempt.",
+      "events": "Events",
+      "noEvents": "No events were recorded.",
+      "close": "Close"
+    },
+    "outcomes": {
+      "running": "Running",
+      "succeeded": "Succeeded",
+      "no_config": "No config",
+      "failed": "Failed",
+      "aborted": "Aborted",
+      "lease_expired": "Lease expired"
+    },
+    "reportStatuses": {
+      "ok": "Read",
+      "missing": "Missing",
+      "unreadable": "Unreadable"
+    },
+    "problems": {
+      "loadFailed": "Could not load the problems.",
+      "emptyTitle": "No problems",
+      "emptyDescription": "Nothing needs attention right now.",
+      "columns": {
+        "kind": "Problem",
+        "repository": "Repository",
+        "since": "Since",
+        "message": "Details",
+        "actions": "Actions"
+      },
+      "kinds": {
+        "job_failed": "Job failed",
+        "ticket_failed": "Ticket error",
+        "rate_limited": "Rate limited",
+        "permissions_lost": "Permissions lost"
+      },
+      "noRepository": "All repositories",
+      "noMessage": "No details recorded",
+      "messageAdminOnly": "Only admins see the error text",
+      "viewJob": "View job",
+      "viewPullRequest": "View pull request",
+      "clear": "Clear pending marker",
+      "clearTitle": "Clear the pending marker?",
+      "clearDescription": "The ticket for this pull request may exist in your ticket tracker although Release Ops never stored it. Search the ticket project for a ticket whose description has the line \"Release Ops key: {key}\" before you clear the marker. Clearing it lets the next event of the pull request create a ticket, which duplicates one that exists.",
+      "clearConfirm": "Clear marker",
+      "clearFailed": "The marker could not be cleared: {message}",
+      "clearDone": "Pending marker cleared for {repository}",
+      "clearUnknown": "the request did not finish"
+    },
+    "pagination": {
+      "summary": "{from}–{to} of {total}",
+      "pageSize": "Rows per page",
+      "pageSizeOption": "{count} per page",
+      "previous": "Previous",
+      "next": "Next"
+    }
   },
   "integrations": {
     "title": "Integrations",
@@ -462,11 +717,13 @@
   },
   "nav": {
     "dashboard": "Dashboard",
+    "repositories": "Repositories",
     "integrations": "Integrations",
     "ticketProjects": "Ticket projects",
     "settings": "Settings",
     "homeAriaLabel": "Home",
-    "about": "About"
+    "about": "About",
+    "jobs": "Jobs"
   },
   "about": {
     "title": "About",

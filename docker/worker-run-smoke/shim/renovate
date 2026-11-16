@@ -1,0 +1,7 @@
+#!/bin/bash
+# Stands in for renovate in the worker run smoke test: it says which user it runs as, starts a
+# child, ignores SIGTERM and waits, so only SIGKILL to the whole process group ends it.
+trap '' TERM
+echo "shim-uid=$(id -u)"
+sleep 3600 &
+wait

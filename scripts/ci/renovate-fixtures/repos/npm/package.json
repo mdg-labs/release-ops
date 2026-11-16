@@ -1,0 +1,11 @@
+{
+  "name": "fixture-npm",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "fixture-lib": "1.0.0"
+  },
+  "devDependencies": {
+    "fixture-dev-lib": "2.3.0"
+  }
+}

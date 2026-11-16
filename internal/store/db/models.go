@@ -8,13 +8,6 @@ import (
 	"database/sql"
 )
 
-type AppSetting struct {
-	ID                              int64  `json:"id"`
-	InviteTokenExpiryHours          int64  `json:"invite_token_expiry_hours"`
-	PasswordResetTokenExpiryMinutes int64  `json:"password_reset_token_expiry_minutes"`
-	UpdatedAt                       string `json:"updated_at"`
-}
-
 type AuthIdentity struct {
 	ID        string `json:"id"`
 	UserID    string `json:"user_id"`
@@ -25,15 +18,12 @@ type AuthIdentity struct {
 }
 
 type AuthToken struct {
-	ID              string         `json:"id"`
-	Kind            string         `json:"kind"`
-	Email           string         `json:"email"`
-	TokenHash       string         `json:"token_hash"`
-	NewEmail        sql.NullString `json:"new_email"`
-	InvitedByUserID sql.NullString `json:"invited_by_user_id"`
-	ExpiresAt       string         `json:"expires_at"`
-	UsedAt          sql.NullString `json:"used_at"`
-	CreatedAt       string         `json:"created_at"`
+	ID        string         `json:"id"`
+	Kind      string         `json:"kind"`
+	TokenHash string         `json:"token_hash"`
+	ExpiresAt string         `json:"expires_at"`
+	UsedAt    sql.NullString `json:"used_at"`
+	CreatedAt string         `json:"created_at"`
 }
 
 type GithubApp struct {
@@ -233,32 +223,31 @@ type UpdatePrDependency struct {
 }
 
 type UpdateTicket struct {
-	ID              string         `json:"id"`
-	UpdatePrID      string         `json:"update_pr_id"`
-	TicketProjectID string         `json:"ticket_project_id"`
-	ExternalID      sql.NullString `json:"external_id"`
-	ExternalUrl     sql.NullString `json:"external_url"`
-	State           string         `json:"state"`
-	PendingSince    sql.NullString `json:"pending_since"`
-	SyncedHash      sql.NullString `json:"synced_hash"`
-	PrCommentID     sql.NullInt64  `json:"pr_comment_id"`
-	PrCommentHash   sql.NullString `json:"pr_comment_hash"`
-	Attempts        int64          `json:"attempts"`
-	NextAttemptAt   sql.NullString `json:"next_attempt_at"`
-	LastError       sql.NullString `json:"last_error"`
-	LastErrorAt     sql.NullString `json:"last_error_at"`
-	CreatedAt       string         `json:"created_at"`
-	UpdatedAt       string         `json:"updated_at"`
-	TargetState     sql.NullString `json:"target_state"`
-	HandsOffAt      sql.NullString `json:"hands_off_at"`
+	ID                 string         `json:"id"`
+	UpdatePrID         string         `json:"update_pr_id"`
+	TicketProjectID    string         `json:"ticket_project_id"`
+	ExternalID         sql.NullString `json:"external_id"`
+	ExternalUrl        sql.NullString `json:"external_url"`
+	State              string         `json:"state"`
+	PendingSince       sql.NullString `json:"pending_since"`
+	SyncedHash         sql.NullString `json:"synced_hash"`
+	PrCommentID        sql.NullInt64  `json:"pr_comment_id"`
+	PrCommentHash      sql.NullString `json:"pr_comment_hash"`
+	Attempts           int64          `json:"attempts"`
+	NextAttemptAt      sql.NullString `json:"next_attempt_at"`
+	LastError          sql.NullString `json:"last_error"`
+	LastErrorAt        sql.NullString `json:"last_error_at"`
+	CreatedAt          string         `json:"created_at"`
+	UpdatedAt          string         `json:"updated_at"`
+	TargetState        sql.NullString `json:"target_state"`
+	HandsOffAt         sql.NullString `json:"hands_off_at"`
+	PendingContentHash sql.NullString `json:"pending_content_hash"`
 }
 
 type User struct {
-	ID           string         `json:"id"`
-	Email        sql.NullString `json:"email"`
-	PasswordHash sql.NullString `json:"password_hash"`
-	CreatedAt    string         `json:"created_at"`
-	UpdatedAt    string         `json:"updated_at"`
+	ID        string `json:"id"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 type WebhookDelivery struct {

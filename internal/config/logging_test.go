@@ -10,15 +10,12 @@ import (
 func TestLoadKeepsItsSecretsOutOfTheLogs(t *testing.T) {
 	validEnv(t)
 	const (
-		session   = "opaque-session-secret-for-config-test-0001"
-		bootstrap = "opaque-bootstrap-password-0001"
-		worker    = "opaque-worker-secret-for-config-test-0001"
-		setup     = "opaque-setup-token-for-config-test-0001-opaque-setup-token-0002-xxxxxxxxxx"
+		session = "opaque-session-secret-for-config-test-0001"
+		worker  = "opaque-worker-secret-for-config-test-0001"
+		setup   = "opaque-setup-token-for-config-test-0001-opaque-setup-token-0002-xxxxxxxxxx"
 	)
 	t.Setenv("SESSION_SECRET", session)
 	t.Setenv("APP_ENCRYPTION_KEY", strings.Repeat("ab", 16)+strings.Repeat("cd", 16))
-	t.Setenv("BOOTSTRAP_ADMIN_EMAIL", "admin@example.com")
-	t.Setenv("BOOTSTRAP_ADMIN_PASSWORD", bootstrap)
 	t.Setenv("INTERNAL_ADDR", "127.0.0.1:9090")
 	t.Setenv("WORKER_SECRET", worker)
 	t.Setenv("SETUP_TOKEN", setup)
@@ -28,7 +25,7 @@ func TestLoadKeepsItsSecretsOutOfTheLogs(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	for name, secret := range map[string]string{
-		"SESSION_SECRET": session, "APP_ENCRYPTION_KEY": cfg.AppEncryptionKey, "BOOTSTRAP_ADMIN_PASSWORD": bootstrap,
+		"SESSION_SECRET": session, "APP_ENCRYPTION_KEY": cfg.AppEncryptionKey,
 		"WORKER_SECRET": worker, "SETUP_TOKEN": setup,
 	} {
 		if got := logging.Redact("value " + secret); strings.Contains(got, secret) {

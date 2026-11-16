@@ -24,8 +24,6 @@ func validEnv(t *testing.T) {
 	t.Setenv("BOOTSTRAP_ADMIN_GITHUB_LOGIN", "")
 	t.Setenv("ADMIN_TEAM", "")
 	t.Setenv("VIEWER_TEAM", "")
-	t.Setenv("BOOTSTRAP_ADMIN_EMAIL", "")
-	t.Setenv("BOOTSTRAP_ADMIN_PASSWORD", "")
 	t.Setenv("INTERNAL_ADDR", "")
 	t.Setenv("WORKER_SECRET", "")
 	t.Setenv("PRESET_REPOSITORIES", "")
@@ -189,40 +187,6 @@ func TestLoadSetupTokenMinimumStrength(t *testing.T) {
 	}
 	if cfg.SetupToken != strings.Repeat("a", minSetupTokenLen) {
 		t.Error("SetupToken not read from the environment")
-	}
-}
-
-func TestLoadBootstrapAdminOptionalPair(t *testing.T) {
-	validEnv(t)
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.BootstrapAdminConfigured() {
-		t.Error("BootstrapAdminConfigured() = true with empty bootstrap env")
-	}
-
-	t.Setenv("BOOTSTRAP_ADMIN_EMAIL", "admin@example.com")
-	t.Setenv("BOOTSTRAP_ADMIN_PASSWORD", "secret")
-	cfg, err = Load()
-	if err != nil {
-		t.Fatalf("Load() with bootstrap pair error = %v", err)
-	}
-	if !cfg.BootstrapAdminConfigured() {
-		t.Error("BootstrapAdminConfigured() = false with both bootstrap vars set")
-	}
-
-	validEnv(t)
-	t.Setenv("BOOTSTRAP_ADMIN_EMAIL", "admin@example.com")
-	if _, err := Load(); err == nil {
-		t.Fatal("Load() expected error when only BOOTSTRAP_ADMIN_EMAIL is set")
-	}
-
-	validEnv(t)
-	t.Setenv("BOOTSTRAP_ADMIN_PASSWORD", "secret")
-	if _, err := Load(); err == nil {
-		t.Fatal("Load() expected error when only BOOTSTRAP_ADMIN_PASSWORD is set")
 	}
 }
 

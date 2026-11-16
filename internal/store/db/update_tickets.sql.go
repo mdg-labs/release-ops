@@ -38,6 +38,28 @@ func (q *Queries) ArmUpdateTicketMarker(ctx context.Context, arg ArmUpdateTicket
 	return result.RowsAffected()
 }
 
+const beginUpdateTicketContent = `-- name: BeginUpdateTicketContent :execrows
+UPDATE update_tickets
+SET pending_content_hash = ?, updated_at = ?
+WHERE id = ? AND external_id IS NOT NULL AND hands_off_at IS NULL
+`
+
+type BeginUpdateTicketContentParams struct {
+	PendingContentHash sql.NullString `json:"pending_content_hash"`
+	UpdatedAt          string         `json:"updated_at"`
+	ID                 string         `json:"id"`
+}
+
+// Records the hash of the dependency list whose content is about to be sent to the ticket
+// system. Only a ticket that exists and that nobody changed outside Release Ops takes it.
+func (q *Queries) BeginUpdateTicketContent(ctx context.Context, arg BeginUpdateTicketContentParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, beginUpdateTicketContent, arg.PendingContentHash, arg.UpdatedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const beginUpdateTicketTransition = `-- name: BeginUpdateTicketTransition :execrows
 UPDATE update_tickets
 SET target_state = ?, updated_at = ?
@@ -249,26 +271,27 @@ func (q *Queries) GetUpdatePRForTicket(ctx context.Context, id string) (GetUpdat
 
 const getUpdateTicketByPR = `-- name: GetUpdateTicketByPR :one
 SELECT id, ticket_project_id, external_id, external_url, state, pending_since, synced_hash, attempts, next_attempt_at, last_error,
-       target_state, hands_off_at, pr_comment_id, pr_comment_hash
+       target_state, hands_off_at, pr_comment_id, pr_comment_hash, pending_content_hash
 FROM update_tickets
 WHERE update_pr_id = ?
 `
 
 type GetUpdateTicketByPRRow struct {
-	ID              string         `json:"id"`
-	TicketProjectID string         `json:"ticket_project_id"`
-	ExternalID      sql.NullString `json:"external_id"`
-	ExternalUrl     sql.NullString `json:"external_url"`
-	State           string         `json:"state"`
-	PendingSince    sql.NullString `json:"pending_since"`
-	SyncedHash      sql.NullString `json:"synced_hash"`
-	Attempts        int64          `json:"attempts"`
-	NextAttemptAt   sql.NullString `json:"next_attempt_at"`
-	LastError       sql.NullString `json:"last_error"`
-	TargetState     sql.NullString `json:"target_state"`
-	HandsOffAt      sql.NullString `json:"hands_off_at"`
-	PrCommentID     sql.NullInt64  `json:"pr_comment_id"`
-	PrCommentHash   sql.NullString `json:"pr_comment_hash"`
+	ID                 string         `json:"id"`
+	TicketProjectID    string         `json:"ticket_project_id"`
+	ExternalID         sql.NullString `json:"external_id"`
+	ExternalUrl        sql.NullString `json:"external_url"`
+	State              string         `json:"state"`
+	PendingSince       sql.NullString `json:"pending_since"`
+	SyncedHash         sql.NullString `json:"synced_hash"`
+	Attempts           int64          `json:"attempts"`
+	NextAttemptAt      sql.NullString `json:"next_attempt_at"`
+	LastError          sql.NullString `json:"last_error"`
+	TargetState        sql.NullString `json:"target_state"`
+	HandsOffAt         sql.NullString `json:"hands_off_at"`
+	PrCommentID        sql.NullInt64  `json:"pr_comment_id"`
+	PrCommentHash      sql.NullString `json:"pr_comment_hash"`
+	PendingContentHash sql.NullString `json:"pending_content_hash"`
 }
 
 func (q *Queries) GetUpdateTicketByPR(ctx context.Context, updatePrID string) (GetUpdateTicketByPRRow, error) {
@@ -289,6 +312,7 @@ func (q *Queries) GetUpdateTicketByPR(ctx context.Context, updatePrID string) (G
 		&i.HandsOffAt,
 		&i.PrCommentID,
 		&i.PrCommentHash,
+		&i.PendingContentHash,
 	)
 	return i, err
 }
@@ -394,6 +418,75 @@ func (q *Queries) LinkUpdateTicket(ctx context.Context, arg LinkUpdateTicketPara
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const listScopedTicketProblems = `-- name: ListScopedTicketProblems :many
+SELECT t.id AS update_ticket_id, p.id AS update_pr_id, p.url AS update_pr_url, p.repository_id,
+       r.full_name AS repository_full_name,
+       CAST(COALESCE(t.last_error_at, t.pending_since, t.updated_at) AS TEXT) AS since,
+       t.last_error,
+       CAST(t.external_id IS NULL AND t.pending_since IS NOT NULL AS INTEGER) AS clearable
+FROM update_tickets t
+JOIN update_prs p ON p.id = t.update_pr_id
+JOIN repositories r ON r.id = p.repository_id
+JOIN installations i ON i.id = r.installation_id
+WHERE r.removed_at IS NULL
+  AND i.status <> 'removed'
+  AND (?1 = 1 OR p.repository_id IN (SELECT s.value FROM json_each(?2) s))
+  AND (t.last_error IS NOT NULL OR t.pending_since IS NOT NULL)
+ORDER BY since DESC, t.id
+`
+
+type ListScopedTicketProblemsParams struct {
+	AllRepositories interface{} `json:"all_repositories"`
+	ScopeIds        interface{} `json:"scope_ids"`
+}
+
+type ListScopedTicketProblemsRow struct {
+	UpdateTicketID     string         `json:"update_ticket_id"`
+	UpdatePrID         string         `json:"update_pr_id"`
+	UpdatePrUrl        string         `json:"update_pr_url"`
+	RepositoryID       string         `json:"repository_id"`
+	RepositoryFullName string         `json:"repository_full_name"`
+	Since              string         `json:"since"`
+	LastError          sql.NullString `json:"last_error"`
+	Clearable          int64          `json:"clearable"`
+}
+
+// The ticket_failed problems of the caller's scope (specs.html section 7.7): a row with an error
+// or a pending marker. since is the error's time, else the marker's. clearable marks the rows an
+// admin may clear: a marker set and no ticket stored. The caller drops last_error and the row id
+// for anyone but an admin.
+func (q *Queries) ListScopedTicketProblems(ctx context.Context, arg ListScopedTicketProblemsParams) ([]ListScopedTicketProblemsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listScopedTicketProblems, arg.AllRepositories, arg.ScopeIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListScopedTicketProblemsRow
+	for rows.Next() {
+		var i ListScopedTicketProblemsRow
+		if err := rows.Scan(
+			&i.UpdateTicketID,
+			&i.UpdatePrID,
+			&i.UpdatePrUrl,
+			&i.RepositoryID,
+			&i.RepositoryFullName,
+			&i.Since,
+			&i.LastError,
+			&i.Clearable,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listUpdatePRsSupersededBy = `-- name: ListUpdatePRsSupersededBy :many
@@ -554,7 +647,7 @@ func (q *Queries) ListUpdatePRsToTicket(ctx context.Context, now sql.NullString)
 
 const markUpdateTicketSynced = `-- name: MarkUpdateTicketSynced :execrows
 UPDATE update_tickets
-SET synced_hash = ?, attempts = 0, next_attempt_at = NULL, last_error = NULL, last_error_at = NULL, updated_at = ?
+SET synced_hash = ?, pending_content_hash = NULL, attempts = 0, next_attempt_at = NULL, last_error = NULL, last_error_at = NULL, updated_at = ?
 WHERE id = ? AND external_id IS NOT NULL AND hands_off_at IS NULL
 `
 
@@ -564,7 +657,8 @@ type MarkUpdateTicketSyncedParams struct {
 	ID         string         `json:"id"`
 }
 
-// Stores the hash of the dependency list the ticket now shows and drops the retry.
+// Stores the hash of the dependency list the ticket now shows and drops the record of the content
+// update and the retry.
 func (q *Queries) MarkUpdateTicketSynced(ctx context.Context, arg MarkUpdateTicketSyncedParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, markUpdateTicketSynced, arg.SyncedHash, arg.UpdatedAt, arg.ID)
 	if err != nil {

@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 
-# The official Renovate OSS image (never a Mend Renovate CE or EE image) the worker image is
-# built on; one version per release. Building the worker with another tag is at your own risk.
+# The Renovate version the worker image is built on: the tag of the FROM line of the worker
+# stage below, which stays equal to it (scripts/ci/check-renovate-pin.mjs, run in CI), as does
+# internal/buildinfo. It feeds the NOTICE file; it does not pick the base image.
 ARG WORKER_RENOVATE_TAG=44.239.1
 
 FROM node:22-bookworm-slim AS web-deps
@@ -29,8 +30,7 @@ ENV CGO_ENABLED=0
 # Release tag (v1.2.3) or nightly-<short sha>; empty or unset builds as "dev".
 ARG APP_VERSION=dev
 RUN VERSION="${APP_VERSION:-dev}" && \
-    go build -trimpath -ldflags="-s -w -X github.com/mdg-labs/release-ops/internal/buildinfo.Version=${VERSION}" -o /out/server ./cmd/server && \
-    go build -trimpath -ldflags="-s -w" -o /out/seed-admin ./cmd/seed-admin
+    go build -trimpath -ldflags="-s -w -X github.com/mdg-labs/release-ops/internal/buildinfo.Version=${VERSION}" -o /out/server ./cmd/server
 
 # The worker image: the pinned Renovate image plus the release-ops binary. It has no data
 # volume and no Docker socket. Two Unix users: "worker" runs `release-ops worker` and holds the
@@ -38,13 +38,21 @@ RUN VERSION="${APP_VERSION:-dev}" && \
 # secret. Both run on /cache, which belongs to renovate and root's group (the group
 # containerbase gives its tool directories), and the worker is a member of that group so it can
 # create the per-slot cache directories inside it.
-FROM ghcr.io/renovatebot/renovate:${WORKER_RENOVATE_TAG} AS worker
+# The official Renovate OSS image (never a Mend Renovate CE or EE image), pinned by tag and
+# digest; one version per release. Dependabot bumps both together. A different Renovate is a
+# change to this line's tag and digest, to the ARG WORKER_RENOVATE_TAG default at the top of
+# this file and to RenovateVersion in internal/buildinfo/buildinfo.go, all to the same version
+# (CI checks that they agree), at your own risk: the report and log handling is tested against
+# the pinned version only.
+FROM ghcr.io/renovatebot/renovate:44.239.1@sha256:7dba1a3b916a2cf302ba0df458ddcc8fcbac3c92d0fe9882ac13ba0363de656b AS worker
 ARG WORKER_RENOVATE_TAG
 USER root
 # The binary carries the setuid and setgid file capabilities so the unprivileged worker can
 # start Renovate as the renovate user under cap_drop ALL; it is not executable by renovate.
+# tini is the container's init (below): the grandchildren of a Renovate process group the
+# deadline killed are reparented to PID 1, which the Go worker would never reap.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libcap2-bin && \
+    apt-get install -y --no-install-recommends libcap2-bin tini && \
     rm -rf /var/lib/apt/lists/* && \
     groupadd --gid 12032 worker && \
     useradd --uid 12032 --gid worker --groups 0 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin worker && \
@@ -55,7 +63,10 @@ RUN setcap cap_setuid,cap_setgid+ep /usr/local/bin/release-ops
 COPY --chmod=0644 NOTICE /NOTICE
 RUN sed -i "s|@RENOVATE_VERSION@|${WORKER_RENOVATE_TAG}|g" /NOTICE
 USER worker
-ENTRYPOINT ["/usr/local/bin/release-ops", "worker"]
+# tini is PID 1 so orphaned processes are reaped, and forwards SIGTERM and SIGINT to the worker,
+# so a `docker stop` still shuts it down gracefully. -s registers it as a child subreaper when
+# something else is PID 1 (`docker run --init`, a shared process namespace).
+ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/usr/local/bin/release-ops", "worker"]
 CMD []
 
 FROM node:22-bookworm-slim AS runtime
@@ -67,9 +78,8 @@ RUN apt-get update && \
 WORKDIR /app
 
 COPY --from=go-build /out/server /app/server
-COPY --from=go-build /out/seed-admin /app/seed-admin
 COPY docker/entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh /app/server /app/seed-admin
+RUN chmod +x /app/entrypoint.sh /app/server
 # `release-ops admin login-link` (specs.html § 3.6) runs from a shell in this container.
 RUN ln -s /app/server /usr/local/bin/release-ops
 

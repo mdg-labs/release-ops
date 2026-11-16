@@ -2,24 +2,20 @@ package api
 
 import (
 	"context"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"net/http/cookiejar"
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/crypto"
-	"github.com/mdg-labs/release-ops/internal/mail"
+	"github.com/mdg-labs/release-ops/internal/github"
 	"github.com/mdg-labs/release-ops/internal/providers/integrationtester"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
@@ -30,13 +26,14 @@ import (
 const routesTestKeyHex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 var expectedAPIRoutes = []string{
-	"POST /api/v1/auth/login",
 	"GET /api/v1/auth/session",
 	"POST /api/v1/auth/login-link",
-	"POST /api/v1/auth/accept-invitation",
-	"POST /api/v1/auth/confirm-email-change",
 	"POST /api/v1/auth/logout",
 	"GET /api/v1/status",
+	"GET /api/v1/update-prs",
+	"GET /api/v1/jobs",
+	"GET /api/v1/jobs/{id}",
+	"GET /api/v1/problems",
 	"GET /api/v1/settings",
 	"PATCH /api/v1/settings",
 	"GET /api/v1/integrations",
@@ -54,13 +51,6 @@ var expectedAPIRoutes = []string{
 	"PATCH /api/v1/ticket-projects/{id}",
 	"DELETE /api/v1/ticket-projects/{id}",
 	"GET /api/v1/users",
-	"DELETE /api/v1/users/{id}",
-	"POST /api/v1/users/me/email-change-request",
-	"POST /api/v1/users/me/password-change",
-	"GET /api/v1/users/invitations",
-	"POST /api/v1/users/invitations",
-	"DELETE /api/v1/users/invitations/{id}",
-	"POST /api/v1/users/invitations/{id}/send-email",
 }
 
 func TestRegisterAllListsExpectedPaths(t *testing.T) {
@@ -106,32 +96,56 @@ func TestRegisterAllListsExpectedPaths(t *testing.T) {
 	}
 }
 
+// The v1 local-account routes, the invitation, password and email-change flows, are not
+// registered: a request to one is answered 404, with or without a session, and is no handler.
+func TestRemovedLocalAccountRoutesAreNotRegistered(t *testing.T) {
+	t.Parallel()
+
+	s := newRolesServer(t, github.User{ID: rolesOwnerID, Login: "acme-owner"})
+	admin := s.signIn(t)
+	anonymous := noRedirects(t)
+
+	routes := []string{
+		"POST /api/v1/auth/login",
+		"POST /api/v1/auth/accept-invitation",
+		"POST /api/v1/auth/forgot-password",
+		"POST /api/v1/auth/reset-password",
+		"POST /api/v1/auth/confirm-email-change",
+		"DELETE /api/v1/users/some-id",
+		"POST /api/v1/users/me/email-change-request",
+		"POST /api/v1/users/me/password-change",
+		"GET /api/v1/users/invitations",
+		"POST /api/v1/users/invitations",
+		"DELETE /api/v1/users/invitations/some-id",
+		"POST /api/v1/users/invitations/some-id/send-email",
+	}
+	for _, route := range routes {
+		method, path, _ := strings.Cut(route, " ")
+		for name, client := range map[string]*http.Client{"admin": admin, "anonymous": anonymous} {
+			if code, body := s.send(t, client, method, path, `{}`); code != http.StatusNotFound {
+				t.Errorf("%s %s = %d %s, want 404", name, route, code, body)
+			}
+		}
+	}
+
+	registered, err := ListRoutes(NewServerRouter(s.deps).(chi.Router))
+	if err != nil {
+		t.Fatalf("ListRoutes: %v", err)
+	}
+	for _, route := range registered {
+		for _, removed := range []string{"/auth/login ", "invitation", "password", "email-change"} {
+			if strings.Contains(route+" ", removed) {
+				t.Errorf("route %s is registered, want no local-account route", route)
+			}
+		}
+	}
+}
+
 func TestRemovedV1RoutesAreNotRegistered(t *testing.T) {
 	t.Parallel()
 
-	deps := newRoutesTestDeps(t)
-	seedRoutesTestUser(t, deps.Queries, "admin@example.com", "secret-pass")
-	seedAppSettingsRow(t, deps.DB)
-	srv := httptest.NewServer(NewServerRouter(deps))
-	t.Cleanup(srv.Close)
-
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatalf("cookiejar: %v", err)
-	}
-	client := &http.Client{Jar: jar}
-	loginResp, err := client.Post(
-		srv.URL+"/api/v1/auth/login",
-		"application/json",
-		strings.NewReader(`{"email":"admin@example.com","password":"secret-pass"}`),
-	)
-	if err != nil {
-		t.Fatalf("POST login: %v", err)
-	}
-	_ = loginResp.Body.Close()
-	if loginResp.StatusCode != http.StatusOK {
-		t.Fatalf("login status = %d, want %d", loginResp.StatusCode, http.StatusOK)
-	}
+	s := newRolesServer(t, github.User{ID: rolesOwnerID, Login: "acme-owner"})
+	client := s.signIn(t)
 
 	for _, route := range []string{
 		"POST /api/v1/poll/trigger",
@@ -147,32 +161,20 @@ func TestRemovedV1RoutesAreNotRegistered(t *testing.T) {
 		"DELETE /api/v1/notification-targets/nt-1",
 		"POST /api/v1/notification-targets/nt-1/test",
 	} {
-		parts := strings.SplitN(route, " ", 2)
-		req, err := http.NewRequest(parts[0], srv.URL+parts[1], nil)
-		if err != nil {
-			t.Fatalf("new request %s: %v", route, err)
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			t.Fatalf("%s: %v", route, err)
-		}
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusMethodNotAllowed {
-			t.Fatalf("%s status = %d, want 404 or 405", route, resp.StatusCode)
+		method, path, _ := strings.Cut(route, " ")
+		code, _ := s.send(t, client, method, path, "")
+		if code != http.StatusNotFound && code != http.StatusMethodNotAllowed {
+			t.Fatalf("%s status = %d, want 404 or 405", route, code)
 		}
 	}
 
-	statusResp, err := client.Get(srv.URL + "/api/v1/status")
-	if err != nil {
-		t.Fatalf("GET status: %v", err)
-	}
-	defer func() { _ = statusResp.Body.Close() }()
 	var status map[string]any
-	if err := json.NewDecoder(statusResp.Body).Decode(&status); err != nil {
+	code, body := s.send(t, client, http.MethodGet, "/api/v1/status", "")
+	if err := json.Unmarshal([]byte(body), &status); err != nil {
 		t.Fatalf("decode status: %v", err)
 	}
-	if statusResp.StatusCode != http.StatusOK || len(status) != 1 || status["version"] == nil {
-		t.Fatalf("status = %d %v, want 200 with only version", statusResp.StatusCode, status)
+	if code != http.StatusOK || len(status) != 1 || status["version"] == nil {
+		t.Fatalf("status = %d %v, want 200 with only version", code, status)
 	}
 }
 
@@ -182,10 +184,9 @@ func TestRemovedV1RoutesAreNotRegistered(t *testing.T) {
 func TestDeleteReferencedRowReturnsConflict(t *testing.T) {
 	t.Parallel()
 
-	deps := newRoutesTestDeps(t)
+	s := newRolesServer(t, github.User{ID: rolesOwnerID, Login: "acme-owner"})
+	deps := s.deps
 	ctx := context.Background()
-	seedRoutesTestUser(t, deps.Queries, "admin@example.com", "secret-pass")
-	seedAppSettingsRow(t, deps.DB)
 
 	integration, err := deps.Store.Integrations().Create(ctx, store.CreateIntegrationInput{
 		Kind:    "jira",
@@ -207,10 +208,6 @@ func TestDeleteReferencedRowReturnsConflict(t *testing.T) {
 		t.Fatalf("Create ticket project: %v", err)
 	}
 	for _, stmt := range []string{
-		`INSERT INTO installations (id, github_installation_id, account_id, account_login, account_type, status, repository_selection, created_at, updated_at)
-		 VALUES ('inst-1', 1, 1, 'acme', 'Organization', 'active', 'all', 't', 't')`,
-		`INSERT INTO repositories (id, installation_id, github_repository_id, full_name, default_branch, created_at, updated_at)
-		 VALUES ('repo-1', 'inst-1', 1, 'acme/api', 'main', 't', 't')`,
 		`INSERT INTO update_prs (id, repository_id, number, node_id, url, title, head_ref, state, last_seen_at, created_at, updated_at)
 		 VALUES ('pr-1', 'repo-1', 1, 'node', 'https://example.test/pr/1', 'Update dep', 'renovate/dep', 'open', 't', 't', 't')`,
 		`INSERT INTO update_tickets (id, update_pr_id, ticket_project_id, state, created_at, updated_at)
@@ -221,35 +218,12 @@ func TestDeleteReferencedRowReturnsConflict(t *testing.T) {
 		}
 	}
 
-	srv := httptest.NewServer(NewServerRouter(deps))
-	t.Cleanup(srv.Close)
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatalf("cookiejar: %v", err)
-	}
-	client := &http.Client{Jar: jar}
-	loginResp, err := client.Post(
-		srv.URL+"/api/v1/auth/login",
-		"application/json",
-		strings.NewReader(`{"email":"admin@example.com","password":"secret-pass"}`),
-	)
-	if err != nil {
-		t.Fatalf("POST login: %v", err)
-	}
-	_ = loginResp.Body.Close()
+	client := s.signIn(t)
 
 	del := func(path string) int {
 		t.Helper()
-		req, err := http.NewRequest(http.MethodDelete, srv.URL+path, nil)
-		if err != nil {
-			t.Fatalf("new request: %v", err)
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			t.Fatalf("DELETE %s: %v", path, err)
-		}
-		_ = resp.Body.Close()
-		return resp.StatusCode
+		code, _ := s.send(t, client, http.MethodDelete, path, "")
+		return code
 	}
 
 	if got := del("/api/v1/ticket-projects/" + project.ID); got != http.StatusConflict {
@@ -310,27 +284,9 @@ func TestPublicAuthRoutesAccessibleWithoutSession(t *testing.T) {
 	if sessionResp.StatusCode != http.StatusOK {
 		t.Fatalf("session status = %d, want %d", sessionResp.StatusCode, http.StatusOK)
 	}
-
-	loginResp, err := http.Post(srv.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"email":"wrong@example.com","password":"bad"}`))
-	if err != nil {
-		t.Fatalf("POST login: %v", err)
-	}
-	_ = loginResp.Body.Close()
-	if loginResp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("login status = %d, want %d", loginResp.StatusCode, http.StatusUnauthorized)
-	}
-
-	acceptResp, err := http.Post(srv.URL+"/api/v1/auth/accept-invitation", "application/json", strings.NewReader(`{"token":"bad","password":"short"}`))
-	if err != nil {
-		t.Fatalf("POST accept-invitation: %v", err)
-	}
-	_ = acceptResp.Body.Close()
-	if acceptResp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("accept-invitation status = %d, want %d", acceptResp.StatusCode, http.StatusBadRequest)
-	}
 }
 
-func TestLoginRateLimitIgnoresClientSuppliedForwardedForHops(t *testing.T) {
+func TestLoginLinkRateLimitIgnoresClientSuppliedForwardedForHops(t *testing.T) {
 	t.Parallel()
 
 	handler := NewServerRouter(newRoutesTestDeps(t))
@@ -339,7 +295,7 @@ func TestLoginRateLimitIgnoresClientSuppliedForwardedForHops(t *testing.T) {
 	// sent, and rotating it must not open a fresh bucket.
 	var last int
 	for i := 0; i < 11; i++ {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"email":"wrong@example.com","password":"bad"}`))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-link", strings.NewReader(`{"token":"bad"}`))
 		req.RemoteAddr = "127.0.0.1:40000"
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Forwarded-For", "198.51.100."+strconv.Itoa(i)+", 203.0.113.9")
@@ -348,10 +304,10 @@ func TestLoginRateLimitIgnoresClientSuppliedForwardedForHops(t *testing.T) {
 		last = rec.Code
 	}
 	if last != http.StatusTooManyRequests {
-		t.Fatalf("11th login status = %d, want %d", last, http.StatusTooManyRequests)
+		t.Fatalf("11th login-link status = %d, want %d", last, http.StatusTooManyRequests)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"email":"wrong@example.com","password":"bad"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-link", strings.NewReader(`{"token":"bad"}`))
 	req.RemoteAddr = "127.0.0.1:40000"
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Forwarded-For", "203.0.113.10")
@@ -377,7 +333,8 @@ func TestIntegrationTestConnectionWithRealTester(t *testing.T) {
 	}))
 	t.Cleanup(mockProvider.Close)
 
-	deps := newRoutesTestDeps(t)
+	s := newRolesServer(t, github.User{ID: rolesOwnerID, Login: "acme-owner"})
+	deps := s.deps
 	deps.IntegrationTester = integrationtester.New(mockProvider.Client())
 
 	created, err := deps.Store.Integrations().Create(context.Background(), store.CreateIntegrationInput{
@@ -390,87 +347,25 @@ func TestIntegrationTestConnectionWithRealTester(t *testing.T) {
 		t.Fatalf("Create integration: %v", err)
 	}
 
-	seedRoutesTestUser(t, deps.Queries, "admin@example.com", "secret-pass")
-	seedAppSettingsRow(t, deps.DB)
-
+	// The router captures the tester when it is built, so the signed-in server is rebuilt on it.
 	srv := httptest.NewServer(NewServerRouter(deps))
 	t.Cleanup(srv.Close)
+	s = &rolesServer{srv: srv, deps: deps, fake: s.fake}
+	client := s.signIn(t)
 
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatalf("cookiejar: %v", err)
+	code, raw := s.send(t, client, http.MethodPost, "/api/v1/integrations/"+created.ID+"/test", "")
+	if code != http.StatusOK {
+		t.Fatalf("test status = %d %s, want %d", code, raw, http.StatusOK)
 	}
-	client := &http.Client{Jar: jar}
-
-	loginResp, err := client.Post(
-		srv.URL+"/api/v1/auth/login",
-		"application/json",
-		strings.NewReader(`{"email":"admin@example.com","password":"secret-pass"}`),
-	)
-	if err != nil {
-		t.Fatalf("POST login: %v", err)
-	}
-	_ = loginResp.Body.Close()
-	if loginResp.StatusCode != http.StatusOK {
-		t.Fatalf("login status = %d, want %d", loginResp.StatusCode, http.StatusOK)
-	}
-
-	testURL := srv.URL + "/api/v1/integrations/" + created.ID + "/test"
-	testResp, err := client.Post(testURL, "application/json", nil)
-	if err != nil {
-		t.Fatalf("POST test: %v", err)
-	}
-	defer func() { _ = testResp.Body.Close() }()
-
-	if testResp.StatusCode != http.StatusOK {
-		t.Fatalf("test status = %d, want %d", testResp.StatusCode, http.StatusOK)
-	}
-
 	var body struct {
 		Success bool   `json:"success"`
 		Message string `json:"message"`
 	}
-	if err := json.NewDecoder(testResp.Body).Decode(&body); err != nil {
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
 		t.Fatalf("decode test response: %v", err)
 	}
 	if !body.Success {
 		t.Fatalf("success = false, message = %q", body.Message)
-	}
-}
-
-func TestLoginThenGetSettingsReturns200(t *testing.T) {
-	t.Parallel()
-
-	deps := newRoutesTestDeps(t)
-	seedRoutesTestUser(t, deps.Queries, "admin@example.com", "secret-pass")
-	seedAppSettingsRow(t, deps.DB)
-
-	srv := httptest.NewServer(NewServerRouter(deps))
-	t.Cleanup(srv.Close)
-
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatalf("cookiejar: %v", err)
-	}
-	client := &http.Client{Jar: jar}
-
-	loginBody := `{"email":"admin@example.com","password":"secret-pass"}`
-	loginResp, err := client.Post(srv.URL+"/api/v1/auth/login", "application/json", strings.NewReader(loginBody))
-	if err != nil {
-		t.Fatalf("POST login: %v", err)
-	}
-	_ = loginResp.Body.Close()
-	if loginResp.StatusCode != http.StatusOK {
-		t.Fatalf("login status = %d, want %d", loginResp.StatusCode, http.StatusOK)
-	}
-
-	settingsResp, err := client.Get(srv.URL + "/api/v1/settings")
-	if err != nil {
-		t.Fatalf("GET settings: %v", err)
-	}
-	defer func() { _ = settingsResp.Body.Close() }()
-	if settingsResp.StatusCode != http.StatusOK {
-		t.Fatalf("settings status = %d, want %d", settingsResp.StatusCode, http.StatusOK)
 	}
 }
 
@@ -491,39 +386,7 @@ func newRoutesTestDeps(t *testing.T) *ServerDeps {
 		Session: sm,
 		Queries: storedb.New(db.Writer),
 		Store:   store.New(db, cipher),
-		Mailer:  mail.NoopMailer{},
 		Queue:   store.NewJobQueue(db, store.JobQueueOptions{}),
-	}
-}
-
-func seedRoutesTestUser(t *testing.T, queries *storedb.Queries, email, password string) {
-	t.Helper()
-
-	now := time.Now().UTC().Format(time.RFC3339)
-	hash, err := auth.HashPassword(password)
-	if err != nil {
-		t.Fatalf("HashPassword: %v", err)
-	}
-	if _, err := queries.CreateUser(context.Background(), storedb.CreateUserParams{
-		ID:           uuid.NewString(),
-		Email:        email,
-		PasswordHash: hash,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}); err != nil {
-		t.Fatalf("CreateUser: %v", err)
-	}
-}
-
-func seedAppSettingsRow(t *testing.T, db *sql.DB) {
-	t.Helper()
-
-	_, err := db.Exec(
-		`INSERT INTO app_settings (id, updated_at) VALUES (1, ?)`,
-		"2026-08-06T12:00:00.000Z",
-	)
-	if err != nil {
-		t.Fatalf("seed app_settings: %v", err)
 	}
 }
 
@@ -545,4 +408,34 @@ func openRoutesTestDBAt(t *testing.T, dbPath string) *store.DB {
 		t.Fatalf("OpenPath: %v", err)
 	}
 	return db
+}
+
+// GET /users is the read-only list of the users who have signed in with GitHub: id, login and
+// creation time, nothing of the removed local accounts, and no user row without a GitHub
+// identity.
+func TestUsersListShowsTheGitHubUsersOnly(t *testing.T) {
+	t.Parallel()
+
+	s := newRolesServer(t, github.User{ID: rolesOwnerID, Login: "acme-owner"})
+	admin := s.signIn(t)
+	if _, err := s.deps.DB.Exec(`INSERT INTO users (id, created_at, updated_at) VALUES ('orphan', 't', 't')`); err != nil {
+		t.Fatalf("seed a user without an identity: %v", err)
+	}
+
+	code, body := s.send(t, admin, http.MethodGet, "/api/v1/users", "")
+	if code != http.StatusOK {
+		t.Fatalf("GET /users = %d %s, want 200", code, body)
+	}
+	var resp struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		t.Fatalf("decode: %v in %s", err, body)
+	}
+	if len(resp.Items) != 1 || resp.Items[0]["login"] != "acme-owner" || resp.Items[0]["id"] == "orphan" {
+		t.Fatalf("items = %v, want only acme-owner", resp.Items)
+	}
+	if len(resp.Items[0]) != 3 {
+		t.Fatalf("item = %v, want exactly id, login and createdAt", resp.Items[0])
+	}
 }

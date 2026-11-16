@@ -334,21 +334,26 @@ func TestPendingPRsListsOpenPRsWithDependenciesAndNoTicketMarkerOrWaitingRetry(t
 	}
 }
 
-func TestTicketProjectFilterIsStoredDefaultedAndUpdated(t *testing.T) {
+func TestTicketProjectFilterIsStoredDefaultedUpdatedAndKept(t *testing.T) {
 	e := newTicketEnv(t)
 	ctx := context.Background()
 	tp, _ := e.st.TicketProjects().Get(ctx, e.project)
 	if tp.Filter != `{"updateTypes":[],"labels":[],"skipAutomerged":true}` {
 		t.Fatalf("filter = %q, want the default", tp.Filter)
 	}
-	const f = `{"updateTypes":["major"],"labels":[],"skipAutomerged":false}`
-	updated, err := e.st.TicketProjects().Update(ctx, e.project, store.UpdateTicketProjectInput{Name: "DEV", CreateConfig: `{}`, StatusMapping: `{}`, Filter: f})
+	f := `{"updateTypes":["major"],"labels":[],"skipAutomerged":false}`
+	updated, err := e.st.TicketProjects().Update(ctx, e.project, store.UpdateTicketProjectInput{Name: "DEV", CreateConfig: `{}`, StatusMapping: `{}`, Filter: &f})
 	if err != nil || updated.Filter != f {
 		t.Fatalf("Update = %+v, %v, want the filter stored", updated, err)
 	}
 	updated, _ = e.st.TicketProjects().Update(ctx, e.project, store.UpdateTicketProjectInput{Name: "DEV", CreateConfig: `{}`, StatusMapping: `{}`})
+	if updated.Filter != f {
+		t.Fatalf("filter = %q, want an update without one to keep %q", updated.Filter, f)
+	}
+	empty := ""
+	updated, _ = e.st.TicketProjects().Update(ctx, e.project, store.UpdateTicketProjectInput{Name: "DEV", CreateConfig: `{}`, StatusMapping: `{}`, Filter: &empty})
 	if updated.Filter != `{"updateTypes":[],"labels":[],"skipAutomerged":true}` {
-		t.Fatalf("filter = %q, want an update without one to store the default", updated.Filter)
+		t.Fatalf("filter = %q, want an empty one to store the default", updated.Filter)
 	}
 }
 
@@ -561,5 +566,52 @@ func TestPRCommentErrorsAreRecordedApartFromTheTicketsOwn(t *testing.T) {
 	}
 	if err := tickets.StorePRComment(ctx, pendingID, 1, "open", "h", ticketEpoch); !errors.Is(err, store.ErrTicketNotSyncable) {
 		t.Fatalf("StorePRComment on a row without a ticket = %v, want ErrTicketNotSyncable", err)
+	}
+}
+
+// A recorded content update is read back with the ticket, survives a failed attempt, and is
+// dropped only by MarkSynced; a ticket that was handed off, or has no link, refuses the record.
+func TestAContentUpdateIsRecordedUntilTheTicketIsMarkedSynced(t *testing.T) {
+	e := newTicketEnv(t)
+	ctx := context.Background()
+	tickets := e.st.UpdateTickets()
+	id := e.ticketed(t, "pr-1", e.repos[0], 1)
+
+	pending := func() string {
+		t.Helper()
+		c, err := tickets.Candidate(ctx, "pr-1")
+		if err != nil || c.Ticket == nil {
+			t.Fatalf("Candidate = %v, %v", c.Ticket, err)
+		}
+		return c.Ticket.PendingContentHash
+	}
+	if got := pending(); got != "" {
+		t.Fatalf("pending content hash = %q on a new ticket, want none", got)
+	}
+
+	if err := tickets.BeginContentUpdate(ctx, id, "h-b", ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if got := pending(); got != "h-b" {
+		t.Fatalf("pending content hash = %q, want h-b", got)
+	}
+	if err := tickets.FailSync(ctx, store.FailSyncInput{ID: id, Message: "boom", NextAttemptAt: ticketEpoch.Add(time.Hour), Now: ticketEpoch}); err != nil {
+		t.Fatal(err)
+	}
+	if got := pending(); got != "h-b" {
+		t.Fatalf("pending content hash = %q after a failed attempt, want it kept", got)
+	}
+	if err := tickets.MarkSynced(ctx, id, "h-b", ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if got := pending(); got != "" {
+		t.Fatalf("pending content hash = %q after MarkSynced, want it dropped", got)
+	}
+
+	if err := tickets.HandOff(ctx, id, ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if err := tickets.BeginContentUpdate(ctx, id, "h-c", ticketEpoch); !errors.Is(err, store.ErrTicketNotSyncable) {
+		t.Fatalf("BeginContentUpdate on a handed-off ticket = %v, want ErrTicketNotSyncable", err)
 	}
 }

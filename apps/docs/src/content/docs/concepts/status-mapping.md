@@ -1,48 +1,42 @@
 ---
 title: "Status mapping"
-description: "How Release Ops reads ticket statuses, and how to set up the mapping for a ticket project."
+description: "How a ticket project tells Release Ops which ticket statuses mean open, done, cancelled and superseded."
 ---
 
-Every ticket system names its statuses differently. The status mapping tells Release Ops which of your statuses mean a ticket is open, done or cancelled, and which status to use when it supersedes a ticket.
+A status mapping translates the life of an update PR into the statuses of your ticket system. Each ticket project has its own mapping, because Kaneo boards, Jira workflows and Linear teams each define their own statuses. You edit it on the **Status mapping** tab of the **Ticket projects** page.
 
-## Why you need it
+## The four parts
 
-Before it creates a ticket for a new release, Release Ops checks the status of the repo's previous ticket. It reads the status live from your ticket system and sorts it with the mapping of the repo's ticket project:
+| Field | What it is | What Release Ops does with it |
+| ----- | ---------- | ----------------------------- |
+| **Open statuses** | Every status that counts as still open. | A ticket in one of these may be updated when its PR gets a newer version. |
+| **Done statuses** | Every status that counts as done. | The first entry is the status a ticket moves to when its PR is merged. |
+| **Cancelled statuses** | Every status that counts as cancelled or won't do. | The first entry is the status a ticket moves to when its PR is closed without a merge. |
+| **Superseded status** | One status. | The status the old ticket moves to when a newer update PR replaces its PR. |
 
-| List | Meaning | Effect on a new release |
-| ---- | ------- | ----------------------- |
-| Open statuses | The ticket is still being worked on. | The [open-ticket policy](../open-ticket-policy/) decides. |
-| Done statuses | The ticket is finished. | A new ticket is created. |
-| Cancelled statuses | The ticket was dropped. | Treated like done: a new ticket is created. |
+Each of the first three needs at least one status, and the superseded status is required.
 
-The **Superseded status** is the one status Release Ops sets on an old ticket when it supersedes it. A ticket in that status counts as cancelled, so a ticket left superseded never blocks a repo.
+The values are the ones your ticket system uses: board column slugs in Kaneo, status names from the project's workflow in Jira, and workflow state IDs in Linear. The page offers the options it reads from the integration.
 
-## One mapping per ticket project
+## Example
 
-The mapping belongs to the ticket project, not to the integration. A Kaneo board, a Jira workflow and a Linear team each have their own statuses, so each [ticket project](../../guide/ticket-projects/) has its own mapping. You pick the statuses from the list your ticket system provides:
+A Jira project that uses the statuses To Do, In Progress, Done and Cancelled:
 
-- **Kaneo:** the board columns of the project.
-- **Jira:** the statuses in the workflow of the project.
-- **Linear:** the workflow states of the team.
+| Field | Value |
+| ----- | ----- |
+| **Open statuses** | To Do, In Progress |
+| **Done statuses** | Done |
+| **Cancelled statuses** | Cancelled |
+| **Superseded status** | Cancelled |
 
-## Set it up
+When a PR is merged, its ticket moves to Done. When a PR is closed without a merge, the ticket moves to Cancelled. When a newer PR replaces it, the old ticket moves to Cancelled and a comment points to the new PR.
 
-1. Open the ticket project and its **Status mapping** tab. Choose the project first, because changing the project resets the tab.
-2. Select every status that counts as open under **Open statuses**.
-3. Select every status that counts as done under **Done statuses**.
-4. Select every status that counts as cancelled under **Cancelled statuses**.
-5. Choose the **Superseded status**.
+## Why the lists hold more than one status
 
-Each list needs at least one status, and the superseded status is required.
+Release Ops reads a ticket's current status before it changes the ticket and sorts it into open, done or cancelled using these lists. A status that is in no list cannot be sorted, so Release Ops retries and does not guess.
 
-## Cover every status
-
-Select every status your tickets can have. If Release Ops finds a status that is in none of the three lists and is not the **Superseded status**, it cannot tell whether the ticket is still open. It then reports an error for the repo and creates no new ticket, so a release is not lost by accident. Add the status to the right list to fix it.
-
-Update the mapping when you add or rename statuses in your ticket system.
+If the sorted result differs from what Release Ops last set, someone changed the ticket by hand. Release Ops then leaves the ticket alone. See [the ticket lifecycle](../update-prs-and-tickets/#the-ticket-lifecycle). List every status your team uses for a ticket in the right group, so a ticket that a person moves between two open statuses is still handled as open.
 
 ## Related pages
 
-- [Ticket projects](../../guide/ticket-projects/)
-- [Open-ticket policy](../open-ticket-policy/)
-- [How release detection works](../release-detection/)
+- [Update PRs and tickets](../update-prs-and-tickets/)

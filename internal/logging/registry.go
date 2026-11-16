@@ -35,10 +35,11 @@ const (
 //
 // The entries with an end are held in two budgets. Values that a request without a session can
 // make the server mint (the token of a session that has no user, a sign-in attempt's state and
-// verifier, a password-reset token) go in the unauthenticated budget, so traffic anyone can
-// send fills that budget and nothing else: it can age out another unauthenticated entry, never
-// an integration credential, a signed-in user's session or an installation token. The other
-// budget holds what only the system or a signed-in user mints and is bounded by its size alone.
+// verifier, the authorization code a sign-in attempt submits) go in the unauthenticated budget,
+// so traffic anyone can send fills that budget and nothing else: it can age out another
+// unauthenticated entry, never an integration credential, a signed-in user's session or an
+// installation token. The other budget holds what only the system or a signed-in user mints and
+// is bounded by its size alone.
 // When a budget is full the entries registered first are dropped, so a secret registered now is
 // never the one dropped, and the drop is counted and logged as a warning, never silently.
 type Registry struct {

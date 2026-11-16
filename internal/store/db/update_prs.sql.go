@@ -79,6 +79,42 @@ func (q *Queries) CountOpenUpdatePRsByRepository(ctx context.Context) ([]CountOp
 	return items, nil
 }
 
+const countScopedUpdatePRs = `-- name: CountScopedUpdatePRs :one
+SELECT COUNT(*)
+FROM update_prs p
+JOIN repositories r ON r.id = p.repository_id
+JOIN installations i ON i.id = r.installation_id
+WHERE r.removed_at IS NULL
+  AND i.status <> 'removed'
+  AND (?1 = 1 OR p.repository_id IN (SELECT j.value FROM json_each(?2) j))
+  AND p.state = ?3
+  AND (?4 = '' OR p.repository_id = ?4)
+  AND (?5 = '' OR EXISTS (
+    SELECT 1 FROM update_pr_dependencies d WHERE d.update_pr_id = p.id AND d.update_type = ?5
+  ))
+`
+
+type CountScopedUpdatePRsParams struct {
+	AllRepositories interface{} `json:"all_repositories"`
+	ScopeIds        interface{} `json:"scope_ids"`
+	State           string      `json:"state"`
+	RepositoryID    interface{} `json:"repository_id"`
+	UpdateType      interface{} `json:"update_type"`
+}
+
+func (q *Queries) CountScopedUpdatePRs(ctx context.Context, arg CountScopedUpdatePRsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countScopedUpdatePRs,
+		arg.AllRepositories,
+		arg.ScopeIds,
+		arg.State,
+		arg.RepositoryID,
+		arg.UpdateType,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getReconcileRepository = `-- name: GetReconcileRepository :one
 SELECT r.id, r.full_name, i.github_installation_id
 FROM repositories r
@@ -256,6 +292,136 @@ func (q *Queries) ListReconcileRepositoryIDs(ctx context.Context) ([]string, err
 			return nil, err
 		}
 		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listScopedUpdatePRs = `-- name: ListScopedUpdatePRs :many
+SELECT p.id, p.repository_id, r.full_name AS repository_full_name, p.number, p.url, p.title, p.state,
+       p.opened_at, p.merged_at, p.closed_at,
+       sp.id AS superseded_by_id, sp.number AS superseded_by_number, sp.url AS superseded_by_url,
+       t.state AS ticket_state, t.external_id AS ticket_external_id, t.external_url AS ticket_external_url,
+       CAST(t.last_error IS NOT NULL OR t.pending_since IS NOT NULL AS INTEGER) AS ticket_has_error,
+       CAST((
+         SELECT json_group_array(json_object('name', d.name, 'from', d.from_version, 'to', d.to_version, 'updateType', d.update_type))
+         FROM (
+           SELECT name, from_version, to_version, update_type
+           FROM update_pr_dependencies
+           WHERE update_pr_id = p.id
+           ORDER BY rowid
+         ) d
+       ) AS TEXT) AS dependencies,
+       CAST(COALESCE(CASE WHEN ?1 = 'openedAt' THEN p.opened_at WHEN ?1 = 'mergedAt' THEN p.merged_at END, '') AS TEXT) AS sort_ascending,
+       CAST(COALESCE(CASE WHEN ?1 = '-openedAt' THEN p.opened_at WHEN ?1 = '-mergedAt' THEN p.merged_at END, '') AS TEXT) AS sort_descending
+FROM update_prs p
+JOIN repositories r ON r.id = p.repository_id
+JOIN installations i ON i.id = r.installation_id
+LEFT JOIN update_prs sp ON sp.id = p.superseded_by_id
+LEFT JOIN update_tickets t ON t.update_pr_id = p.id
+WHERE r.removed_at IS NULL
+  AND i.status <> 'removed'
+  AND (?2 = 1 OR p.repository_id IN (SELECT j.value FROM json_each(?3) j))
+  AND p.state = ?4
+  AND (?5 = '' OR p.repository_id = ?5)
+  AND (?6 = '' OR EXISTS (
+    SELECT 1 FROM update_pr_dependencies d WHERE d.update_pr_id = p.id AND d.update_type = ?6
+  ))
+ORDER BY sort_ascending ASC, sort_descending DESC, p.id
+LIMIT ?8 OFFSET ?7
+`
+
+type ListScopedUpdatePRsParams struct {
+	Sort            interface{} `json:"sort"`
+	AllRepositories interface{} `json:"all_repositories"`
+	ScopeIds        interface{} `json:"scope_ids"`
+	State           string      `json:"state"`
+	RepositoryID    interface{} `json:"repository_id"`
+	UpdateType      interface{} `json:"update_type"`
+	PageOffset      int64       `json:"page_offset"`
+	PageSize        int64       `json:"page_size"`
+}
+
+type ListScopedUpdatePRsRow struct {
+	ID                 string         `json:"id"`
+	RepositoryID       string         `json:"repository_id"`
+	RepositoryFullName string         `json:"repository_full_name"`
+	Number             int64          `json:"number"`
+	Url                string         `json:"url"`
+	Title              string         `json:"title"`
+	State              string         `json:"state"`
+	OpenedAt           sql.NullString `json:"opened_at"`
+	MergedAt           sql.NullString `json:"merged_at"`
+	ClosedAt           sql.NullString `json:"closed_at"`
+	SupersededByID     sql.NullString `json:"superseded_by_id"`
+	SupersededByNumber sql.NullInt64  `json:"superseded_by_number"`
+	SupersededByUrl    sql.NullString `json:"superseded_by_url"`
+	TicketState        sql.NullString `json:"ticket_state"`
+	TicketExternalID   sql.NullString `json:"ticket_external_id"`
+	TicketExternalUrl  sql.NullString `json:"ticket_external_url"`
+	TicketHasError     int64          `json:"ticket_has_error"`
+	Dependencies       string         `json:"dependencies"`
+	SortAscending      string         `json:"sort_ascending"`
+	SortDescending     string         `json:"sort_descending"`
+}
+
+// The update PRs a dashboard lists, with the PR that replaced one, its ticket and its
+// dependencies, all from one statement so the three belong to the same snapshot. Only the
+// repositories of the scope are read: all_repositories is 1 for the admin scope, and otherwise
+// a PR needs a repository in scope_ids, a JSON array of repository ids where an empty one
+// matches none. A removed repository, or one of a removed installation, has no PRs here. Empty
+// repository_id and update_type arguments filter nothing; sort is one of openedAt, -openedAt,
+// mergedAt and -mergedAt, computed into the two sort columns (an empty string stands for a
+// missing time) because sqlc does not rewrite arguments in an ORDER BY. The ticket's error
+// text is never selected, only whether it has one.
+func (q *Queries) ListScopedUpdatePRs(ctx context.Context, arg ListScopedUpdatePRsParams) ([]ListScopedUpdatePRsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listScopedUpdatePRs,
+		arg.Sort,
+		arg.AllRepositories,
+		arg.ScopeIds,
+		arg.State,
+		arg.RepositoryID,
+		arg.UpdateType,
+		arg.PageOffset,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListScopedUpdatePRsRow
+	for rows.Next() {
+		var i ListScopedUpdatePRsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepositoryID,
+			&i.RepositoryFullName,
+			&i.Number,
+			&i.Url,
+			&i.Title,
+			&i.State,
+			&i.OpenedAt,
+			&i.MergedAt,
+			&i.ClosedAt,
+			&i.SupersededByID,
+			&i.SupersededByNumber,
+			&i.SupersededByUrl,
+			&i.TicketState,
+			&i.TicketExternalID,
+			&i.TicketExternalUrl,
+			&i.TicketHasError,
+			&i.Dependencies,
+			&i.SortAscending,
+			&i.SortDescending,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

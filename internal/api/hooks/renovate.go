@@ -141,7 +141,7 @@ func (t RenovateTriggers) edited(ctx context.Context, tx *sql.Tx, d Delivery, tr
 	if body != nil {
 		current = *body
 	}
-	markers := tickedMarkers(*p.Changes.Body.From, current)
+	markers := TickedMarkers(*p.Changes.Body.From, current)
 	if len(markers) == 0 {
 		return nil
 	}
@@ -272,10 +272,11 @@ func (t RenovateTriggers) enqueue(ctx context.Context, tx *sql.Tx, d Delivery, g
 // checkboxLine matches a Renovate checkbox line, " - [ ] <!-- marker -->", ticked or not.
 var checkboxLine = regexp.MustCompile(`^\s*[-*+]\s+\[([ xX])\]\s+<!--\s*(.+?)\s*-->`)
 
-// tickedMarkers returns the markers that sit on an unchecked line of from and on a checked
+// TickedMarkers returns the markers that sit on an unchecked line of from and on a checked
 // line of to, in the order of to, matched by marker text so reordered lines do not matter.
-// It makes no assumption about which markers exist.
-func tickedMarkers(from, to string) []string {
+// It makes no assumption about which markers exist. The polling fallback applies the same
+// test to the bodies it saw on two passes (specs.html § 2.11).
+func TickedMarkers(from, to string) []string {
 	unchecked := map[string]bool{}
 	for _, line := range strings.Split(from, "\n") {
 		if state, marker, ok := checkbox(line); ok && state == ' ' {

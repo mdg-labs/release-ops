@@ -16,30 +16,20 @@ const rateLimitedMessage = "Too many requests. Try again later."
 
 // Rate limit windows per specs §7.
 const (
-	LoginLimit               = 10
-	LoginWindow              = time.Minute
-	ForgotPasswordLimit      = 5
-	ForgotPasswordWindow     = time.Hour
-	AcceptInvitationLimit    = 10
-	AcceptInvitationWindow   = time.Hour
-	ResetPasswordLimit       = 10
-	ResetPasswordWindow      = time.Hour
-	ConfirmEmailChangeLimit  = 10
-	ConfirmEmailChangeWindow = time.Hour
-	SetupSessionLimit        = 10
-	SetupSessionWindow       = time.Minute
-	SetupStatusLimit         = 10
-	SetupStatusWindow        = time.Minute
-	SetupCallbackLimit       = 10
-	SetupCallbackWindow      = time.Minute
-	GitHubLoginLimit         = 10
-	GitHubLoginWindow        = time.Minute
-	GitHubCallbackLimit      = 10
-	GitHubCallbackWindow     = time.Minute
-	LoginLinkLimit           = 10
-	LoginLinkWindow          = time.Minute
-	WebhookSignatureLimit    = 10
-	WebhookSignatureWindow   = time.Minute
+	SetupSessionLimit      = 10
+	SetupSessionWindow     = time.Minute
+	SetupStatusLimit       = 10
+	SetupStatusWindow      = time.Minute
+	SetupCallbackLimit     = 10
+	SetupCallbackWindow    = time.Minute
+	GitHubLoginLimit       = 10
+	GitHubLoginWindow      = time.Minute
+	GitHubCallbackLimit    = 10
+	GitHubCallbackWindow   = time.Minute
+	LoginLinkLimit         = 10
+	LoginLinkWindow        = time.Minute
+	WebhookSignatureLimit  = 10
+	WebhookSignatureWindow = time.Minute
 )
 
 type clock interface {
@@ -80,31 +70,6 @@ func NewRateLimiterForTest(clock interface{ Now() time.Time }) *RateLimiter {
 		clock: clock,
 		store: make(map[string]*rateBucket),
 	}
-}
-
-// Login limits POST /api/v1/auth/login to 10 requests per minute per IP.
-func (rl *RateLimiter) Login(next http.Handler) http.Handler {
-	return rl.limit("login", LoginLimit, LoginWindow, next)
-}
-
-// ForgotPassword limits POST /api/v1/auth/forgot-password to 5 requests per hour per IP.
-func (rl *RateLimiter) ForgotPassword(next http.Handler) http.Handler {
-	return rl.limit("forgot-password", ForgotPasswordLimit, ForgotPasswordWindow, next)
-}
-
-// AcceptInvitation limits POST /api/v1/auth/accept-invitation to 10 requests per hour per IP.
-func (rl *RateLimiter) AcceptInvitation(next http.Handler) http.Handler {
-	return rl.limit("accept-invitation", AcceptInvitationLimit, AcceptInvitationWindow, next)
-}
-
-// ResetPassword limits POST /api/v1/auth/reset-password to 10 requests per hour per IP.
-func (rl *RateLimiter) ResetPassword(next http.Handler) http.Handler {
-	return rl.limit("reset-password", ResetPasswordLimit, ResetPasswordWindow, next)
-}
-
-// ConfirmEmailChange limits POST /api/v1/auth/confirm-email-change to 10 requests per hour per IP.
-func (rl *RateLimiter) ConfirmEmailChange(next http.Handler) http.Handler {
-	return rl.limit("confirm-email-change", ConfirmEmailChangeLimit, ConfirmEmailChangeWindow, next)
 }
 
 // SetupSession limits POST /api/v1/setup/session to 10 requests per minute per IP: it takes a

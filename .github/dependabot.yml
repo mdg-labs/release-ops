@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # The Renovate image the worker is built on, named by tag and digest in the worker stage of
+  # the Dockerfile. A bump PR runs the CI jobs that pin-check the reference and run the new
+  # image against the fixture repositories (scripts/ci/renovate-fixtures/README.md). Other
+  # images of the Dockerfile and the Go and npm dependencies are not proposed by this entry.
+  - package-ecosystem: docker
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-name: ghcr.io/renovatebot/renovate
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "chore(deps)"

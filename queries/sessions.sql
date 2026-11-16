@@ -3,15 +3,6 @@ UPDATE sessions
 SET user_id = ?
 WHERE token = ?;
 
--- name: DeleteSessionsByUserID :exec
-DELETE FROM sessions
-WHERE user_id = ?;
-
--- name: DeleteOtherSessionsByUserID :exec
-DELETE FROM sessions
-WHERE user_id = ?
-  AND token != ?;
-
 -- A repository that has left the installation drops out of the list at once; the row itself
 -- goes with the session or with the repository.
 -- name: ListSessionRepositoryIDs :many

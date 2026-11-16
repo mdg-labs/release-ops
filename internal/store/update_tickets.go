@@ -82,6 +82,10 @@ type UpdateTicket struct {
 	TargetState string
 	// SyncedHash is the hash of the dependency list the ticket content was last rendered for.
 	SyncedHash string
+	// PendingContentHash is the hash of the dependency list whose content was about to be sent
+	// when the last content update began, and that update is not finished (its note included);
+	// empty when none is. While it is set an update is due, whatever the PR's current hash is.
+	PendingContentHash string
 	// HandsOff reports that the ticket was changed outside Release Ops, so no operation
 	// touches it.
 	HandsOff bool
@@ -182,8 +186,12 @@ type UpdateTicketRepository interface {
 	// CompleteTransition stores the state a recorded transition led to and drops the record,
 	// the error and the retry. It returns ErrTicketNotSyncable when the row may not take it.
 	CompleteTransition(ctx context.Context, id, state string, now time.Time) error
+	// BeginContentUpdate records the hash of the dependency list whose content is about to be
+	// sent, before the ticket system is called. It returns ErrTicketNotSyncable when the row
+	// may not take it.
+	BeginContentUpdate(ctx context.Context, id, hash string, now time.Time) error
 	// MarkSynced stores the hash of the dependency list the ticket now shows, and drops the
-	// error and the retry. It returns ErrTicketNotSyncable when the row may not take it.
+	// record of the content update, the error and the retry. It returns ErrTicketNotSyncable when the row may not take it.
 	MarkSynced(ctx context.Context, id, hash string, now time.Time) error
 	// FailSync records a failed operation on a ticket that exists; a recorded transition stays.
 	FailSync(ctx context.Context, in FailSyncInput) error
@@ -276,7 +284,7 @@ func (r updateTicketRepo) Candidate(ctx context.Context, updatePRID string) (Tic
 	default:
 		ticket := UpdateTicket{
 			ID: t.ID, TicketProjectID: t.TicketProjectID, Created: t.ExternalID.Valid, ExternalID: t.ExternalID.String, ExternalURL: t.ExternalUrl.String,
-			State: t.State, TargetState: t.TargetState.String, SyncedHash: t.SyncedHash.String, HandsOff: t.HandsOffAt.Valid,
+			State: t.State, TargetState: t.TargetState.String, SyncedHash: t.SyncedHash.String, PendingContentHash: t.PendingContentHash.String, HandsOff: t.HandsOffAt.Valid,
 			Unconfirmed: t.PendingSince.Valid, Attempts: t.Attempts, LastError: t.LastError.String,
 			PRCommentID: t.PrCommentID.Int64, PRCommentHash: t.PrCommentHash.String,
 		}
@@ -440,6 +448,13 @@ func (r updateTicketRepo) BeginTransition(ctx context.Context, id, state string,
 func (r updateTicketRepo) CompleteTransition(ctx context.Context, id, state string, now time.Time) error {
 	n, err := r.store.writes.CompleteUpdateTicketTransition(ctx, db.CompleteUpdateTicketTransitionParams{State: state, At: formatTime(now), ID: id})
 	return syncWriteResult("store the ticket state", n, err)
+}
+
+func (r updateTicketRepo) BeginContentUpdate(ctx context.Context, id, hash string, now time.Time) error {
+	n, err := r.store.writes.BeginUpdateTicketContent(ctx, db.BeginUpdateTicketContentParams{
+		PendingContentHash: sql.NullString{String: hash, Valid: true}, UpdatedAt: formatTime(now), ID: id,
+	})
+	return syncWriteResult("record the ticket content update", n, err)
 }
 
 func (r updateTicketRepo) MarkSynced(ctx context.Context, id, hash string, now time.Time) error {

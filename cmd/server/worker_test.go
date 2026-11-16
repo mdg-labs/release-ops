@@ -282,14 +282,12 @@ func TestServerMountsWorkerRoutesOnTheInternalListenerOnly(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "app.db")
 	withFreePorts(t, 2, func(ports []int) error {
 		cfg := &config.Config{
-			SessionSecret:          strings.Repeat("s", 32),
-			AppEncryptionKey:       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
-			AppDBPath:              dbPath,
-			GoInternalPort:         ports[0],
-			BootstrapAdminEmail:    "admin@example.com",
-			BootstrapAdminPassword: "correct-horse-battery",
-			InternalAddr:           fmt.Sprintf("127.0.0.1:%d", ports[1]),
-			WorkerSecret:           testWorkerSecret,
+			SessionSecret:    strings.Repeat("s", 32),
+			AppEncryptionKey: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+			AppDBPath:        dbPath,
+			GoInternalPort:   ports[0],
+			InternalAddr:     fmt.Sprintf("127.0.0.1:%d", ports[1]),
+			WorkerSecret:     testWorkerSecret,
 		}
 		public = fmt.Sprintf("http://127.0.0.1:%d", ports[0])
 		internal = fmt.Sprintf("http://127.0.0.1:%d", ports[1])
@@ -321,7 +319,7 @@ func TestServerMountsWorkerRoutesOnTheInternalListenerOnly(t *testing.T) {
 	if got := post(internal+"/internal/v1/jobs/x/heartbeat", true); got != http.StatusOK {
 		t.Errorf("internal heartbeat with the secret = %d, want 200 (an abort for the unknown job)", got)
 	}
-	if got := post(internal+"/api/v1/auth/login", true); got != http.StatusNotFound {
+	if got := post(internal+"/api/v1/auth/session", true); got != http.StatusNotFound {
 		t.Errorf("an API route on the internal listener = %d, want 404", got)
 	}
 	for _, path := range []string{"/internal/v1/jobs/claim", "/internal/v1/jobs/x/heartbeat", "/internal/v1/jobs/x/result", "/api/v1/internal/v1/jobs/claim"} {
@@ -384,15 +382,13 @@ func TestServerServesReadinessAndMetricsOnTheirListeners(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "app.db")
 	withFreePorts(t, 3, func(ports []int) error {
 		cfg = &config.Config{
-			SessionSecret:          strings.Repeat("s", 32),
-			AppEncryptionKey:       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
-			AppDBPath:              dbPath,
-			GoInternalPort:         ports[0],
-			BootstrapAdminEmail:    "admin@example.com",
-			BootstrapAdminPassword: "correct-horse-battery",
-			InternalAddr:           fmt.Sprintf("127.0.0.1:%d", ports[1]),
-			WorkerSecret:           testWorkerSecret,
-			MetricsAddr:            fmt.Sprintf("127.0.0.1:%d", ports[2]),
+			SessionSecret:    strings.Repeat("s", 32),
+			AppEncryptionKey: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+			AppDBPath:        dbPath,
+			GoInternalPort:   ports[0],
+			InternalAddr:     fmt.Sprintf("127.0.0.1:%d", ports[1]),
+			WorkerSecret:     testWorkerSecret,
+			MetricsAddr:      fmt.Sprintf("127.0.0.1:%d", ports[2]),
 		}
 		public = fmt.Sprintf("http://127.0.0.1:%d", ports[0])
 		internal = fmt.Sprintf("http://127.0.0.1:%d", ports[1])
@@ -462,13 +458,11 @@ func TestServerFailsWhenTheMetricsListenerCannotBind(t *testing.T) {
 	defer func() { _ = busy.Close() }()
 
 	cfg := &config.Config{
-		SessionSecret:          strings.Repeat("s", 32),
-		AppEncryptionKey:       "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
-		AppDBPath:              filepath.Join(t.TempDir(), "app.db"),
-		GoInternalPort:         0,
-		BootstrapAdminEmail:    "admin@example.com",
-		BootstrapAdminPassword: "correct-horse-battery",
-		MetricsAddr:            busy.Addr().String(),
+		SessionSecret:    strings.Repeat("s", 32),
+		AppEncryptionKey: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+		AppDBPath:        filepath.Join(t.TempDir(), "app.db"),
+		GoInternalPort:   0,
+		MetricsAddr:      busy.Addr().String(),
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

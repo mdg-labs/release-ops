@@ -7,10 +7,11 @@ import { MetadataSelect } from "@/components/ticket-projects/metadata-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CheckboxGroup } from "@/components/ui/checkbox-group";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { useTicketMetadataStatuses } from "@/lib/hooks/use-ticket-metadata";
+import type { TicketMetadataItem } from "@/lib/query/types";
 import type { StatusMappingValues } from "@/lib/ticket-projects/status-mapping";
+import { cn } from "@/lib/utils";
 
 type StatusMappingFormProps = {
   integrationId: string | null;
@@ -18,6 +19,55 @@ type StatusMappingFormProps = {
   values: StatusMappingValues;
   onChange: (values: StatusMappingValues) => void;
 };
+
+type StatusGroupProps = {
+  kind: "open" | "done" | "cancelled";
+  groupId: string;
+  label: string;
+  hint: string;
+  statuses: TicketMetadataItem[];
+  value: string[];
+  onValueChange: (value: string[]) => void;
+  className?: string;
+};
+
+function StatusGroup({
+  kind,
+  groupId,
+  label,
+  hint,
+  statuses,
+  value,
+  onValueChange,
+  className,
+}: StatusGroupProps): React.ReactElement {
+  const labelId = `${groupId}-${kind}`;
+  const hintId = `${labelId}-hint`;
+
+  return (
+    <div className={cn("flex flex-col items-start gap-2", className)}>
+      <Label render={<p id={labelId} />}>
+        {label} <span aria-hidden="true">*</span>
+      </Label>
+      <CheckboxGroup
+        aria-describedby={hintId}
+        aria-labelledby={labelId}
+        onValueChange={onValueChange}
+        value={value}
+      >
+        {statuses.map((status) => (
+          <Label key={status.id}>
+            <Checkbox value={status.id} />
+            {status.label?.trim() || status.name}
+          </Label>
+        ))}
+      </CheckboxGroup>
+      <p className="text-muted-foreground text-xs" id={hintId}>
+        {hint}
+      </p>
+    </div>
+  );
+}
 
 export function StatusMappingForm({
   integrationId,
@@ -27,6 +77,7 @@ export function StatusMappingForm({
 }: StatusMappingFormProps): React.ReactElement {
   const t = useTranslations("ticket-projects");
   const supersededId = useId();
+  const groupId = useId();
 
   const metadataEnabled = Boolean(integrationId && externalProjectId);
   const statusesQuery = useTicketMetadataStatuses(
@@ -68,73 +119,34 @@ export function StatusMappingForm({
       {metadataEnabled && statuses.length > 0 ? (
         <>
           <div className="grid gap-4 md:grid-cols-2">
-            <Field name="statusOpen">
-              <FieldLabel>
-                {t("statusOpen")} <span aria-hidden="true">*</span>
-              </FieldLabel>
-              <CheckboxGroup
-                aria-label={t("statusOpen")}
-                onValueChange={(next) => onChange({ ...values, open: next })}
-                value={values.open}
-              >
-                {statuses.map((status) => (
-                  <Label key={status.id}>
-                    <Checkbox
-                      aria-label={status.label?.trim() || status.name}
-                      value={status.id}
-                    />
-                    {status.label?.trim() || status.name}
-                  </Label>
-                ))}
-              </CheckboxGroup>
-              <FieldDescription>{t("statusOpenHint")}</FieldDescription>
-            </Field>
-
-            <Field name="statusDone">
-              <FieldLabel>
-                {t("statusDone")} <span aria-hidden="true">*</span>
-              </FieldLabel>
-              <CheckboxGroup
-                aria-label={t("statusDone")}
-                onValueChange={(next) => onChange({ ...values, done: next })}
-                value={values.done}
-              >
-                {statuses.map((status) => (
-                  <Label key={status.id}>
-                    <Checkbox
-                      aria-label={status.label?.trim() || status.name}
-                      value={status.id}
-                    />
-                    {status.label?.trim() || status.name}
-                  </Label>
-                ))}
-              </CheckboxGroup>
-              <FieldDescription>{t("statusDoneHint")}</FieldDescription>
-            </Field>
-
-            <Field className="md:col-span-2" name="statusCancelled">
-              <FieldLabel>
-                {t("statusCancelled")} <span aria-hidden="true">*</span>
-              </FieldLabel>
-              <CheckboxGroup
-                aria-label={t("statusCancelled")}
-                onValueChange={(next) =>
-                  onChange({ ...values, cancelled: next })
-                }
-                value={values.cancelled}
-              >
-                {statuses.map((status) => (
-                  <Label key={status.id}>
-                    <Checkbox
-                      aria-label={status.label?.trim() || status.name}
-                      value={status.id}
-                    />
-                    {status.label?.trim() || status.name}
-                  </Label>
-                ))}
-              </CheckboxGroup>
-              <FieldDescription>{t("statusCancelledHint")}</FieldDescription>
-            </Field>
+            <StatusGroup
+              groupId={groupId}
+              hint={t("statusOpenHint")}
+              kind="open"
+              label={t("statusOpen")}
+              onValueChange={(next) => onChange({ ...values, open: next })}
+              statuses={statuses}
+              value={values.open}
+            />
+            <StatusGroup
+              groupId={groupId}
+              hint={t("statusDoneHint")}
+              kind="done"
+              label={t("statusDone")}
+              onValueChange={(next) => onChange({ ...values, done: next })}
+              statuses={statuses}
+              value={values.done}
+            />
+            <StatusGroup
+              className="md:col-span-2"
+              groupId={groupId}
+              hint={t("statusCancelledHint")}
+              kind="cancelled"
+              label={t("statusCancelled")}
+              onValueChange={(next) => onChange({ ...values, cancelled: next })}
+              statuses={statuses}
+              value={values.cancelled}
+            />
           </div>
 
           <MetadataSelect

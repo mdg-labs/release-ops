@@ -6,6 +6,7 @@
 package ratelimit
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -69,7 +70,8 @@ func DelayOf(err error) (time.Duration, bool) {
 // Signal is what one response says about the rate limit.
 type Signal struct {
 	// Limited is true for an answer that refuses the call because of a rate limit: 429, or
-	// 403 with a Retry-After or an exhausted X-RateLimit-Remaining.
+	// 403 with a Retry-After or an exhausted X-RateLimit-Remaining. A 403 that only its body
+	// identifies as a secondary limit is marked by WithSecondaryLimit.
 	Limited bool
 	// Remaining and Limit are X-RateLimit-Remaining and X-RateLimit-Limit when present.
 	Remaining, Limit       int64
@@ -107,6 +109,28 @@ func Parse(status int, h http.Header, now time.Time) Signal {
 	s.RetryAfter = parseRetryAfter(h.Get("Retry-After"), now)
 	s.Limited = status == http.StatusTooManyRequests ||
 		(status == http.StatusForbidden && (s.RetryAfter > 0 || (s.HasRemaining && s.Remaining == 0)))
+	return s
+}
+
+// SecondaryLimitBody reports whether body is a GitHub error answer whose JSON message says a
+// secondary rate limit was hit, the answer of a secondary limit that carries neither
+// Retry-After nor an exhausted X-RateLimit-Remaining. Nothing else counts: a body that is not
+// JSON, has no message, or whose message does not name a secondary rate limit is not one.
+func SecondaryLimitBody(body []byte) bool {
+	var out struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(body, &out) != nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(out.Message), "secondary rate limit")
+}
+
+// WithSecondaryLimit marks s as a secondary rate limit read from the response body: Limited,
+// held back for at least DefaultBlock and for longer when a longer Retry-After was sent.
+func (s Signal) WithSecondaryLimit() Signal {
+	s.Limited = true
+	s.RetryAfter = max(s.RetryAfter, DefaultBlock)
 	return s
 }
 

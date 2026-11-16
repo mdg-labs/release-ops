@@ -21,8 +21,8 @@ import (
 	"github.com/mdg-labs/release-ops/internal/crypto"
 	"github.com/mdg-labs/release-ops/internal/github"
 	"github.com/mdg-labs/release-ops/internal/logging"
-	"github.com/mdg-labs/release-ops/internal/mail"
 	"github.com/mdg-labs/release-ops/internal/metrics"
+	"github.com/mdg-labs/release-ops/internal/pollwatch"
 	"github.com/mdg-labs/release-ops/internal/providers/integrationtester"
 	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 	"github.com/mdg-labs/release-ops/internal/queue"
@@ -152,9 +152,6 @@ func run(ctx context.Context, cfg *config.Config) error {
 	}()
 
 	queries := storedb.New(db.Writer)
-	if err := auth.BootstrapFromEnv(context.Background(), queries, cfg.BootstrapAdminEmail, cfg.BootstrapAdminPassword); err != nil {
-		return fmt.Errorf("bootstrap admin: %w", err)
-	}
 
 	if err := setup.EnsureToken(ctx, db.Writer, cfg.SetupToken, cfg.AppURL, setupLogf); err != nil {
 		return fmt.Errorf("setup token: %w", err)
@@ -174,15 +171,6 @@ func run(ctx context.Context, cfg *config.Config) error {
 		AdminTeam:          cfg.AdminTeam,
 		ViewerTeam:         cfg.ViewerTeam,
 	})
-
-	if err := appStore.Settings().EnsureDefault(context.Background()); err != nil {
-		return fmt.Errorf("app settings: %w", err)
-	}
-
-	mailer, err := mail.NewFromEnv()
-	if err != nil {
-		return fmt.Errorf("mail: %w", err)
-	}
 
 	// One rate-limit budget per installation, shared by every consumer of its tokens and kept on
 	// the installation row, so an exhausted budget is still honoured after a restart.
@@ -257,11 +245,11 @@ func run(ctx context.Context, cfg *config.Config) error {
 		Queries:           queries,
 		Store:             appStore,
 		IntegrationTester: integrationtester.New(nil),
-		Mailer:            mailer,
 		AppURL:            cfg.AppURL,
 		WebhookURL:        cfg.WebhookURL,
 		GitHubBaseURL:     cfg.GitHubBaseURL,
 		GitHub:            githubClient,
+		GitHubApp:         appClient,
 		Roles: &auth.GitHubRoles{
 			Access:     appStore.Access(),
 			Users:      appStore.SignIn(),
@@ -310,6 +298,24 @@ func run(ctx context.Context, cfg *config.Config) error {
 	if cfg.PollingMode() {
 		syncEvery = pollingInterval
 		slog.Warn("WEBHOOK_URL is not set: running in polling mode (degraded), re-reading installations and repositories from GitHub; changes reach this instance with minutes of latency", "interval", pollingInterval)
+		// Without a webhook nothing reports a ticked checkbox, a closed bot PR or a push to the
+		// default branch, so they are read from GitHub at the same interval (docs/specs.html §2.11).
+		watcher := &pollwatch.Watcher{
+			Repositories: appStore.UpdatePRs(), Branches: appStore.Repositories(), Bot: appStore.GitHubApp(),
+			Tokens: appClient, API: githubClient, Queue: jobs,
+		}
+		background.Go(func() {
+			ticker := time.NewTicker(pollingInterval)
+			defer ticker.Stop()
+			watcher.Run(appCtx, ticker.C, func(res pollwatch.Result, err error) {
+				if err != nil {
+					logPassFailure("github polling failed", err)
+				}
+				if res.Requested > 0 {
+					slog.Info("github polling: asked for runs of changed repositories", "count", res.Requested)
+				}
+			})
+		})
 	} else {
 		background.Go(func() {
 			ticker := time.NewTicker(redeliveryInterval)

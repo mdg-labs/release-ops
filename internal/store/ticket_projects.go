@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/mdg-labs/release-ops/internal/store/db"
@@ -35,14 +36,19 @@ type CreateTicketProjectInput struct {
 	Filter string
 }
 
-// UpdateTicketProjectInput holds updatable ticket project fields.
+// UpdateTicketProjectInput holds updatable ticket project fields. Name, CreateConfig and
+// StatusMapping are always written. ContentTemplates and Filter are written only when set; an
+// unset one leaves the stored column as it is when the update is applied, so a concurrent edit
+// of it is not undone.
 type UpdateTicketProjectInput struct {
-	Name             string
-	CreateConfig     string
-	StatusMapping    string
-	ContentTemplates string
-	// Filter is stored as given; empty stores the default.
-	Filter string
+	Name          string
+	CreateConfig  string
+	StatusMapping string
+	// ContentTemplates receives the templates as stored in the update's own transaction and
+	// returns the JSON to store. Its error aborts the update and is returned as it is.
+	ContentTemplates func(stored string) (string, error)
+	// Filter is stored as given; an empty one stores the default.
+	Filter *string
 }
 
 // TicketProjectRepository manages ticket_projects rows.
@@ -108,23 +114,45 @@ func (r ticketProjectRepo) ListByIntegration(ctx context.Context, integrationID 
 	return ticketProjectsFromRows(rows), nil
 }
 
+// Update writes the fields of input. It returns sql.ErrNoRows, with nothing changed, when the
+// project does not exist. Reading the stored templates and writing the merged ones happen in
+// one transaction on the single writer connection.
 func (r ticketProjectRepo) Update(ctx context.Context, id string, input UpdateTicketProjectInput) (*TicketProject, error) {
-	contentTemplates := input.ContentTemplates
-	if contentTemplates == "" {
-		contentTemplates = defaultContentTemplatesJSON
+	tx, err := r.store.db.Writer.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin ticket project update: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	q := r.store.writes.WithTx(tx)
+
+	params := db.UpdateTicketProjectParams{
+		Name:          input.Name,
+		CreateConfig:  input.CreateConfig,
+		StatusMapping: input.StatusMapping,
+		UpdatedAt:     nowUTC(),
+		ID:            id,
+	}
+	if input.ContentTemplates != nil {
+		stored, err := q.GetTicketProject(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		merged, err := input.ContentTemplates(stored.ContentTemplates)
+		if err != nil {
+			return nil, err
+		}
+		params.ContentTemplates = sql.NullString{String: merged, Valid: true}
+	}
+	if input.Filter != nil {
+		params.Filter = sql.NullString{String: orDefaultFilter(*input.Filter), Valid: true}
 	}
 
-	row, err := r.store.writes.UpdateTicketProject(ctx, db.UpdateTicketProjectParams{
-		Name:             input.Name,
-		CreateConfig:     input.CreateConfig,
-		StatusMapping:    input.StatusMapping,
-		ContentTemplates: contentTemplates,
-		Filter:           orDefaultFilter(input.Filter),
-		UpdatedAt:        nowUTC(),
-		ID:               id,
-	})
+	row, err := q.UpdateTicketProject(ctx, params)
 	if err != nil {
 		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit ticket project update: %w", err)
 	}
 	return ticketProjectFromRow(row), nil
 }
