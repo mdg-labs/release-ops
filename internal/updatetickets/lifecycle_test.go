@@ -2,6 +2,7 @@ package updatetickets_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -136,6 +137,91 @@ func TestAnUpdateThatFailsKeepsTheOldHashAndIsRetriedWhenDue(t *testing.T) {
 	row, _ = e.row(t, id)
 	if row.SyncedHash.String == before.SyncedHash.String || row.LastError.Valid || row.Attempts != 0 || row.NextAttemptAt.Valid {
 		t.Fatalf("row = %+v, want the new hash and the failure state cleared", row)
+	}
+}
+
+// pendingContent is the dependencies hash recorded for an update that is not finished.
+func (e *env) pendingContent(t *testing.T, prID string) sql.NullString {
+	t.Helper()
+	var h sql.NullString
+	if err := e.db.Reader.QueryRow(`SELECT pending_content_hash FROM update_tickets WHERE update_pr_id = ?`, prID).Scan(&h); err != nil {
+		t.Fatal(err)
+	}
+	return h
+}
+
+func TestAnUpdateWhoseNoteFailedIsDueAgainAfterThePRRevertsToTheSyncedVersion(t *testing.T) {
+	e := newEnv(t)
+	id := e.ticketed(t, pr{})
+	before, _ := e.row(t, id)
+	if h := e.pendingContent(t, id); h.Valid {
+		t.Fatalf("pending content hash = %v on a new ticket, want NULL", h)
+	}
+
+	// The PR changes to B; the content reaches the ticket and its note fails.
+	e.setDeps(t, id, []dep{{"foo", "1.4.0", "3.0.0", "major"}})
+	e.tracker.fail(trackerFailure{Method: http.MethodPost, PathPrefix: "/api/comment/", Code: http.StatusBadGateway, Times: 1})
+	if out, err := syncPR(t, e, id); err == nil || out != updatetickets.SyncFailed {
+		t.Fatalf("Sync = %s, %v, want a failure", out, err)
+	}
+	if desc := e.tracker.task("task-1").Description; !strings.Contains(desc, "1.4.0 → 3.0.0") {
+		t.Fatalf("description = %q, want the B content sent before the note failed", desc)
+	}
+	row, _ := e.row(t, id)
+	if row.SyncedHash.String != before.SyncedHash.String {
+		t.Fatalf("synced hash = %q, want the old one %q", row.SyncedHash.String, before.SyncedHash.String)
+	}
+	if h := e.pendingContent(t, id); !h.Valid || h.String == before.SyncedHash.String {
+		t.Fatalf("pending content hash = %v, want the hash of the B content", h)
+	}
+
+	// The PR changes back to A before the retry: the ticket is brought back to A.
+	e.setDeps(t, id, foo)
+	e.advance(time.Hour)
+	wantSync(t, e, id, updatetickets.SyncUpdated)
+	task := e.tracker.task("task-1")
+	if !strings.Contains(task.Description, "- foo: 1.4.0 → 2.0.0 (major)") || strings.Contains(task.Description, "3.0.0") {
+		t.Errorf("description = %q, want the A content back", task.Description)
+	}
+	if len(task.Comments) != 1 || !strings.Contains(task.Comments[0], "2.0.0") {
+		t.Errorf("comments = %q, want the note of the A update", task.Comments)
+	}
+	row, _ = e.row(t, id)
+	if row.SyncedHash.String != before.SyncedHash.String || row.LastError.Valid || row.Attempts != 0 || row.NextAttemptAt.Valid {
+		t.Errorf("row = %+v, want the A hash and the failure state cleared", row)
+	}
+	if h := e.pendingContent(t, id); h.Valid {
+		t.Errorf("pending content hash = %v, want it cleared by the successful update", h)
+	}
+
+	n := len(e.tracker.calls())
+	wantSync(t, e, id, updatetickets.SyncNothing)
+	if len(e.tracker.calls()) != n {
+		t.Fatalf("a Sync after the update called the ticket system: %v", paths(e.tracker.calls()[n:]))
+	}
+}
+
+func TestAnUpdateWhoseNoteKeepsFailingStaysDueUntilItsNoteIsAdded(t *testing.T) {
+	e := newEnv(t)
+	id := e.ticketed(t, pr{})
+	e.setDeps(t, id, []dep{{"foo", "1.4.0", "3.0.0", "major"}})
+	e.tracker.fail(trackerFailure{Method: http.MethodPost, PathPrefix: "/api/comment/", Code: http.StatusBadGateway, Times: 2})
+
+	for range 2 {
+		if out, err := syncPR(t, e, id); err == nil || out != updatetickets.SyncFailed {
+			t.Fatalf("Sync = %s, %v, want a failure", out, err)
+		}
+		if h := e.pendingContent(t, id); !h.Valid {
+			t.Fatal("pending content hash cleared after a failed note, want it kept")
+		}
+		e.advance(time.Hour)
+	}
+	wantSync(t, e, id, updatetickets.SyncUpdated)
+	if h := e.pendingContent(t, id); h.Valid {
+		t.Errorf("pending content hash = %v, want it cleared once the note was added", h)
+	}
+	if got := e.tracker.task("task-1").Comments; len(got) != 1 {
+		t.Errorf("comments = %q, want exactly the one note", got)
 	}
 }
 

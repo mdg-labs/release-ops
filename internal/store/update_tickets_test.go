@@ -563,3 +563,50 @@ func TestPRCommentErrorsAreRecordedApartFromTheTicketsOwn(t *testing.T) {
 		t.Fatalf("StorePRComment on a row without a ticket = %v, want ErrTicketNotSyncable", err)
 	}
 }
+
+// A recorded content update is read back with the ticket, survives a failed attempt, and is
+// dropped only by MarkSynced; a ticket that was handed off, or has no link, refuses the record.
+func TestAContentUpdateIsRecordedUntilTheTicketIsMarkedSynced(t *testing.T) {
+	e := newTicketEnv(t)
+	ctx := context.Background()
+	tickets := e.st.UpdateTickets()
+	id := e.ticketed(t, "pr-1", e.repos[0], 1)
+
+	pending := func() string {
+		t.Helper()
+		c, err := tickets.Candidate(ctx, "pr-1")
+		if err != nil || c.Ticket == nil {
+			t.Fatalf("Candidate = %v, %v", c.Ticket, err)
+		}
+		return c.Ticket.PendingContentHash
+	}
+	if got := pending(); got != "" {
+		t.Fatalf("pending content hash = %q on a new ticket, want none", got)
+	}
+
+	if err := tickets.BeginContentUpdate(ctx, id, "h-b", ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if got := pending(); got != "h-b" {
+		t.Fatalf("pending content hash = %q, want h-b", got)
+	}
+	if err := tickets.FailSync(ctx, store.FailSyncInput{ID: id, Message: "boom", NextAttemptAt: ticketEpoch.Add(time.Hour), Now: ticketEpoch}); err != nil {
+		t.Fatal(err)
+	}
+	if got := pending(); got != "h-b" {
+		t.Fatalf("pending content hash = %q after a failed attempt, want it kept", got)
+	}
+	if err := tickets.MarkSynced(ctx, id, "h-b", ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if got := pending(); got != "" {
+		t.Fatalf("pending content hash = %q after MarkSynced, want it dropped", got)
+	}
+
+	if err := tickets.HandOff(ctx, id, ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if err := tickets.BeginContentUpdate(ctx, id, "h-c", ticketEpoch); !errors.Is(err, store.ErrTicketNotSyncable) {
+		t.Fatalf("BeginContentUpdate on a handed-off ticket = %v, want ErrTicketNotSyncable", err)
+	}
+}

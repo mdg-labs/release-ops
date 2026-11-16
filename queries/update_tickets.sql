@@ -15,7 +15,7 @@ WHERE p.id = ?
 
 -- name: GetUpdateTicketByPR :one
 SELECT id, ticket_project_id, external_id, external_url, state, pending_since, synced_hash, attempts, next_attempt_at, last_error,
-       target_state, hands_off_at, pr_comment_id, pr_comment_hash
+       target_state, hands_off_at, pr_comment_id, pr_comment_hash, pending_content_hash
 FROM update_tickets
 WHERE update_pr_id = ?;
 
@@ -127,10 +127,18 @@ SET pr_comment_hash = CASE WHEN state <> sqlc.arg(state) THEN NULL ELSE pr_comme
     last_error = NULL, last_error_at = NULL, updated_at = sqlc.arg(at)
 WHERE id = sqlc.arg(id) AND external_id IS NOT NULL AND hands_off_at IS NULL;
 
--- Stores the hash of the dependency list the ticket now shows and drops the retry.
+-- Records the hash of the dependency list whose content is about to be sent to the ticket
+-- system. Only a ticket that exists and that nobody changed outside Release Ops takes it.
+-- name: BeginUpdateTicketContent :execrows
+UPDATE update_tickets
+SET pending_content_hash = ?, updated_at = ?
+WHERE id = ? AND external_id IS NOT NULL AND hands_off_at IS NULL;
+
+-- Stores the hash of the dependency list the ticket now shows and drops the record of the content
+-- update and the retry.
 -- name: MarkUpdateTicketSynced :execrows
 UPDATE update_tickets
-SET synced_hash = ?, attempts = 0, next_attempt_at = NULL, last_error = NULL, last_error_at = NULL, updated_at = ?
+SET synced_hash = ?, pending_content_hash = NULL, attempts = 0, next_attempt_at = NULL, last_error = NULL, last_error_at = NULL, updated_at = ?
 WHERE id = ? AND external_id IS NOT NULL AND hands_off_at IS NULL;
 
 -- Records a failed operation on an existing ticket and when the next attempt is due. A recorded

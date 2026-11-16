@@ -53,11 +53,13 @@ type operation struct {
 // plan reads the operation the PR's state asks of its ticket from the stored rows, without
 // calling the ticket system (specs.html section 5.2.1). A ticket that is done or superseded
 // gets none, and a won't-do ticket only the supersede, so a reopened PR leaves its ticket as it is.
+// An open ticket whose content update was recorded and never finished is updated again, even when
+// the PR's dependencies are back at the synced hash: the ticket may show what that update sent.
 func plan(c store.TicketCandidate) operation {
 	t := c.Ticket
 	switch c.State {
 	case store.UpdatePROpen:
-		if t.State == store.TicketStateOpen && len(c.Dependencies) > 0 && dependenciesHash(c.Dependencies) != t.SyncedHash {
+		if t.State == store.TicketStateOpen && len(c.Dependencies) > 0 && (dependenciesHash(c.Dependencies) != t.SyncedHash || t.PendingContentHash != "") {
 			return operation{kind: opUpdate}
 		}
 	case store.UpdatePRMerged:
@@ -212,7 +214,9 @@ func (e *Engine) finish(ctx context.Context, s *syncState, state string) (SyncOu
 	return SyncTransitioned, nil
 }
 
-// update re-renders the title and description, sends them, and adds the note.
+// update re-renders the title and description, sends them, and adds the note. The hash of what
+// it sends is recorded before the ticket system is called and dropped only when the note step
+// is resolved too, so a stop or a failure in between leaves the update due.
 func (e *Engine) update(ctx context.Context, s *syncState) (SyncOutcome, error) {
 	renderer, tctx, err := contentRenderer(s)
 	if err != nil {
@@ -232,6 +236,10 @@ func (e *Engine) update(ctx context.Context, s *syncState) (SyncOutcome, error) 
 	}
 	description += "\n\n" + keyLine + s.t.ID
 
+	hash := dependenciesHash(s.c.Dependencies)
+	if err := e.Tickets.BeginContentUpdate(ctx, s.t.ID, hash, e.now()); err != nil {
+		return SyncFailed, err
+	}
 	if err := s.provider.UpdateTicket(ctx, s.t.ExternalID, title, description); err != nil {
 		return e.failSync(ctx, s.t, fmt.Errorf("update ticket: %w", err))
 	}
@@ -240,7 +248,7 @@ func (e *Engine) update(ctx context.Context, s *syncState) (SyncOutcome, error) 
 			return e.failSync(ctx, s.t, fmt.Errorf("add update note: %w", err))
 		}
 	}
-	if err := e.Tickets.MarkSynced(ctx, s.t.ID, dependenciesHash(s.c.Dependencies), e.now()); err != nil {
+	if err := e.Tickets.MarkSynced(ctx, s.t.ID, hash, e.now()); err != nil {
 		return SyncFailed, err
 	}
 	return SyncUpdated, nil

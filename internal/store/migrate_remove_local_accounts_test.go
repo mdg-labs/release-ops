@@ -4,11 +4,26 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	sqlitemigrate "github.com/mdg-labs/sqlite-migrate"
 )
+
+// removeLocalAccountsIndex is the position of the remove_local_accounts migration in all.
+func removeLocalAccountsIndex(t *testing.T, all []sqlitemigrate.Migration) int {
+	t.Helper()
+
+	idx := -1
+	for i, m := range all {
+		if m.Slug == removeLocalAccountsSlug {
+			idx = i
+		}
+	}
+	if idx < 1 {
+		t.Fatalf("migration %s not found after another migration in %d migrations", removeLocalAccountsSlug, len(all))
+	}
+	return idx
+}
 
 // seedBeforeRemoveLocalAccounts applies every migration before remove_local_accounts to a new
 // database and fills it the way an instance that has run both local accounts and GitHub sign-in
@@ -19,15 +34,7 @@ func seedBeforeRemoveLocalAccounts(t *testing.T, dbPath string) *sql.DB {
 
 	ctx := context.Background()
 	all := loadEmbedded(t, ctx)
-	idx := -1
-	for i, m := range all {
-		if m.Slug == removeLocalAccountsSlug {
-			idx = i
-		}
-	}
-	if idx < 1 {
-		t.Fatalf("migration %s not found after another migration in %d migrations", removeLocalAccountsSlug, len(all))
-	}
+	idx := removeLocalAccountsIndex(t, all)
 	if _, err := applyMigrations(ctx, dbPath, all[:idx]); err != nil {
 		t.Fatalf("apply earlier migrations: %v", err)
 	}
@@ -91,7 +98,8 @@ func TestRemoveLocalAccountsMigrationKeepsTheSurvivingData(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "app.db")
 	raw := seedBeforeRemoveLocalAccounts(t, dbPath)
 
-	applied, err := applyMigrations(ctx, dbPath, loadEmbedded(t, ctx))
+	all := loadEmbedded(t, ctx)
+	applied, err := applyMigrations(ctx, dbPath, all[:removeLocalAccountsIndex(t, all)+1])
 	if err != nil {
 		t.Fatalf("apply remove_local_accounts over a database with local accounts: %v", err)
 	}
@@ -171,15 +179,17 @@ func TestRemoveLocalAccountsMigrationOnADatabaseWithoutOldTokens(t *testing.T) {
 		t.Fatalf("remove old tokens: %v", err)
 	}
 
-	if _, err := applyMigrations(ctx, dbPath, loadEmbedded(t, ctx)); err != nil {
+	all := loadEmbedded(t, ctx)
+	through := all[:removeLocalAccountsIndex(t, all)+1]
+	if _, err := applyMigrations(ctx, dbPath, through); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	if got := count(t, raw, `SELECT COUNT(*) FROM auth_tokens WHERE kind = 'setup'`); got != 1 {
 		t.Fatalf("setup tokens after the migration = %d, want 1", got)
 	}
-	again, err := Migrate(ctx, dbPath)
+	again, err := applyMigrations(ctx, dbPath, through)
 	if err != nil || len(again) != 0 {
-		t.Fatalf("second Migrate = %v, %v; want nothing to apply", again, err)
+		t.Fatalf("second apply = %v, %v; want nothing to apply", again, err)
 	}
 }
 
@@ -192,13 +202,10 @@ func TestRemoveLocalAccountsMigrationNeedsTheOldTokensRemovedFirst(t *testing.T)
 	dbPath := filepath.Join(t.TempDir(), "app.db")
 	raw := seedBeforeRemoveLocalAccounts(t, dbPath)
 	all := loadEmbedded(t, ctx)
-	last := all[len(all)-1]
-	if last.Slug != removeLocalAccountsSlug && !strings.HasSuffix(last.Slug, removeLocalAccountsSlug) {
-		t.Skip("remove_local_accounts is no longer the newest migration")
-	}
+	through := all[:removeLocalAccountsIndex(t, all)+1]
 
 	runner := &sqlitemigrate.Runner{DBPath: dbPath, SnapshotDir: filepath.Join(filepath.Dir(dbPath), "snapshots")}
-	if _, err := runner.Apply(ctx, all); err == nil {
+	if _, err := runner.Apply(ctx, through); err == nil {
 		t.Fatal("the migration applied over invitation tokens without the removal step, want the CHECK of the rebuilt table to refuse them")
 	}
 	if got := count(t, raw, `SELECT COUNT(*) FROM auth_tokens`); got != 4 {

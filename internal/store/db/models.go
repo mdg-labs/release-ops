@@ -223,24 +223,25 @@ type UpdatePrDependency struct {
 }
 
 type UpdateTicket struct {
-	ID              string         `json:"id"`
-	UpdatePrID      string         `json:"update_pr_id"`
-	TicketProjectID string         `json:"ticket_project_id"`
-	ExternalID      sql.NullString `json:"external_id"`
-	ExternalUrl     sql.NullString `json:"external_url"`
-	State           string         `json:"state"`
-	PendingSince    sql.NullString `json:"pending_since"`
-	SyncedHash      sql.NullString `json:"synced_hash"`
-	PrCommentID     sql.NullInt64  `json:"pr_comment_id"`
-	PrCommentHash   sql.NullString `json:"pr_comment_hash"`
-	Attempts        int64          `json:"attempts"`
-	NextAttemptAt   sql.NullString `json:"next_attempt_at"`
-	LastError       sql.NullString `json:"last_error"`
-	LastErrorAt     sql.NullString `json:"last_error_at"`
-	CreatedAt       string         `json:"created_at"`
-	UpdatedAt       string         `json:"updated_at"`
-	TargetState     sql.NullString `json:"target_state"`
-	HandsOffAt      sql.NullString `json:"hands_off_at"`
+	ID                 string         `json:"id"`
+	UpdatePrID         string         `json:"update_pr_id"`
+	TicketProjectID    string         `json:"ticket_project_id"`
+	ExternalID         sql.NullString `json:"external_id"`
+	ExternalUrl        sql.NullString `json:"external_url"`
+	State              string         `json:"state"`
+	PendingSince       sql.NullString `json:"pending_since"`
+	SyncedHash         sql.NullString `json:"synced_hash"`
+	PrCommentID        sql.NullInt64  `json:"pr_comment_id"`
+	PrCommentHash      sql.NullString `json:"pr_comment_hash"`
+	Attempts           int64          `json:"attempts"`
+	NextAttemptAt      sql.NullString `json:"next_attempt_at"`
+	LastError          sql.NullString `json:"last_error"`
+	LastErrorAt        sql.NullString `json:"last_error_at"`
+	CreatedAt          string         `json:"created_at"`
+	UpdatedAt          string         `json:"updated_at"`
+	TargetState        sql.NullString `json:"target_state"`
+	HandsOffAt         sql.NullString `json:"hands_off_at"`
+	PendingContentHash sql.NullString `json:"pending_content_hash"`
 }
 
 type User struct {

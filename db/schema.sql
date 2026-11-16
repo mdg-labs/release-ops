@@ -264,7 +264,12 @@ CREATE TABLE update_tickets (
   -- stop between the two is recognised on the next look (specs.html section 5.2.1).
   target_state TEXT CHECK (target_state IN ('done', 'cancelled', 'superseded')),
   -- Set when the ticket was found changed outside Release Ops; no operation touches it after.
-  hands_off_at TEXT
+  hands_off_at TEXT,
+  -- The dependencies hash whose content is about to be sent to the tracker, recorded before the
+  -- tracker is called and cleared when synced_hash follows it (the update note included), so an
+  -- update that stopped half-way stays due even when the PR changes back to synced_hash
+  -- (specs.html section 5.2.1).
+  pending_content_hash TEXT
 ) STRICT;
 
 -- The persistent job queue (specs.html § 2.8): at most one queued and one running job per repository.
