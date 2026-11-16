@@ -23,7 +23,7 @@ You are done when the old schedule is off, the new bot has opened the update PRs
 
 ## 1. Keep your presets and `renovate.json` files
 
-Leave the repositories' `renovate.json` files and your shared presets as they are. Renovate reads them the same way under Release Ops. Presets that use `local>…` keep working when the preset repository is reachable by the job, which step 5 sets up.
+Leave the repositories' `renovate.json` files and your shared presets as they are. Renovate reads them the same way under Release Ops. Presets that use `local>…` keep working when the preset repository is reachable by the job, which step 6 sets up.
 
 ## 2. Point the instance at your global configuration
 
@@ -47,21 +47,21 @@ If your old setup runs commands through `postUpgradeTasks`, keep `allowedCommand
 
 If the old setup used a tools directory for those commands, bring it along with the global configuration: it is fetched together with the file, or you mount it read-only into the worker next to the file. Renovate cannot modify it.
 
-## 4. Create a new App
+## 4. Stop the old schedule
+
+Disable the old workflow's schedule, or stop the old Renovate process, before you create the App. Installing the App on a repository starts a run there right away, and two bots on one repository open duplicate PRs.
+
+## 5. Create a new App
 
 Create the App through the setup page, as in [Getting started](../../getting-started/#5-open-the-setup-page-and-create-the-github-app). You cannot adopt an existing GitHub App or a hand-made one: Release Ops creates its own with the permissions it needs, and one instance has exactly one App and one installation. When GitHub has created the App, it sends you to the installation page, which is the next step. Signing in comes after that.
 
-## 5. Install it on the same repositories
+## 6. Install it on the same repositories
 
 1. Install the App on the repositories the old setup covered.
 2. Install it on your preset repository and on the global configuration repository too.
 3. List the preset repository in the instance configuration, so each job's token can read it. A shared presets repository that the token cannot read breaks `extends` for every repository that uses it.
 
 Release Ops takes part in a repository when the App is installed on it and it has a Renovate configuration file. See [How runs are triggered](../../concepts/how-runs-are-triggered/) for what starts a run.
-
-## 6. Stop the old schedule
-
-Disable the old workflow's schedule, or stop the old Renovate process, before the new bot starts opening PRs. Two bots on one repository open duplicate PRs.
 
 ## 7. Close the old bot's open PRs and delete their branches
 
