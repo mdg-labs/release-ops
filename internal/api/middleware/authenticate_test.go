@@ -607,22 +607,76 @@ func TestSessionLifetimeIsCappedAtEightHours(t *testing.T) {
 	}
 }
 
-// requestWithCookie sends a request that carries the session cookie value by hand, so it keeps
-// using that session however the cookie jar changes.
-func (a *authRig) requestWithCookie(method, path, token string) int {
-	a.t.Helper()
+// requestResult is what a request sent from a goroutine reports back, since a goroutine other
+// than the test's own must not fail the test.
+type requestResult struct {
+	status int
+	err    error
+}
+
+// doWithCookie sends a request that carries the session cookie value by hand, so it keeps using
+// that session however the cookie jar changes. It is safe to call from any goroutine.
+func (a *authRig) doWithCookie(method, path, token string) (int, error) {
 	req, err := http.NewRequest(method, a.srv.URL+path, nil)
 	if err != nil {
-		a.t.Fatalf("new request: %v", err)
+		return 0, err
 	}
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: token})
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		a.t.Fatalf("%s %s: %v", method, path, err)
+		return 0, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, resp.Body)
-	return resp.StatusCode
+	return resp.StatusCode, nil
+}
+
+func (a *authRig) requestWithCookie(method, path, token string) int {
+	a.t.Helper()
+	status, err := a.doWithCookie(method, path, token)
+	if err != nil {
+		a.t.Fatalf("%s %s: %v", method, path, err)
+	}
+	return status
+}
+
+// holdFirstRequest sends GET /me with the token while the role evaluation is held, and returns
+// once that request is inside the evaluation. The returned release lets it finish and is safe to
+// call more than once; it also runs on cleanup, before the server closes, so a failing test
+// cannot leave the handler blocked. The result channel carries the held request's outcome.
+func (a *authRig) holdFirstRequest(token string) (release func(), first <-chan requestResult) {
+	a.t.Helper()
+	hold := a.roles.holdNext()
+	var once sync.Once
+	release = func() { once.Do(func() { close(hold.release) }) }
+	a.t.Cleanup(release)
+
+	result := make(chan requestResult, 1)
+	go func() {
+		status, err := a.doWithCookie(http.MethodGet, "/me", token)
+		result <- requestResult{status, err}
+	}()
+	select {
+	case <-hold.entered:
+	case r := <-result:
+		a.t.Fatalf("the held request ended before it reached the role evaluation: status %d, err %v", r.status, r.err)
+	case <-time.After(10 * time.Second):
+		a.t.Fatal("the held request did not reach the role evaluation within 10s")
+	}
+	return release, result
+}
+
+// awaitHeld waits for the held request's result.
+func (a *authRig) awaitHeld(first <-chan requestResult) {
+	a.t.Helper()
+	select {
+	case r := <-first:
+		if r.err != nil {
+			a.t.Fatalf("the held request: %v", r.err)
+		}
+	case <-time.After(10 * time.Second):
+		a.t.Fatal("the held request did not finish within 10s of its release")
+	}
 }
 
 func (a *authRig) sessionToken() string {
@@ -644,10 +698,7 @@ func TestARecheckInFlightDoesNotReviveASessionTheNextRecheckDestroyed(t *testing
 	token := a.sessionToken()
 	a.advance(auth.RoleRecheckInterval + time.Minute)
 
-	hold := a.roles.holdNext()
-	first := make(chan int, 1)
-	go func() { first <- a.requestWithCookie(http.MethodGet, "/me", token) }()
-	<-hold.entered
+	release, first := a.holdFirstRequest(token)
 
 	a.roles.set("", nil) // the membership is removed after the first evaluation
 	if code := a.requestWithCookie(http.MethodGet, "/me", token); code != http.StatusUnauthorized {
@@ -657,8 +708,8 @@ func TestARecheckInFlightDoesNotReviveASessionTheNextRecheckDestroyed(t *testing
 		t.Fatalf("sessions after the second request = %d, want 0", n)
 	}
 
-	close(hold.release)
-	<-first
+	release()
+	a.awaitHeld(first)
 
 	if n := a.count(`SELECT COUNT(*) FROM sessions`); n != 0 {
 		t.Fatalf("sessions after the first request's commit = %d, want the destroyed session to stay gone", n)
@@ -677,16 +728,13 @@ func TestALogoutIsNotUndoneByARequestThatWritesTheSession(t *testing.T) {
 	token := a.sessionToken()
 	a.advance(auth.RoleRecheckInterval + time.Minute)
 
-	hold := a.roles.holdNext()
-	first := make(chan int, 1)
-	go func() { first <- a.requestWithCookie(http.MethodGet, "/me", token) }()
-	<-hold.entered
+	release, first := a.holdFirstRequest(token)
 
 	if code := a.requestWithCookie(http.MethodPost, "/auth/logout", token); code != http.StatusOK {
 		t.Fatalf("logout = %d, want 200", code)
 	}
-	close(hold.release)
-	<-first
+	release()
+	a.awaitHeld(first)
 
 	if n := a.count(`SELECT COUNT(*) FROM sessions`); n != 0 {
 		t.Fatalf("sessions after logout and the concurrent request = %d, want 0", n)
