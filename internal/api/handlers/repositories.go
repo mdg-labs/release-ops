@@ -27,7 +27,8 @@ const (
 // RenovateEnabler opens the pull request of "Enable repo".
 type RenovateEnabler interface {
 	// Enable opens a pull request adding a renovate.json that extends preset, or returns the
-	// one an earlier call left open; github.ErrConfigExists when the default branch has a config.
+	// one an earlier call left open; github.ErrConfigExists when the default branch has a config;
+	// github.ErrEnableBranchExists when the action's branch holds commits that are not its own.
 	Enable(ctx context.Context, installationID int64, fullName, defaultBranch, preset string) (github.EnabledPullRequest, error)
 }
 
@@ -306,7 +307,8 @@ func (h *RepositoryHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 // request that adds a renovate.json extending the configured preset (the first of
 // PRESET_REPOSITORIES, else config:recommended). 201 with the pull request, or 200 with the
 // one an earlier call left open; 409 CONFIG_EXISTS for a repository recorded as having a
-// config or whose default branch has one. A repository whose pull request GitHub refused is
+// config or whose default branch has one; 409 ENABLE_BRANCH_EXISTS when the action's branch
+// already exists with commits that are not the action's own (it is left as it is). A repository whose pull request GitHub refused is
 // 502 and changes nothing here: the repository is neither enabled nor otherwise marked.
 func (h *RepositoryHandlers) EnableRenovate(w http.ResponseWriter, r *http.Request) {
 	if !requireAdminRole(w, r) {
@@ -329,6 +331,9 @@ func (h *RepositoryHandlers) EnableRenovate(w http.ResponseWriter, r *http.Reque
 	case err == nil:
 	case errors.Is(err, github.ErrConfigExists):
 		writeConfigExists(w)
+		return
+	case errors.Is(err, github.ErrEnableBranchExists):
+		auth.WriteError(w, "ENABLE_BRANCH_EXISTS", "the branch "+github.EnableRenovateBranch+" already exists with commits that Release Ops did not make; delete or merge it, then try again", http.StatusConflict)
 		return
 	case errors.Is(err, github.ErrAppRejected):
 		slog.Warn("repositories: GitHub refused the enable pull request", "repository", repo.ID, "err", err)

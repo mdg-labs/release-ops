@@ -185,6 +185,7 @@
     "enableRepoConfirm": "Open pull request",
     "enableRepoOpened": "Pull request #{number} is open for {repository}",
     "enableRepoFailed": "The pull request could not be opened: {message}",
+    "enableRepoBranchExists": "The branch {branch} already exists with commits that Release Ops did not make, so it was left as it is. Delete or merge that branch, then try again.",
     "enableRepoLink": "Pull request #{number}",
     "actionFailedUnknown": "the request did not finish",
     "pagination": {

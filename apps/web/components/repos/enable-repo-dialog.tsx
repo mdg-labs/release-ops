@@ -16,6 +16,9 @@ import { ApiError } from "@/lib/api/client";
 import { useEnableRenovate } from "@/lib/query/repositories";
 import type { EnableRenovateResult, Repository } from "@/lib/query/types";
 
+/** The branch "Enable repo" opens its pull request from (internal/github EnableRenovateBranch). */
+const ENABLE_BRANCH = "release-ops/enable-renovate";
+
 type EnableRepoDialogProps = {
   repository: Repository;
   /** The preset the opened config extends, or null while it could not be read. */
@@ -62,6 +65,13 @@ export function EnableRepoDialog({
       onOpened(result);
     } catch (caught) {
       if (mine !== attempt.current) {
+        return;
+      }
+      if (
+        caught instanceof ApiError &&
+        caught.code === "ENABLE_BRANCH_EXISTS"
+      ) {
+        setError(t("enableRepoBranchExists", { branch: ENABLE_BRANCH }));
         return;
       }
       setError(

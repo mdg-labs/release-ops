@@ -190,6 +190,34 @@ func TestEnableRepoRefusesARepositoryThatHasAConfig(t *testing.T) {
 	}
 }
 
+func TestEnableRepoAnswers409WhenTheBranchHoldsCommitsOfSomeoneElseAndLeavesItAlone(t *testing.T) {
+	t.Parallel()
+	s := newEnableServer(t, github.User{ID: rolesOwnerID, Login: "acme-owner"})
+	admin := s.signIn(t)
+	s.fake.SetBranchHead(enableRepoName, github.EnableRenovateBranch, "base-sha")
+	s.fake.AddBranchCommit(enableRepoName, github.EnableRenovateBranch, "fix: tune the preset", "renovate.json")
+	headBefore, _ := s.fake.BranchHeadSHA(enableRepoName, github.EnableRenovateBranch)
+
+	code, body := s.send(t, admin, http.MethodPost, "/api/v1/repositories/repo-1/enable-renovate", "")
+	if code != http.StatusConflict || errorCodeOf(body) != "ENABLE_BRANCH_EXISTS" {
+		t.Fatalf("enable with a foreign commit on the branch = %d %s, want 409 ENABLE_BRANCH_EXISTS", code, body)
+	}
+	if !strings.Contains(body, github.EnableRenovateBranch) {
+		t.Errorf("body %s does not name the branch", body)
+	}
+	if head, _ := s.fake.BranchHeadSHA(enableRepoName, github.EnableRenovateBranch); head != headBefore {
+		t.Errorf("the branch moved from %q to %q", headBefore, head)
+	}
+	for _, req := range s.fake.Requests() {
+		if req.Method != http.MethodGet && strings.HasPrefix(req.Path, "/repos/") {
+			t.Errorf("%s %s: nothing is written while the branch holds someone else's commits", req.Method, req.Path)
+		}
+	}
+	if enabled, state := repositoryState(t, s, "repo-1"); !enabled || state != "unknown" {
+		t.Errorf("repo-1 = enabled %v, config %s, want it unchanged", enabled, state)
+	}
+}
+
 func TestEnableRepoIsRefusedToAViewerWithoutCallingGitHub(t *testing.T) {
 	t.Parallel()
 	s := newEnableServer(t, github.User{ID: rolesMemberID, Login: "acme-member"}, 1)

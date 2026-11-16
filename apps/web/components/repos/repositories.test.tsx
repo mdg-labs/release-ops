@@ -413,6 +413,35 @@ describe("RepositoriesView", () => {
     expect(writes().every((c) => c.method === "POST")).toBe(true);
   });
 
+  it("explains that the enable branch holds someone else's commits and opens no pull request", async () => {
+    admin([repo({ id: "r2", fullName: "acme/web", configState: "missing" })]);
+    serve(
+      "POST",
+      "/repositories/r2/enable-renovate",
+      {
+        error: {
+          code: "ENABLE_BRANCH_EXISTS",
+          message: "server text that is not shown",
+        },
+      },
+      409,
+    );
+    renderView();
+    await screen.findByRole("link", { name: "acme/web" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Enable repo" }));
+    await screen.findByRole("alertdialog");
+    fireEvent.click(screen.getByRole("button", { name: "Open pull request" }));
+
+    expect(
+      await screen.findByText(
+        "The branch release-ops/enable-renovate already exists with commits that Release Ops did not make, so it was left as it is. Delete or merge that branch, then try again.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/server text that is not shown/)).toBeNull();
+    expect(screen.queryByRole("link", { name: /Pull request #/ })).toBeNull();
+  });
+
   it("gives a viewer the state and no action, and reads no admin endpoint", async () => {
     session("viewer");
     serve(

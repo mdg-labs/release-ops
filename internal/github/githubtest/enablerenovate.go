@@ -14,8 +14,21 @@ type BranchFile struct {
 	Content, Message string
 }
 
+// BranchCommit is a commit a branch holds on top of the default branch.
+type BranchCommit struct {
+	Message string
+	Files   []string
+	// RenamedFrom maps a file the commit renamed to the path it had before.
+	RenamedFrom map[string]string
+}
+
 type writeState struct {
-	files map[string]map[string]BranchFile // owner/name -> "branch:path" -> file
+	// ahead lists, per repository (owner/name) and branch, the commits the branch has that the
+	// default branch has not, oldest first.
+	ahead map[string]map[string][]BranchCommit
+	// compareStatus makes a branch comparison of the repository answer that status.
+	compareStatus map[string]int
+	files         map[string]map[string]BranchFile // owner/name -> "branch:path" -> file
 	// createStatus makes a pull request creation of the repository answer that status.
 	createStatus map[string]int
 	// putStatus makes a file commit of the repository answer that status.
@@ -37,6 +50,100 @@ func (f *Fake) BranchHeadSHA(fullName, branch string) (string, bool) {
 	defer f.mu.Unlock()
 	sha, ok := f.watch.heads[fullName][branch]
 	return sha, ok
+}
+
+// AddBranchCommit adds a commit with the message that changes the files to the branch of the
+// repository (owner/name), which must exist, as one the default branch does not have.
+func (f *Fake) AddBranchCommit(fullName, branch, message string, files ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.addAhead(fullName, branch, BranchCommit{Message: message, Files: files})
+	f.watch.heads[fullName][branch] = fmt.Sprintf("%s-ahead-%d", f.watch.heads[fullName][branch], len(f.writes.ahead[fullName][branch]))
+}
+
+// BranchCommits returns the commits the branch of the repository (owner/name) has that the
+// default branch has not.
+func (f *Fake) BranchCommits(fullName, branch string) []BranchCommit {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]BranchCommit(nil), f.writes.ahead[fullName][branch]...)
+}
+
+// FailBranchComparison makes comparing two branches of the repository answer status; 0
+// restores normal answers.
+func (f *Fake) FailBranchComparison(fullName string, status int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.writes.compareStatus == nil {
+		f.writes.compareStatus = map[string]int{}
+	}
+	f.writes.compareStatus[fullName] = status
+}
+
+// AddRenamedBranchCommit adds a commit with the message that renames the file from to the
+// branch of the repository (owner/name), which must exist.
+func (f *Fake) AddRenamedBranchCommit(fullName, branch, message, from, to string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.addAhead(fullName, branch, BranchCommit{Message: message, Files: []string{to}, RenamedFrom: map[string]string{to: from}})
+	f.watch.heads[fullName][branch] = fmt.Sprintf("%s-ahead-%d", f.watch.heads[fullName][branch], len(f.writes.ahead[fullName][branch]))
+}
+
+func (f *Fake) addAhead(fullName, branch string, c BranchCommit) {
+	if f.writes.ahead == nil {
+		f.writes.ahead = map[string]map[string][]BranchCommit{}
+	}
+	if f.writes.ahead[fullName] == nil {
+		f.writes.ahead[fullName] = map[string][]BranchCommit{}
+	}
+	f.writes.ahead[fullName][branch] = append(f.writes.ahead[fullName][branch], c)
+}
+
+// serveCompare answers GET /repos/{owner}/{repo}/compare/{base}...{head}: the commits the head
+// has that the base has not, and the files they changed. The caller holds the lock.
+func (f *Fake) serveCompare(w http.ResponseWriter, r *http.Request, fullName, spec string) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+	if status := f.writes.compareStatus[fullName]; status != 0 {
+		w.WriteHeader(status)
+		return
+	}
+	base, head, ok := strings.Cut(spec, "...")
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if _, ok := f.watch.heads[fullName][base]; !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if _, ok := f.watch.heads[fullName][head]; !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	commits := []map[string]any{}
+	files := []map[string]any{}
+	seen := map[string]bool{}
+	for i, c := range f.writes.ahead[fullName][head] {
+		commits = append(commits, map[string]any{"sha": fmt.Sprintf("commit-%d", i), "commit": map[string]any{"message": c.Message}})
+		for _, name := range c.Files {
+			if !seen[name] {
+				seen[name] = true
+				file := map[string]any{"filename": name, "status": "added"}
+				if from := c.RenamedFrom[name]; from != "" {
+					file["status"] = "renamed"
+					file["previous_filename"] = from
+				}
+				files = append(files, file)
+			}
+		}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status": "ahead", "ahead_by": len(commits), "behind_by": 0, "total_commits": len(commits),
+		"commits": commits, "files": files,
+	})
 }
 
 // FailPullCreation makes the creation of a pull request in the repository answer status; 0
@@ -137,6 +244,7 @@ func (f *Fake) serveRefs(w http.ResponseWriter, r *http.Request, fullName string
 		}
 		heads[branch] = in.SHA
 		// A reset branch holds none of what it held before.
+		delete(f.writes.ahead[fullName], branch)
 		for key := range f.writes.files[fullName] {
 			if strings.HasPrefix(key, branch+":") {
 				delete(f.writes.files[fullName], key)
@@ -182,6 +290,7 @@ func (f *Fake) servePutContents(w http.ResponseWriter, r *http.Request, fullName
 		f.writes.files[fullName] = map[string]BranchFile{}
 	}
 	f.writes.files[fullName][key] = BranchFile{Content: string(raw), Message: in.Message}
+	f.addAhead(fullName, in.Branch, BranchCommit{Message: in.Message, Files: []string{path}})
 	f.watch.heads[fullName][in.Branch] = fmt.Sprintf("%s-%d", sha, len(f.writes.files[fullName]))
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]any{

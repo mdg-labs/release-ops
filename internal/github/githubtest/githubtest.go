@@ -830,6 +830,10 @@ func (f *Fake) serveWithToken(w http.ResponseWriter, r *http.Request, token stri
 		f.serveRefs(w, r, parts[0]+"/"+parts[1], parts[4:])
 		return
 	}
+	if len(parts) >= 4 && parts[2] == "compare" {
+		f.serveCompare(w, r, parts[0]+"/"+parts[1], strings.Join(parts[3:], "/"))
+		return
+	}
 	if len(parts) >= 4 && parts[2] == "contents" && r.Method == http.MethodPut {
 		f.servePutContents(w, r, parts[0]+"/"+parts[1], strings.Join(parts[3:], "/"))
 		return
