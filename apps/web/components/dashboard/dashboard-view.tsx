@@ -3,12 +3,9 @@
 import { LayoutDashboardIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/common/page-header";
-import {
-  type RepositoryOption,
-  UpdatePrFilters,
-} from "@/components/dashboard/update-pr-filters";
+import { UpdatePrFilters } from "@/components/dashboard/update-pr-filters";
 import {
   UpdatePrTable,
   type UpdatePrTimeColumn,
@@ -28,7 +25,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { usePersistedPageSize } from "@/lib/hooks/use-persisted-page-size";
 import { TablePaginationControls } from "@/lib/pagination/table-pagination-controls";
 import { PAGE_SIZE_OPTIONS } from "@/lib/pagination/constants";
-import type { UpdatePr, UpdatePrType } from "@/lib/query/types";
+import { useRepositoryOptions } from "@/lib/query/repositories";
+import type { UpdatePrType } from "@/lib/query/types";
 import { type UpdatePrsParams, useUpdatePrs } from "@/lib/query/update-prs";
 
 /** The recently merged list is the ten most recent merges (docs/specs.html §8.3). */
@@ -43,7 +41,6 @@ type ListSectionProps = {
     onPageChange: (page: number) => void;
     onPageSizeChange: (size: number) => void;
   };
-  onItems: (items: UpdatePr[]) => void;
   onTotal: (total: number | null) => void;
 };
 
@@ -53,7 +50,6 @@ function ListSection({
   timeColumn,
   params,
   paginated,
-  onItems,
   onTotal,
 }: ListSectionProps): React.ReactElement {
   const t = useTranslations("dashboard");
@@ -61,11 +57,8 @@ function ListSection({
   const { data, isPending, isError, isPlaceholderData, refetch } = query;
 
   useEffect(() => {
-    if (data) {
-      onItems(data.items);
-    }
     onTotal(data && !isError ? data.total : null);
-  }, [data, isError, onItems, onTotal]);
+  }, [data, isError, onTotal]);
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
@@ -139,8 +132,7 @@ export function DashboardView(): React.ReactElement {
   const [updateType, setUpdateType] = useState<UpdatePrType | "">("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = usePersistedPageSize("dashboard-page-size");
-  // The repositories seen so far, so the filter keeps offering them after it narrows the list.
-  const [repositories, setRepositories] = useState<RepositoryOption[]>([]);
+  const repositoryOptions = useRepositoryOptions();
   const [openTotal, setOpenTotal] = useState<number | null>(null);
   const [mergedTotal, setMergedTotal] = useState<number | null>(null);
 
@@ -149,24 +141,6 @@ export function DashboardView(): React.ReactElement {
     ...(updateType ? { updateType } : {}),
   };
   const filtered = repositoryId !== "" || updateType !== "";
-
-  const learnRepositories = useCallback((items: UpdatePr[]): void => {
-    setRepositories((known) => {
-      const missing = items
-        .map((pr) => pr.repository)
-        .filter((repo) => !known.some((k) => k.id === repo.id));
-      if (missing.length === 0) {
-        return known;
-      }
-      const next = [...known];
-      for (const repo of missing) {
-        if (!next.some((k) => k.id === repo.id)) {
-          next.push(repo);
-        }
-      }
-      return next.sort((a, b) => a.fullName.localeCompare(b.fullName));
-    });
-  }, []);
 
   const nothingYet = !filtered && openTotal === 0 && mergedTotal === 0;
 
@@ -182,7 +156,9 @@ export function DashboardView(): React.ReactElement {
           setUpdateType(type);
           setPage(1);
         }}
-        repositories={repositories}
+        repositories={
+          repositoryOptions.isError ? [] : (repositoryOptions.data ?? [])
+        }
         repositoryId={repositoryId}
         updateType={updateType}
       />
@@ -205,7 +181,6 @@ export function DashboardView(): React.ReactElement {
       <div className={nothingYet ? "hidden" : "flex flex-col gap-8"}>
         <ListSection
           emptyText={filtered ? t("open.emptyFiltered") : t("open.empty")}
-          onItems={learnRepositories}
           onTotal={setOpenTotal}
           paginated={{
             onPageChange: setPage,
@@ -226,7 +201,6 @@ export function DashboardView(): React.ReactElement {
         />
         <ListSection
           emptyText={filtered ? t("merged.emptyFiltered") : t("merged.empty")}
-          onItems={learnRepositories}
           onTotal={setMergedTotal}
           params={{
             state: "merged",

@@ -13,6 +13,7 @@ export const queryKeys = {
   about: () => ["about"] as const,
   updatePrs: (params: object) => ["update-prs", params] as const,
   repositories: (params: object) => ["repositories", params] as const,
+  repositoryOptions: () => ["repositories", "options"] as const,
   repositoriesAll: () => ["repositories"] as const,
   jobs: (params: object) => ["jobs", params] as const,
   job: (id: string) => ["job", id] as const,

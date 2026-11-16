@@ -29,13 +29,10 @@ import { useSessionRole } from "@/lib/hooks/use-session";
 import { PAGE_SIZE_OPTIONS } from "@/lib/pagination/constants";
 import { TablePaginationControls } from "@/lib/pagination/table-pagination-controls";
 import { useJobs, useProblems } from "@/lib/query/jobs";
-import { useRepositories } from "@/lib/query/repositories";
+import { useRepositoryOptions } from "@/lib/query/repositories";
 import type { JobState } from "@/lib/query/types";
 
 type View = "jobs" | "problems";
-
-/** Enough to offer every repository the caller can see in the filter (the API allows 100). */
-const REPOSITORY_OPTIONS_LIMIT = 100;
 
 function LoadFailed({
   message,
@@ -119,10 +116,7 @@ function JobsSection({
   const [state, setState] = useState<JobState | "">("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = usePersistedPageSize("jobs-page-size");
-  const repositories = useRepositories({
-    page: 1,
-    pageSize: REPOSITORY_OPTIONS_LIMIT,
-  });
+  const repositories = useRepositoryOptions();
   const query = useJobs({
     page,
     pageSize,
@@ -199,9 +193,7 @@ function JobsSection({
           setState(next);
           setPage(1);
         }}
-        repositories={
-          repositories.isError ? [] : (repositories.data?.items ?? [])
-        }
+        repositories={repositories.isError ? [] : (repositories.data ?? [])}
         repositoryId={repositoryId}
         state={state}
       />

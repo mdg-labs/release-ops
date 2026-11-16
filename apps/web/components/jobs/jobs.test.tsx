@@ -172,6 +172,42 @@ describe("JobsView", () => {
     });
   }
 
+  // Answers GET /repositories page by page: a page is a list of ids and a status.
+  function serveRepositoryPages(
+    total: number,
+    pageOf: (page: number) => { ids: string[]; status?: number },
+  ) {
+    mockAgent
+      .get(ORIGIN)
+      .intercept({
+        path: (p: string) => p.startsWith(`${API}/repositories?`),
+        method: "GET",
+      })
+      .reply((opts) => {
+        const requested = String(opts.path);
+        paths.push(requested.slice(API.length));
+        const page = Number(
+          new URLSearchParams(requested.split("?")[1]).get("page"),
+        );
+        const { ids, status = 200 } = pageOf(page);
+        return {
+          statusCode: status,
+          data: JSON.stringify(
+            status === 200
+              ? {
+                  items: ids.map((id) => ({ id, fullName: `acme/${id}` })),
+                  page,
+                  pageSize: 100,
+                  total,
+                }
+              : { error: { code: "ERR", message: "boom" } },
+          ),
+          responseOptions: json,
+        };
+      })
+      .persist();
+  }
+
   function renderView() {
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -312,6 +348,52 @@ describe("JobsView", () => {
           ),
         ).toBe(true),
       );
+    });
+
+    it("offers every repository when more than one page of them exists", async () => {
+      session("viewer");
+      const ids = Array.from({ length: 101 }, (_, i) => `repo-${i + 1}`);
+      serveRepositoryPages(101, (page) => ({
+        ids: page === 1 ? ids.slice(0, 100) : ids.slice(100),
+      }));
+      serve("GET", "/jobs", jobs([job({ id: "j1" })]));
+      renderView();
+      await screen.findByText("acme/api");
+
+      await waitFor(() =>
+        expect(paths.some((p) => p.startsWith("/repositories?page=2"))).toBe(
+          true,
+        ),
+      );
+      await waitFor(() => {
+        openSelect("Repository");
+        expect(
+          screen.getByRole("option", { name: "acme/repo-101" }),
+        ).toBeTruthy();
+      });
+      expect(screen.getByRole("option", { name: "acme/repo-1" })).toBeTruthy();
+    });
+
+    it("offers no repository rather than a partial list when a later page fails", async () => {
+      session("viewer");
+      const ids = Array.from({ length: 100 }, (_, i) => `repo-${i + 1}`);
+      serveRepositoryPages(101, (page) =>
+        page === 1 ? { ids } : { ids: [], status: 500 },
+      );
+      serve("GET", "/jobs", jobs([job({ id: "j1" })]));
+      renderView();
+      await screen.findByText("acme/api");
+
+      await waitFor(() =>
+        expect(paths.some((p) => p.startsWith("/repositories?page=2"))).toBe(
+          true,
+        ),
+      );
+      openSelect("Repository");
+      expect(
+        await screen.findByRole("option", { name: "All repositories" }),
+      ).toBeTruthy();
+      expect(screen.queryByRole("option", { name: "acme/repo-1" })).toBeNull();
     });
 
     it("shows the empty state when no job exists yet", async () => {

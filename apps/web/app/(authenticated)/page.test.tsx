@@ -16,6 +16,7 @@ import DashboardPage from "./page";
 
 const ORIGIN = "http://localhost:3000";
 const PATH = "/api/go/api/v1/update-prs";
+const REPOSITORIES = "/api/go/api/v1/repositories";
 
 function pr(overrides: Partial<UpdatePr> & { id: string }): UpdatePr {
   return {
@@ -99,6 +100,27 @@ describe("DashboardPage", () => {
           responseOptions: { headers: { "content-type": "application/json" } },
         };
       })
+      .persist();
+  }
+
+  // Answers GET /repositories, the source of the repository filter's options.
+  function serveRepositories(items: { id: string; fullName: string }[]) {
+    mockAgent
+      .get(ORIGIN)
+      .intercept({
+        path: (path: string) => path.startsWith(`${REPOSITORIES}?`),
+        method: "GET",
+      })
+      .reply(() => ({
+        statusCode: 200,
+        data: JSON.stringify({
+          items,
+          page: 1,
+          pageSize: 100,
+          total: items.length,
+        }),
+        responseOptions: { headers: { "content-type": "application/json" } },
+      }))
       .persist();
   }
 
@@ -251,18 +273,12 @@ describe("DashboardPage", () => {
     ).toBe(true);
   });
 
-  it("sends the repository filter, offering the repositories seen so far", async () => {
-    serve(
-      page([
-        pr({ id: "pr-1" }),
-        pr({
-          id: "pr-2",
-          number: 2,
-          repository: { id: "repo-2", fullName: "acme/web" },
-        }),
-      ]),
-      page([]),
-    );
+  it("offers every repository the caller can see, also one with no pull request on screen", async () => {
+    serveRepositories([
+      { id: "repo-1", fullName: "acme/api" },
+      { id: "repo-2", fullName: "acme/web" },
+    ]);
+    serve(page([pr({ id: "pr-1" })]), page([]));
     renderPage();
     await screen.findAllByText("Update dependency foo to v2");
 
