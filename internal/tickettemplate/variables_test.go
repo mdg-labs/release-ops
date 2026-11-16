@@ -67,3 +67,47 @@ func TestValidateChecksTheFieldsChainedOntoAnExpression(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateChecksFieldsOfVariablesAgainstWhatTheyAreBoundTo(t *testing.T) {
+	t.Parallel()
+
+	for name, tmpl := range map[string]string{
+		"an alias of the pull request":              "{{$pr := .PullRequest}}{{$pr.Foo}}",
+		"the element of a range":                    "{{range $d := .Dependencies}}{{$d.Foo}}{{end}}",
+		"the element of a range with an index":      "{{range $i, $d := .Dependencies}}{{$d.Foo}}{{end}}",
+		"an alias of the list":                      "{{$deps := .Dependencies}}{{$deps.Name}}",
+		"an alias of a string":                      "{{$r := .Repository}}{{$r.Owner}}",
+		"an alias of a nested field":                "{{$n := .Supersede.NewPullRequest}}{{$n.Branch}}",
+		"a variable of a with":                      "{{with $pr := .PullRequest}}{{$pr.Foo}}{{end}}",
+		"a variable of an if":                       "{{if $pr := .PullRequest}}{{$pr.Foo}}{{end}}",
+		"an alias used inside a range":              "{{$pr := .PullRequest}}{{range .Dependencies}}{{$pr.Foo}}{{end}}",
+		"an alias rebound by an assignment":         "{{$x := .PullRequest}}{{$x = .Supersede}}{{$x.Title}}",
+		"an alias of a variable":                    "{{$a := .PullRequest}}{{$b := $a}}{{$b.Foo}}",
+		"a field of the release contract":           "{{$pr := .PullRequest}}{{$pr.Release.Tag}}",
+		"the element of a range over an alias":      "{{$deps := .Dependencies}}{{range $d := $deps}}{{$d.Foo}}{{end}}",
+		"an alias used in a branch not taken":       "{{$pr := .PullRequest}}{{if false}}{{$pr.Foo}}{{end}}",
+		"an alias declared in the enclosing branch": "{{if true}}{{$pr := .PullRequest}}{{if true}}{{$pr.Foo}}{{end}}{{end}}",
+	} {
+		if err := validate(tmpl); err == nil {
+			t.Errorf("%s: Validate() accepted %q", name, tmpl)
+		}
+	}
+	for name, tmpl := range map[string]string{
+		"an alias of the pull request":             "{{$pr := .PullRequest}}{{$pr.Title}} {{$pr.URL}}",
+		"the element of a range":                   "{{range $d := .Dependencies}}{{$d.Name}} {{$d.UpdateType}}{{end}}",
+		"the element of a range with an index":     "{{range $i, $d := .Dependencies}}{{$i}} {{$d.To}}{{end}}",
+		"the root through $":                       "{{range .Dependencies}}{{$.PullRequest.Title}}{{end}}",
+		"a variable of a with":                     "{{with $pr := .PullRequest}}{{$pr.Title}} {{.Number}}{{end}}",
+		"an alias used inside a range":             "{{$pr := .PullRequest}}{{range .Dependencies}}{{$pr.Title}}{{.Name}}{{end}}",
+		"an alias rebound to another pull request": "{{$x := .PullRequest}}{{$x = .Supersede.NewPullRequest}}{{$x.Title}}",
+		"a variable that is not tracked":           "{{$x := len .Dependencies}}{{$x}}",
+		"a variable of a function call":            "{{$x := printf \"%s\" .Repository}}{{$x.Whatever}}",
+		"a name reused in a nested scope":          "{{$x := .Repository}}{{range .Dependencies}}{{$x := .}}{{$x.Name}}{{end}}{{$x}}",
+		"a variable assigned in a branch":          "{{$x := .PullRequest}}{{if true}}{{$x = .Supersede}}{{end}}{{$x.Whatever}}",
+		"a variable of a with in the else":         "{{with $r := .Repository}}{{$r}}{{else}}{{$r}}{{end}}",
+	} {
+		if err := validate(tmpl); err != nil {
+			t.Errorf("%s: Validate() = %v for %q", name, err, tmpl)
+		}
+	}
+}
