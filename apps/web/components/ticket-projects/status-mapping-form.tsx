@@ -7,7 +7,6 @@ import { MetadataSelect } from "@/components/ticket-projects/metadata-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CheckboxGroup } from "@/components/ui/checkbox-group";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { useTicketMetadataStatuses } from "@/lib/hooks/use-ticket-metadata";
 import type { StatusMappingValues } from "@/lib/ticket-projects/status-mapping";
@@ -27,6 +26,7 @@ export function StatusMappingForm({
 }: StatusMappingFormProps): React.ReactElement {
   const t = useTranslations("ticket-projects");
   const supersededId = useId();
+  const groupId = useId();
 
   const metadataEnabled = Boolean(integrationId && externalProjectId);
   const statusesQuery = useTicketMetadataStatuses(
@@ -68,56 +68,72 @@ export function StatusMappingForm({
       {metadataEnabled && statuses.length > 0 ? (
         <>
           <div className="grid gap-4 md:grid-cols-2">
-            <Field name="statusOpen">
-              <FieldLabel>
+            <div className="flex flex-col items-start gap-2">
+              <p
+                className="inline-flex items-center gap-2 font-medium text-base/4.5 text-foreground sm:text-sm/4"
+                id={`${groupId}-open`}
+              >
                 {t("statusOpen")} <span aria-hidden="true">*</span>
-              </FieldLabel>
+              </p>
               <CheckboxGroup
-                aria-label={t("statusOpen")}
+                aria-describedby={`${groupId}-open-hint`}
+                aria-labelledby={`${groupId}-open`}
                 onValueChange={(next) => onChange({ ...values, open: next })}
                 value={values.open}
               >
                 {statuses.map((status) => (
                   <Label key={status.id}>
-                    <Checkbox
-                      aria-label={status.label?.trim() || status.name}
-                      value={status.id}
-                    />
+                    <Checkbox value={status.id} />
                     {status.label?.trim() || status.name}
                   </Label>
                 ))}
               </CheckboxGroup>
-              <FieldDescription>{t("statusOpenHint")}</FieldDescription>
-            </Field>
+              <p
+                className="text-muted-foreground text-xs"
+                id={`${groupId}-open-hint`}
+              >
+                {t("statusOpenHint")}
+              </p>
+            </div>
 
-            <Field name="statusDone">
-              <FieldLabel>
+            <div className="flex flex-col items-start gap-2">
+              <p
+                className="inline-flex items-center gap-2 font-medium text-base/4.5 text-foreground sm:text-sm/4"
+                id={`${groupId}-done`}
+              >
                 {t("statusDone")} <span aria-hidden="true">*</span>
-              </FieldLabel>
+              </p>
               <CheckboxGroup
-                aria-label={t("statusDone")}
+                aria-describedby={`${groupId}-done-hint`}
+                aria-labelledby={`${groupId}-done`}
                 onValueChange={(next) => onChange({ ...values, done: next })}
                 value={values.done}
               >
                 {statuses.map((status) => (
                   <Label key={status.id}>
-                    <Checkbox
-                      aria-label={status.label?.trim() || status.name}
-                      value={status.id}
-                    />
+                    <Checkbox value={status.id} />
                     {status.label?.trim() || status.name}
                   </Label>
                 ))}
               </CheckboxGroup>
-              <FieldDescription>{t("statusDoneHint")}</FieldDescription>
-            </Field>
+              <p
+                className="text-muted-foreground text-xs"
+                id={`${groupId}-done-hint`}
+              >
+                {t("statusDoneHint")}
+              </p>
+            </div>
 
-            <Field className="md:col-span-2" name="statusCancelled">
-              <FieldLabel>
+            <div className="flex flex-col items-start gap-2 md:col-span-2">
+              <p
+                className="inline-flex items-center gap-2 font-medium text-base/4.5 text-foreground sm:text-sm/4"
+                id={`${groupId}-cancelled`}
+              >
                 {t("statusCancelled")} <span aria-hidden="true">*</span>
-              </FieldLabel>
+              </p>
               <CheckboxGroup
-                aria-label={t("statusCancelled")}
+                aria-describedby={`${groupId}-cancelled-hint`}
+                aria-labelledby={`${groupId}-cancelled`}
                 onValueChange={(next) =>
                   onChange({ ...values, cancelled: next })
                 }
@@ -125,16 +141,18 @@ export function StatusMappingForm({
               >
                 {statuses.map((status) => (
                   <Label key={status.id}>
-                    <Checkbox
-                      aria-label={status.label?.trim() || status.name}
-                      value={status.id}
-                    />
+                    <Checkbox value={status.id} />
                     {status.label?.trim() || status.name}
                   </Label>
                 ))}
               </CheckboxGroup>
-              <FieldDescription>{t("statusCancelledHint")}</FieldDescription>
-            </Field>
+              <p
+                className="text-muted-foreground text-xs"
+                id={`${groupId}-cancelled-hint`}
+              >
+                {t("statusCancelledHint")}
+              </p>
+            </div>
           </div>
 
           <MetadataSelect
