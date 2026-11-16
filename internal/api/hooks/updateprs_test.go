@@ -51,10 +51,24 @@ func (f failingTracker) ApplyTx(ctx context.Context, tx *sql.Tx, repositoryID st
 	return out, err
 }
 
-// eventLog records the events the tracker publishes.
+// eventLog records the events the tracker publishes and the state of each event's PR row as
+// the subscriber read it from the database while the events were delivered.
 type eventLog struct {
 	mu     sync.Mutex
 	events []updateprs.Event
+	states []string
+}
+
+func (l *eventLog) addState(state string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.states = append(l.states, state)
+}
+
+func (l *eventLog) statesSeen() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.states...)
 }
 
 func (l *eventLog) add(events []updateprs.Event) {
@@ -109,7 +123,16 @@ func newPRRig(t *testing.T, botID int64) *prRig {
 		Queue: failingEnqueuer{real: store.NewJobQueue(db, store.JobQueueOptions{}), fail: r.fail}, Repositories: st, Bot: r.bot, Logger: logger,
 	})
 	tracker := updateprs.NewTracker(st.UpdatePRs(), func() time.Time { return receivedAt }, r.wake)
-	tracker.Subscribe(r.events.add)
+	tracker.Subscribe(func(events []updateprs.Event) {
+		r.events.add(events)
+		for _, e := range events {
+			var state string
+			if err := db.Reader.QueryRow(`SELECT state FROM update_prs WHERE id = ?`, e.UpdatePRID).Scan(&state); err != nil {
+				state = "unreadable: " + err.Error()
+			}
+			r.events.addState(state)
+		}
+	})
 	hooks.RegisterUpdatePRHandler(routes, hooks.UpdatePRs{Tracker: failingTracker{UpdatePRTracker: tracker, failApply: r.failApply}, Repositories: st, Bot: r.bot, Logger: logger})
 	r.srv = httptest.NewServer(&hooks.Receiver{
 		Secrets: secrets{}, Deliveries: st.WebhookDeliveries(), Routes: routes, Now: func() time.Time { return receivedAt },
@@ -460,9 +483,39 @@ func TestPullRequestEventsArePublishedAfterTheDeliveryCommits(t *testing.T) {
 	if len(events) != 1 || events[0].Kind != updateprs.EventDependenciesRecorded || events[0].Number != 21 || events[0].UpdatePRID == "" {
 		t.Fatalf("events = %+v, want one dependencies_recorded event of PR 21", events)
 	}
+	if got := r.events.statesSeen(); len(got) != 1 || got[0] != "open" {
+		t.Fatalf("the subscriber read the PR as %q when it was published, want the committed row, open", got)
+	}
 
 	r.must(t, "g-opened", "update_pr_opened.json")
 	if n := len(r.events.all()); n != 1 {
 		t.Fatalf("%d events after a duplicate delivery, want still 1", n)
+	}
+}
+
+// A delivery that fails after the PR handler registered its publication callback, here the
+// enqueue of the run a close also asks for, rolls back and publishes nothing; the redelivery
+// that commits publishes once, and the subscriber then reads the committed row.
+func TestEventsAreSuppressedWhenTheDeliveryFailsAfterThePublicationWasRegistered(t *testing.T) {
+	r := newPRRig(t, botUserID)
+
+	r.fail.Store(true)
+	if got := r.deliver(t, "g-closed", "update_pr_closed_merged.json"); got != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", got)
+	}
+	if _, ok := r.row(t, 21); ok {
+		t.Fatal("a row survived the rolled-back delivery")
+	}
+	if n := len(r.events.all()); n != 0 {
+		t.Fatalf("%d events published by a delivery that rolled back", n)
+	}
+
+	r.fail.Store(false)
+	r.must(t, "g-closed", "update_pr_closed_merged.json")
+	if n := len(r.events.all()); n != 1 {
+		t.Fatalf("%d events after the redelivery, want 1", n)
+	}
+	if got := r.events.statesSeen(); len(got) != 1 || got[0] != "merged" {
+		t.Fatalf("the subscriber read the PR as %q when it was published, want the committed row, merged", got)
 	}
 }
