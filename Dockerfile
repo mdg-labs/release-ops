@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 
-# The official Renovate OSS image (never a Mend Renovate CE or EE image) the worker image is
-# built on; one version per release. Building the worker with another tag is at your own risk.
+# The Renovate version the worker image is built on: the tag of the FROM line of the worker
+# stage below, which stays equal to it (scripts/ci/check-renovate-pin.mjs, run in CI), as does
+# internal/buildinfo. It feeds the NOTICE file; it does not pick the base image.
 ARG WORKER_RENOVATE_TAG=44.239.1
 
 FROM node:22-bookworm-slim AS web-deps
@@ -37,7 +38,11 @@ RUN VERSION="${APP_VERSION:-dev}" && \
 # secret. Both run on /cache, which belongs to renovate and root's group (the group
 # containerbase gives its tool directories), and the worker is a member of that group so it can
 # create the per-slot cache directories inside it.
-FROM ghcr.io/renovatebot/renovate:${WORKER_RENOVATE_TAG} AS worker
+# The official Renovate OSS image (never a Mend Renovate CE or EE image), pinned by tag and
+# digest; one version per release. Dependabot bumps both together. A different Renovate is a
+# change to this line, at your own risk: the report and log handling is tested against the
+# pinned version only.
+FROM ghcr.io/renovatebot/renovate:44.239.1@sha256:7dba1a3b916a2cf302ba0df458ddcc8fcbac3c92d0fe9882ac13ba0363de656b AS worker
 ARG WORKER_RENOVATE_TAG
 USER root
 # The binary carries the setuid and setgid file capabilities so the unprivileged worker can

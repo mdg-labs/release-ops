@@ -118,7 +118,7 @@ Each attacker has a capability, what it is trusted with, and what it must never 
 | **Logs and stored log excerpts** | `internal/api/router.go` (`requestLogger`, `recoverer`); the redacting `slog` handler `internal/logging/handler.go`, installed first in `cmd/server/main.go` for the app and the worker; excerpts stored in `job_runs` and shown to viewers of the repository | 2.3, 2.10 (as sources of text), 2.7 |
 | **Secrets at rest** | `internal/crypto/aesgcm.go` (`Encrypt`/`Decrypt`), `internal/store/integrations.go`; the `github_app` store (`internal/store/github_app.go`; key rotation `ReplacePrivateKey` encrypts the new key and replaces the stored one in a single write) | 2.5 |
 | **Startup, migrations, bootstrap** | `cmd/server/main.go`, `internal/config/config.go` (`validate`), `internal/store/migrate.go`, `migrations/`, `db/schema.sql`; `BOOTSTRAP_ADMIN_GITHUB_LOGIN` resolution (`internal/api/auth/github_signin.go` `decide` / `firstAdmin`, `internal/store/signin.go` `SignIn`) | 2.5, 2.8 |
-| **Build, images and release** | `Dockerfile` (target `worker` is the worker image), `docker-compose.yml` (the Compose reference), `.github/workflows/`, `go.mod`, `package-lock.json`, the pinned Renovate version (`Dockerfile` `WORKER_RENOVATE_TAG`; bump tests planned, #222) | 2.8 |
+| **Build, images and release** | `Dockerfile` (target `worker` is the worker image), `docker-compose.yml` (the Compose reference), `.github/workflows/`, `go.mod`, `package-lock.json`, the pinned Renovate version (the tag and digest of the `Dockerfile` worker stage, bumped by Dependabot and checked in CI against fixture repositories) | 2.8 |
 
 ---
 

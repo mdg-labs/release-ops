@@ -239,10 +239,10 @@ th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; color
 
   <h3 id="worker-process">2.3 Worker process model</h3>
   <ul>
-    <li><strong>Image:</strong> the worker image is built <code>FROM</code> the pinned Renovate image (unmodified, pinned by tag or digest) and adds the <code>release-ops</code> binary. Renovate runs as a <strong>child process</strong> of <code>release-ops worker</code>, one per claimed job, never in the API process and never from a Docker container (no Docker socket).</li>
+    <li><strong>Image:</strong> the worker image is built <code>FROM</code> the pinned Renovate image (unmodified, pinned by tag and digest) and adds the <code>release-ops</code> binary. Renovate runs as a <strong>child process</strong> of <code>release-ops worker</code>, one per claimed job, never in the API process and never from a Docker container (no Docker socket).</li>
     <li><strong>Two Unix users.</strong> The worker process runs as one user; Renovate runs as a <strong>second Unix user</strong> inside the same container and <strong>cannot read the worker secret</strong> (not its environment, not a file, not a mounted secret). Renovate gets a <strong>minimal environment</strong>: <code>PATH</code>, <code>HOME</code> of its own user, the variables of §2.2 and §2.4, and log settings. No app secret and no worker-side setting is passed to it. That Renovate runs as a second user with the tools mount (§2.5) and <code>binarySource=install</code> is covered by a CI smoke test (tracked as #195).</li>
     <li><strong>Lifetime:</strong> the worker enforces the job timeout (§2.5): it stops Renovate's process group, waits briefly and then kills it, by PID. A worker that dies leaves a lease that the reaper reclaims (§2.8).</li>
-    <li><strong>Pinning:</strong> Release Ops pins one Renovate version per release. The Renovate image tag can be overridden at your own risk (§9): the report and log handling is tested against the pinned version only.</li>
+    <li><strong>Pinning:</strong> Release Ops pins one Renovate version per release. The pin is a literal tag and digest in the worker stage of the <code>Dockerfile</code>; running another Renovate means editing it, at your own risk (§9): the report and log handling is tested against the pinned version only.</li>
   </ul>
 
   <h3 id="renovate-config">2.4 Global self-hosted config &amp; tools</h3>
@@ -1711,8 +1711,8 @@ func CreateDefinitelyNotStored(err error) bool</code></pre>
     <tr><td><code>WORKER_SECRET</code></td><td>yes</td><td>Same value as the app's. Held by the worker process only; Renovate runs as another Unix user and cannot read it (§2.3)</td></tr>
   </table>
   <p><strong>Not environment variables:</strong> the concurrency cap is an instance setting on the settings page (§4.1, §7.2); the number of slots is that cap (§2.5); the hourly safety net and the other timings are fixed (§5.7). The worker accepts no other Renovate override.</p>
-  <h4>Renovate image tag override</h4>
-  <p>The worker image is built <code>FROM</code> the pinned Renovate image (§2.3). Operators who build the worker image themselves can override the Renovate base tag with the build argument <code>WORKER_RENOVATE_TAG</code>. <strong>Running a Renovate version other than the pinned one is at your own risk:</strong> the report and log handling, and the global config handling, are tested against the pinned version only. It is a build-time setting, not a variable of a running container (the worker has no Docker socket and pulls no image).</p>
+  <h4>Renovate image pin</h4>
+  <p>The worker image is built <code>FROM</code> the pinned Renovate image (§2.3): the worker stage of the <code>Dockerfile</code> names <code>ghcr.io/renovatebot/renovate:&lt;tag&gt;@sha256:&lt;digest&gt;</code> literally, with no floating tag. Dependabot proposes bumps of the tag and digest together as pull requests; CI checks the pin, runs the new image against fixture repositories and runs a <code>renovate_run</code> job through <code>release-ops worker</code> in it. A bump pull request must also move <code>ARG WORKER_RENOVATE_TAG</code> in the <code>Dockerfile</code> and <code>RenovateVersion</code> in <code>internal/buildinfo</code> to the same version. There is no build argument that selects the base image: <strong>running a Renovate version other than the pinned one means editing the <code>FROM</code> line, at your own risk,</strong> because the report and log handling, and the global config handling, are tested against the pinned version only. The pin is a build-time fact, not a variable of a running container (the worker has no Docker socket and pulls no image).</p>
 
   <h2 id="deployment">10. Deployment</h2>
   <ul>
