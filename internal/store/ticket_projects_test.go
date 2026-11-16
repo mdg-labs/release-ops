@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 
@@ -63,5 +64,75 @@ func TestDeleteUnreferencedTicketProject(t *testing.T) {
 	}
 	if _, err := s.TicketProjects().Get(ctx, fixture.ticketProjectID); err == nil {
 		t.Fatal("ticket project still present after delete")
+	}
+}
+
+func TestUpdateTicketProjectWritesOnlyWhatIsSet(t *testing.T) {
+	t.Parallel()
+
+	s, _ := testStore(t)
+	ctx := context.Background()
+	fixture := seedTicketFixture(t, s, ctx)
+	const (
+		templates = `{"title":"T","description":"D","updateComment":"","supersedeComment":"S"}`
+		filter    = `{"updateTypes":["major"],"labels":[],"skipAutomerged":false}`
+	)
+	if _, err := s.TicketProjects().Update(ctx, fixture.ticketProjectID, store.UpdateTicketProjectInput{
+		Name: "One", CreateConfig: `{}`, StatusMapping: `{}`,
+		ContentTemplates: func(string) (string, error) { return templates, nil },
+		Filter:           strPtr(filter),
+	}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	got, err := s.TicketProjects().Update(ctx, fixture.ticketProjectID, store.UpdateTicketProjectInput{Name: "Two", CreateConfig: `{"a":1}`, StatusMapping: `{}`})
+	if err != nil {
+		t.Fatalf("Update without templates or filter: %v", err)
+	}
+	if got.Name != "Two" || got.CreateConfig != `{"a":1}` || got.ContentTemplates != templates || got.Filter != filter {
+		t.Fatalf("project = %+v, want the name and create config written and the templates and filter kept", got)
+	}
+
+	var seen string
+	got, err = s.TicketProjects().Update(ctx, fixture.ticketProjectID, store.UpdateTicketProjectInput{
+		Name: "Two", CreateConfig: `{}`, StatusMapping: `{}`,
+		ContentTemplates: func(stored string) (string, error) { seen = stored; return `{"title":"N"}`, nil },
+	})
+	if err != nil || seen != templates || got.ContentTemplates != `{"title":"N"}` || got.Filter != filter {
+		t.Fatalf("Update = %+v, %v; callback saw %q, want it to see the stored templates and leave the filter", got, err, seen)
+	}
+}
+
+func TestUpdateTicketProjectLeavesTheRowAloneWhenTheTemplateStepFailsOrTheProjectIsMissing(t *testing.T) {
+	t.Parallel()
+
+	s, _ := testStore(t)
+	ctx := context.Background()
+	fixture := seedTicketFixture(t, s, ctx)
+	before, err := s.TicketProjects().Get(ctx, fixture.ticketProjectID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	refused := errors.New("refused")
+	_, err = s.TicketProjects().Update(ctx, fixture.ticketProjectID, store.UpdateTicketProjectInput{
+		Name: "Changed", CreateConfig: `{}`, StatusMapping: `{}`, Filter: strPtr(`{"updateTypes":["major"],"labels":[],"skipAutomerged":false}`),
+		ContentTemplates: func(string) (string, error) { return "", refused },
+	})
+	if !errors.Is(err, refused) {
+		t.Fatalf("Update = %v, want the callback's error", err)
+	}
+	after, err := s.TicketProjects().Get(ctx, fixture.ticketProjectID)
+	if err != nil || *after != *before {
+		t.Fatalf("project = %+v (%v), want %+v unchanged", after, err, before)
+	}
+
+	called := false
+	_, err = s.TicketProjects().Update(ctx, "no-such", store.UpdateTicketProjectInput{
+		Name: "X", CreateConfig: `{}`, StatusMapping: `{}`,
+		ContentTemplates: func(string) (string, error) { called = true; return "{}", nil },
+	})
+	if !errors.Is(err, sql.ErrNoRows) || called {
+		t.Fatalf("Update of a missing project = %v (callback called: %v), want sql.ErrNoRows", err, called)
 	}
 }

@@ -159,6 +159,15 @@ func (h *TicketProjectHandlers) Create(w http.ResponseWriter, r *http.Request) {
 	writeTicketProjectsJSON(w, http.StatusCreated, ticketProjectFromStore(created))
 }
 
+// requestRefused is a validation failure found while the store applies an update, carrying the
+// status the handler answers with.
+type requestRefused struct {
+	err    error
+	status int
+}
+
+func (e *requestRefused) Error() string { return e.err.Error() }
+
 // Patch handles PATCH /api/v1/ticket-projects/{id}.
 func (h *TicketProjectHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
@@ -177,16 +186,6 @@ func (h *TicketProjectHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.TicketProjects.Get(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			auth.WriteError(w, "NOT_FOUND", "ticket project not found", http.StatusNotFound)
-			return
-		}
-		auth.WriteError(w, "INTERNAL_ERROR", "failed to load ticket project", http.StatusInternalServerError)
-		return
-	}
-
 	createConfig, err := validateJSONField(req.CreateConfig, "createConfig")
 	if err != nil {
 		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
@@ -198,40 +197,46 @@ func (h *TicketProjectHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentTemplates := existing.ContentTemplates
+	// Only what the request supplies is written; the store keeps every other column as it is
+	// when the update is applied, and hands the stored templates to the merge in its own
+	// transaction.
+	input := store.UpdateTicketProjectInput{
+		Name:          req.Name,
+		CreateConfig:  createConfig,
+		StatusMapping: statusMapping,
+	}
 	if len(req.ContentTemplates) > 0 {
-		contentTemplates, err = mergeContentTemplates(existing.ContentTemplates, req.ContentTemplates)
-		if err != nil {
-			auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
-			return
-		}
-		if err := validateTemplateContent(contentTemplates); err != nil {
-			auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusUnprocessableEntity)
-			return
+		input.ContentTemplates = func(stored string) (string, error) {
+			merged, err := mergeContentTemplates(stored, req.ContentTemplates)
+			if err != nil {
+				return "", &requestRefused{err: err, status: http.StatusBadRequest}
+			}
+			if err := validateTemplateContent(merged); err != nil {
+				return "", &requestRefused{err: err, status: http.StatusUnprocessableEntity}
+			}
+			return merged, nil
 		}
 	}
-
-	filter := existing.Filter
 	if len(req.Filter) > 0 {
-		if filter, err = updatetickets.ValidateFilter(req.Filter); err != nil {
+		filter, err := updatetickets.ValidateFilter(req.Filter)
+		if err != nil {
 			auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
+		input.Filter = &filter
 	}
 
-	updated, err := h.TicketProjects.Update(r.Context(), id, store.UpdateTicketProjectInput{
-		Name:             req.Name,
-		CreateConfig:     createConfig,
-		StatusMapping:    statusMapping,
-		ContentTemplates: contentTemplates,
-		Filter:           filter,
-	})
+	updated, err := h.TicketProjects.Update(r.Context(), id, input)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		var refused *requestRefused
+		switch {
+		case errors.As(err, &refused):
+			auth.WriteError(w, "VALIDATION_ERROR", refused.err.Error(), refused.status)
+		case errors.Is(err, sql.ErrNoRows):
 			auth.WriteError(w, "NOT_FOUND", "ticket project not found", http.StatusNotFound)
-			return
+		default:
+			auth.WriteError(w, "INTERNAL_ERROR", "failed to update ticket project", http.StatusInternalServerError)
 		}
-		auth.WriteError(w, "INTERNAL_ERROR", "failed to update ticket project", http.StatusInternalServerError)
 		return
 	}
 

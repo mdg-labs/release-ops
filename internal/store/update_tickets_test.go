@@ -334,21 +334,26 @@ func TestPendingPRsListsOpenPRsWithDependenciesAndNoTicketMarkerOrWaitingRetry(t
 	}
 }
 
-func TestTicketProjectFilterIsStoredDefaultedAndUpdated(t *testing.T) {
+func TestTicketProjectFilterIsStoredDefaultedUpdatedAndKept(t *testing.T) {
 	e := newTicketEnv(t)
 	ctx := context.Background()
 	tp, _ := e.st.TicketProjects().Get(ctx, e.project)
 	if tp.Filter != `{"updateTypes":[],"labels":[],"skipAutomerged":true}` {
 		t.Fatalf("filter = %q, want the default", tp.Filter)
 	}
-	const f = `{"updateTypes":["major"],"labels":[],"skipAutomerged":false}`
-	updated, err := e.st.TicketProjects().Update(ctx, e.project, store.UpdateTicketProjectInput{Name: "DEV", CreateConfig: `{}`, StatusMapping: `{}`, Filter: f})
+	f := `{"updateTypes":["major"],"labels":[],"skipAutomerged":false}`
+	updated, err := e.st.TicketProjects().Update(ctx, e.project, store.UpdateTicketProjectInput{Name: "DEV", CreateConfig: `{}`, StatusMapping: `{}`, Filter: &f})
 	if err != nil || updated.Filter != f {
 		t.Fatalf("Update = %+v, %v, want the filter stored", updated, err)
 	}
 	updated, _ = e.st.TicketProjects().Update(ctx, e.project, store.UpdateTicketProjectInput{Name: "DEV", CreateConfig: `{}`, StatusMapping: `{}`})
+	if updated.Filter != f {
+		t.Fatalf("filter = %q, want an update without one to keep %q", updated.Filter, f)
+	}
+	empty := ""
+	updated, _ = e.st.TicketProjects().Update(ctx, e.project, store.UpdateTicketProjectInput{Name: "DEV", CreateConfig: `{}`, StatusMapping: `{}`, Filter: &empty})
 	if updated.Filter != `{"updateTypes":[],"labels":[],"skipAutomerged":true}` {
-		t.Fatalf("filter = %q, want an update without one to store the default", updated.Filter)
+		t.Fatalf("filter = %q, want an empty one to store the default", updated.Filter)
 	}
 }
 

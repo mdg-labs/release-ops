@@ -16,7 +16,9 @@ import (
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/api/handlers"
 	apimw "github.com/mdg-labs/release-ops/internal/api/middleware"
+	"github.com/mdg-labs/release-ops/internal/crypto"
 	"github.com/mdg-labs/release-ops/internal/store"
+	"github.com/mdg-labs/release-ops/internal/store/storetest"
 )
 
 const (
@@ -30,6 +32,7 @@ type mockTicketProjectRepo struct {
 	items       map[string]*store.TicketProject
 	createInput *store.CreateTicketProjectInput
 	updateInput *store.UpdateTicketProjectInput
+	updated     *store.TicketProject
 	createErr   error
 	listErr     error
 	listByErr   error
@@ -124,12 +127,21 @@ func (m *mockTicketProjectRepo) Update(_ context.Context, id string, input store
 	if !ok {
 		return nil, sql.ErrNoRows
 	}
+	if input.ContentTemplates != nil {
+		templates, err := input.ContentTemplates(item.ContentTemplates)
+		if err != nil {
+			return nil, err
+		}
+		item.ContentTemplates = templates
+	}
 	m.updateInput = &input
 	item.Name = input.Name
 	item.CreateConfig = input.CreateConfig
 	item.StatusMapping = input.StatusMapping
-	item.ContentTemplates = input.ContentTemplates
-	item.Filter = defaultFilter(input.Filter)
+	if input.Filter != nil {
+		item.Filter = defaultFilter(*input.Filter)
+	}
+	m.updated = item
 	item.UpdatedAt = "2026-08-07T12:00:00.000Z"
 	return item, nil
 }
@@ -474,8 +486,8 @@ func TestPatchTicketProjectUpdatesFields(t *testing.T) {
 	if repo.updateInput.Name != "Updated Name" {
 		t.Fatalf("name = %q, want Updated Name", repo.updateInput.Name)
 	}
-	if repo.updateInput.ContentTemplates != validContentTemplates {
-		t.Fatalf("contentTemplates = %q, want unchanged %q", repo.updateInput.ContentTemplates, validContentTemplates)
+	if repo.updated.ContentTemplates != validContentTemplates {
+		t.Fatalf("contentTemplates = %q, want unchanged %q", repo.updated.ContentTemplates, validContentTemplates)
 	}
 }
 
@@ -749,8 +761,8 @@ func TestPatchTicketProjectMergesPartialContentTemplates(t *testing.T) {
 	}
 
 	expected := `{"title":"New title","description":"Notes","updateComment":"Updated","supersedeComment":"Superseded"}`
-	if repo.updateInput.ContentTemplates != expected {
-		t.Fatalf("contentTemplates = %q, want %q", repo.updateInput.ContentTemplates, expected)
+	if repo.updated.ContentTemplates != expected {
+		t.Fatalf("contentTemplates = %q, want %q", repo.updated.ContentTemplates, expected)
 	}
 
 	resp := ticketProjectResponseShape(t, rec.Body.Bytes())
@@ -947,16 +959,16 @@ func TestPatchTicketProjectSetsTheFilterAndKeepsItWhenOmitted(t *testing.T) {
 	if rec := patchTicketProject(t, repo, ``); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d; body = %s", rec.Code, rec.Body.String())
 	}
-	if repo.updateInput.Filter != stored {
-		t.Fatalf("filter = %q, want the stored one kept", repo.updateInput.Filter)
+	if repo.updated.Filter != stored {
+		t.Fatalf("filter = %q, want the stored one kept", repo.updated.Filter)
 	}
 
 	rec := patchTicketProject(t, repo, `,"filter":{"labels":["security"],"skipAutomerged":false}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d; body = %s", rec.Code, rec.Body.String())
 	}
-	if want := `{"updateTypes":[],"labels":["security"],"skipAutomerged":false}`; repo.updateInput.Filter != want {
-		t.Fatalf("filter = %q, want %q", repo.updateInput.Filter, want)
+	if want := `{"updateTypes":[],"labels":["security"],"skipAutomerged":false}`; repo.updated.Filter != want {
+		t.Fatalf("filter = %q, want %q", repo.updated.Filter, want)
 	}
 
 	repo = repoWithProject(validContentTemplates, stored)
@@ -974,7 +986,126 @@ func TestPatchTicketProjectAcceptsTheUpdateComment(t *testing.T) {
 		t.Fatalf("status = %d; body = %s", rec.Code, rec.Body.String())
 	}
 	want := `{"title":"","description":"","updateComment":"{{ range .Dependencies }}{{ .Name }}{{ end }}","supersedeComment":"S"}`
-	if repo.updateInput.ContentTemplates != want {
-		t.Fatalf("contentTemplates = %q, want %q", repo.updateInput.ContentTemplates, want)
+	if repo.updated.ContentTemplates != want {
+		t.Fatalf("contentTemplates = %q, want %q", repo.updated.ContentTemplates, want)
 	}
 }
+
+// interleavingTicketProjects runs beforeUpdate once, just before the first Update reaches the
+// store: whatever the handler has read by then is the state a concurrent request can change.
+type interleavingTicketProjects struct {
+	store.TicketProjectRepository
+	beforeUpdate func()
+}
+
+func (r *interleavingTicketProjects) Update(ctx context.Context, id string, input store.UpdateTicketProjectInput) (*store.TicketProject, error) {
+	if hook := r.beforeUpdate; hook != nil {
+		r.beforeUpdate = nil
+		hook()
+	}
+	return r.TicketProjectRepository.Update(ctx, id, input)
+}
+
+func TestConcurrentPatchesDoNotOverwriteFieldsTheyOmit(t *testing.T) {
+	t.Parallel()
+
+	const (
+		storedTemplates = `{"title":"T","description":"D","updateComment":"","supersedeComment":"S"}`
+		storedFilter    = `{"updateTypes":["patch"],"labels":[],"skipAutomerged":true}`
+		newFilter       = `{"updateTypes":["major"],"labels":["security"],"skipAutomerged":false}`
+	)
+
+	for name, tc := range map[string]struct {
+		requestA string // the request that completes last, without the field B changes
+		requestB string
+		check    func(t *testing.T, got *store.TicketProject)
+	}{
+		"filter": {
+			requestA: `,"contentTemplates":{"description":"from A"}`,
+			requestB: `,"filter":` + newFilter,
+			check: func(t *testing.T, got *store.TicketProject) {
+				if got.Filter != newFilter {
+					t.Fatalf("filter = %q, want the one request B saved, %q", got.Filter, newFilter)
+				}
+				if !strings.Contains(got.ContentTemplates, `"description":"from A"`) {
+					t.Fatalf("contentTemplates = %q, want request A's description", got.ContentTemplates)
+				}
+			},
+		},
+		"content templates": {
+			requestA: `,"contentTemplates":{"description":"from A"}`,
+			requestB: `,"contentTemplates":{"title":"from B"}`,
+			check: func(t *testing.T, got *store.TicketProject) {
+				want := `{"title":"from B","description":"from A","updateComment":"","supersedeComment":"S"}`
+				if got.ContentTemplates != want {
+					t.Fatalf("contentTemplates = %q, want both requests' keys, %q", got.ContentTemplates, want)
+				}
+				if got.Filter != storedFilter {
+					t.Fatalf("filter = %q, want %q unchanged", got.Filter, storedFilter)
+				}
+			},
+		},
+		"templates and filter omitted": {
+			requestA: ``,
+			requestB: `,"filter":` + newFilter + `,"contentTemplates":{"title":"from B"}`,
+			check: func(t *testing.T, got *store.TicketProject) {
+				if got.Filter != newFilter || !strings.Contains(got.ContentTemplates, `"title":"from B"`) {
+					t.Fatalf("filter = %q, contentTemplates = %q, want request B's values kept", got.Filter, got.ContentTemplates)
+				}
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cipher, err := crypto.NewCipherFromHex("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+			if err != nil {
+				t.Fatalf("NewCipherFromHex: %v", err)
+			}
+			st := store.New(storetest.OpenMigrated(t), cipher)
+			ctx := context.Background()
+			integration, err := st.Integrations().Create(ctx, store.CreateIntegrationInput{
+				Kind: "kaneo", Name: "Kaneo", BaseURL: strPtr("https://api.kaneo.example"), Secret: []byte(`{"api_key":"test"}`),
+			})
+			if err != nil {
+				t.Fatalf("Create integration: %v", err)
+			}
+			project, err := st.TicketProjects().Create(ctx, store.CreateTicketProjectInput{
+				IntegrationID: integration.ID, ExternalProjectID: "DEV", Name: "Old",
+				CreateConfig: validCreateConfig, StatusMapping: validStatusMapping,
+				ContentTemplates: storedTemplates, Filter: storedFilter,
+			})
+			if err != nil {
+				t.Fatalf("Create ticket project: %v", err)
+			}
+
+			repo := &interleavingTicketProjects{TicketProjectRepository: st.TicketProjects()}
+			router, sm := newTicketProjectsTestRouter(t, repo)
+			cookie := seedSession(t, sm)
+			patch := func(extra string) int {
+				body := fmt.Sprintf(`{"name":"Renamed","createConfig":%s,"statusMapping":%s%s}`, validCreateConfig, validStatusMapping, extra)
+				req := httptest.NewRequest(http.MethodPatch, "/api/v1/ticket-projects/"+project.ID, strings.NewReader(body))
+				req.AddCookie(cookie)
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+				return rec.Code
+			}
+			repo.beforeUpdate = func() {
+				if code := patch(tc.requestB); code != http.StatusOK {
+					t.Errorf("request B status = %d, want 200", code)
+				}
+			}
+
+			if code := patch(tc.requestA); code != http.StatusOK {
+				t.Fatalf("request A status = %d, want 200", code)
+			}
+			got, err := st.TicketProjects().Get(ctx, project.ID)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			tc.check(t, got)
+		})
+	}
+}
+
+func strPtr(s string) *string { return &s }

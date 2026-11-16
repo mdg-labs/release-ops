@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const countTicketProjectDefaultAndOverrideReferences = `-- name: CountTicketProjectDefaultAndOverrideReferences :one
@@ -251,13 +252,13 @@ func (q *Queries) ListTicketProjectsByIntegration(ctx context.Context, integrati
 const updateTicketProject = `-- name: UpdateTicketProject :one
 UPDATE ticket_projects
 SET
-  name = ?,
-  create_config = ?,
-  status_mapping = ?,
-  content_templates = ?,
-  filter = ?,
-  updated_at = ?
-WHERE id = ?
+  name = ?1,
+  create_config = ?2,
+  status_mapping = ?3,
+  content_templates = COALESCE(?4, content_templates),
+  filter = COALESCE(?5, filter),
+  updated_at = ?6
+WHERE id = ?7
 RETURNING
   id,
   integration_id,
@@ -272,13 +273,13 @@ RETURNING
 `
 
 type UpdateTicketProjectParams struct {
-	Name             string `json:"name"`
-	CreateConfig     string `json:"create_config"`
-	StatusMapping    string `json:"status_mapping"`
-	ContentTemplates string `json:"content_templates"`
-	Filter           string `json:"filter"`
-	UpdatedAt        string `json:"updated_at"`
-	ID               string `json:"id"`
+	Name             string         `json:"name"`
+	CreateConfig     string         `json:"create_config"`
+	StatusMapping    string         `json:"status_mapping"`
+	ContentTemplates sql.NullString `json:"content_templates"`
+	Filter           sql.NullString `json:"filter"`
+	UpdatedAt        string         `json:"updated_at"`
+	ID               string         `json:"id"`
 }
 
 func (q *Queries) UpdateTicketProject(ctx context.Context, arg UpdateTicketProjectParams) (TicketProject, error) {

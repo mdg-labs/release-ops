@@ -259,7 +259,7 @@ func TestTicketProjectCreateWithValidJSONConfigs(t *testing.T) {
 		Name:             project.Name,
 		CreateConfig:     createConfig,
 		StatusMapping:    statusMapping,
-		ContentTemplates: updatedTemplates,
+		ContentTemplates: func(string) (string, error) { return updatedTemplates, nil },
 	})
 	if err != nil {
 		t.Fatalf("Update ticket project: %v", err)
