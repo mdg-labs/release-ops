@@ -251,8 +251,9 @@ type BranchComparison struct {
 	Messages []string
 	// Files are the paths those commits changed.
 	Files []string
-	// FilesComplete is false when GitHub listed fewer files than it changed or a file was
-	// renamed, so Files is not the whole set.
+	// FilesComplete is false when a listed file was renamed, so Files does not name every path
+	// the commits touched. GitHub caps the files it lists without saying so; callers that need
+	// the whole set must not rely on Files alone.
 	FilesComplete bool
 }
 
