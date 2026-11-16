@@ -11,14 +11,23 @@ import { ContentTemplateForm } from "@/components/ticket-projects/content-templa
 import { toastManager } from "@/components/ui/toast";
 import type { TicketIntegrationKind } from "@/lib/integrations/kinds";
 import { integrationDefaultTemplates } from "@/lib/ticket-projects/content-templates";
+import type { ContentTemplates } from "@/lib/query/types";
 import messages from "@/messages/en.json";
 
-const EMPTY = { title: "", description: "", supersedeComment: "" };
+const EMPTY = {
+  title: "",
+  description: "",
+  updateComment: "",
+  supersedeComment: "",
+};
 
-function renderForm(kind: TicketIntegrationKind | undefined) {
+function renderForm(
+  kind: TicketIntegrationKind | undefined,
+  values: ContentTemplates = EMPTY,
+) {
   return render(
     <NextIntlClientProvider locale="en" messages={messages}>
-      <ContentTemplateForm kind={kind} onChange={() => {}} values={EMPTY} />
+      <ContentTemplateForm kind={kind} onChange={() => {}} values={values} />
     </NextIntlClientProvider>,
   );
 }
@@ -124,5 +133,69 @@ describe("ContentTemplateForm", () => {
     expect(add).toHaveBeenCalledWith(
       expect.objectContaining({ type: "error" }),
     );
+  });
+
+  it("has an update comment field with its integration default as placeholder", () => {
+    renderForm("kaneo");
+
+    expect(
+      screen
+        .getByLabelText("Update comment template")
+        .getAttribute("placeholder"),
+    ).toBe(integrationDefaultTemplates("kaneo").updateComment);
+  });
+
+  it("names the variables each field has", () => {
+    renderForm("kaneo");
+
+    expect(
+      screen.getByText(messages["ticket-projects"].templates.hints.title),
+    ).toHaveTextContent(
+      "PullRequest, Repository, Dependencies and ReleaseNotes",
+    );
+    expect(
+      screen.getByText(
+        messages["ticket-projects"].templates.hints.supersedeComment,
+      ),
+    ).toHaveTextContent("Supersede");
+  });
+
+  it("previews an empty field from the default template with sample data", () => {
+    renderForm("kaneo");
+
+    expect(
+      screen.getByLabelText("Preview of Title template"),
+    ).toHaveTextContent("Update dependency react to v19 (acme/web)");
+    expect(
+      screen.getByLabelText("Preview of Update comment template"),
+    ).toHaveTextContent("react: 18.3.1 → 19.0.0 (major)");
+    expect(
+      screen.getByLabelText("Preview of Supersede comment template"),
+    ).toHaveTextContent("Superseded by https://github.com/acme/web/pull/43");
+  });
+
+  it("previews the template a user typed", () => {
+    renderForm("kaneo", {
+      ...EMPTY,
+      title: "[{{ .Repository }}] {{ .PullRequest.Title }}",
+    });
+
+    expect(
+      screen.getByLabelText("Preview of Title template"),
+    ).toHaveTextContent("[acme/web] Update dependency react to v19");
+  });
+
+  it("says no preview is available when a template uses a variable the field lacks", () => {
+    renderForm("kaneo", { ...EMPTY, title: "{{ .Release.Tag }}" });
+
+    expect(
+      screen.queryByLabelText("Preview of Title template"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        messages["ticket-projects"].templates.previewUnavailable
+          .unknownVariable,
+      ),
+    ).toBeInTheDocument();
   });
 });

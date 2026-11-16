@@ -2,7 +2,7 @@ import type { TicketIntegrationKind } from "@/lib/integrations/kinds";
 import type { ContentTemplates } from "@/lib/query/types";
 
 /** The template keys of docs/specs.html §5.4; the form edits the keys of ContentTemplates. */
-export type TemplateField = keyof ContentTemplates | "updateComment";
+export type TemplateField = keyof ContentTemplates;
 
 // Mirror the default templates in internal/tickettemplate/templates.go
 // (docs/specs.html §5.4); shown as placeholders while a field is empty.
@@ -33,13 +33,10 @@ const DEFAULT_SUPERSEDE_COMMENT =
   "Superseded by {{ .Supersede.NewPullRequest.URL }}\n" +
   "{{ if .Supersede.NewTicketURL }}New ticket: {{ .Supersede.NewTicketURL }}{{ end }}";
 
-/** The integration-kind defaults of every template key of the spec. */
-export type IntegrationDefaults = ContentTemplates & { updateComment: string };
-
 /** Integration-kind default for each template key; Jira uses plain text. */
 export function integrationDefaultTemplates(
   kind: TicketIntegrationKind | undefined,
-): IntegrationDefaults {
+): ContentTemplates {
   const plain = kind === "jira";
   return {
     title: DEFAULT_TITLE,
@@ -114,6 +111,7 @@ export function defaultContentTemplates(): ContentTemplates {
   return {
     title: "",
     description: "",
+    updateComment: "",
     supersedeComment: "",
   };
 }
@@ -129,6 +127,8 @@ export function contentTemplatesFromRecord(
     title: typeof record.title === "string" ? record.title : "",
     description:
       typeof record.description === "string" ? record.description : "",
+    updateComment:
+      typeof record.updateComment === "string" ? record.updateComment : "",
     supersedeComment:
       typeof record.supersedeComment === "string"
         ? record.supersedeComment

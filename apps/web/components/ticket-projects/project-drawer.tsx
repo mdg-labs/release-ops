@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl";
 import { useEffect, useId, useMemo, useState } from "react";
 import { CreateConfigTabs } from "@/components/ticket-projects/create-config-tabs";
 import { ContentTemplateForm } from "@/components/ticket-projects/content-template-form";
+import { FilterForm } from "@/components/ticket-projects/filter-form";
 import { MetadataSelect } from "@/components/ticket-projects/metadata-select";
 import { StatusMappingForm } from "@/components/ticket-projects/status-mapping-form";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,12 @@ import {
   defaultContentTemplates,
 } from "@/lib/ticket-projects/content-templates";
 import {
+  defaultFilter,
+  filterFromRecord,
+  formatLabels,
+  parseLabels,
+} from "@/lib/ticket-projects/filter";
+import {
   defaultStatusMapping,
   statusMappingFromRecord,
   statusMappingToRecord,
@@ -56,15 +63,17 @@ import type {
   ContentTemplates,
   Integration,
   TicketProject,
+  TicketProjectFilter,
 } from "@/lib/query/types";
 
 type ProjectDrawerMode = "create" | "edit";
 
 type DrawerTab =
-  "general" | "createConfig" | "statusMapping" | "contentTemplates";
+  "general" | "filter" | "createConfig" | "statusMapping" | "contentTemplates";
 
 const DRAWER_TABS: DrawerTab[] = [
   "general",
+  "filter",
   "createConfig",
   "statusMapping",
   "contentTemplates",
@@ -83,6 +92,7 @@ type ProjectDrawerProps = {
     createConfig: Record<string, unknown>;
     statusMapping: Record<string, unknown>;
     contentTemplates: ContentTemplates;
+    filter: TicketProjectFilter;
   }) => Promise<TicketProject>;
   onUpdate: (
     id: string,
@@ -91,6 +101,7 @@ type ProjectDrawerProps = {
       createConfig: Record<string, unknown>;
       statusMapping: Record<string, unknown>;
       contentTemplates: ContentTemplates;
+      filter: TicketProjectFilter;
     },
   ) => Promise<TicketProject>;
   isSaving: boolean;
@@ -178,6 +189,8 @@ export function ProjectDrawer({
   const [contentTemplates, setContentTemplates] = useState<ContentTemplates>(
     defaultContentTemplates(),
   );
+  const [filter, setFilter] = useState<TicketProjectFilter>(defaultFilter());
+  const [labelsText, setLabelsText] = useState("");
   const [activeTab, setActiveTab] = useState<DrawerTab>("general");
   const [invalidTabs, setInvalidTabs] = useState<Set<DrawerTab>>(new Set());
   const [formError, setFormError] = useState<string | null>(null);
@@ -233,6 +246,9 @@ export function ProjectDrawer({
       );
       setStatusMapping(statusMappingFromRecord(project.statusMapping));
       setContentTemplates(contentTemplatesFromRecord(project.contentTemplates));
+      const storedFilter = filterFromRecord(project.filter);
+      setFilter(storedFilter);
+      setLabelsText(formatLabels(storedFilter.labels));
       return;
     }
 
@@ -246,6 +262,8 @@ export function ProjectDrawer({
     setCreateConfig(kind ? defaultCreateConfig(kind) : {});
     setStatusMapping(defaultStatusMapping());
     setContentTemplates(defaultContentTemplates());
+    setFilter(defaultFilter());
+    setLabelsText("");
   }, [open, mode, project, integrations, ticketIntegrations]);
 
   useEffect(() => {
@@ -371,6 +389,7 @@ export function ProjectDrawer({
       ),
       statusMapping: statusMappingToRecord(statusMapping),
       contentTemplates,
+      filter: { ...filter, labels: parseLabels(labelsText) },
     };
 
     try {
@@ -387,6 +406,11 @@ export function ProjectDrawer({
     } catch (error) {
       if (error instanceof ApiError) {
         setFormError(error.message);
+        if (error.status === 422) {
+          setActiveTab(
+            error.message.startsWith("filter") ? "filter" : "contentTemplates",
+          );
+        }
       } else {
         setFormError(t("saveFailed"));
       }
@@ -532,6 +556,15 @@ export function ProjectDrawer({
                     value={name}
                   />
                 </Field>
+              </TabsPanel>
+
+              <TabsPanel className="flex flex-col gap-4 pt-2" value="filter">
+                <FilterForm
+                  labelsText={labelsText}
+                  onChange={setFilter}
+                  onLabelsTextChange={setLabelsText}
+                  values={filter}
+                />
               </TabsPanel>
 
               <TabsPanel

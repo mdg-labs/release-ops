@@ -16,6 +16,14 @@ import messages from "@/messages/en.json";
 
 const ORIGIN = "http://localhost:3000";
 
+// Base UI's checkbox and switch read PointerEvent when clicked, which jsdom lacks.
+if (!("PointerEvent" in window)) {
+  Object.defineProperty(window, "PointerEvent", {
+    configurable: true,
+    value: MouseEvent,
+  });
+}
+
 const ticketIntegrations = [
   {
     id: "int-jira",
@@ -55,11 +63,12 @@ const sampleProjects = [
       superseded: "Cancelled",
     },
     contentTemplates: {
-      title: "Release: {{ .Release.Tag }}",
-      description: "**Release:** {{ .Release.Name }}",
-      supersedeComment:
-        "Superseded: {{ .Supersede.OldTag }} → {{ .Supersede.NewTag }}",
+      title: "{{ .PullRequest.Title }} in {{ .Repository }}",
+      description: "**Notes:** {{ .ReleaseNotes }}",
+      updateComment: "Updated: {{ .PullRequest.URL }}",
+      supersedeComment: "Superseded by {{ .Supersede.NewPullRequest.URL }}",
     },
+    filter: { updateTypes: ["major"], labels: ["deps"], skipAutomerged: false },
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   },
@@ -91,6 +100,18 @@ describe("TicketProjectsView", () => {
     mockAgent = new MockAgent();
     setGlobalDispatcher(mockAgent);
     mockAgent.disableNetConnect();
+    const mappingPool = mockAgent.get(ORIGIN);
+    mappingPool
+      .intercept({ path: "/api/go/api/v1/installations", method: "GET" })
+      .reply(200, { items: [] })
+      .persist();
+    mappingPool
+      .intercept({
+        path: /^\/api\/go\/api\/v1\/repositories\?/,
+        method: "GET",
+      })
+      .reply(200, { items: [], page: 1, pageSize: 25, total: 0 })
+      .persist();
 
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
       const url =
@@ -256,6 +277,9 @@ describe("TicketProjectsView", () => {
     const dialog = await screen.findByRole("dialog");
     expect(
       within(dialog).getByRole("tab", { name: "General" }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("tab", { name: "Filter" }),
     ).toBeInTheDocument();
     expect(
       within(dialog).getByRole("tab", { name: "Create config" }),
@@ -611,16 +635,17 @@ describe("TicketProjectsView", () => {
     );
 
     expect(within(dialog).getByLabelText("Title template")).toHaveValue(
-      "Release: {{ .Release.Tag }}",
+      "{{ .PullRequest.Title }} in {{ .Repository }}",
     );
     expect(within(dialog).getByLabelText("Description template")).toHaveValue(
-      "**Release:** {{ .Release.Name }}",
+      "**Notes:** {{ .ReleaseNotes }}",
     );
     expect(
+      within(dialog).getByLabelText("Update comment template"),
+    ).toHaveValue("Updated: {{ .PullRequest.URL }}");
+    expect(
       within(dialog).getByLabelText("Supersede comment template"),
-    ).toHaveValue(
-      "Superseded: {{ .Supersede.OldTag }} → {{ .Supersede.NewTag }}",
-    );
+    ).toHaveValue("Superseded by {{ .Supersede.NewPullRequest.URL }}");
     expect(
       within(dialog).getByText("{{ .Supersede.NewTicketURL }}"),
     ).toBeInTheDocument();
@@ -639,6 +664,7 @@ describe("TicketProjectsView", () => {
           contentTemplates: {
             title: "",
             description: "",
+            updateComment: "",
             supersedeComment: "",
           },
         },
@@ -717,10 +743,8 @@ describe("TicketProjectsView", () => {
         return {
           ...sampleProjects[0],
           contentTemplates: {
-            title: "Updated: {{ .Release.Tag }}",
-            description: sampleProjects[0].contentTemplates.description,
-            supersedeComment:
-              sampleProjects[0].contentTemplates.supersedeComment,
+            ...sampleProjects[0].contentTemplates,
+            title: "Updated: {{ .Repository }}",
           },
         };
       });
@@ -736,7 +760,7 @@ describe("TicketProjectsView", () => {
       within(dialog).getByRole("tab", { name: "Content templates" }),
     );
     fireEvent.change(within(dialog).getByLabelText("Title template"), {
-      target: { value: "Updated: {{ .Release.Tag }}" },
+      target: { value: "Updated: {{ .Repository }}" },
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
@@ -746,10 +770,169 @@ describe("TicketProjectsView", () => {
 
     expect(patchBody).not.toHaveProperty("onOpenTicketPolicy");
     expect(patchBody?.contentTemplates).toEqual({
-      title: "Updated: {{ .Release.Tag }}",
-      description: "**Release:** {{ .Release.Name }}",
-      supersedeComment:
-        "Superseded: {{ .Supersede.OldTag }} → {{ .Supersede.NewTag }}",
+      title: "Updated: {{ .Repository }}",
+      description: "**Notes:** {{ .ReleaseNotes }}",
+      updateComment: "Updated: {{ .PullRequest.URL }}",
+      supersedeComment: "Superseded by {{ .Supersede.NewPullRequest.URL }}",
     });
+    expect(patchBody?.filter).toEqual({
+      updateTypes: ["major"],
+      labels: ["deps"],
+      skipAutomerged: false,
+    });
+  });
+
+  it("shows the default filter for a project that sets none", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/ticket-projects", method: "GET" })
+      .reply(200, [
+        {
+          ...sampleProjects[0],
+          filter: { updateTypes: [], labels: [], skipAutomerged: true },
+        },
+      ]);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, ticketIntegrations);
+
+    renderTicketProjectsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit Jira — DEV" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Filter" }));
+
+    expect(
+      within(dialog).getByText(messages["ticket-projects"].filter.noteDefault),
+    ).toBeInTheDocument();
+    for (const type of ["Major", "Minor", "Patch", "Digest", "Lockfile"]) {
+      expect(
+        within(dialog).getByRole("checkbox", { name: type }),
+      ).not.toBeChecked();
+    }
+    expect(within(dialog).getByLabelText("Labels")).toHaveValue("");
+    expect(
+      within(dialog).getByRole("switch", {
+        name: "Skip automerged pull requests",
+      }),
+    ).toBeChecked();
+  });
+
+  it("saves the edited filter through the API", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/ticket-projects", method: "GET" })
+      .reply(200, [
+        {
+          ...sampleProjects[0],
+          filter: { updateTypes: [], labels: [], skipAutomerged: true },
+        },
+      ]);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, ticketIntegrations);
+    pool
+      .intercept({
+        path: /\/api\/go\/api\/v1\/integrations\/int-jira\/ticket-metadata\/.*/,
+        method: "GET",
+      })
+      .reply(200, { items: [] })
+      .persist();
+
+    let patchBody: Record<string, unknown> | undefined;
+    pool
+      .intercept({
+        path: "/api/go/api/v1/ticket-projects/tp-1",
+        method: "PATCH",
+      })
+      .reply(200, (opts) => {
+        patchBody = JSON.parse(opts.body as string) as Record<string, unknown>;
+        return sampleProjects[0];
+      });
+
+    renderTicketProjectsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit Jira — DEV" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Filter" }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Minor" }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Patch" }));
+    fireEvent.change(within(dialog).getByLabelText("Labels"), {
+      target: { value: "deps, security, " },
+    });
+    expect(within(dialog).getByLabelText("Labels")).toHaveValue(
+      "deps, security, ",
+    );
+    fireEvent.click(
+      within(dialog).getByRole("switch", {
+        name: "Skip automerged pull requests",
+      }),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await vi.waitFor(() => {
+      expect(patchBody).toBeDefined();
+    });
+    expect(patchBody?.filter).toEqual({
+      updateTypes: ["minor", "patch"],
+      labels: ["deps", "security"],
+      skipAutomerged: false,
+    });
+  });
+
+  it("shows the server's template validation error and opens the templates tab", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/ticket-projects", method: "GET" })
+      .reply(200, sampleProjects);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, ticketIntegrations);
+    pool
+      .intercept({
+        path: /\/api\/go\/api\/v1\/integrations\/int-jira\/ticket-metadata\/.*/,
+        method: "GET",
+      })
+      .reply(200, { items: [] })
+      .persist();
+    pool
+      .intercept({
+        path: "/api/go/api/v1/ticket-projects/tp-1",
+        method: "PATCH",
+      })
+      .reply(422, {
+        error: {
+          code: "VALIDATION_ERROR",
+          message:
+            "content_templates.title: template: ticket:1: unexpected EOF",
+        },
+      });
+
+    renderTicketProjectsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit Jira — DEV" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/Display name/), {
+      target: { value: "Jira — DEV 2" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(
+      await within(dialog).findByText(
+        "content_templates.title: template: ticket:1: unexpected EOF",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("tab", { name: "Content templates" }),
+    ).toHaveAttribute("data-active");
+    expect(
+      within(dialog).getByLabelText("Update comment template"),
+    ).toBeInTheDocument();
   });
 });

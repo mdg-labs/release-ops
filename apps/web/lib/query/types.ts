@@ -91,7 +91,20 @@ export type TicketMetadataResponse = {
 export type ContentTemplates = {
   title: string;
   description: string;
+  updateComment: string;
   supersedeComment: string;
+};
+
+export type FilterUpdateType =
+  "major" | "minor" | "patch" | "digest" | "lockfile";
+
+/** Which update PRs get a ticket in a ticket project (docs/specs.html §5.2). */
+export type TicketProjectFilter = {
+  /** Empty lets every update type through. */
+  updateTypes: FilterUpdateType[];
+  /** Empty is no restriction; otherwise a PR needs one of them. */
+  labels: string[];
+  skipAutomerged: boolean;
 };
 
 export type TicketProject = {
@@ -102,6 +115,7 @@ export type TicketProject = {
   createConfig: Record<string, unknown>;
   statusMapping: Record<string, unknown>;
   contentTemplates: ContentTemplates;
+  filter: TicketProjectFilter;
   createdAt: string;
   updatedAt: string;
 };
@@ -113,6 +127,7 @@ export type CreateTicketProjectInput = {
   createConfig: Record<string, unknown>;
   statusMapping: Record<string, unknown>;
   contentTemplates: ContentTemplates;
+  filter: TicketProjectFilter;
 };
 
 export type UpdateTicketProjectInput = {
@@ -120,4 +135,5 @@ export type UpdateTicketProjectInput = {
   createConfig: Record<string, unknown>;
   statusMapping: Record<string, unknown>;
   contentTemplates: ContentTemplates;
+  filter: TicketProjectFilter;
 };
