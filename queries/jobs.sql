@@ -10,9 +10,13 @@ WHERE state = 'running'
   AND lease_owner IS NOT NULL;
 
 -- A queued job is claimable when its run_after has passed, its repository is enabled and not
--- removed, the repository has no running job and the number of running jobs is below the limit
--- for its priority. The limit of a normal job leaves one slot free for high-priority jobs when
--- the cap is 2 or more. A job of a paused or removed repository stays queued.
+-- removed, that repository's installation is active, the repository has no running job and the
+-- number of running jobs is below the limit for its priority. The limit of a normal job leaves
+-- one slot free for high-priority jobs when the cap is 2 or more. A job of a paused or removed
+-- repository or of an installation that is not active stays queued. The repository and
+-- installation condition is the one of HeartbeatJob and GetLeasedJob; change the three together.
+-- A job of an installation whose rate-limit budget is exhausted (no request remaining before the
+-- reset, specs.html section 2.8) stays queued until the reset has passed.
 -- name: ClaimNextJob :one
 UPDATE jobs
 SET state = 'running',
@@ -23,10 +27,18 @@ WHERE id = (
   SELECT j.id
   FROM jobs j
   JOIN repositories repo ON repo.id = j.repository_id
+  JOIN installations inst ON inst.id = repo.installation_id
   WHERE j.state = 'queued'
     AND j.run_after <= sqlc.arg(now)
     AND repo.enabled = 1
     AND repo.removed_at IS NULL
+    AND inst.status = 'active'
+    AND NOT (
+      inst.rate_limit_remaining IS NOT NULL
+      AND inst.rate_limit_remaining <= 0
+      AND inst.rate_limit_reset_at IS NOT NULL
+      AND inst.rate_limit_reset_at > sqlc.arg(now)
+    )
     AND NOT EXISTS (
       SELECT 1 FROM jobs r
       WHERE r.repository_id = j.repository_id AND r.state = 'running'
@@ -84,8 +96,9 @@ SET rerun_requested = 1,
 WHERE id = ?
   AND state = 'running';
 
--- A heartbeat renews the lease only while the job's repository is enabled and not removed; for
--- a paused or removed repository no row matches and the worker is told to abort.
+-- A heartbeat renews the lease only while the job's repository is enabled and not removed and
+-- its installation is active (the condition of ClaimNextJob and GetLeasedJob); otherwise no row
+-- matches and the worker is told to abort.
 -- name: HeartbeatJob :one
 UPDATE jobs
 SET last_heartbeat_at = sqlc.arg(now),
@@ -96,8 +109,10 @@ WHERE jobs.id = sqlc.arg(id)
   AND jobs.lease_owner = sqlc.arg(lease_owner)
   AND jobs.repository_id IN (
     SELECT repo.id FROM repositories repo
+    JOIN installations inst ON inst.id = repo.installation_id
     WHERE repo.enabled = 1
       AND repo.removed_at IS NULL
+      AND inst.status = 'active'
   )
 RETURNING id;
 
@@ -140,7 +155,8 @@ WHERE id = sqlc.arg(id)
   AND state = 'running';
 
 -- The job a lease owner holds right now: running, leased to that owner, lease not yet expired,
--- its repository enabled and not removed, and that repository's installation active.
+-- its repository enabled and not removed, and that repository's installation active (the
+-- condition of ClaimNextJob and HeartbeatJob).
 -- name: GetLeasedJob :one
 SELECT j.id, j.repository_id, r.full_name AS repository_full_name, i.github_installation_id
 FROM jobs j
@@ -198,3 +214,22 @@ WHERE repository_id = sqlc.arg(repository_id)
 DELETE FROM jobs
 WHERE repository_id = ?
   AND state = 'queued';
+
+-- name: InsertJobEvent :exec
+INSERT INTO job_events (id, job_id, job_run_id, at, kind, message)
+VALUES (?, ?, ?, ?, ?, ?);
+
+-- Retention (specs.html section 4.6): a job in a terminal state that finished before the cutoff is
+-- deleted with its job_runs and job_events (the foreign keys cascade). A queued or running job is
+-- never matched, whatever its age. The oldest go first and a batch is bounded, so a pass over a
+-- long history takes a number of small deletes and never one large one.
+-- name: PruneFinishedJobs :execrows
+DELETE FROM jobs
+WHERE id IN (
+  SELECT old.id FROM jobs old
+  WHERE old.state IN ('succeeded', 'failed')
+    AND old.finished_at IS NOT NULL
+    AND old.finished_at < sqlc.arg(cutoff)
+  ORDER BY old.finished_at, old.id
+  LIMIT sqlc.arg(batch)
+);

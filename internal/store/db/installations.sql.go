@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const getInstallationByGitHubID = `-- name: GetInstallationByGitHubID :one
@@ -23,6 +24,17 @@ func (q *Queries) GetInstallationByGitHubID(ctx context.Context, githubInstallat
 	var i GetInstallationByGitHubIDRow
 	err := row.Scan(&i.ID, &i.Status)
 	return i, err
+}
+
+const getInstallationStatus = `-- name: GetInstallationStatus :one
+SELECT status FROM installations WHERE id = ?
+`
+
+func (q *Queries) GetInstallationStatus(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRowContext(ctx, getInstallationStatus, id)
+	var status string
+	err := row.Scan(&status)
+	return status, err
 }
 
 const getLiveInstallation = `-- name: GetLiveInstallation :one
@@ -53,6 +65,113 @@ func (q *Queries) GetLiveInstallation(ctx context.Context) (GetLiveInstallationR
 		&i.Status,
 	)
 	return i, err
+}
+
+const listInstallationRateLimits = `-- name: ListInstallationRateLimits :many
+SELECT github_installation_id, rate_limit_remaining, rate_limit_limit, rate_limit_reset_at
+FROM installations
+WHERE status <> 'removed'
+  AND rate_limit_remaining IS NOT NULL
+  AND rate_limit_reset_at IS NOT NULL
+ORDER BY github_installation_id
+`
+
+type ListInstallationRateLimitsRow struct {
+	GithubInstallationID int64          `json:"github_installation_id"`
+	RateLimitRemaining   sql.NullInt64  `json:"rate_limit_remaining"`
+	RateLimitLimit       sql.NullInt64  `json:"rate_limit_limit"`
+	RateLimitResetAt     sql.NullString `json:"rate_limit_reset_at"`
+}
+
+// The stored budgets of the installations that are not removed, read at start so an exhausted
+// budget is still honoured after a restart.
+func (q *Queries) ListInstallationRateLimits(ctx context.Context) ([]ListInstallationRateLimitsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listInstallationRateLimits)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInstallationRateLimitsRow
+	for rows.Next() {
+		var i ListInstallationRateLimitsRow
+		if err := rows.Scan(
+			&i.GithubInstallationID,
+			&i.RateLimitRemaining,
+			&i.RateLimitLimit,
+			&i.RateLimitResetAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInstallationsForAdmin = `-- name: ListInstallationsForAdmin :many
+SELECT i.id, i.account_login, i.account_type, i.status, i.repository_selection, i.permissions,
+       i.rate_limit_remaining, i.rate_limit_limit, i.rate_limit_reset_at,
+       s.default_ticket_project_id,
+       (SELECT COUNT(*) FROM repositories r WHERE r.installation_id = i.id AND r.removed_at IS NULL) AS repository_count
+FROM installations i
+LEFT JOIN installation_settings s ON s.installation_id = i.id
+ORDER BY i.created_at DESC, i.id
+`
+
+type ListInstallationsForAdminRow struct {
+	ID                     string         `json:"id"`
+	AccountLogin           string         `json:"account_login"`
+	AccountType            string         `json:"account_type"`
+	Status                 string         `json:"status"`
+	RepositorySelection    string         `json:"repository_selection"`
+	Permissions            string         `json:"permissions"`
+	RateLimitRemaining     sql.NullInt64  `json:"rate_limit_remaining"`
+	RateLimitLimit         sql.NullInt64  `json:"rate_limit_limit"`
+	RateLimitResetAt       sql.NullString `json:"rate_limit_reset_at"`
+	DefaultTicketProjectID sql.NullString `json:"default_ticket_project_id"`
+	RepositoryCount        int64          `json:"repository_count"`
+}
+
+// The installations an admin reads: the live one and a removed one kept for history, newest
+// first, with the count of their repositories that are not removed and their settings.
+func (q *Queries) ListInstallationsForAdmin(ctx context.Context) ([]ListInstallationsForAdminRow, error) {
+	rows, err := q.db.QueryContext(ctx, listInstallationsForAdmin)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInstallationsForAdminRow
+	for rows.Next() {
+		var i ListInstallationsForAdminRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountLogin,
+			&i.AccountType,
+			&i.Status,
+			&i.RepositorySelection,
+			&i.Permissions,
+			&i.RateLimitRemaining,
+			&i.RateLimitLimit,
+			&i.RateLimitResetAt,
+			&i.DefaultTicketProjectID,
+			&i.RepositoryCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listLiveInstallationIDs = `-- name: ListLiveInstallationIDs :many
@@ -101,6 +220,17 @@ func (q *Queries) MarkInstallationRemoved(ctx context.Context, arg MarkInstallat
 	return result.RowsAffected()
 }
 
+const ticketProjectExists = `-- name: TicketProjectExists :one
+SELECT COUNT(*) FROM ticket_projects WHERE id = ?
+`
+
+func (q *Queries) TicketProjectExists(ctx context.Context, id string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, ticketProjectExists, id)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const updateInstallation = `-- name: UpdateInstallation :execrows
 UPDATE installations
 SET account_id = ?1,
@@ -142,6 +272,37 @@ func (q *Queries) UpdateInstallation(ctx context.Context, arg UpdateInstallation
 		arg.RepositorySelection,
 		arg.Permissions,
 		arg.UpdatedAt,
+		arg.GithubInstallationID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const updateInstallationRateLimit = `-- name: UpdateInstallationRateLimit :execrows
+UPDATE installations
+SET rate_limit_remaining = ?,
+    rate_limit_limit = ?,
+    rate_limit_reset_at = ?
+WHERE github_installation_id = ?
+`
+
+type UpdateInstallationRateLimitParams struct {
+	RateLimitRemaining   sql.NullInt64  `json:"rate_limit_remaining"`
+	RateLimitLimit       sql.NullInt64  `json:"rate_limit_limit"`
+	RateLimitResetAt     sql.NullString `json:"rate_limit_reset_at"`
+	GithubInstallationID int64          `json:"github_installation_id"`
+}
+
+// The installation's shared GitHub rate-limit budget as last seen in a response (specs.html
+// section 2.8). The row's other columns are untouched: a budget is not a change of the
+// installation.
+func (q *Queries) UpdateInstallationRateLimit(ctx context.Context, arg UpdateInstallationRateLimitParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateInstallationRateLimit,
+		arg.RateLimitRemaining,
+		arg.RateLimitLimit,
+		arg.RateLimitResetAt,
 		arg.GithubInstallationID,
 	)
 	if err != nil {
@@ -202,5 +363,25 @@ func (q *Queries) UpsertInstallation(ctx context.Context, arg UpsertInstallation
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
+	return err
+}
+
+const upsertInstallationDefaultTicketProject = `-- name: UpsertInstallationDefaultTicketProject :exec
+INSERT INTO installation_settings (installation_id, default_ticket_project_id, updated_at)
+VALUES (?, ?, ?)
+ON CONFLICT (installation_id) DO UPDATE SET
+  default_ticket_project_id = excluded.default_ticket_project_id,
+  updated_at = excluded.updated_at
+`
+
+type UpsertInstallationDefaultTicketProjectParams struct {
+	InstallationID         string         `json:"installation_id"`
+	DefaultTicketProjectID sql.NullString `json:"default_ticket_project_id"`
+	UpdatedAt              string         `json:"updated_at"`
+}
+
+// The settings row may not exist yet, so the first write creates it.
+func (q *Queries) UpsertInstallationDefaultTicketProject(ctx context.Context, arg UpsertInstallationDefaultTicketProjectParams) error {
+	_, err := q.db.ExecContext(ctx, upsertInstallationDefaultTicketProject, arg.InstallationID, arg.DefaultTicketProjectID, arg.UpdatedAt)
 	return err
 }

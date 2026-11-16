@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mdg-labs/release-ops/internal/logging"
 	"github.com/mdg-labs/release-ops/internal/queue"
 	"github.com/mdg-labs/release-ops/internal/queue/worker"
 	"github.com/mdg-labs/release-ops/internal/renovate/globalconfig"
@@ -61,6 +62,7 @@ const (
 	CodeRenovateExit       = "renovate_exit"
 	CodeRenovateTerminated = "renovate_terminated"
 	CodeCacheScrub         = "cache_scrub"
+	CodeRateLimited        = queue.ErrorCodeRateLimited
 )
 
 var repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$`)
@@ -182,7 +184,13 @@ func NewHandler(opts Options) (*Handler, error) {
 }
 
 // failure is a failed attempt: a short code and a short, secret-free message.
-type failure struct{ code, msg string }
+type failure struct {
+	code, msg string
+	// retryAfter and rateLimit are set when GitHub's rate limit ended the attempt: the delay the
+	// app should wait and what the attempt saw of the limit.
+	retryAfter time.Duration
+	rateLimit  *queue.RateLimitReport
+}
 
 func (f *failure) Error() string { return f.msg }
 
@@ -191,9 +199,10 @@ func fail(code, msg string) *failure { return &failure{code: code, msg: msg} }
 // Run implements worker.Handler.
 func (h *Handler) Run(ctx context.Context, job queue.ClaimedJob) worker.Result {
 	var rec queue.RunRecord
-	err := h.execute(ctx, job, &rec)
+	var seen *queue.RateLimitReport
+	err := h.execute(ctx, job, &rec, &seen)
 	if err == nil {
-		return worker.Result{Run: &rec}
+		return worker.Result{Run: &rec, RateLimit: seen}
 	}
 	var f *failure
 	if !errors.As(err, &f) {
@@ -201,10 +210,15 @@ func (h *Handler) Run(ctx context.Context, job queue.ClaimedJob) worker.Result {
 		return worker.Result{Err: err}
 	}
 	rec.ErrorCode, rec.ErrorMessage = f.code, f.msg
-	return worker.Result{Err: f, Run: &rec}
+	if f.rateLimit == nil {
+		f.rateLimit = seen
+	}
+	return worker.Result{Err: f, Run: &rec, RetryAfter: f.retryAfter, RateLimit: f.rateLimit}
 }
 
-func (h *Handler) execute(ctx context.Context, job queue.ClaimedJob, rec *queue.RunRecord) error {
+// execute runs the job. seen is set to what Renovate's log shows of GitHub's rate limit, when it
+// shows anything, however the attempt ends.
+func (h *Handler) execute(ctx context.Context, job queue.ClaimedJob, rec *queue.RunRecord, seen **queue.RateLimitReport) error {
 	if !repositoryPattern.MatchString(job.RepositoryFullName) || job.Slot < 0 || strings.ContainsAny(job.GitAuthor, "\x00\r\n") {
 		return fail(CodeInvalidJob, "the job does not name a valid repository and slot")
 	}
@@ -222,9 +236,14 @@ func (h *Handler) execute(ctx context.Context, job queue.ClaimedJob, rec *queue.
 		if errors.Is(err, worker.ErrLeaseLost) {
 			return fail(CodeTokenRefused, "the app refused the installation token request")
 		}
+		var limited *worker.RateLimitedError
+		if errors.As(err, &limited) {
+			return rateLimitedFailure(nil, limited.RetryAfter)
+		}
 		return fail(CodeTokenUnavailable, "the installation token could not be obtained")
 	}
 	redactor := redact.New(tok.Token, h.opts.WorkerSecret)
+	logging.RegisterFor(max(time.Until(tok.ExpiresAt), 0), tok.Token)
 
 	now := h.opts.Now()
 	runBy := now.Add(h.opts.Deadline)
@@ -308,7 +327,9 @@ func (h *Handler) execute(ctx context.Context, job queue.ClaimedJob, rec *queue.
 		h.log.Error("renovate: cache scrub after the run", "job", job.ID, "err", redactor.String(scrubErr.Error()))
 	}
 
-	rec.LogExcerpt = tailBytes(redactor.String(logs.String()), queue.MaxLogExcerptBytes)
+	rawLog := logs.String()
+	*seen = rateLimitFromLog(rawLog, hostOf(h.opts.GitHubAPIURL), h.opts.Now())
+	rec.LogExcerpt = tailBytes(redactor.String(rawLog), queue.MaxLogExcerptBytes)
 	rec.ReportStatus, rec.Report = readReport(reportPath, redactor)
 	if outcome.exit != nil {
 		code := *outcome.exit
@@ -321,6 +342,8 @@ func (h *Handler) execute(ctx context.Context, job queue.ClaimedJob, rec *queue.
 		return fail(CodeStartFailed, "renovate could not be started")
 	case outcome.cancelled:
 		return ctx.Err()
+	case *seen != nil && (*seen).Limited:
+		return rateLimitedFailure(*seen, retryAfterOf(*seen, h.opts.Now()))
 	case outcome.timedOut:
 		return fail(CodeTimeout, "renovate exceeded the job deadline and was stopped")
 	case outcome.exit == nil:

@@ -93,3 +93,51 @@ ORDER BY r.full_name, r.id;
 SELECT id, full_name, default_branch, enabled, removed_at
 FROM repositories
 WHERE github_repository_id = ?;
+
+-- The repositories an admin can act on, with the ticket project of the repository and the one
+-- it effectively uses: its own, else the installation's default. search is a substring of the
+-- full name, matched without case; empty arguments filter nothing.
+-- name: ListManageableRepositories :many
+SELECT r.id, r.full_name, r.default_branch, r.enabled, r.config_state, r.ticket_project_id, i.status AS installation_status,
+       CASE WHEN r.ticket_project_id IS NOT NULL THEN r.ticket_project_id ELSE s.default_ticket_project_id END AS effective_ticket_project_id,
+       tp.name AS effective_ticket_project_name
+FROM repositories r
+JOIN installations i ON i.id = r.installation_id
+LEFT JOIN installation_settings s ON s.installation_id = r.installation_id
+LEFT JOIN ticket_projects tp ON tp.id = CASE WHEN r.ticket_project_id IS NOT NULL THEN r.ticket_project_id ELSE s.default_ticket_project_id END
+WHERE r.removed_at IS NULL
+  AND i.status <> 'removed'
+  AND (sqlc.arg(search) = '' OR instr(lower(r.full_name), lower(sqlc.arg(search))) > 0)
+  AND (sqlc.narg(enabled) IS NULL OR r.enabled = sqlc.narg(enabled))
+  AND (sqlc.arg(config_state) = '' OR r.config_state = sqlc.arg(config_state))
+ORDER BY r.full_name, r.id
+LIMIT sqlc.arg(page_size) OFFSET sqlc.arg(page_offset);
+
+-- name: CountManageableRepositories :one
+SELECT COUNT(*)
+FROM repositories r
+JOIN installations i ON i.id = r.installation_id
+WHERE r.removed_at IS NULL
+  AND i.status <> 'removed'
+  AND (sqlc.arg(search) = '' OR instr(lower(r.full_name), lower(sqlc.arg(search))) > 0)
+  AND (sqlc.narg(enabled) IS NULL OR r.enabled = sqlc.narg(enabled))
+  AND (sqlc.arg(config_state) = '' OR r.config_state = sqlc.arg(config_state));
+
+-- name: SetRepositoryTicketProject :execrows
+UPDATE repositories
+SET ticket_project_id = sqlc.narg(ticket_project_id), updated_at = sqlc.arg(updated_at)
+WHERE repositories.id = sqlc.arg(id)
+  AND repositories.removed_at IS NULL
+  AND repositories.installation_id IN (SELECT i.id FROM installations i WHERE i.status <> 'removed');
+
+-- name: GetManageableRepositoryListing :one
+SELECT r.id, r.full_name, r.default_branch, r.enabled, r.config_state, r.ticket_project_id, i.status AS installation_status,
+       CASE WHEN r.ticket_project_id IS NOT NULL THEN r.ticket_project_id ELSE s.default_ticket_project_id END AS effective_ticket_project_id,
+       tp.name AS effective_ticket_project_name
+FROM repositories r
+JOIN installations i ON i.id = r.installation_id
+LEFT JOIN installation_settings s ON s.installation_id = r.installation_id
+LEFT JOIN ticket_projects tp ON tp.id = CASE WHEN r.ticket_project_id IS NOT NULL THEN r.ticket_project_id ELSE s.default_ticket_project_id END
+WHERE r.id = ?
+  AND r.removed_at IS NULL
+  AND i.status <> 'removed';

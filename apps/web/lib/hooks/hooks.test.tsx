@@ -5,7 +5,7 @@ import { MockAgent, setGlobalDispatcher } from "undici";
 import { useIntegrations } from "./use-integrations";
 import { useRedeemLoginLink } from "./use-login";
 import { useSession, useSessionRole } from "./use-session";
-import { useSettings } from "./use-settings";
+import { useSettings, useUpdateSettings } from "./use-settings";
 import { useStatus } from "./use-status";
 
 const ORIGIN = "http://localhost:3000";
@@ -172,16 +172,17 @@ describe("React Query hooks", () => {
     expect(testResult).toEqual({ success: true, message: "ok" });
   });
 
-  it("useSettings GET and PATCH /api/v1/settings", async () => {
+  it("useSettings GETs the settings and PATCHes only the concurrency cap", async () => {
+    const settings = {
+      concurrencyCap: 2,
+      mode: "webhook",
+      presetRepositories: [],
+      globalConfig: { source: null, repository: null, ref: null },
+    };
     const pool = mockAgent.get(ORIGIN);
     pool
-      .intercept({
-        path: "/api/go/api/v1/settings",
-        method: "GET",
-      })
-      .reply(200, {
-        pollIntervalMinutes: 360,
-      });
+      .intercept({ path: "/api/go/api/v1/settings", method: "GET" })
+      .reply(200, settings);
 
     const queryClient = createTestQueryClient();
     const { result } = renderHook(() => useSettings(), {
@@ -189,30 +190,23 @@ describe("React Query hooks", () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.pollIntervalMinutes).toBe(360);
+    expect(result.current.data?.concurrencyCap).toBe(2);
 
     pool
       .intercept({
         path: "/api/go/api/v1/settings",
         method: "PATCH",
-        body: JSON.stringify({ pollIntervalMinutes: 120 }),
+        body: JSON.stringify({ concurrencyCap: 4 }),
       })
-      .reply(200, {
-        pollIntervalMinutes: 120,
-      });
+      .reply(200, { ...settings, concurrencyCap: 4 });
 
-    pool
-      .intercept({
-        path: "/api/go/api/v1/settings",
-        method: "GET",
-      })
-      .reply(200, {
-        pollIntervalMinutes: 120,
-      });
-
-    const updated = await result.current.updateSettings.mutateAsync({
-      pollIntervalMinutes: 120,
+    const update = renderHook(() => useUpdateSettings(), {
+      wrapper: createWrapper(queryClient),
     });
-    expect(updated.pollIntervalMinutes).toBe(120);
+    const updated = await update.result.current.mutateAsync({
+      concurrencyCap: 4,
+    });
+    expect(updated.concurrencyCap).toBe(4);
+    await waitFor(() => expect(result.current.data?.concurrencyCap).toBe(4));
   });
 });

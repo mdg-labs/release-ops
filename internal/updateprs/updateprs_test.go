@@ -111,11 +111,16 @@ func (r *rig) woken() bool {
 
 func (r *rig) apply(t *testing.T, pr github.PullRequest, botUserID int64) bool {
 	t.Helper()
+	return r.applyOutcome(t, pr, botUserID).Changed
+}
+
+func (r *rig) applyOutcome(t *testing.T, pr github.PullRequest, botUserID int64) updateprs.Outcome {
+	t.Helper()
 	tx, err := r.db.Writer.BeginTx(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	changed, err := r.tracker.ApplyTx(context.Background(), tx, r.repo, pr, botUserID)
+	out, err := r.tracker.ApplyTx(context.Background(), tx, r.repo, pr, botUserID)
 	if err != nil {
 		_ = tx.Rollback()
 		t.Fatal(err)
@@ -123,7 +128,7 @@ func (r *rig) apply(t *testing.T, pr github.PullRequest, botUserID int64) bool {
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	return changed
+	return out
 }
 
 func prOf(number int64, user int64, body string, mutate ...func(*github.PullRequest)) github.PullRequest {

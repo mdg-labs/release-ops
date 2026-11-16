@@ -610,6 +610,22 @@ func TestSuccessfulSignInStartsARenewedSessionForTheBootstrapAdmin(t *testing.T)
 	}
 }
 
+func TestManagedUserLoginIsMatchedAsTheBootstrapAdmin(t *testing.T) {
+	t.Parallel()
+	h := newSignInHarness(t, harnessOptions{bootstrapLogin: "Mona-Cat_Octo"})
+
+	c := h.newClient()
+	if resp := h.signIn(c, github.User{ID: 583232, Login: "mona-cat_octo"}, "", false); resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/" {
+		t.Fatalf("managed-user sign-in = %d %q, want 302 to /", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	if user := h.sessionUser(c); user["id"] != float64(583232) || user["login"] != "mona-cat_octo" || user["role"] != "admin" {
+		t.Errorf("session user = %v, want the managed user as admin", user)
+	}
+	if admin, ok, err := h.store.SignIn().BootstrapAdmin(context.Background()); err != nil || !ok || admin.ID != 583232 {
+		t.Fatalf("bootstrap admin = %+v, %v, %v; want the pinned numeric id 583232", admin, ok, err)
+	}
+}
+
 // The user token, the authorization code, the client secret and the PKCE verifier appear in no
 // session blob, no byte of the database files and no log line.
 func TestSignInNeverStoresOrLogsTheUserToken(t *testing.T) {

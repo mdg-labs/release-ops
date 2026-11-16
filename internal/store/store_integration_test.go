@@ -274,11 +274,10 @@ func TestTicketProjectCreateWithValidJSONConfigs(t *testing.T) {
 
 	updatedTemplates := `{"title":"","description":"","supersedeComment":""}`
 	updated, err := s.TicketProjects().Update(ctx, project.ID, store.UpdateTicketProjectInput{
-		Name:               project.Name,
-		CreateConfig:       createConfig,
-		StatusMapping:      statusMapping,
-		ContentTemplates:   updatedTemplates,
-		OnOpenTicketPolicy: project.OnOpenTicketPolicy,
+		Name:             project.Name,
+		CreateConfig:     createConfig,
+		StatusMapping:    statusMapping,
+		ContentTemplates: updatedTemplates,
 	})
 	if err != nil {
 		t.Fatalf("Update ticket project: %v", err)

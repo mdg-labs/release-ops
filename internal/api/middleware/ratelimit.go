@@ -38,6 +38,8 @@ const (
 	GitHubCallbackWindow     = time.Minute
 	LoginLinkLimit           = 10
 	LoginLinkWindow          = time.Minute
+	WebhookSignatureLimit    = 10
+	WebhookSignatureWindow   = time.Minute
 )
 
 type clock interface {
@@ -141,6 +143,16 @@ func (rl *RateLimiter) GitHubCallback(next http.Handler) http.Handler {
 // secret on a public listener.
 func (rl *RateLimiter) LoginLink(next http.Handler) http.Handler {
 	return rl.limit("login-link", LoginLinkLimit, LoginLinkWindow, next)
+}
+
+// WebhookSignatureFailure records one failed signature on /hooks/github against the
+// request's client IP and reports whether the IP is already at WebhookSignatureLimit failures
+// in WebhookSignatureWindow: the caller then answers 429 with the returned Retry-After
+// instead of 401. Only failures are recorded, so a valid delivery never counts toward the
+// limit and is never refused by it.
+func (rl *RateLimiter) WebhookSignatureFailure(r *http.Request) (retryAfter time.Duration, limited bool) {
+	retryAfter, allowed := rl.allow(clientIP(r), "webhook-signature", WebhookSignatureLimit, WebhookSignatureWindow, rl.clock.Now())
+	return retryAfter, !allowed
 }
 
 func (rl *RateLimiter) limit(endpoint string, max int, window time.Duration, next http.Handler) http.Handler {

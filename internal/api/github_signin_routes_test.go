@@ -8,7 +8,10 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
@@ -44,9 +47,14 @@ func (s stubOAuth) InstallationRepositoryIDs(context.Context, github.UserToken, 
 
 func newSignInRoutesServer(t *testing.T) (*httptest.Server, *ServerDeps) {
 	t.Helper()
+	return newSignInRoutesServerWith(t, stubOAuth{user: github.User{ID: 583231, Login: "octocat"}})
+}
+
+func newSignInRoutesServerWith(t *testing.T, provider auth.OAuthProvider) (*httptest.Server, *ServerDeps) {
+	t.Helper()
 	deps := newRoutesTestDeps(t)
 	deps.AppURL = "https://release-ops.example.com"
-	deps.GitHubOAuth = stubOAuth{user: github.User{ID: 583231, Login: "octocat"}}
+	deps.GitHubOAuth = provider
 	deps.BootstrapAdminGitHubLogin = "octocat"
 	if err := deps.Store.GitHubApp().Create(context.Background(), sampleSignInApp()); err != nil {
 		t.Fatalf("store app: %v", err)
@@ -212,6 +220,78 @@ func TestGitHubCallbackRefusesABadStateWithARedirectThroughTheRouter(t *testing.
 		if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/login?error=invalid_state" {
 			t.Errorf("%s = %d to %q, want 302 to /login?error=invalid_state", name, resp.StatusCode, resp.Header.Get("Location"))
 		}
+	}
+}
+
+// slowOAuth holds the code exchange back, so every concurrent callback has read the pre-login
+// session, still holding the state, before any of them finishes.
+type slowOAuth struct {
+	stubOAuth
+	exchanges atomic.Int32
+}
+
+func (s *slowOAuth) ExchangeCode(ctx context.Context, p github.ExchangeParams) (github.UserToken, error) {
+	s.exchanges.Add(1)
+	time.Sleep(200 * time.Millisecond)
+	return s.stubOAuth.ExchangeCode(ctx, p)
+}
+
+// Of concurrent callbacks that carry the same pre-login session and state, one signs in and
+// reaches GitHub; the rest are refused with the invalid_state redirect.
+func TestGitHubCallbackConcurrentRedemptionsLetOneWin(t *testing.T) {
+	t.Parallel()
+	gh := &slowOAuth{stubOAuth: stubOAuth{user: github.User{ID: 583231, Login: "octocat"}}}
+	srv, _ := newSignInRoutesServerWith(t, gh)
+	c := noRedirects(t)
+
+	resp, err := c.Get(srv.URL + "/api/v1/auth/github/login")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	_ = resp.Body.Close()
+	loc, _ := url.Parse(resp.Header.Get("Location"))
+	state := loc.Query().Get("state")
+	if state == "" {
+		t.Fatalf("login start = %d %q, want a state", resp.StatusCode, resp.Header.Get("Location"))
+	}
+
+	const requests = 8
+	locations := make([]string, requests)
+	statuses := make([]int, requests)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range requests {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			resp, err := c.Get(srv.URL + "/api/v1/auth/github/callback?code=abc&state=" + url.QueryEscape(state))
+			if err != nil {
+				return
+			}
+			_ = resp.Body.Close()
+			statuses[i], locations[i] = resp.StatusCode, resp.Header.Get("Location")
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	signedIn, refused := 0, 0
+	for i := range requests {
+		switch {
+		case statuses[i] == http.StatusFound && locations[i] == "/":
+			signedIn++
+		case statuses[i] == http.StatusFound && locations[i] == "/login?error=invalid_state":
+			refused++
+		default:
+			t.Errorf("callback %d = %d to %q", i, statuses[i], locations[i])
+		}
+	}
+	if signedIn != 1 || refused != requests-1 {
+		t.Errorf("%d callbacks signed in and %d were refused, want 1 and %d", signedIn, refused, requests-1)
+	}
+	if got := gh.exchanges.Load(); got != 1 {
+		t.Errorf("GitHub exchanges = %d, want 1: only the winning callback may reach GitHub", got)
 	}
 }
 

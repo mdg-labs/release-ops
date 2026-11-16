@@ -144,12 +144,12 @@
     "title": "Ticket projects",
     "add": "Add ticket project",
     "createTitle": "Add ticket project",
-    "createDescription": "Define a project or team target with status mapping and open-ticket policy.",
+    "createDescription": "Define a project or team target with status mapping and ticket content.",
     "editTitle": "Edit ticket project",
-    "editDescription": "Update status mapping, create defaults, and open-ticket policy.",
+    "editDescription": "Update status mapping, create defaults, and ticket content.",
     "empty": "No ticket projects yet. Add one to get started.",
     "emptyTitle": "No ticket projects yet",
-    "emptyDescription": "Define a project target with status mapping and ticket policy.",
+    "emptyDescription": "Define a project target with status mapping and ticket content.",
     "loadFailed": "Failed to load ticket projects.",
     "saveFailed": "Failed to save ticket project.",
     "integration": "Integration",
@@ -157,10 +157,9 @@
     "noTicketIntegrations": "Add a Kaneo, Jira, or Linear integration first.",
     "externalProjectId": "External project ID",
     "name": "Display name",
-    "policy": "Open ticket policy",
-    "policyPlaceholder": "Select policy",
     "tabs": {
       "general": "General",
+      "filter": "Filter",
       "createConfig": "Create config",
       "statusMapping": "Status mapping",
       "contentTemplates": "Content templates"
@@ -188,13 +187,7 @@
       "integration": "Integration",
       "name": "Name",
       "externalProjectId": "External project ID",
-      "policy": "Policy",
       "actions": "Actions"
-    },
-    "policies": {
-      "supersede": "Supersede",
-      "merge": "Merge",
-      "skip_if_open": "Skip if open"
     },
     "kinds": {
       "kaneo": "Kaneo",
@@ -242,56 +235,59 @@
     "templates": {
       "title": "Content templates",
       "noteTitle": "Per-project templates",
-      "noteDescription": "Templates differ per project. Leave a field empty to use the integration default, shown in grey inside each field.",
-      "supersedeHint": "Used when commenting on the old ticket during supersede.",
+      "noteDescription": "Templates differ per project. Leave a field empty to use the integration default, shown in grey inside each field. The preview below each field renders it with sample data.",
       "variablesTitle": "Template variables",
-      "variablesDescription": "Go text/template variables available when tickets are created or superseded. Copy one and paste it into a template. Use {previousTag} in the title and description of a new ticket; the Supersede variables only work in the supersede comment.",
+      "variablesDescription": "Go text/template variables available when a ticket is created for an update pull request. Copy one and paste it into a template. Dependencies is a list: loop over it with range and use the Name, From, To and UpdateType variables inside the loop. The Supersede variables only work in the supersede comment.",
       "variablePath": "Variable",
       "variableDescription": "Description",
       "fields": {
         "title": "Title template",
         "description": "Description template",
+        "updateComment": "Update comment template",
         "supersedeComment": "Supersede comment template"
       },
       "variables": {
-        "repoSourceKind": {
-          "description": "Monitored repo source kind (github, gitlab, etc.)"
+        "pullRequestUrl": {
+          "description": "The pull request's web URL"
         },
-        "repoProjectPath": {
-          "description": "Monitored repo project path"
+        "pullRequestNumber": {
+          "description": "The pull request number"
         },
-        "repoUrl": {
-          "description": "Repository web URL"
+        "pullRequestTitle": {
+          "description": "The pull request title as GitHub reports it"
         },
-        "releaseTag": {
-          "description": "Latest release tag"
+        "repository": {
+          "description": "The repository's full name, owner/repo"
         },
-        "releaseName": {
-          "description": "Release name from the source API"
+        "dependencies": {
+          "description": "The pull request's dependencies, a list to loop over with range"
         },
-        "releaseUrl": {
-          "description": "Release page URL"
+        "dependencyName": {
+          "description": "Inside the loop: the dependency's name"
+        },
+        "dependencyFrom": {
+          "description": "Inside the loop: the current version (empty when unknown)"
+        },
+        "dependencyTo": {
+          "description": "Inside the loop: the new version (empty when unknown)"
+        },
+        "dependencyUpdateType": {
+          "description": "Inside the loop: major, minor, patch, digest, lockfile or other (empty when unknown)"
         },
         "releaseNotes": {
-          "description": "Release body or changelog text"
+          "description": "The release notes from the pull request body, truncated"
         },
-        "releasePublishedAt": {
-          "description": "Release timestamp (RFC3339 UTC)"
+        "supersedeNewPullRequestUrl": {
+          "description": "The web URL of the pull request that replaced this one"
         },
-        "releaseIsPrerelease": {
-          "description": "Whether the release is a pre-release (true/false)"
+        "supersedeNewPullRequestNumber": {
+          "description": "The number of the pull request that replaced this one"
         },
-        "previousTag": {
-          "description": "Last known tag before this poll action"
-        },
-        "supersedeOldTag": {
-          "description": "Tag on the open ticket being superseded"
-        },
-        "supersedeNewTag": {
-          "description": "New release tag"
+        "supersedeNewPullRequestTitle": {
+          "description": "The title of the pull request that replaced this one"
         },
         "supersedeNewTicketUrl": {
-          "description": "Provider web URL for the new ticket created during supersede"
+          "description": "Web URL of the replacing pull request's ticket (empty when it has none)"
         }
       },
       "variableWorksIn": "Works in",
@@ -302,24 +298,166 @@
       "worksIn": {
         "title": "Title",
         "description": "Description",
+        "updateComment": "Update comment",
         "supersedeComment": "Supersede comment"
+      },
+      "hints": {
+        "title": "Variables: PullRequest, Repository, Dependencies and ReleaseNotes. Used when the ticket is created and updated.",
+        "description": "Variables: PullRequest, Repository, Dependencies and ReleaseNotes. Markdown for Kaneo and Linear, plain text for Jira.",
+        "updateComment": "Variables: PullRequest, Repository, Dependencies and ReleaseNotes. Added to the ticket when its pull request gets a new version.",
+        "supersedeComment": "Variables: PullRequest, Repository, Dependencies and Supersede. Used when commenting on the old ticket during supersede."
+      },
+      "previewTitle": "Preview with sample data",
+      "previewAria": "Preview of {field}",
+      "previewUnavailable": {
+        "unsupported": "No preview: this template uses syntax the preview cannot show. The server checks it when you save.",
+        "unknownVariable": "No preview: this template uses a variable this field does not have. The server checks it when you save."
       }
+    },
+    "filter": {
+      "noteTitle": "Which update pull requests get a ticket",
+      "noteDefault": "No restriction is set: every pull request that is not automerged gets a ticket.",
+      "noteCustom": "Only pull requests that pass all of the settings below get a ticket. A ticket that already exists is never removed when its pull request stops matching.",
+      "updateTypes": "Update types",
+      "updateTypesHint": "A pull request needs a dependency of one of the ticked types. Tick none to allow every type.",
+      "types": {
+        "major": "Major",
+        "minor": "Minor",
+        "patch": "Patch",
+        "digest": "Digest",
+        "lockfile": "Lockfile"
+      },
+      "labels": "Labels",
+      "labelsPlaceholder": "dependencies, security",
+      "labelsHint": "Comma-separated. A pull request needs one of these labels. Leave empty for no restriction.",
+      "skipAutomerged": "Skip automerged pull requests",
+      "skipAutomergedHint": "On by default: a pull request that Renovate merges by itself gets no ticket."
     }
   },
   "settings": {
     "title": "Settings",
     "general": "General",
     "navAria": "Settings sections",
-    "saved": "Settings saved",
-    "savedDescription": "Your changes will apply to the next scheduled run.",
-    "pollIntervalSection": "Polling",
-    "pollIntervalDescription": "Configure how often Release Ops checks monitored repositories for new releases.",
-    "pollInterval": "Poll interval (minutes)",
-    "pollIntervalHint": "Minimum 5 minutes between automated polls.",
     "loadFailed": "Failed to load settings.",
-    "saveFailed": "Failed to save settings.",
-    "validation": {
-      "minInterval": "Poll interval must be at least 5 minutes."
+    "instance": {
+      "title": "Updates",
+      "description": "How many Renovate jobs run at the same time.",
+      "concurrencyCap": "Concurrency cap (jobs)",
+      "concurrencyCapHint": "At least 1. A change applies to the next job that starts; a running job is never interrupted.",
+      "saved": "Settings saved",
+      "savedDescription": "The new cap applies to the next job that starts.",
+      "saveFailed": "Failed to save settings.",
+      "minCap": "The concurrency cap must be a whole number of at least 1.",
+      "pollingTitle": "Polling mode",
+      "pollingDescription": "No webhook URL is configured, so GitHub sends no events. Release Ops re-reads installations and repositories on a timer, and changes reach it with minutes of latency. Set WEBHOOK_URL to receive webhooks."
+    },
+    "defaultProject": {
+      "title": "Default ticket project",
+      "description": "Tickets for update PRs go to this project unless a repository sets its own. A change applies to tickets created afterwards.",
+      "label": "Default ticket project",
+      "placeholder": "Choose a ticket project",
+      "none": "No default",
+      "saved": "Default ticket project saved",
+      "saveFailed": "Failed to save the default ticket project.",
+      "loadFailed": "Failed to load the installation or the ticket projects.",
+      "noInstallation": "The App has no installation yet, so there is nothing to set a default for.",
+      "noProjects": "There are no ticket projects yet. Create one to choose it as the default.",
+      "manageProjects": "Go to ticket projects"
+    },
+    "globalConfig": {
+      "title": "Global Renovate config",
+      "description": "The file as the worker last used it, shown as plain text and never parsed. Token-shaped strings are hidden. It is edited where it lives, not here.",
+      "source": "Source",
+      "sourceRepository": "Repository {repository} at {ref}",
+      "sourceRepositoryDefaultRef": "Repository {repository} at its default branch",
+      "sourceMounted": "A file mounted into the worker",
+      "sourceUnknown": "Not known yet",
+      "capturedAt": "Last used",
+      "notCaptured": "No job has returned the config yet. It appears here after the first run.",
+      "contentLabel": "Config file contents",
+      "loadFailed": "Failed to load the global Renovate config."
+    },
+    "app": {
+      "title": "GitHub App",
+      "description": "The App this instance runs as. Nothing secret is shown.",
+      "loadFailed": "Failed to load the GitHub App.",
+      "notConfigured": "The GitHub App is not set up yet.",
+      "appId": "App ID",
+      "slug": "Slug",
+      "owner": "Owner",
+      "ownerValue": "{login} ({type})",
+      "ownerTypeUser": "personal account",
+      "ownerTypeOrganization": "organization",
+      "webhook": "Webhook",
+      "webhookActive": "Active",
+      "webhookInactive": "Not active (polling mode)",
+      "privateKey": "Private key",
+      "clientSecret": "Client secret",
+      "webhookSecret": "Webhook secret",
+      "stored": "Stored",
+      "missing": "Missing"
+    },
+    "installation": {
+      "title": "Installation",
+      "none": "The App has no installation yet. Install it on your account or organization to start.",
+      "account": "Account",
+      "accountValue": "{login} ({type})",
+      "status": "Status",
+      "statusActive": "Active",
+      "statusSuspended": "Suspended",
+      "statusRemoved": "Removed",
+      "repositories": "Repositories",
+      "repositoriesValue": "{count, plural, one {# repository} other {# repositories}}, {selection}",
+      "selectionAll": "all repositories",
+      "selectionSelected": "selected repositories",
+      "permissions": "Permissions",
+      "permissionsNone": "None granted",
+      "permissionsMissing": "Missing or too low: {names}",
+      "permissionsComplete": "Every permission the App requests is granted.",
+      "rateLimit": "Rate limit budget",
+      "rateLimitValue": "{remaining} of {limit} left, resets {resetAt}",
+      "rateLimitUnknown": "Not read yet"
+    },
+    "roles": {
+      "title": "Role mapping",
+      "description": "Roles come from GitHub and are not edited here.",
+      "adminTeam": "ADMIN_TEAM",
+      "viewerTeam": "VIEWER_TEAM",
+      "notSet": "Not set",
+      "rules": "Resulting rules",
+      "noInstallation": "Roles apply once the App is installed. Until then only the bootstrap admin can sign in.",
+      "personalAdmin": "Admin: the account owner and the bootstrap admin.",
+      "personalNone": "Everyone else has no access.",
+      "orgAdmin": "Admin: organization owners, the bootstrap admin and active members of ADMIN_TEAM when it is set.",
+      "orgViewerAll": "Viewer: every other active member of the organization.",
+      "orgViewerTeam": "Viewer: active members of VIEWER_TEAM. Admins are never excluded by it.",
+      "orgNone": "Everyone else, including pending invitees, has no access.",
+      "problemTitle": "Configuration problem",
+      "problem_team_of_another_organization": "{variable} names a team of another organization. It grants nothing (ADMIN_TEAM) or admits nobody (VIEWER_TEAM).",
+      "problem_ignored_on_personal_account": "{variable} is ignored on a personal-account installation."
+    }
+  },
+  "githubAppKey": {
+    "title": "GitHub App private key",
+    "description": "Replace the private key the App signs with. The new key is checked against GitHub before it replaces the current one, and it is never shown again.",
+    "fileLabel": "Key file (.pem)",
+    "keyLabel": "Private key (PEM)",
+    "keyPlaceholder": "-----BEGIN RSA PRIVATE KEY-----",
+    "keyHint": "Generate the key in the App's settings on GitHub, then paste it here or choose the downloaded file. Delete the old key on GitHub afterwards.",
+    "submit": "Verify and replace key",
+    "verifying": "Verifying with GitHub",
+    "rotated": "Private key replaced",
+    "rotatedDescription": "GitHub accepted the new key and it is now in use. The previous key is discarded.",
+    "failed": "The key was not replaced",
+    "unconfirmed": "The result could not be confirmed",
+    "errors": {
+      "keyRejected": "This key could not be verified for this App. The current key is unchanged. Use a PEM-encoded key generated in this App's settings.",
+      "githubUnavailable": "GitHub could not be reached to check the key. The current key is unchanged; try again.",
+      "notConfigured": "The GitHub App is not set up yet.",
+      "forbidden": "Only an admin can replace the private key.",
+      "network": "The request did not finish, so it is not known whether the key was replaced. Submitting the same key again is safe.",
+      "unknown": "Something went wrong, so it is not known whether the key was replaced. Submitting the same key again is safe.",
+      "fileUnreadable": "The file could not be read."
     }
   },
   "nav": {
@@ -327,6 +465,28 @@
     "integrations": "Integrations",
     "ticketProjects": "Ticket projects",
     "settings": "Settings",
-    "homeAriaLabel": "Home"
+    "homeAriaLabel": "Home",
+    "about": "About"
+  },
+  "about": {
+    "title": "About",
+    "loadFailed": "Failed to load the version information.",
+    "app": {
+      "title": "Release Ops",
+      "version": "Version",
+      "license": "Licence",
+      "licenseValue": "GNU Affero General Public License, version 3 (AGPL-3.0-only)",
+      "licenseLink": "Licence text",
+      "noticeLink": "NOTICE",
+      "sourceLink": "Source code"
+    },
+    "renovate": {
+      "title": "Renovate",
+      "description": "Release Ops runs Renovate unmodified, as a separate process in the worker image.",
+      "version": "Pinned version",
+      "license": "Licence",
+      "notice": "Renovate is licensed under the GNU Affero General Public License, version 3. This notice also ships in the images. Release Ops is not affiliated with or endorsed by Renovate's authors or by Mend.",
+      "sourceLink": "Source code of this Renovate version"
+    }
   }
 }

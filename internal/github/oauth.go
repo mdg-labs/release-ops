@@ -12,6 +12,9 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
+
+	"github.com/mdg-labs/release-ops/internal/logging"
 )
 
 var (
@@ -26,13 +29,18 @@ var (
 // digits and hyphens, starting with a letter or a digit.
 var loginPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`)
 
-// userLoginPattern is a user's login: a loginPattern name, followed for an Enterprise
-// Managed User by an underscore and the short code of the enterprise (mona-cat_octo).
-var userLoginPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:_[A-Za-z0-9]{1,39})?$`)
+// userLoginPattern is a user's login: letters, digits and single hyphens, neither starting
+// nor ending with a hyphen, followed for an Enterprise Managed User by an underscore and the
+// short code of the enterprise (mona-cat_octo).
+var userLoginPattern = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*(?:_[A-Za-z0-9]{1,39})?$`)
 
 func validUserLogin(s string) bool {
-	return userLoginPattern.MatchString(s) && !strings.Contains(s, "--")
+	name, _, _ := strings.Cut(s, "_")
+	return len(name) <= 39 && userLoginPattern.MatchString(s)
 }
+
+// ValidUserLogin reports whether s is a GitHub user login, a managed user's included.
+func ValidUserLogin(s string) bool { return validUserLogin(s) }
 
 // UserToken is a GitHub user access token. It is held in memory for the length of one
 // sign-in; the type renders without the value when printed or logged.
@@ -56,6 +64,15 @@ type User struct {
 func (u User) valid() bool {
 	return u.ID > 0 && validUserLogin(u.Login)
 }
+
+const (
+	// oauthAttemptLogTTL is how long an authorization code and its PKCE verifier are kept out
+	// of the logs: past the time GitHub honours a code.
+	oauthAttemptLogTTL = time.Hour
+	// userTokenLogTTL is how long a user access token is kept out of the logs. The token is used
+	// for the sign-in and dropped; GitHub's own lifetime for it is eight hours.
+	userTokenLogTTL = 24 * time.Hour
+)
 
 // ExchangeParams is what the token endpoint takes for an authorization code.
 type ExchangeParams struct {
@@ -95,9 +112,11 @@ func (o *OAuthClient) AuthorizeURL(clientID, redirectURI, state, codeChallenge s
 // 200 with an error field for a refused code; that is ErrOAuthRejected. Nothing of GitHub's
 // response is carried in an error.
 func (o *OAuthClient) ExchangeCode(ctx context.Context, p ExchangeParams) (UserToken, error) {
+	logging.Register(p.ClientSecret)
 	if !ValidCode(p.Code) {
 		return UserToken{}, ErrOAuthRejected
 	}
+	logging.RegisterUnauthenticatedFor(oauthAttemptLogTTL, p.Code, p.CodeVerifier)
 	payload, err := json.Marshal(map[string]string{
 		"client_id":     p.ClientID,
 		"client_secret": p.ClientSecret,
@@ -136,6 +155,7 @@ func (o *OAuthClient) ExchangeCode(ctx context.Context, p ExchangeParams) (UserT
 	if out.AccessToken == "" {
 		return UserToken{}, fmt.Errorf("%w: response carries no token", ErrRequestFailed)
 	}
+	logging.RegisterFor(userTokenLogTTL, out.AccessToken)
 	return UserToken{value: out.AccessToken}, nil
 }
 

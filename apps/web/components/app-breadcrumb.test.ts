@@ -12,4 +12,9 @@ describe("ROUTE_BREADCRUMBS", () => {
       expect(messages.nav, key).toHaveProperty(key);
     }
   });
+
+  it("labels the about page with the About entry", () => {
+    expect(ROUTE_BREADCRUMBS["/about"]).toEqual([{ labelKey: "about" }]);
+    expect(messages.nav.about).toBe("About");
+  });
 });

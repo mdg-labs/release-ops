@@ -536,8 +536,9 @@ func (q *JobQueue) HeldJob(ctx context.Context, jobID, leaseOwner string) (*queu
 }
 
 // Heartbeat implements queue.Queue. A heartbeat that matches no row answers with an abort: the
-// lease was lost, or the job's repository was paused or removed. The wire carries one reason
-// for both, since the spec defines no separate code.
+// lease was lost, the job's repository was paused or removed, or the repository's installation
+// is not active. The wire carries one reason for all three, since the spec defines no separate
+// code.
 func (q *JobQueue) Heartbeat(ctx context.Context, jobID, leaseOwner string) (queue.HeartbeatResult, error) {
 	q.touch()
 	now := q.now().UTC()
@@ -620,7 +621,7 @@ func (q *JobQueue) complete(ctx context.Context, jobID, leaseOwner string, run *
 			}
 			return queue.ErrLeaseLost
 		}
-		_, err = q.endAttempt(ctx, qtx, job, attemptSucceeded, 0, run)
+		_, err = q.endAttempt(ctx, qtx, job, attemptSucceeded, 0, false, run)
 		return err
 	})
 	if err != nil {
@@ -646,7 +647,7 @@ func (q *JobQueue) Fail(ctx context.Context, jobID, leaseOwner string, p queue.F
 			}
 			return queue.ErrLeaseLost
 		}
-		outcome, err = q.endAttempt(ctx, qtx, job, attemptFailed, p.RetryAfter, p.Run)
+		outcome, err = q.endAttempt(ctx, qtx, job, attemptFailed, p.RetryAfter, p.RateLimited, p.Run)
 		return err
 	})
 	if err != nil {
@@ -692,7 +693,7 @@ func (q *JobQueue) Reap(ctx context.Context) (queue.ReapResult, error) {
 				return err
 			}
 			expiredRepos = append(expiredRepos, fullName)
-			outcome, err := q.endAttempt(ctx, qtx, job, attemptFailed, 0, nil)
+			outcome, err := q.endAttempt(ctx, qtx, job, attemptLeaseExpired, 0, false, nil)
 			if err != nil {
 				return err
 			}
@@ -723,30 +724,68 @@ type attemptResult int
 const (
 	attemptSucceeded attemptResult = iota
 	attemptFailed
+	attemptLeaseExpired
 )
+
+// runOutcome is the job_runs outcome of an attempt that ended this way.
+func (r attemptResult) runOutcome() string {
+	switch r {
+	case attemptSucceeded:
+		return queue.OutcomeSucceeded
+	case attemptLeaseExpired:
+		return outcomeLeaseExpired
+	default:
+		return queue.OutcomeFailed
+	}
+}
+
+// outcomeLeaseExpired is the job_runs outcome of an attempt the reaper ended.
+const outcomeLeaseExpired = "lease_expired"
 
 // endAttempt ends the running job's attempt and counts it. A success or an exhausted job is
 // terminal and enqueues the follow-up a mid-run trigger asked for; any other failure puts
-// the job back with a backoff, and that retry is the follow-up. A run record is stored as the
-// attempt's job_runs row in the same transaction.
-func (q *JobQueue) endAttempt(ctx context.Context, qtx *db.Queries, job db.Job, result attemptResult, retryAfter time.Duration, run *queue.RunRecord) (queue.FailOutcome, error) {
+// the job back with a backoff, and that retry is the follow-up. An attempt that ended rate
+// limited is deferred by Config.RateLimitDelay, never sooner than retryAfter, and has
+// Config.RateLimitMaxAttempts attempts. The attempt's job_runs row is written in the same
+// transaction, from the run record when there is one, and a rate-limited or retried failure
+// leaves a job_events row naming the attempt and when the job runs next.
+func (q *JobQueue) endAttempt(ctx context.Context, qtx *db.Queries, job db.Job, result attemptResult, retryAfter time.Duration, rateLimited bool, run *queue.RunRecord) (queue.FailOutcome, error) {
 	now := q.now().UTC()
 	used := job.Attempts + 1
+	rateLimited = rateLimited && result == attemptFailed
 
+	maxAttempts := q.cfg.MaxAttempts
+	if rateLimited {
+		maxAttempts = q.cfg.RateLimitMaxAttempts
+	}
 	state := queue.StateSucceeded
 	outcome := queue.FailOutcome("")
 	switch {
 	case result == attemptSucceeded:
-	case int(used) >= q.cfg.MaxAttempts:
+	case int(used) >= maxAttempts:
 		state = queue.StateFailed
 		outcome = queue.FailExhausted
 	default:
 		delay := max(q.cfg.Backoff(int(used), q.rand()), retryAfter)
+		if rateLimited {
+			delay = q.cfg.RateLimitDelay(int(used), retryAfter, q.rand())
+		}
 		if err := requeue(ctx, qtx, job, used, now.Add(delay)); err != nil {
 			return "", err
 		}
-		if err := insertRun(ctx, qtx, job, used, queue.OutcomeFailed, retryAfter, run, now); err != nil {
+		runID, err := insertRun(ctx, qtx, job, used, result.runOutcome(), retryAfter, run, now)
+		if err != nil {
 			return "", err
+		}
+		if result == attemptFailed {
+			kind, what := eventRetryScheduled, "failed"
+			if rateLimited {
+				kind, what = eventRateLimited, "was rate limited"
+			}
+			msg := fmt.Sprintf("attempt %d of %d %s; the next one is not before %s", used, maxAttempts, what, formatTime(now.Add(delay)))
+			if err := insertEvent(ctx, qtx, job.ID, runID, kind, msg, now); err != nil {
+				return "", err
+			}
 		}
 		return queue.FailRequeued, nil
 	}
@@ -758,12 +797,15 @@ func (q *JobQueue) endAttempt(ctx context.Context, qtx *db.Queries, job db.Job, 
 	if n == 0 {
 		return "", queue.ErrLeaseLost
 	}
-	runOutcome := queue.OutcomeSucceeded
-	if result == attemptFailed {
-		runOutcome = queue.OutcomeFailed
-	}
-	if err := insertRun(ctx, qtx, job, used, runOutcome, retryAfter, run, now); err != nil {
+	runID, err := insertRun(ctx, qtx, job, used, result.runOutcome(), retryAfter, run, now)
+	if err != nil {
 		return "", err
+	}
+	if rateLimited && state == queue.StateFailed {
+		msg := fmt.Sprintf("attempt %d of %d was rate limited; no attempts are left", used, maxAttempts)
+		if err := insertEvent(ctx, qtx, job.ID, runID, eventRateLimited, msg, now); err != nil {
+			return "", err
+		}
 	}
 	if job.RerunRequested == 1 {
 		if err := q.enqueueFollowUp(ctx, qtx, job, now); err != nil {
@@ -773,10 +815,24 @@ func (q *JobQueue) endAttempt(ctx context.Context, qtx *db.Queries, job db.Job, 
 	return outcome, nil
 }
 
-// insertRun stores the attempt's record as its job_runs row; without a record nothing is stored.
-func insertRun(ctx context.Context, qtx *db.Queries, job db.Job, attempt int64, outcome string, retryAfter time.Duration, run *queue.RunRecord, now time.Time) error {
+// Kinds of the job_events rows the queue writes for a failed attempt that is retried.
+const (
+	eventRetryScheduled = "retry_scheduled"
+	eventRateLimited    = "rate_limited"
+)
+
+// insertEvent records what happened to a job, in the attempt's transaction.
+func insertEvent(ctx context.Context, qtx *db.Queries, jobID, runID, kind, message string, at time.Time) error {
+	return qtx.InsertJobEvent(ctx, db.InsertJobEventParams{
+		ID: newID(), JobID: jobID, JobRunID: nullString(runID), At: formatTime(at), Kind: kind, Message: nullString(message),
+	})
+}
+
+// insertRun stores the attempt as its job_runs row. Without a record from the worker the row
+// holds the outcome and the times alone.
+func insertRun(ctx context.Context, qtx *db.Queries, job db.Job, attempt int64, outcome string, retryAfter time.Duration, run *queue.RunRecord, now time.Time) (string, error) {
 	if run == nil {
-		return nil
+		run = &queue.RunRecord{}
 	}
 	row := db.InsertJobRunParams{
 		ID:           newID(),
@@ -800,7 +856,7 @@ func insertRun(ctx context.Context, qtx *db.Queries, job db.Job, attempt int64, 
 	if retryAfter > 0 {
 		row.RetryAfter = nullString(strconv.FormatInt(int64(retryAfter/time.Second), 10))
 	}
-	return qtx.InsertJobRun(ctx, row)
+	return row.ID, qtx.InsertJobRun(ctx, row)
 }
 
 // requeue puts the running job back in the queue. When a trigger arrived while it ran, the job

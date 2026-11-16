@@ -10,6 +10,30 @@ import (
 	"database/sql"
 )
 
+const countManageableRepositories = `-- name: CountManageableRepositories :one
+SELECT COUNT(*)
+FROM repositories r
+JOIN installations i ON i.id = r.installation_id
+WHERE r.removed_at IS NULL
+  AND i.status <> 'removed'
+  AND (?1 = '' OR instr(lower(r.full_name), lower(?1)) > 0)
+  AND (?2 IS NULL OR r.enabled = ?2)
+  AND (?3 = '' OR r.config_state = ?3)
+`
+
+type CountManageableRepositoriesParams struct {
+	Search      interface{} `json:"search"`
+	Enabled     interface{} `json:"enabled"`
+	ConfigState interface{} `json:"config_state"`
+}
+
+func (q *Queries) CountManageableRepositories(ctx context.Context, arg CountManageableRepositoriesParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countManageableRepositories, arg.Search, arg.Enabled, arg.ConfigState)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getManageableRepository = `-- name: GetManageableRepository :one
 SELECT r.id, r.full_name, r.default_branch, r.enabled, r.config_state, i.status AS installation_status
 FROM repositories r
@@ -39,6 +63,48 @@ func (q *Queries) GetManageableRepository(ctx context.Context, id string) (GetMa
 		&i.Enabled,
 		&i.ConfigState,
 		&i.InstallationStatus,
+	)
+	return i, err
+}
+
+const getManageableRepositoryListing = `-- name: GetManageableRepositoryListing :one
+SELECT r.id, r.full_name, r.default_branch, r.enabled, r.config_state, r.ticket_project_id, i.status AS installation_status,
+       CASE WHEN r.ticket_project_id IS NOT NULL THEN r.ticket_project_id ELSE s.default_ticket_project_id END AS effective_ticket_project_id,
+       tp.name AS effective_ticket_project_name
+FROM repositories r
+JOIN installations i ON i.id = r.installation_id
+LEFT JOIN installation_settings s ON s.installation_id = r.installation_id
+LEFT JOIN ticket_projects tp ON tp.id = CASE WHEN r.ticket_project_id IS NOT NULL THEN r.ticket_project_id ELSE s.default_ticket_project_id END
+WHERE r.id = ?
+  AND r.removed_at IS NULL
+  AND i.status <> 'removed'
+`
+
+type GetManageableRepositoryListingRow struct {
+	ID                         string         `json:"id"`
+	FullName                   string         `json:"full_name"`
+	DefaultBranch              string         `json:"default_branch"`
+	Enabled                    int64          `json:"enabled"`
+	ConfigState                string         `json:"config_state"`
+	TicketProjectID            sql.NullString `json:"ticket_project_id"`
+	InstallationStatus         string         `json:"installation_status"`
+	EffectiveTicketProjectID   interface{}    `json:"effective_ticket_project_id"`
+	EffectiveTicketProjectName sql.NullString `json:"effective_ticket_project_name"`
+}
+
+func (q *Queries) GetManageableRepositoryListing(ctx context.Context, id string) (GetManageableRepositoryListingRow, error) {
+	row := q.db.QueryRowContext(ctx, getManageableRepositoryListing, id)
+	var i GetManageableRepositoryListingRow
+	err := row.Scan(
+		&i.ID,
+		&i.FullName,
+		&i.DefaultBranch,
+		&i.Enabled,
+		&i.ConfigState,
+		&i.TicketProjectID,
+		&i.InstallationStatus,
+		&i.EffectiveTicketProjectID,
+		&i.EffectiveTicketProjectName,
 	)
 	return i, err
 }
@@ -127,6 +193,85 @@ func (q *Queries) ListActiveRepositoryIDs(ctx context.Context, installationID st
 	for rows.Next() {
 		var i ListActiveRepositoryIDsRow
 		if err := rows.Scan(&i.ID, &i.GithubRepositoryID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listManageableRepositories = `-- name: ListManageableRepositories :many
+SELECT r.id, r.full_name, r.default_branch, r.enabled, r.config_state, r.ticket_project_id, i.status AS installation_status,
+       CASE WHEN r.ticket_project_id IS NOT NULL THEN r.ticket_project_id ELSE s.default_ticket_project_id END AS effective_ticket_project_id,
+       tp.name AS effective_ticket_project_name
+FROM repositories r
+JOIN installations i ON i.id = r.installation_id
+LEFT JOIN installation_settings s ON s.installation_id = r.installation_id
+LEFT JOIN ticket_projects tp ON tp.id = CASE WHEN r.ticket_project_id IS NOT NULL THEN r.ticket_project_id ELSE s.default_ticket_project_id END
+WHERE r.removed_at IS NULL
+  AND i.status <> 'removed'
+  AND (?1 = '' OR instr(lower(r.full_name), lower(?1)) > 0)
+  AND (?2 IS NULL OR r.enabled = ?2)
+  AND (?3 = '' OR r.config_state = ?3)
+ORDER BY r.full_name, r.id
+LIMIT ?5 OFFSET ?4
+`
+
+type ListManageableRepositoriesParams struct {
+	Search      interface{} `json:"search"`
+	Enabled     interface{} `json:"enabled"`
+	ConfigState interface{} `json:"config_state"`
+	PageOffset  int64       `json:"page_offset"`
+	PageSize    int64       `json:"page_size"`
+}
+
+type ListManageableRepositoriesRow struct {
+	ID                         string         `json:"id"`
+	FullName                   string         `json:"full_name"`
+	DefaultBranch              string         `json:"default_branch"`
+	Enabled                    int64          `json:"enabled"`
+	ConfigState                string         `json:"config_state"`
+	TicketProjectID            sql.NullString `json:"ticket_project_id"`
+	InstallationStatus         string         `json:"installation_status"`
+	EffectiveTicketProjectID   interface{}    `json:"effective_ticket_project_id"`
+	EffectiveTicketProjectName sql.NullString `json:"effective_ticket_project_name"`
+}
+
+// The repositories an admin can act on, with the ticket project of the repository and the one
+// it effectively uses: its own, else the installation's default. search is a substring of the
+// full name, matched without case; empty arguments filter nothing.
+func (q *Queries) ListManageableRepositories(ctx context.Context, arg ListManageableRepositoriesParams) ([]ListManageableRepositoriesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listManageableRepositories,
+		arg.Search,
+		arg.Enabled,
+		arg.ConfigState,
+		arg.PageOffset,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListManageableRepositoriesRow
+	for rows.Next() {
+		var i ListManageableRepositoriesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FullName,
+			&i.DefaultBranch,
+			&i.Enabled,
+			&i.ConfigState,
+			&i.TicketProjectID,
+			&i.InstallationStatus,
+			&i.EffectiveTicketProjectID,
+			&i.EffectiveTicketProjectName,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -265,6 +410,28 @@ type SetRepositoryEnabledParams struct {
 
 func (q *Queries) SetRepositoryEnabled(ctx context.Context, arg SetRepositoryEnabledParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, setRepositoryEnabled, arg.Enabled, arg.UpdatedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const setRepositoryTicketProject = `-- name: SetRepositoryTicketProject :execrows
+UPDATE repositories
+SET ticket_project_id = ?1, updated_at = ?2
+WHERE repositories.id = ?3
+  AND repositories.removed_at IS NULL
+  AND repositories.installation_id IN (SELECT i.id FROM installations i WHERE i.status <> 'removed')
+`
+
+type SetRepositoryTicketProjectParams struct {
+	TicketProjectID sql.NullString `json:"ticket_project_id"`
+	UpdatedAt       string         `json:"updated_at"`
+	ID              string         `json:"id"`
+}
+
+func (q *Queries) SetRepositoryTicketProject(ctx context.Context, arg SetRepositoryTicketProjectParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setRepositoryTicketProject, arg.TicketProjectID, arg.UpdatedAt, arg.ID)
 	if err != nil {
 		return 0, err
 	}

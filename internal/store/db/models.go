@@ -167,6 +167,11 @@ type Repository struct {
 	UpdatedAt            string         `json:"updated_at"`
 }
 
+type RevokedSession struct {
+	TokenHash string  `json:"token_hash"`
+	Expiry    float64 `json:"expiry"`
+}
+
 type Session struct {
 	Token  string  `json:"token"`
 	Data   []byte  `json:"data"`
@@ -180,17 +185,16 @@ type SessionRepository struct {
 }
 
 type TicketProject struct {
-	ID                 string `json:"id"`
-	IntegrationID      string `json:"integration_id"`
-	ExternalProjectID  string `json:"external_project_id"`
-	Name               string `json:"name"`
-	CreateConfig       string `json:"create_config"`
-	StatusMapping      string `json:"status_mapping"`
-	ContentTemplates   string `json:"content_templates"`
-	OnOpenTicketPolicy string `json:"on_open_ticket_policy"`
-	CreatedAt          string `json:"created_at"`
-	UpdatedAt          string `json:"updated_at"`
-	Filter             string `json:"filter"`
+	ID                string `json:"id"`
+	IntegrationID     string `json:"integration_id"`
+	ExternalProjectID string `json:"external_project_id"`
+	Name              string `json:"name"`
+	CreateConfig      string `json:"create_config"`
+	StatusMapping     string `json:"status_mapping"`
+	ContentTemplates  string `json:"content_templates"`
+	CreatedAt         string `json:"created_at"`
+	UpdatedAt         string `json:"updated_at"`
+	Filter            string `json:"filter"`
 }
 
 type UpdatePr struct {
@@ -245,6 +249,8 @@ type UpdateTicket struct {
 	LastErrorAt     sql.NullString `json:"last_error_at"`
 	CreatedAt       string         `json:"created_at"`
 	UpdatedAt       string         `json:"updated_at"`
+	TargetState     sql.NullString `json:"target_state"`
+	HandsOffAt      sql.NullString `json:"hands_off_at"`
 }
 
 type User struct {

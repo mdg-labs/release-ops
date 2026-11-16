@@ -2,6 +2,7 @@ package github_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -145,6 +146,28 @@ func TestPullRequestValidNeedsWhatTrackingUses(t *testing.T) {
 		}
 		if pr.Valid() != tc.want {
 			t.Errorf("%s: Valid = %v, want %v", tc.name, pr.Valid(), tc.want)
+		}
+	}
+}
+
+func TestPullRequestAutoMerge(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		body    string
+		present bool
+		enabled bool
+	}{
+		"absent":  {`{"number":1}`, false, false},
+		"null":    {`{"number":1,"auto_merge":null}`, true, false},
+		"enabled": {`{"number":1,"auto_merge":{"merge_method":"squash"}}`, true, true},
+	} {
+		var pr github.PullRequest
+		if err := json.Unmarshal([]byte(tc.body), &pr); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if pr.AutoMerge.Present != tc.present || pr.AutoMerge.Enabled != tc.enabled {
+			t.Errorf("%s: auto_merge = %+v, want present %v enabled %v", name, pr.AutoMerge, tc.present, tc.enabled)
 		}
 	}
 }

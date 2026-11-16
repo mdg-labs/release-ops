@@ -28,9 +28,27 @@ type ResultRequest struct {
 	Outcome    string `json:"outcome"`
 	// RetryAfterSeconds is the delay an upstream asked for with a failed outcome.
 	RetryAfterSeconds int64 `json:"retry_after_seconds,omitempty"`
+	// RateLimit is what the attempt's GitHub calls said about the installation's rate limit,
+	// when anything; the app records it in the installation's shared budget.
+	RateLimit *RateLimitReport `json:"rate_limit,omitempty"`
 	// Run is the attempt's record; absent when the worker has nothing to report beyond the
 	// outcome.
 	Run *RunRecord `json:"run,omitempty"`
+}
+
+// RateLimitReport is the last rate-limit state the worker saw in a response of GitHub's API
+// during an attempt. Renovate's own calls are not intercepted: the worker reads what Renovate
+// logged of them.
+type RateLimitReport struct {
+	// Limited is true when the last such response refused the call because of a rate limit.
+	Limited bool `json:"limited,omitempty"`
+	// Remaining and Limit are X-RateLimit-Remaining and X-RateLimit-Limit.
+	Remaining *int64 `json:"remaining,omitempty"`
+	Limit     *int64 `json:"limit,omitempty"`
+	// ResetUnix is X-RateLimit-Reset, a Unix time in seconds.
+	ResetUnix int64 `json:"reset_unix,omitempty"`
+	// RetryAfterSeconds is Retry-After.
+	RetryAfterSeconds int64 `json:"retry_after_seconds,omitempty"`
 }
 
 // TokenResponse is the body of a successful token request: the installation access token for

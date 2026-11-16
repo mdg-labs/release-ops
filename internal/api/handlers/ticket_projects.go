@@ -10,16 +10,15 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/store"
+	"github.com/mdg-labs/release-ops/internal/tickettemplate"
+	"github.com/mdg-labs/release-ops/internal/updatetickets"
 )
 
-var validOnOpenTicketPolicies = map[string]struct{}{
-	"supersede":    {},
-	"merge":        {},
-	"skip_if_open": {},
-}
+const defaultContentTemplatesJSON = `{"title":"","description":"","updateComment":"","supersedeComment":""}`
 
-const defaultContentTemplatesJSON = `{"title":"","description":"","supersedeComment":""}`
-
+// requiredContentTemplateKeys are the keys a POST must carry. updateComment may be left out
+// (it is then empty, the integration-kind default), so a client that predates it still creates
+// projects.
 var requiredContentTemplateKeys = []string{"title", "description", "supersedeComment"}
 
 // TicketProjectHandlers serves ticket project HTTP endpoints.
@@ -30,38 +29,39 @@ type TicketProjectHandlers struct {
 type contentTemplatesResponse struct {
 	Title            string `json:"title"`
 	Description      string `json:"description"`
+	UpdateComment    string `json:"updateComment"`
 	SupersedeComment string `json:"supersedeComment"`
 }
 
 type ticketProjectResponse struct {
-	ID                 string                   `json:"id"`
-	IntegrationID      string                   `json:"integrationId"`
-	ExternalProjectID  string                   `json:"externalProjectId"`
-	Name               string                   `json:"name"`
-	CreateConfig       json.RawMessage          `json:"createConfig"`
-	StatusMapping      json.RawMessage          `json:"statusMapping"`
-	ContentTemplates   contentTemplatesResponse `json:"contentTemplates"`
-	OnOpenTicketPolicy string                   `json:"onOpenTicketPolicy"`
-	CreatedAt          string                   `json:"createdAt"`
-	UpdatedAt          string                   `json:"updatedAt"`
+	ID                string                   `json:"id"`
+	IntegrationID     string                   `json:"integrationId"`
+	ExternalProjectID string                   `json:"externalProjectId"`
+	Name              string                   `json:"name"`
+	CreateConfig      json.RawMessage          `json:"createConfig"`
+	StatusMapping     json.RawMessage          `json:"statusMapping"`
+	ContentTemplates  contentTemplatesResponse `json:"contentTemplates"`
+	Filter            json.RawMessage          `json:"filter"`
+	CreatedAt         string                   `json:"createdAt"`
+	UpdatedAt         string                   `json:"updatedAt"`
 }
 
 type createTicketProjectRequest struct {
-	IntegrationID      string          `json:"integrationId"`
-	ExternalProjectID  string          `json:"externalProjectId"`
-	Name               string          `json:"name"`
-	CreateConfig       json.RawMessage `json:"createConfig"`
-	StatusMapping      json.RawMessage `json:"statusMapping"`
-	ContentTemplates   json.RawMessage `json:"contentTemplates"`
-	OnOpenTicketPolicy string          `json:"onOpenTicketPolicy"`
+	IntegrationID     string          `json:"integrationId"`
+	ExternalProjectID string          `json:"externalProjectId"`
+	Name              string          `json:"name"`
+	CreateConfig      json.RawMessage `json:"createConfig"`
+	StatusMapping     json.RawMessage `json:"statusMapping"`
+	ContentTemplates  json.RawMessage `json:"contentTemplates"`
+	Filter            json.RawMessage `json:"filter"`
 }
 
 type patchTicketProjectRequest struct {
-	Name               string          `json:"name"`
-	CreateConfig       json.RawMessage `json:"createConfig"`
-	StatusMapping      json.RawMessage `json:"statusMapping"`
-	ContentTemplates   json.RawMessage `json:"contentTemplates"`
-	OnOpenTicketPolicy string          `json:"onOpenTicketPolicy"`
+	Name             string          `json:"name"`
+	CreateConfig     json.RawMessage `json:"createConfig"`
+	StatusMapping    json.RawMessage `json:"statusMapping"`
+	ContentTemplates json.RawMessage `json:"contentTemplates"`
+	Filter           json.RawMessage `json:"filter"`
 }
 
 // List handles GET /api/v1/ticket-projects.
@@ -126,24 +126,26 @@ func (h *TicketProjectHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	policy := req.OnOpenTicketPolicy
-	if policy == "" {
-		policy = "supersede"
-	}
-	if err := validateOnOpenTicketPolicy(policy); err != nil {
-		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
+	if err := validateTemplateContent(contentTemplates); err != nil {
+		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusUnprocessableEntity)
 		return
+	}
+	filter := ""
+	if len(req.Filter) > 0 {
+		if filter, err = updatetickets.ValidateFilter(req.Filter); err != nil {
+			auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
 	}
 
 	created, err := h.TicketProjects.Create(r.Context(), store.CreateTicketProjectInput{
-		IntegrationID:      req.IntegrationID,
-		ExternalProjectID:  req.ExternalProjectID,
-		Name:               req.Name,
-		CreateConfig:       createConfig,
-		StatusMapping:      statusMapping,
-		ContentTemplates:   contentTemplates,
-		OnOpenTicketPolicy: policy,
+		IntegrationID:     req.IntegrationID,
+		ExternalProjectID: req.ExternalProjectID,
+		Name:              req.Name,
+		CreateConfig:      createConfig,
+		StatusMapping:     statusMapping,
+		ContentTemplates:  contentTemplates,
+		Filter:            filter,
 	})
 	if err != nil {
 		if isUniqueConstraintError(err) {
@@ -203,23 +205,26 @@ func (h *TicketProjectHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 			auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
 			return
 		}
+		if err := validateTemplateContent(contentTemplates); err != nil {
+			auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
 	}
 
-	if req.OnOpenTicketPolicy == "" {
-		auth.WriteError(w, "VALIDATION_ERROR", "onOpenTicketPolicy is required", http.StatusBadRequest)
-		return
-	}
-	if err := validateOnOpenTicketPolicy(req.OnOpenTicketPolicy); err != nil {
-		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
-		return
+	filter := existing.Filter
+	if len(req.Filter) > 0 {
+		if filter, err = updatetickets.ValidateFilter(req.Filter); err != nil {
+			auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
 	}
 
 	updated, err := h.TicketProjects.Update(r.Context(), id, store.UpdateTicketProjectInput{
-		Name:               req.Name,
-		CreateConfig:       createConfig,
-		StatusMapping:      statusMapping,
-		ContentTemplates:   contentTemplates,
-		OnOpenTicketPolicy: req.OnOpenTicketPolicy,
+		Name:             req.Name,
+		CreateConfig:     createConfig,
+		StatusMapping:    statusMapping,
+		ContentTemplates: contentTemplates,
+		Filter:           filter,
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -269,18 +274,22 @@ func ticketProjectFromStore(item *store.TicketProject) ticketProjectResponse {
 		raw = defaultContentTemplatesJSON
 	}
 	_ = json.Unmarshal([]byte(raw), &contentTemplates)
+	filter := item.Filter
+	if filter == "" {
+		filter = updatetickets.DefaultFilterJSON
+	}
 
 	return ticketProjectResponse{
-		ID:                 item.ID,
-		IntegrationID:      item.IntegrationID,
-		ExternalProjectID:  item.ExternalProjectID,
-		Name:               item.Name,
-		CreateConfig:       json.RawMessage(item.CreateConfig),
-		StatusMapping:      json.RawMessage(item.StatusMapping),
-		ContentTemplates:   contentTemplates,
-		OnOpenTicketPolicy: item.OnOpenTicketPolicy,
-		CreatedAt:          item.CreatedAt,
-		UpdatedAt:          item.UpdatedAt,
+		ID:                item.ID,
+		IntegrationID:     item.IntegrationID,
+		ExternalProjectID: item.ExternalProjectID,
+		Name:              item.Name,
+		CreateConfig:      json.RawMessage(item.CreateConfig),
+		StatusMapping:     json.RawMessage(item.StatusMapping),
+		ContentTemplates:  contentTemplates,
+		Filter:            json.RawMessage(filter),
+		CreatedAt:         item.CreatedAt,
+		UpdatedAt:         item.UpdatedAt,
 	}
 }
 
@@ -365,6 +374,8 @@ func mergeContentTemplates(existingJSON string, patch json.RawMessage) (string, 
 			base.Title = strVal
 		case "description":
 			base.Description = strVal
+		case "updateComment":
+			base.UpdateComment = strVal
 		case "supersedeComment":
 			base.SupersedeComment = strVal
 		}
@@ -379,7 +390,7 @@ func mergeContentTemplates(existingJSON string, patch json.RawMessage) (string, 
 
 func isContentTemplateKey(key string) bool {
 	switch key {
-	case "title", "description", "supersedeComment":
+	case "title", "description", "updateComment", "supersedeComment":
 		return true
 	default:
 		return false
@@ -394,11 +405,14 @@ func parseContentTemplateStringValue(key string, raw json.RawMessage) (string, e
 	return str, nil
 }
 
-func validateOnOpenTicketPolicy(policy string) error {
-	if _, ok := validOnOpenTicketPolicies[policy]; !ok {
-		return errors.New("onOpenTicketPolicy must be one of: supersede, merge, skip_if_open")
+// validateTemplateContent refuses stored templates that do not parse or that use a variable the
+// update-PR context does not have, such as one of the release-based contract.
+func validateTemplateContent(contentTemplates string) error {
+	templates, err := tickettemplate.ParseContentTemplates(contentTemplates)
+	if err != nil {
+		return err
 	}
-	return nil
+	return tickettemplate.NewRenderer("", templates).Validate()
 }
 
 func isUniqueConstraintError(err error) bool {

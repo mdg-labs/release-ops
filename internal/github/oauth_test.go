@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/mdg-labs/release-ops/internal/logging"
 )
 
 func newOAuthFixture(t *testing.T, handler http.HandlerFunc) (*OAuthClient, *httptest.Server) {
@@ -177,4 +179,52 @@ func TestUserAndOrganizationOwner(t *testing.T) {
 			t.Errorf("500: err = %v, want ErrRequestFailed", err)
 		}
 	})
+}
+
+func TestValidUserLogin(t *testing.T) {
+	t.Parallel()
+	for _, login := range []string{"octocat", "a", "mona-cat", "mona-cat_octo", strings.Repeat("a", 39), "mona_" + strings.Repeat("b", 39)} {
+		if !ValidUserLogin(login) {
+			t.Errorf("ValidUserLogin(%q) = false, want true", login)
+		}
+	}
+	for _, login := range []string{"", "mona/cat", "_mona", "mona_", "mona--cat", "-mona", "mona-", "mona-_octo", "mona_octo_cat", "mona cat", "@mona", strings.Repeat("a", 40), "mona_" + strings.Repeat("b", 40)} {
+		if ValidUserLogin(login) {
+			t.Errorf("ValidUserLogin(%q) = true, want false", login)
+		}
+	}
+}
+
+func TestExchangeCodeRegistersOnlyAcceptedCodes(t *testing.T) {
+	t.Parallel()
+	o, _ := newOAuthFixture(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"error":"bad_verification_code"}`))
+	})
+	const (
+		badCode      = "not a valid code: opaque-malformed-code-0001"
+		badVerifier  = "opaque-verifier-of-a-malformed-code-0002"
+		goodCode     = "opaque-accepted-code-0003"
+		goodVerifier = "opaque-verifier-of-an-accepted-code-0004"
+	)
+	exchange := func(code, verifier string) {
+		t.Helper()
+		_, err := o.ExchangeCode(context.Background(), ExchangeParams{ClientID: "id", ClientSecret: "secret", Code: code, RedirectURI: "https://x.example/cb", CodeVerifier: verifier})
+		if !errors.Is(err, ErrOAuthRejected) {
+			t.Fatalf("ExchangeCode(%q) = %v, want ErrOAuthRejected", code, err)
+		}
+	}
+
+	exchange(badCode, badVerifier)
+	for _, v := range []string{badCode, badVerifier} {
+		if got := logging.Redact("line " + v); got != "line "+v {
+			t.Errorf("a value of a rejected code is registered: %q", got)
+		}
+	}
+
+	exchange(goodCode, goodVerifier)
+	for _, v := range []string{goodCode, goodVerifier} {
+		if got := logging.Redact("line " + v); strings.Contains(got, v) {
+			t.Errorf("%s of an accepted code is not removed from log text: %q", v, got)
+		}
+	}
 }

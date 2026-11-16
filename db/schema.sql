@@ -113,10 +113,7 @@ CREATE TABLE ticket_projects (
   name TEXT NOT NULL,
   create_config TEXT NOT NULL,
   status_mapping TEXT NOT NULL,
-  content_templates TEXT NOT NULL DEFAULT '{"title":"","description":"","supersedeComment":""}' CHECK (json_valid(content_templates)),
-  on_open_ticket_policy TEXT NOT NULL DEFAULT 'supersede' CHECK (
-    on_open_ticket_policy IN ('supersede', 'merge', 'skip_if_open')
-  ),
+  content_templates TEXT NOT NULL DEFAULT '{"title":"","description":"","updateComment":"","supersedeComment":""}' CHECK (json_valid(content_templates)),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   filter TEXT NOT NULL DEFAULT '{"updateTypes":[],"labels":[],"skipAutomerged":true}' CHECK (json_valid(filter)),
@@ -174,8 +171,8 @@ CREATE TABLE installation_settings (
 ) STRICT;
 
 -- GitHub's delivery GUIDs the webhook endpoint has accepted (specs.html § 2.10): a GUID seen again does
--- nothing. A row is written in the transaction of the work the delivery caused, and rows are pruned after
--- the retention of internal/store/webhook_deliveries.go. installation_id is NULL while the delivery's
+-- nothing. A row is written in the transaction of the work the delivery caused, and rows are deleted after
+-- their retention by the daily pass of internal/store/retention.go. installation_id is NULL while the delivery's
 -- installation is not recorded.
 CREATE TABLE webhook_deliveries (
   guid TEXT PRIMARY KEY,
@@ -203,6 +200,17 @@ CREATE TABLE repositories (
   updated_at TEXT NOT NULL,
   UNIQUE (installation_id, full_name)
 ) STRICT;
+
+-- Tokens that were deleted while a request might still hold the session: logout, a failed role
+-- re-check, a renewed token. A commit never writes a token listed here, so a request that loaded
+-- the session before it was destroyed cannot bring it back. token_hash is the SHA-256 (hex) of the
+-- token; a row is kept until the latest moment the session could have expired.
+CREATE TABLE revoked_sessions (
+  token_hash TEXT PRIMARY KEY,
+  expiry REAL NOT NULL
+) STRICT;
+
+CREATE INDEX idx_revoked_sessions_expiry ON revoked_sessions (expiry);
 
 -- The repository-access list of a viewer's session (specs.html § 3.9): the repositories the user
 -- can access, written at sign-in and never refreshed. Rows go with the session and with a deleted
@@ -272,7 +280,12 @@ CREATE TABLE update_tickets (
   last_error TEXT,
   last_error_at TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  -- The transition recorded before the tracker is called and cleared when state follows it, so a
+  -- stop between the two is recognised on the next look (specs.html section 5.2.1).
+  target_state TEXT CHECK (target_state IN ('done', 'cancelled', 'superseded')),
+  -- Set when the ticket was found changed outside Release Ops; no operation touches it after.
+  hands_off_at TEXT
 ) STRICT;
 
 -- The persistent job queue (specs.html § 2.8): at most one queued and one running job per repository.

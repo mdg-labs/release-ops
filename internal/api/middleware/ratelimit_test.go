@@ -274,3 +274,33 @@ func TestRateLimiterForgotPasswordLimit(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusTooManyRequests)
 	}
 }
+
+func TestWebhookSignatureFailureLimitsPerClientIP(t *testing.T) {
+	t.Parallel()
+
+	clock := &fixedClock{now: time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)}
+	rl := apimw.NewRateLimiterForTest(clock)
+	req := func(addr string) *http.Request {
+		r := httptest.NewRequest(http.MethodPost, "/hooks/github", nil)
+		r.RemoteAddr = addr
+		return r
+	}
+
+	for i := 0; i < apimw.WebhookSignatureLimit; i++ {
+		if _, limited := rl.WebhookSignatureFailure(req("203.0.113.1:1")); limited {
+			t.Fatalf("failure %d limited, want allowed", i+1)
+		}
+	}
+	retryAfter, limited := rl.WebhookSignatureFailure(req("203.0.113.1:1"))
+	if !limited || retryAfter < time.Second {
+		t.Fatalf("failure past the limit = (%v, %v), want limited with Retry-After of at least 1s", retryAfter, limited)
+	}
+	if _, limited := rl.WebhookSignatureFailure(req("203.0.113.2:1")); limited {
+		t.Fatal("a second address shares the first one's count")
+	}
+
+	clock.now = clock.now.Add(apimw.WebhookSignatureWindow + time.Second)
+	if _, limited := rl.WebhookSignatureFailure(req("203.0.113.1:1")); limited {
+		t.Fatal("still limited after the window passed")
+	}
+}

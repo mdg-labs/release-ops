@@ -1,35 +1,37 @@
 import type { TicketIntegrationKind } from "@/lib/integrations/kinds";
 import type { ContentTemplates } from "@/lib/query/types";
 
+/** The template keys of docs/specs.html §5.4; the form edits the keys of ContentTemplates. */
 export type TemplateField = keyof ContentTemplates;
 
-// Mirrors the default templates in internal/tickettemplate/templates.go
+// Mirror the default templates in internal/tickettemplate/templates.go
 // (docs/specs.html §5.4); shown as placeholders while a field is empty.
-const DEFAULT_TITLE =
-  "Release: {{ .Repo.SourceKind }} {{ .Repo.ProjectPath }} {{ .Release.Tag }}";
+const DEFAULT_TITLE = "{{ .PullRequest.Title }} ({{ .Repository }})";
 
 const DEFAULT_DESCRIPTION_MARKDOWN =
-  "**Source:** {{ .Repo.SourceKind }}\n" +
-  "**Repository:** {{ .Repo.ProjectPath }} ({{ .Repo.URL }})\n\n" +
-  "**Release:** {{ .Release.Tag }} — {{ .Release.Name }}\n" +
-  "**URL:** {{ .Release.URL }}\n" +
-  "**Published:** {{ .Release.PublishedAt }}\n" +
-  "**Pre-release:** {{ yesNo .Release.IsPrerelease }}\n\n" +
-  "**Previous tag:** {{ .Previous.Tag }}\n\n" +
-  "**Release notes:**\n{{ .Release.Notes }}";
+  "**Repository:** {{ .Repository }}\n" +
+  "**Pull request:** [#{{ .PullRequest.Number }} {{ .PullRequest.Title }}]({{ .PullRequest.URL }})\n\n" +
+  "**Dependencies:**\n" +
+  "{{ range .Dependencies }}- {{ .Name }}: {{ .From }} → {{ .To }}{{ if .UpdateType }} ({{ .UpdateType }}){{ end }}\n" +
+  "{{ end }}\n" +
+  "**Release notes:**\n{{ .ReleaseNotes }}";
 
 const DEFAULT_DESCRIPTION_PLAIN =
-  "Source: {{ .Repo.SourceKind }}\n" +
-  "Repository: {{ .Repo.ProjectPath }} ({{ .Repo.URL }})\n\n" +
-  "Release: {{ .Release.Tag }} — {{ .Release.Name }}\n" +
-  "URL: {{ .Release.URL }}\n" +
-  "Published: {{ .Release.PublishedAt }}\n" +
-  "Pre-release: {{ yesNo .Release.IsPrerelease }}\n\n" +
-  "Previous tag: {{ .Previous.Tag }}\n\n" +
-  "Release notes:\n{{ .Release.Notes }}";
+  "Repository: {{ .Repository }}\n" +
+  "Pull request: #{{ .PullRequest.Number }} {{ .PullRequest.Title }} ({{ .PullRequest.URL }})\n\n" +
+  "Dependencies:\n" +
+  "{{ range .Dependencies }}- {{ .Name }}: {{ .From }} → {{ .To }}{{ if .UpdateType }} ({{ .UpdateType }}){{ end }}\n" +
+  "{{ end }}\n" +
+  "Release notes:\n{{ .ReleaseNotes }}";
+
+const DEFAULT_UPDATE_COMMENT =
+  "Pull request updated:\n" +
+  "{{ range .Dependencies }}- {{ .Name }}: {{ .From }} → {{ .To }}{{ if .UpdateType }} ({{ .UpdateType }}){{ end }}\n" +
+  "{{ end }}{{ .PullRequest.URL }}";
 
 const DEFAULT_SUPERSEDE_COMMENT =
-  "Superseded: {{ .Supersede.OldTag }} → {{ .Supersede.NewTag }}\n{{ .Release.URL }}\n\nNew ticket: {{ .Supersede.NewTicketURL }}";
+  "Superseded by {{ .Supersede.NewPullRequest.URL }}\n" +
+  "{{ if .Supersede.NewTicketURL }}New ticket: {{ .Supersede.NewTicketURL }}{{ end }}";
 
 /** Integration-kind default for each template key; Jira uses plain text. */
 export function integrationDefaultTemplates(
@@ -41,6 +43,7 @@ export function integrationDefaultTemplates(
     description: plain
       ? DEFAULT_DESCRIPTION_PLAIN
       : DEFAULT_DESCRIPTION_MARKDOWN,
+    updateComment: DEFAULT_UPDATE_COMMENT,
     supersedeComment: DEFAULT_SUPERSEDE_COMMENT,
   };
 }
@@ -51,36 +54,45 @@ export type TemplateVariable = {
   worksIn: readonly TemplateField[];
 };
 
-const ALL_FIELDS = ["title", "description", "supersedeComment"] as const;
+const ALL_FIELDS = [
+  "title",
+  "description",
+  "updateComment",
+  "supersedeComment",
+] as const;
+const WITH_NOTES = ["title", "description", "updateComment"] as const;
 const SUPERSEDE_ONLY = ["supersedeComment"] as const;
 
+// The variables of docs/specs.html §5.4. The paths from .Name to .UpdateType are the dot of a
+// {{ range .Dependencies }} loop.
 export const TEMPLATE_VARIABLES: readonly TemplateVariable[] = [
-  { key: "repoSourceKind", path: ".Repo.SourceKind", worksIn: ALL_FIELDS },
-  { key: "repoProjectPath", path: ".Repo.ProjectPath", worksIn: ALL_FIELDS },
-  { key: "repoUrl", path: ".Repo.URL", worksIn: ALL_FIELDS },
-  { key: "releaseTag", path: ".Release.Tag", worksIn: ALL_FIELDS },
-  { key: "releaseName", path: ".Release.Name", worksIn: ALL_FIELDS },
-  { key: "releaseUrl", path: ".Release.URL", worksIn: ALL_FIELDS },
-  { key: "releaseNotes", path: ".Release.Notes", worksIn: ALL_FIELDS },
+  { key: "pullRequestUrl", path: ".PullRequest.URL", worksIn: ALL_FIELDS },
   {
-    key: "releasePublishedAt",
-    path: ".Release.PublishedAt",
+    key: "pullRequestNumber",
+    path: ".PullRequest.Number",
     worksIn: ALL_FIELDS,
   },
+  { key: "pullRequestTitle", path: ".PullRequest.Title", worksIn: ALL_FIELDS },
+  { key: "repository", path: ".Repository", worksIn: ALL_FIELDS },
+  { key: "dependencies", path: ".Dependencies", worksIn: ALL_FIELDS },
+  { key: "dependencyName", path: ".Name", worksIn: ALL_FIELDS },
+  { key: "dependencyFrom", path: ".From", worksIn: ALL_FIELDS },
+  { key: "dependencyTo", path: ".To", worksIn: ALL_FIELDS },
+  { key: "dependencyUpdateType", path: ".UpdateType", worksIn: ALL_FIELDS },
+  { key: "releaseNotes", path: ".ReleaseNotes", worksIn: WITH_NOTES },
   {
-    key: "releaseIsPrerelease",
-    path: ".Release.IsPrerelease",
-    worksIn: ALL_FIELDS,
-  },
-  { key: "previousTag", path: ".Previous.Tag", worksIn: ALL_FIELDS },
-  {
-    key: "supersedeOldTag",
-    path: ".Supersede.OldTag",
+    key: "supersedeNewPullRequestUrl",
+    path: ".Supersede.NewPullRequest.URL",
     worksIn: SUPERSEDE_ONLY,
   },
   {
-    key: "supersedeNewTag",
-    path: ".Supersede.NewTag",
+    key: "supersedeNewPullRequestNumber",
+    path: ".Supersede.NewPullRequest.Number",
+    worksIn: SUPERSEDE_ONLY,
+  },
+  {
+    key: "supersedeNewPullRequestTitle",
+    path: ".Supersede.NewPullRequest.Title",
     worksIn: SUPERSEDE_ONLY,
   },
   {
@@ -90,7 +102,7 @@ export const TEMPLATE_VARIABLES: readonly TemplateVariable[] = [
   },
 ];
 
-/** The text a user pastes into a template field, e.g. `{{ .Release.Tag }}`. */
+/** The text a user pastes into a template field, e.g. `{{ .Repository }}`. */
 export function templateVariableSyntax(path: string): string {
   return `{{ ${path} }}`;
 }
@@ -99,6 +111,7 @@ export function defaultContentTemplates(): ContentTemplates {
   return {
     title: "",
     description: "",
+    updateComment: "",
     supersedeComment: "",
   };
 }
@@ -114,6 +127,8 @@ export function contentTemplatesFromRecord(
     title: typeof record.title === "string" ? record.title : "",
     description:
       typeof record.description === "string" ? record.description : "",
+    updateComment:
+      typeof record.updateComment === "string" ? record.updateComment : "",
     supersedeComment:
       typeof record.supersedeComment === "string"
         ? record.supersedeComment

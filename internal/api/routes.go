@@ -20,8 +20,14 @@ import (
 //     only the setup routes; GET /setup/installed is public
 //  4. Logout, behind a session alone, so a user whose role cannot be evaluated can still end it
 //  5. Protected group (Authenticate: a session with a role, re-evaluated every 15 minutes):
-//     status for any role; settings, integrations, ticket-projects, repositories (run now,
-//     pause and enable) and users for an admin only (RequireAdmin), a viewer getting 403
+//     status and about for any role; settings (the concurrency cap, the global Renovate
+//     config), github-app (its metadata and role mapping), installations (the default ticket
+//     project),
+//     integrations, ticket-projects, update-tickets (clearing a pending marker), repositories
+//     (the list with ticket projects, run now, pause, enable and the ticket-project override)
+//     and users for an admin only
+//     (RequireAdmin), a viewer getting 403; the GitHub App's private key rotation
+//     (PUT /github-app/private-key, only with a GitHub client) is one of them
 func RegisterAll(api chi.Router, deps *ServerDeps) {
 	if deps == nil || deps.Session == nil {
 		return
@@ -97,6 +103,7 @@ func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appURL s
 	statusHandlers := &handlers.StatusHandlers{}
 
 	protected.Get("/status", statusHandlers.Get)
+	protected.Get("/about", (&handlers.AboutHandlers{}).Get)
 
 	protected.Group(func(admin chi.Router) {
 		admin.Use(apimw.RequireAdmin)
@@ -108,7 +115,12 @@ func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps, appURL s
 // protected API that is not meant for a viewer belongs here, behind RequireAdmin.
 func registerAdminRoutes(protected chi.Router, deps *ServerDeps, appURL string, rateLimiter *apimw.RateLimiter) {
 	st := deps.Store
-	settingsHandlers := &handlers.SettingsHandlers{Settings: st.Settings()}
+	settingsHandlers := &handlers.SettingsHandlers{
+		Settings:    st.InstanceSettings(),
+		Config:      st.InstanceConfig,
+		PollingMode: deps.WebhookURL == "",
+	}
+	requiredPermissions := setup.BuildManifest("", "", "").DefaultPermissions
 	integrationHandlers := &handlers.IntegrationHandlers{
 		Integrations: st.Integrations(),
 		Tester:       deps.IntegrationTester,
@@ -136,6 +148,7 @@ func registerAdminRoutes(protected chi.Router, deps *ServerDeps, appURL string, 
 
 	protected.Get("/settings", settingsHandlers.Get)
 	protected.Patch("/settings", settingsHandlers.Patch)
+	protected.Get("/settings/global-config", settingsHandlers.GetGlobalConfig)
 
 	protected.Get("/integrations", integrationHandlers.List)
 	protected.Post("/integrations", integrationHandlers.Create)
@@ -153,9 +166,30 @@ func registerAdminRoutes(protected chi.Router, deps *ServerDeps, appURL string, 
 	protected.Patch("/ticket-projects/{id}", ticketProjectHandlers.Patch)
 	protected.Delete("/ticket-projects/{id}", ticketProjectHandlers.Delete)
 
+	updateTicketHandlers := &handlers.UpdateTicketHandlers{Tickets: st.UpdateTickets()}
+	protected.Post("/update-tickets/{id}/clear-pending-marker", updateTicketHandlers.ClearPendingMarker)
+
+	installationHandlers := &handlers.InstallationHandlers{Installations: st.InstallationSettings(), RequiredPermissions: requiredPermissions}
+	protected.Get("/installations", installationHandlers.List)
+	protected.Patch("/installations/{id}", installationHandlers.Patch)
+
 	repositoryHandlers := &handlers.RepositoryHandlers{Repositories: st.Repositories(), Queue: deps.Queue}
+	protected.Get("/repositories", repositoryHandlers.List)
 	protected.Patch("/repositories/{id}", repositoryHandlers.Patch)
 	protected.Post("/repositories/{id}/run", repositoryHandlers.Run)
+
+	githubAppHandlers := &handlers.GitHubAppHandlers{
+		Info:                st.GitHubAppInfo(),
+		Installations:       st.InstallationSettings(),
+		Config:              st.InstanceConfig,
+		RequiredPermissions: requiredPermissions,
+	}
+	protected.Get("/github-app", githubAppHandlers.Get)
+	if deps.GitHub != nil {
+		githubAppHandlers.Verifier = github.NewAppClient(deps.GitHub, st.GitHubApp(), github.AppClientOptions{})
+		githubAppHandlers.Apps = st.GitHubApp()
+		protected.Put("/github-app/private-key", githubAppHandlers.RotatePrivateKey)
+	}
 
 	protected.Get("/users", userHandlers.List)
 	protected.Delete("/users/{id}", userHandlers.Delete)

@@ -27,6 +27,7 @@ type Tracker struct {
 	store store.UpdatePRRepository
 	now   func() time.Time
 	wake  *Notifier
+	sink  func([]Event)
 }
 
 // NewTracker returns a Tracker over the update PR repository; now defaults to time.Now, and
@@ -42,23 +43,49 @@ func NewTracker(s store.UpdatePRRepository, now func() time.Time, wake *Notifier
 // commit, when the change is visible to the ticket engine.
 func (t *Tracker) Wake() { t.wake.Wake() }
 
-// ApplyTx upserts a PR of the repository through tx when it is an update PR, and reports
-// whether the row changed. A PR is an update PR when its author is the bot user, by numeric
-// id, and its body carries Renovate's markers; branch name and title decide nothing. A PR
-// that is already tracked stays tracked while the bot is its author, so an edit that drops
-// the markers does not freeze its state. A PR that lacks what tracking needs, or whose bot id
-// is not known (botUserID 0), is ignored.
-func (t *Tracker) ApplyTx(ctx context.Context, tx *sql.Tx, repositoryID string, pr github.PullRequest, botUserID int64) (bool, error) {
+// Subscribe makes Publish hand the events it receives to sink. It is called once, before the
+// Tracker is used.
+func (t *Tracker) Subscribe(sink func([]Event)) { t.sink = sink }
+
+// Publish hands the events of applied PRs to the subscriber. A caller that applied PRs through a
+// transaction runs it after the commit, when the rows the events describe are final; with no
+// subscriber, or no events, it does nothing. The sink only queues the events: the work they
+// cause never runs in the caller.
+func (t *Tracker) Publish(events []Event) {
+	if t.sink != nil && len(events) > 0 {
+		t.sink(events)
+	}
+}
+
+// ApplyTx upserts a PR of the repository through tx when it is an update PR, then records its
+// dependencies and release notes and applies the superseded rule, all in tx. A PR is an update
+// PR when its author is the bot user, by numeric id, and its body carries Renovate's markers;
+// branch name and title decide nothing. A PR that is already tracked stays tracked while the
+// bot is its author, so an edit that drops the markers does not freeze its state. A PR that
+// lacks what tracking needs, or whose bot id is not known (botUserID 0), is ignored. The
+// Outcome says whether anything changed and carries the events of the step; a report the
+// stored row outranks (an older one, or an open one at the EventAt of a close) changes nothing,
+// records nothing and has no events.
+func (t *Tracker) ApplyTx(ctx context.Context, tx *sql.Tx, repositoryID string, pr github.PullRequest, botUserID int64) (Outcome, error) {
 	if botUserID == 0 || pr.User.ID != botUserID || !pr.Valid() {
-		return false, nil
+		return Outcome{}, nil
 	}
 	if !HasRenovateMarkers(pr.Body) {
 		tracked, err := t.store.Tracked(ctx, tx, repositoryID, pr.Number)
 		if err != nil || !tracked {
-			return false, err
+			return Outcome{}, err
 		}
 	}
-	return t.store.Upsert(ctx, tx, input(repositoryID, pr, t.now()))
+	in := input(repositoryID, pr, t.now())
+	up, err := t.store.Upsert(ctx, tx, in)
+	if err != nil || !up.Accepted {
+		return Outcome{}, err
+	}
+	events, depsChanged, err := t.recordDependencies(ctx, tx, repositoryID, pr, in)
+	if err != nil {
+		return Outcome{}, err
+	}
+	return Outcome{Changed: up.Changed || depsChanged, Events: events}, nil
 }
 
 // input maps a valid PR to the row it is stored as.

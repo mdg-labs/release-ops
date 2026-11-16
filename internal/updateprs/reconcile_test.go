@@ -223,21 +223,136 @@ func TestReconcileFailureAppliesNothing(t *testing.T) {
 	})
 }
 
-func TestReconcileSkipsAStoredPRGitHubDoesNotKnow(t *testing.T) {
+// A stored open PR that is no longer listed and that GitHub answers 404 for is gone: it is
+// stored closed, wakes the engine, and is not fetched again.
+func TestReconcileClosesAStoredPRGitHubDoesNotKnow(t *testing.T) {
 	r := newRig(t, true)
 	r.bot(1)
 	r.bot(2)
+	r.bot(3)
 	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
 		t.Fatal(err)
 	}
+	r.woken()
 	r.fake.FailPullRequest("acme/repo-1", 1, 404)
 	r.bot(1, func(p *githubtest.PullRequest) { p.State, p.UpdatedAt = "closed", at(9) })
 	r.bot(2, func(p *githubtest.PullRequest) { p.State, p.ClosedAt, p.UpdatedAt = "closed", at(9), at(9) })
 	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
-	if got := r.states(t); !reflect.DeepEqual(got, map[int64]string{1: "open", 2: "closed"}) {
-		t.Fatalf("rows = %v", got)
+	if got := r.states(t); !reflect.DeepEqual(got, map[int64]string{1: "closed", 2: "closed", 3: "open"}) {
+		t.Fatalf("rows = %v, want the unknown PR 1 closed", got)
+	}
+	var closedAt *string
+	if err := r.db.Reader.QueryRow(`SELECT closed_at FROM update_prs WHERE repository_id = ? AND number = 1`, r.repo).Scan(&closedAt); err != nil {
+		t.Fatal(err)
+	}
+	if closedAt == nil {
+		t.Error("the closed PR has no closed_at")
+	}
+	if !r.woken() {
+		t.Fatal("closing a PR GitHub does not know did not wake the engine")
+	}
+
+	before := len(r.fake.Requests())
+	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
+		t.Fatal(err)
+	}
+	for _, req := range r.fake.Requests()[before:] {
+		if strings.HasPrefix(req.Path, "/repos/acme/repo-1/pulls/") {
+			t.Errorf("a closed PR was fetched again: %s", req.Path)
+		}
+	}
+	if r.woken() {
+		t.Fatal("a reconcile with nothing left to close woke the engine")
+	}
+}
+
+// racingAPI runs after, once a PullRequest call has answered, to stand for a delivery that lands
+// while the reconcile still has to apply what it found.
+type racingAPI struct {
+	updateprs.API
+	after func()
+}
+
+func (a racingAPI) PullRequest(ctx context.Context, token, fullName string, number int64) (github.PullRequest, error) {
+	pr, err := a.API.PullRequest(ctx, token, fullName, number)
+	a.after()
+	return pr, err
+}
+
+// A PR that GitHub answered 404 for is closed only when its row is the one the reconcile read: a
+// webhook that stored a newer event for it meanwhile keeps it open.
+func TestReconcileLeavesAGonePROpenWhenAWebhookUpdatedItMeanwhile(t *testing.T) {
+	r := newRig(t, true)
+	r.bot(1)
+	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
+		t.Fatal(err)
+	}
+	r.fake.FailPullRequest("acme/repo-1", 1, 404)
+	r.bot(1, func(p *githubtest.PullRequest) { p.State = "closed" })
+	newer := at(20)
+	r.rec.API = racingAPI{API: r.rec.API, after: func() {
+		r.apply(t, prOf(1, botID, renovateBody, func(p *github.PullRequest) { p.UpdatedAt = &newer }), botID)
+	}}
+	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.states(t); !reflect.DeepEqual(got, map[int64]string{1: "open"}) {
+		t.Fatalf("rows = %v, want the PR a webhook updated after the reconcile read it left open", got)
+	}
+}
+
+// A PR stored closed because GitHub did not know it is reopened when a later reconcile lists it
+// open again, even when its updated_at has not moved.
+func TestReconcileReopensAGoneClosedPRThatGitHubListsAgain(t *testing.T) {
+	r := newRig(t, true)
+	r.bot(1)
+	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
+		t.Fatal(err)
+	}
+	r.fake.FailPullRequest("acme/repo-1", 1, 404)
+	r.bot(1, func(p *githubtest.PullRequest) { p.State = "closed" })
+	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.states(t); !reflect.DeepEqual(got, map[int64]string{1: "closed"}) {
+		t.Fatalf("rows = %v, want PR 1 stored closed", got)
+	}
+	r.woken()
+
+	r.fake.FailPullRequest("acme/repo-1", 1, 0)
+	r.bot(1)
+	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.states(t); !reflect.DeepEqual(got, map[int64]string{1: "open"}) {
+		t.Fatalf("rows = %v, want PR 1 open again after the listing showed it", got)
+	}
+	if !r.woken() {
+		t.Fatal("reopening the PR did not wake the engine")
+	}
+}
+
+// A 404 does not close the row when the same pass could not list the repository: nothing says
+// the repository and the token are fine.
+func TestReconcileLeavesAStoredPRAloneWhenTheListingFailed(t *testing.T) {
+	r := newRig(t, true)
+	r.bot(1)
+	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
+		t.Fatal(err)
+	}
+	r.woken()
+	r.fake.FailPulls("acme/repo-1", 500)
+	r.fake.FailPullRequest("acme/repo-1", 1, 404)
+	if err := r.rec.Reconcile(context.Background(), r.repo); err == nil {
+		t.Fatal("a failed listing returned no error")
+	}
+	if got := r.states(t); !reflect.DeepEqual(got, map[int64]string{1: "open"}) {
+		t.Fatalf("rows = %v, want PR 1 still open", got)
+	}
+	if r.woken() {
+		t.Fatal("a failed reconcile woke the engine")
 	}
 }
 
@@ -410,5 +525,47 @@ func TestRunnerReportsAFailedReconcileAndGoesOn(t *testing.T) {
 	}
 	if got := r.states(t); len(got) != 1 {
 		t.Fatalf("rows = %v, want the PR stored by the second reconcile", got)
+	}
+}
+
+// A reconcile publishes the events of the PRs it applied after its transaction commits, and
+// nothing when it fails and applies nothing.
+func TestReconcilePublishesTheEventsOfAppliedPRsAfterTheCommit(t *testing.T) {
+	r := newRig(t, true)
+	var got []updateprs.Event
+	var storedWhenPublished int
+	r.tracker.Subscribe(func(events []updateprs.Event) {
+		got = append(got, events...)
+		if err := r.db.Reader.QueryRow(`SELECT COUNT(*) FROM update_prs`).Scan(&storedWhenPublished); err != nil {
+			t.Error(err)
+		}
+	})
+	r.bot(1)
+	r.bot(2)
+
+	r.fake.FailPulls("acme/repo-1", 500)
+	if err := r.rec.Reconcile(context.Background(), r.repo); err == nil {
+		t.Fatal("a failed listing returned no error")
+	}
+	if len(got) != 0 {
+		t.Fatalf("a failed reconcile published %+v", got)
+	}
+
+	r.fake.FailPulls("acme/repo-1", 0)
+	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
+		t.Fatal(err)
+	}
+	numbers := map[int64]bool{}
+	for _, e := range got {
+		if e.Kind != updateprs.EventDependenciesRecorded {
+			t.Fatalf("event %+v, want dependencies_recorded", e)
+		}
+		numbers[e.Number] = true
+	}
+	if len(got) != 2 || !numbers[1] || !numbers[2] {
+		t.Fatalf("events = %+v, want one dependencies_recorded event per applied PR", got)
+	}
+	if storedWhenPublished != 2 {
+		t.Fatalf("%d rows were visible when the events were published, want both committed", storedWhenPublished)
 	}
 }

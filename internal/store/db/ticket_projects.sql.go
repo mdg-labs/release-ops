@@ -9,6 +9,20 @@ import (
 	"context"
 )
 
+const countTicketProjectDefaultAndOverrideReferences = `-- name: CountTicketProjectDefaultAndOverrideReferences :one
+SELECT
+  (SELECT COUNT(*) FROM repositories WHERE ticket_project_id = CAST(?1 AS TEXT))
+  + (SELECT COUNT(*) FROM installation_settings WHERE default_ticket_project_id = CAST(?1 AS TEXT))
+  AS referenced
+`
+
+func (q *Queries) CountTicketProjectDefaultAndOverrideReferences(ctx context.Context, id string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countTicketProjectDefaultAndOverrideReferences, id)
+	var referenced int64
+	err := row.Scan(&referenced)
+	return referenced, err
+}
+
 const createTicketProject = `-- name: CreateTicketProject :one
 INSERT INTO ticket_projects (
   id,
@@ -18,9 +32,9 @@ INSERT INTO ticket_projects (
   create_config,
   status_mapping,
   content_templates,
-  on_open_ticket_policy,
   created_at,
-  updated_at
+  updated_at,
+  filter
 ) VALUES (
   ?,
   ?,
@@ -41,23 +55,22 @@ RETURNING
   create_config,
   status_mapping,
   content_templates,
-  on_open_ticket_policy,
   created_at,
   updated_at,
   filter
 `
 
 type CreateTicketProjectParams struct {
-	ID                 string `json:"id"`
-	IntegrationID      string `json:"integration_id"`
-	ExternalProjectID  string `json:"external_project_id"`
-	Name               string `json:"name"`
-	CreateConfig       string `json:"create_config"`
-	StatusMapping      string `json:"status_mapping"`
-	ContentTemplates   string `json:"content_templates"`
-	OnOpenTicketPolicy string `json:"on_open_ticket_policy"`
-	CreatedAt          string `json:"created_at"`
-	UpdatedAt          string `json:"updated_at"`
+	ID                string `json:"id"`
+	IntegrationID     string `json:"integration_id"`
+	ExternalProjectID string `json:"external_project_id"`
+	Name              string `json:"name"`
+	CreateConfig      string `json:"create_config"`
+	StatusMapping     string `json:"status_mapping"`
+	ContentTemplates  string `json:"content_templates"`
+	CreatedAt         string `json:"created_at"`
+	UpdatedAt         string `json:"updated_at"`
+	Filter            string `json:"filter"`
 }
 
 func (q *Queries) CreateTicketProject(ctx context.Context, arg CreateTicketProjectParams) (TicketProject, error) {
@@ -69,9 +82,9 @@ func (q *Queries) CreateTicketProject(ctx context.Context, arg CreateTicketProje
 		arg.CreateConfig,
 		arg.StatusMapping,
 		arg.ContentTemplates,
-		arg.OnOpenTicketPolicy,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.Filter,
 	)
 	var i TicketProject
 	err := row.Scan(
@@ -82,7 +95,6 @@ func (q *Queries) CreateTicketProject(ctx context.Context, arg CreateTicketProje
 		&i.CreateConfig,
 		&i.StatusMapping,
 		&i.ContentTemplates,
-		&i.OnOpenTicketPolicy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Filter,
@@ -109,7 +121,6 @@ SELECT
   create_config,
   status_mapping,
   content_templates,
-  on_open_ticket_policy,
   created_at,
   updated_at,
   filter
@@ -129,7 +140,6 @@ func (q *Queries) GetTicketProject(ctx context.Context, id string) (TicketProjec
 		&i.CreateConfig,
 		&i.StatusMapping,
 		&i.ContentTemplates,
-		&i.OnOpenTicketPolicy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Filter,
@@ -146,7 +156,6 @@ SELECT
   create_config,
   status_mapping,
   content_templates,
-  on_open_ticket_policy,
   created_at,
   updated_at,
   filter
@@ -171,7 +180,6 @@ func (q *Queries) ListTicketProjects(ctx context.Context) ([]TicketProject, erro
 			&i.CreateConfig,
 			&i.StatusMapping,
 			&i.ContentTemplates,
-			&i.OnOpenTicketPolicy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Filter,
@@ -198,7 +206,6 @@ SELECT
   create_config,
   status_mapping,
   content_templates,
-  on_open_ticket_policy,
   created_at,
   updated_at,
   filter
@@ -224,7 +231,6 @@ func (q *Queries) ListTicketProjectsByIntegration(ctx context.Context, integrati
 			&i.CreateConfig,
 			&i.StatusMapping,
 			&i.ContentTemplates,
-			&i.OnOpenTicketPolicy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Filter,
@@ -249,7 +255,7 @@ SET
   create_config = ?,
   status_mapping = ?,
   content_templates = ?,
-  on_open_ticket_policy = ?,
+  filter = ?,
   updated_at = ?
 WHERE id = ?
 RETURNING
@@ -260,20 +266,19 @@ RETURNING
   create_config,
   status_mapping,
   content_templates,
-  on_open_ticket_policy,
   created_at,
   updated_at,
   filter
 `
 
 type UpdateTicketProjectParams struct {
-	Name               string `json:"name"`
-	CreateConfig       string `json:"create_config"`
-	StatusMapping      string `json:"status_mapping"`
-	ContentTemplates   string `json:"content_templates"`
-	OnOpenTicketPolicy string `json:"on_open_ticket_policy"`
-	UpdatedAt          string `json:"updated_at"`
-	ID                 string `json:"id"`
+	Name             string `json:"name"`
+	CreateConfig     string `json:"create_config"`
+	StatusMapping    string `json:"status_mapping"`
+	ContentTemplates string `json:"content_templates"`
+	Filter           string `json:"filter"`
+	UpdatedAt        string `json:"updated_at"`
+	ID               string `json:"id"`
 }
 
 func (q *Queries) UpdateTicketProject(ctx context.Context, arg UpdateTicketProjectParams) (TicketProject, error) {
@@ -282,7 +287,7 @@ func (q *Queries) UpdateTicketProject(ctx context.Context, arg UpdateTicketProje
 		arg.CreateConfig,
 		arg.StatusMapping,
 		arg.ContentTemplates,
-		arg.OnOpenTicketPolicy,
+		arg.Filter,
 		arg.UpdatedAt,
 		arg.ID,
 	)
@@ -295,7 +300,6 @@ func (q *Queries) UpdateTicketProject(ctx context.Context, arg UpdateTicketProje
 		&i.CreateConfig,
 		&i.StatusMapping,
 		&i.ContentTemplates,
-		&i.OnOpenTicketPolicy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Filter,
@@ -312,11 +316,9 @@ INSERT INTO ticket_projects (
   create_config,
   status_mapping,
   content_templates,
-  on_open_ticket_policy,
   created_at,
   updated_at
 ) VALUES (
-  ?,
   ?,
   ?,
   ?,
@@ -332,7 +334,6 @@ ON CONFLICT (integration_id, external_project_id) DO UPDATE SET
   create_config = excluded.create_config,
   status_mapping = excluded.status_mapping,
   content_templates = excluded.content_templates,
-  on_open_ticket_policy = excluded.on_open_ticket_policy,
   updated_at = excluded.updated_at
 RETURNING
   id,
@@ -342,23 +343,21 @@ RETURNING
   create_config,
   status_mapping,
   content_templates,
-  on_open_ticket_policy,
   created_at,
   updated_at,
   filter
 `
 
 type UpsertTicketProjectParams struct {
-	ID                 string `json:"id"`
-	IntegrationID      string `json:"integration_id"`
-	ExternalProjectID  string `json:"external_project_id"`
-	Name               string `json:"name"`
-	CreateConfig       string `json:"create_config"`
-	StatusMapping      string `json:"status_mapping"`
-	ContentTemplates   string `json:"content_templates"`
-	OnOpenTicketPolicy string `json:"on_open_ticket_policy"`
-	CreatedAt          string `json:"created_at"`
-	UpdatedAt          string `json:"updated_at"`
+	ID                string `json:"id"`
+	IntegrationID     string `json:"integration_id"`
+	ExternalProjectID string `json:"external_project_id"`
+	Name              string `json:"name"`
+	CreateConfig      string `json:"create_config"`
+	StatusMapping     string `json:"status_mapping"`
+	ContentTemplates  string `json:"content_templates"`
+	CreatedAt         string `json:"created_at"`
+	UpdatedAt         string `json:"updated_at"`
 }
 
 func (q *Queries) UpsertTicketProject(ctx context.Context, arg UpsertTicketProjectParams) (TicketProject, error) {
@@ -370,7 +369,6 @@ func (q *Queries) UpsertTicketProject(ctx context.Context, arg UpsertTicketProje
 		arg.CreateConfig,
 		arg.StatusMapping,
 		arg.ContentTemplates,
-		arg.OnOpenTicketPolicy,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
@@ -383,7 +381,6 @@ func (q *Queries) UpsertTicketProject(ctx context.Context, arg UpsertTicketProje
 		&i.CreateConfig,
 		&i.StatusMapping,
 		&i.ContentTemplates,
-		&i.OnOpenTicketPolicy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Filter,

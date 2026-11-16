@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
+
+	"github.com/mdg-labs/release-ops/internal/ratelimit"
 )
 
 // slugPattern is a team slug as GitHub names one; it keeps a configured value from adding
@@ -136,7 +138,7 @@ func userTokenError(err error) error {
 // UserLogin resolves the current login of the account with the numeric id, with an
 // installation token.
 func (c *AppClient) UserLogin(ctx context.Context, installationID, userID int64) (string, bool, error) {
-	tok, err := c.Token(ctx, installationID)
+	tok, err := c.tokenFor(ctx, installationID, ratelimit.ConsumerRoleCheck)
 	if err != nil {
 		return "", false, err
 	}
@@ -146,7 +148,7 @@ func (c *AppClient) UserLogin(ctx context.Context, installationID, userID int64)
 // OrganizationMembership reads a user's membership of an organization with an installation
 // token.
 func (c *AppClient) OrganizationMembership(ctx context.Context, installationID int64, org, login string) (Membership, bool, error) {
-	tok, err := c.Token(ctx, installationID)
+	tok, err := c.tokenFor(ctx, installationID, ratelimit.ConsumerRoleCheck)
 	if err != nil {
 		return Membership{}, false, err
 	}
@@ -155,7 +157,7 @@ func (c *AppClient) OrganizationMembership(ctx context.Context, installationID i
 
 // TeamMembership reads a user's membership of a team with an installation token.
 func (c *AppClient) TeamMembership(ctx context.Context, installationID int64, org, team, login string) (Membership, bool, error) {
-	tok, err := c.Token(ctx, installationID)
+	tok, err := c.tokenFor(ctx, installationID, ratelimit.ConsumerRoleCheck)
 	if err != nil {
 		return Membership{}, false, err
 	}

@@ -101,7 +101,7 @@ func TestWebhookDeliveryApplyFailureLeavesNothing(t *testing.T) {
 	}
 }
 
-func TestWebhookDeliveryRecordsExpireAfterTheRetention(t *testing.T) {
+func TestWebhookDeliveryPrunedByRetentionIsProcessedAsNew(t *testing.T) {
 	t.Parallel()
 
 	s, db, _ := newGitHubAppStore(t)
@@ -115,32 +115,40 @@ func TestWebhookDeliveryRecordsExpireAfterTheRetention(t *testing.T) {
 		}
 	}
 
-	// Exactly one retention after "edge" nothing of it is pruned yet; "old" is older than that.
-	next := deliveryAt.Add(time.Hour + store.WebhookDeliveryRetention)
-	if _, err := s.WebhookDeliveries().Receive(ctx, store.WebhookDelivery{GUID: "new", Event: "push", ReceivedAt: next}, nil); err != nil {
-		t.Fatal(err)
-	}
-	rows, err := db.Writer.Query(`SELECT guid FROM webhook_deliveries ORDER BY guid`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = rows.Close() }()
-	var guids []string
-	for rows.Next() {
-		var g string
-		if err := rows.Scan(&g); err != nil {
-			t.Fatal(err)
-		}
-		guids = append(guids, g)
-	}
-	if len(guids) != 2 || guids[0] != "edge" || guids[1] != "new" {
-		t.Fatalf("guids = %v, want [edge new]", guids)
+	// Exactly one window after "edge" it is still inside; "old" is older than the window.
+	now := deliveryAt.Add(time.Hour + store.DefaultWebhookDeliveryRetention)
+	res, err := store.NewRetention(db, store.RetentionOptions{Now: func() time.Time { return now }}).Prune(ctx)
+	if err != nil || res.Deliveries != 1 {
+		t.Fatalf("Prune = %+v, %v, want exactly the old record deleted", res, err)
 	}
 
-	// An expired GUID is processed again.
-	dup, err := s.WebhookDeliveries().Receive(ctx, store.WebhookDelivery{GUID: "old", Event: "push", ReceivedAt: next}, nil)
+	dup, err := s.WebhookDeliveries().Receive(ctx, store.WebhookDelivery{GUID: "old", Event: "push", ReceivedAt: now}, nil)
 	if dup || err != nil {
-		t.Errorf("expired guid = dup %v, err %v, want it processed as new", dup, err)
+		t.Errorf("pruned guid = dup %v, err %v, want it processed as new", dup, err)
+	}
+	applied := false
+	dup, err = s.WebhookDeliveries().Receive(ctx, store.WebhookDelivery{GUID: "edge", Event: "push", ReceivedAt: now}, func(context.Context, *sql.Tx) error {
+		applied = true
+		return nil
+	})
+	if !dup || err != nil || applied {
+		t.Errorf("guid inside the window = dup %v, err %v, applied %v, want a duplicate that applies nothing", dup, err, applied)
+	}
+}
+
+func TestWebhookDeliveryRequestPathDoesNotPrune(t *testing.T) {
+	t.Parallel()
+
+	s, db, _ := newGitHubAppStore(t)
+	ctx := context.Background()
+	if _, err := s.WebhookDeliveries().Receive(ctx, store.WebhookDelivery{GUID: "old", Event: "push", ReceivedAt: deliveryAt}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.WebhookDeliveries().Receive(ctx, store.WebhookDelivery{GUID: "new", Event: "push", ReceivedAt: deliveryAt.Add(365 * 24 * time.Hour)}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if n := countDeliveries(t, db); n != 2 {
+		t.Fatalf("rows = %d, want both: receiving a delivery deletes nothing", n)
 	}
 }
 

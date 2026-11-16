@@ -25,6 +25,8 @@ services:
       GLOBAL_CONFIG_REPO: ${GLOBAL_CONFIG_REPO:-}
       GLOBAL_CONFIG_REF: ${GLOBAL_CONFIG_REF:-}
       METRICS_ADDR: ${METRICS_ADDR:-127.0.0.1:9100}
+      JOB_HISTORY_RETENTION_DAYS: ${JOB_HISTORY_RETENTION_DAYS:-}
+      WEBHOOK_DELIVERY_RETENTION_DAYS: ${WEBHOOK_DELIVERY_RETENTION_DAYS:-}
       # The internal listener the worker connects to: reachable on the compose network only,
       # so it has no ports entry and Next.js never proxies it.
       INTERNAL_ADDR: ${INTERNAL_ADDR:-:9090}

@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/mdg-labs/release-ops/internal/api/hooks"
+	apimw "github.com/mdg-labs/release-ops/internal/api/middleware"
 	"github.com/mdg-labs/release-ops/internal/store"
 )
 
@@ -430,5 +431,92 @@ func TestWebhookOnlyAcceptsPOSTWithoutASession(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("GET status = %d, want 405", resp.StatusCode)
+	}
+}
+
+// postFrom posts h as the client at address ip: the test server is reached over loopback, so
+// the last X-Forwarded-For hop is the client address the limiter keys on.
+func (f *webhookFlow) postFrom(t *testing.T, ip string, h hookRequest) (int, string, http.Header) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, f.srv.URL+hooks.Path, bytes.NewReader(h.body))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("X-Forwarded-For", ip)
+	req.Header.Set("X-Hub-Signature-256", h.signature)
+	req.Header.Set("X-GitHub-Event", h.event)
+	req.Header.Set("X-GitHub-Delivery", h.guid)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	out, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	return resp.StatusCode, string(out), resp.Header
+}
+
+func TestWebhookFailedSignaturesAreRateLimitedPerClientIP(t *testing.T) {
+	t.Parallel()
+
+	routes := hooks.NewRoutes()
+	var calls seen
+	routes.Register("installation", calls.handler(nil))
+	f := newWebhookFlow(t, "https://release-ops.example.com/hooks/github", true, routes)
+	body := fixture(t, "installation_created.json")
+	bad := hookRequest{body: body, signature: sign("not-the-secret", body), event: "installation", guid: "guid-bad"}
+
+	const attacker = "198.51.100.7"
+	for i := 0; i < apimw.WebhookSignatureLimit; i++ {
+		if status, _, _ := f.postFrom(t, attacker, bad); status != http.StatusUnauthorized {
+			t.Fatalf("bad signature %d status = %d, want 401", i+1, status)
+		}
+	}
+
+	status, _, header := f.postFrom(t, attacker, bad)
+	if status != http.StatusTooManyRequests {
+		t.Fatalf("bad signature past the limit status = %d, want 429", status)
+	}
+	if header.Get("Retry-After") == "" {
+		t.Fatal("429 carries no Retry-After")
+	}
+
+	// The same address with a valid signature is still accepted, and is not counted.
+	for i, guid := range []string{"guid-ok-1", "guid-ok-2"} {
+		if status, _, _ := f.postFrom(t, attacker, signedHook("installation", guid, body)); status != http.StatusAccepted {
+			t.Fatalf("valid delivery %d from the limited address status = %d, want 202", i+1, status)
+		}
+	}
+	if got := calls.calls.Load(); got != 2 {
+		t.Fatalf("handler calls = %d, want 2", got)
+	}
+
+	// Another address has its own count.
+	if status, _, _ := f.postFrom(t, "198.51.100.8", bad); status != http.StatusUnauthorized {
+		t.Fatalf("bad signature from another address status = %d, want 401", status)
+	}
+}
+
+func TestWebhookValidDeliveriesAreNeverCounted(t *testing.T) {
+	t.Parallel()
+
+	routes := hooks.NewRoutes()
+	var calls seen
+	routes.Register("installation", calls.handler(nil))
+	f := newWebhookFlow(t, "https://release-ops.example.com/hooks/github", true, routes)
+	body := fixture(t, "installation_created.json")
+
+	const n = apimw.WebhookSignatureLimit * 2
+	for i := 0; i < n; i++ {
+		guid := "guid-valid-" + string(rune('a'+i))
+		if status, _, _ := f.postFrom(t, "198.51.100.9", signedHook("installation", guid, body)); status != http.StatusAccepted {
+			t.Fatalf("valid delivery %d status = %d, want 202", i+1, status)
+		}
+	}
+	bad := hookRequest{body: body, signature: sign("not-the-secret", body), event: "installation", guid: "guid-bad"}
+	if status, _, _ := f.postFrom(t, "198.51.100.9", bad); status != http.StatusUnauthorized {
+		t.Fatalf("first bad signature after %d valid deliveries status = %d, want 401", n, status)
 	}
 }

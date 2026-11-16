@@ -4,6 +4,7 @@
 package githubtest
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -40,6 +41,9 @@ var contentEntryFixture []byte
 //go:embed testdata/hook_delivery.json
 var hookDeliveryFixture []byte
 
+//go:embed testdata/issue_comment.json
+var issueCommentFixture []byte
+
 // TokenPrefix starts every token the fake mints; a counter follows.
 const TokenPrefix = "fixture-installation-token-"
 
@@ -67,10 +71,14 @@ type Fake struct {
 	// PEM is the App's private key, PKCS#1.
 	PEM []byte
 
-	key *rsa.PrivateKey
 	srv *httptest.Server
 
 	mu sync.Mutex
+	// keys are the public keys of the private keys GitHub accepts for the App, the generated
+	// one first.
+	keys []*rsa.PublicKey
+	// appDocID is the id GET /app answers with; 0 answers AppID.
+	appDocID int64
 	// now is the fake's clock for JWT expiry and token lifetimes.
 	now          func() time.Time
 	installs     map[int64]int64 // installation id -> app id answered
@@ -109,6 +117,11 @@ type Fake struct {
 	deliveryStatus   int                              // status of GET /app/hook/deliveries; 0 answers the list
 	redeliveryStatus map[int64]int                    // delivery id -> status for its redelivery; 0 answers 202
 	onRedelivery     func(Delivery) int               // called for each accepted redelivery; returns the receiver's status
+
+	comments commentState
+
+	rateHeaders http.Header // added to every answer
+	limitStatus int         // answers every request with this status instead; 0 answers normally
 }
 
 // Delivery is a webhook delivery of the App as GET /app/hook/deliveries lists it.
@@ -142,7 +155,7 @@ func New(t testing.TB, now func() time.Time) *Fake {
 		t.Fatalf("generate key: %v", err)
 	}
 	f := &Fake{
-		key:         key,
+		keys:        []*rsa.PublicKey{&key.PublicKey},
 		now:         now,
 		installs:    map[int64]int64{},
 		tokenFor422: map[string]bool{},
@@ -168,6 +181,65 @@ func New(t testing.TB, now func() time.Time) *Fake {
 	t.Cleanup(f.srv.Close)
 	f.URL = f.srv.URL
 	return f
+}
+
+// Close stops the fake, so calls to its URL fail as they do when GitHub is unreachable.
+func (f *Fake) Close() { f.srv.Close() }
+
+// AddKey generates another private key for the App, accepts JWTs signed with it from now on
+// and returns it as a PKCS#1 PEM, the way a second key generated in the App's settings is
+// valid beside the first.
+func (f *Fake) AddKey(t testing.TB) []byte {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.keys = append(f.keys, &key.PublicKey)
+	return pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+}
+
+// RevokeKey stops accepting JWTs signed with the private key in keyPEM, as GitHub does once a
+// key is deleted from the App's settings.
+func (f *Fake) RevokeKey(t testing.TB, keyPEM []byte) {
+	t.Helper()
+	block, _ := pem.Decode(keyPEM)
+	if block == nil {
+		t.Fatal("revoke key: not a PEM")
+	}
+	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		t.Fatalf("revoke key: %v", err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.keys = slices.DeleteFunc(f.keys, func(k *rsa.PublicKey) bool { return k.Equal(&key.PublicKey) })
+}
+
+// AnswerAppID makes GET /app answer with another App's id; 0 answers AppID again.
+func (f *Fake) AnswerAppID(id int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.appDocID = id
+}
+
+// SetRateLimitHeaders adds the headers, such as X-RateLimit-Remaining, to every answer the fake
+// gives from now on; nil removes them.
+func (f *Fake) SetRateLimitHeaders(h http.Header) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rateHeaders = h.Clone()
+}
+
+// RefuseAll makes the fake answer every request with status, without looking at it, and with
+// the rate-limit headers set by SetRateLimitHeaders; 0 restores normal answers. The requests are
+// still counted.
+func (f *Fake) RefuseAll(status int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.limitStatus = status
 }
 
 // SetBotUser makes the public GET /users/{slug}[bot] answer the bot user of the App with that
@@ -422,11 +494,20 @@ func (f *Fake) TokenRequests() [][]string {
 
 func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	r.Body = io.NopCloser(bytes.NewReader(raw))
 	valid := f.checkJWT(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 
 	f.mu.Lock()
 	f.requests = append(f.requests, Request{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, IfNoneMatch: r.Header.Get("If-None-Match"), Body: string(raw), JWTValid: valid})
+	rateHeaders, limitStatus := f.rateHeaders, f.limitStatus
 	f.mu.Unlock()
+	for name, values := range rateHeaders {
+		w.Header()[name] = values
+	}
+	if limitStatus != 0 {
+		w.WriteHeader(limitStatus)
+		return
+	}
 
 	bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if login, ok := strings.CutPrefix(r.URL.Path, "/users/"); ok {
@@ -443,6 +524,10 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	if !valid {
 		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	if r.URL.Path == "/app" && r.Method == http.MethodGet {
+		f.serveApp(w)
 		return
 	}
 	if r.URL.Path == "/app/installations" {
@@ -510,6 +595,16 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func (f *Fake) serveApp(w http.ResponseWriter) {
+	f.mu.Lock()
+	id := f.appDocID
+	f.mu.Unlock()
+	if id == 0 {
+		id = AppID
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "slug": "release-ops-fixture"})
 }
 
 func (f *Fake) deliveryDoc(d Delivery) map[string]any {
@@ -680,9 +775,13 @@ func (f *Fake) serveWithToken(w http.ResponseWriter, r *http.Request, token stri
 		http.NotFound(w, r)
 		return
 	}
-	parts := strings.SplitN(rest, "/", 4)
+	parts := strings.SplitN(rest, "/", 5)
 	if len(parts) >= 3 && parts[2] == "pulls" {
 		f.servePulls(w, r, parts[0]+"/"+parts[1], parts[3:])
+		return
+	}
+	if len(parts) >= 4 && parts[2] == "issues" {
+		f.serveComments(w, r, parts[0]+"/"+parts[1], parts[3:])
 		return
 	}
 	if len(parts) < 3 || parts[2] != "contents" {
@@ -700,8 +799,8 @@ func (f *Fake) serveWithToken(w http.ResponseWriter, r *http.Request, token stri
 		return
 	}
 	dir := ""
-	if len(parts) == 4 {
-		dir = parts[3] + "/"
+	if len(parts) >= 4 {
+		dir = strings.Join(parts[3:], "/") + "/"
 	}
 	seen := map[string]bool{}
 	var entries []any
@@ -827,7 +926,12 @@ func (f *Fake) checkJWT(token string) bool {
 		return false
 	}
 	digest := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
-	if rsa.VerifyPKCS1v15(&f.key.PublicKey, crypto.SHA256, digest[:], sig) != nil {
+	f.mu.Lock()
+	signed := slices.ContainsFunc(f.keys, func(k *rsa.PublicKey) bool {
+		return rsa.VerifyPKCS1v15(k, crypto.SHA256, digest[:], sig) == nil
+	})
+	f.mu.Unlock()
+	if !signed {
 		return false
 	}
 	payload, err := enc.DecodeString(parts[1])

@@ -44,7 +44,7 @@ func TestLoadInternalListenerNeedsAddrAndSecretTogether(t *testing.T) {
 
 // The worker holds no app secret: it starts with none of the app's variables set.
 func TestLoadWorkerNeedsOnlyTheInternalURLAndTheSecret(t *testing.T) {
-	for _, name := range []string{"SESSION_SECRET", "APP_ENCRYPTION_KEY", "APP_DB_PATH", "INTERNAL_ADDR"} {
+	for _, name := range []string{"SESSION_SECRET", "APP_ENCRYPTION_KEY", "APP_DB_PATH", "INTERNAL_ADDR", "METRICS_ADDR", "GITHUB_BASE_URL"} {
 		t.Setenv(name, "")
 	}
 	t.Setenv("INTERNAL_URL", "http://release-ops:9090")

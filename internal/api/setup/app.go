@@ -3,6 +3,7 @@ package setup
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
@@ -13,10 +14,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/github"
+	"github.com/mdg-labs/release-ops/internal/logging"
 	"github.com/mdg-labs/release-ops/internal/store"
 )
 
@@ -123,8 +126,8 @@ const (
 
 // Callback answers GET /setup/callback behind RequireSession, GitHub's redirect after the owner
 // confirms the App, with the code and state in the query. The state must be the one bound to
-// this setup session and is spent by the first request that presents it, so a replay is refused
-// before GitHub is called. The code is then converted to the App, which is stored with its
+// this setup session and is spent by the first request that presents it, also when several arrive at
+// once, so a replay is refused before GitHub is called. The code is then converted to the App, which is stored with its
 // secrets encrypted, and the browser is redirected (302) to the App's installation page. A
 // failure before the store leaves nothing behind and redirects to /setup with an error code;
 // so does a missing or expired setup session (RequireCallbackSession). Once the App is stored
@@ -275,18 +278,61 @@ func (h *Handlers) redirectToSetup(w http.ResponseWriter, r *http.Request, code 
 
 // takeState compares state with the attempt bound to the setup session. A match spends it;
 // a mismatch leaves the attempt in place so a forged request cannot cancel the real one.
+// The session a request reads is its own copy, saved when the request ends, so two requests
+// that carry the same session can both match; the spend is therefore claimed in the
+// process-wide spent set under its lock, and the request that loses the claim is refused.
 func (h *Handlers) takeState(r *http.Request, state string) bool {
 	ctx := r.Context()
 	stored := h.Sessions.GetString(ctx, StateKey)
 	expires := h.Sessions.GetInt64(ctx, StateExpiresKey)
-	if stored == "" || state == "" || expires == 0 || !h.now().Before(time.Unix(expires, 0)) {
+	now := h.now()
+	if stored == "" || state == "" || expires == 0 || !now.Before(time.Unix(expires, 0)) {
 		return false
 	}
 	if subtle.ConstantTimeCompare([]byte(state), []byte(stored)) != 1 {
 		return false
 	}
+	if !h.spent.claim(stored, h.now, time.Unix(expires, 0)) {
+		return false
+	}
 	h.Sessions.Remove(ctx, StateKey)
 	h.Sessions.Remove(ctx, StateExpiresKey)
+	return true
+}
+
+// spentStates holds the SHA-256 of every manifest state redeemed by this process until the
+// state would have expired anyway. The server is one process on one database, so the lock is
+// the single writer that makes "one concurrent redemption wins" hold for a state kept in the
+// session. The zero value is ready to use.
+type spentStates struct {
+	mu    sync.Mutex
+	until map[[sha256.Size]byte]time.Time
+}
+
+// claim records state as spent until expires and reports whether this call was the first to.
+// It reads the clock under the lock and refuses a state that has expired by then, so a request
+// that checked the expiry earlier and waited for the lock cannot claim a state whose spent
+// marker a later claim already pruned.
+func (s *spentStates) claim(state string, now func() time.Time, expires time.Time) bool {
+	sum := sha256.Sum256([]byte(state))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at := now()
+	if !at.Before(expires) {
+		return false
+	}
+	for k, t := range s.until {
+		if !at.Before(t) {
+			delete(s.until, k)
+		}
+	}
+	if _, spent := s.until[sum]; spent {
+		return false
+	}
+	if s.until == nil {
+		s.until = make(map[[sha256.Size]byte]time.Time)
+	}
+	s.until[sum] = expires
 	return true
 }
 
@@ -295,7 +341,9 @@ func newState() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	state := base64.RawURLEncoding.EncodeToString(b)
+	logging.RegisterFor(StateTTL, state)
+	return state, nil
 }
 
 func writeValidationError(w http.ResponseWriter, message string) {

@@ -1,20 +1,27 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/mdg-labs/release-ops/internal/logging"
 )
 
 func TestHealthReturnsJSON(t *testing.T) {
@@ -265,5 +272,57 @@ func TestServeCutsOffASlowHeaderClient(t *testing.T) {
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		t.Fatalf("the server did not close the slow connection: %v", err)
+	}
+}
+
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// A handler that panics with a secret in the panic value is answered with 500, and the panic
+// and its stack are logged through the default logger, redacted.
+func TestARecoveredPanicIsLoggedThroughTheRedactingHandler(t *testing.T) {
+	const secret = "opaque-secret-in-a-panic-value-0001"
+	previous := slog.Default()
+	out := &syncBuffer{}
+	logging.Install(out)
+	logging.Register(secret)
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+		log.SetOutput(os.Stderr)
+		log.SetFlags(log.LstdFlags)
+	})
+
+	r := chi.NewRouter()
+	r.Use(requestLogger)
+	r.Use(recoverer)
+	r.Get("/boom", func(http.ResponseWriter, *http.Request) { panic(fmt.Errorf("handler failed with %s", secret)) })
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+
+	resp, err := http.Get(srv.URL + "/boom")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("a panicking handler = %d, want 500", resp.StatusCode)
+	}
+	text := out.String()
+	if strings.Contains(text, secret) || !strings.Contains(text, "handler panicked") || !strings.Contains(text, logging.Placeholder) || !strings.Contains(text, "status=500") {
+		t.Fatalf("the panic was not logged redacted:\n%s", text)
 	}
 }

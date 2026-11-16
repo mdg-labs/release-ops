@@ -19,7 +19,9 @@ import {
   TEMPLATE_VARIABLES,
   integrationDefaultTemplates,
   templateVariableSyntax,
+  type TemplateField,
 } from "@/lib/ticket-projects/content-templates";
+import { renderTemplatePreview } from "@/lib/ticket-projects/template-preview";
 import type { ContentTemplates } from "@/lib/query/types";
 
 type ContentTemplateFormProps = {
@@ -28,15 +30,78 @@ type ContentTemplateFormProps = {
   onChange: (values: ContentTemplates) => void;
 };
 
+const TEMPLATE_FIELDS: readonly { key: TemplateField; rows: number }[] = [
+  { key: "title", rows: 3 },
+  { key: "description", rows: 10 },
+  { key: "updateComment", rows: 5 },
+  { key: "supersedeComment", rows: 5 },
+];
+
+type TemplateTextareaProps = {
+  name: TemplateField;
+  value: string;
+  defaultValue: string;
+  rows: number;
+  hint: string;
+  onChange: (value: string) => void;
+};
+
+// A template field with the variables it has and a preview of what it renders from sample
+// data; an empty field previews the integration default it falls back to.
+function TemplateTextarea({
+  name,
+  value,
+  defaultValue,
+  rows,
+  hint,
+  onChange,
+}: TemplateTextareaProps): React.ReactElement {
+  const t = useTranslations("ticket-projects");
+  const id = useId();
+  const preview = renderTemplatePreview(
+    value.trim() ? value : defaultValue,
+    name,
+  );
+
+  return (
+    <Field name={`template-${name}`}>
+      <FieldLabel htmlFor={id}>{t(`templates.fields.${name}`)}</FieldLabel>
+      <Textarea
+        className="font-mono"
+        id={id}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={defaultValue}
+        rows={rows}
+        value={value}
+      />
+      <FieldDescription>{hint}</FieldDescription>
+      <div className="flex w-full flex-col gap-1">
+        <p className="font-medium text-xs">{t("templates.previewTitle")}</p>
+        {preview.ok ? (
+          <pre
+            aria-label={t("templates.previewAria", {
+              field: t(`templates.fields.${name}`),
+            })}
+            className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg border bg-muted/40 p-3 font-mono text-xs"
+          >
+            {preview.text}
+          </pre>
+        ) : (
+          <p className="text-muted-foreground text-xs">
+            {t(`templates.previewUnavailable.${preview.reason}`)}
+          </p>
+        )}
+      </div>
+    </Field>
+  );
+}
+
 export function ContentTemplateForm({
   kind,
   values,
   onChange,
 }: ContentTemplateFormProps): React.ReactElement {
   const t = useTranslations("ticket-projects");
-  const titleId = useId();
-  const descriptionId = useId();
-  const supersedeCommentId = useId();
   const defaults = integrationDefaultTemplates(kind);
 
   async function copyVariable(syntax: string): Promise<void> {
@@ -63,61 +128,23 @@ export function ContentTemplateForm({
       </Alert>
 
       <div className="flex flex-col gap-4">
-        <Field name="templateTitle">
-          <FieldLabel htmlFor={titleId}>
-            {t("templates.fields.title")}
-          </FieldLabel>
-          <Textarea
-            className="font-mono"
-            id={titleId}
-            onChange={(event) =>
-              onChange({ ...values, title: event.target.value })
-            }
-            placeholder={defaults.title}
-            value={values.title}
+        {TEMPLATE_FIELDS.map((field) => (
+          <TemplateTextarea
+            defaultValue={defaults[field.key]}
+            hint={t(`templates.hints.${field.key}`)}
+            key={field.key}
+            name={field.key}
+            onChange={(value) => onChange({ ...values, [field.key]: value })}
+            rows={field.rows}
+            value={values[field.key]}
           />
-        </Field>
-
-        <Field name="templateDescription">
-          <FieldLabel htmlFor={descriptionId}>
-            {t("templates.fields.description")}
-          </FieldLabel>
-          <Textarea
-            className="font-mono"
-            id={descriptionId}
-            onChange={(event) =>
-              onChange({ ...values, description: event.target.value })
-            }
-            placeholder={defaults.description}
-            rows={10}
-            value={values.description}
-          />
-        </Field>
-
-        <Field name="templateSupersedeComment">
-          <FieldLabel htmlFor={supersedeCommentId}>
-            {t("templates.fields.supersedeComment")}
-          </FieldLabel>
-          <Textarea
-            className="font-mono"
-            id={supersedeCommentId}
-            onChange={(event) =>
-              onChange({ ...values, supersedeComment: event.target.value })
-            }
-            placeholder={defaults.supersedeComment}
-            rows={5}
-            value={values.supersedeComment}
-          />
-          <FieldDescription>{t("templates.supersedeHint")}</FieldDescription>
-        </Field>
+        ))}
       </div>
 
       <section className="flex min-w-0 flex-col gap-2">
         <p className="font-medium text-sm">{t("templates.variablesTitle")}</p>
         <p className="text-muted-foreground text-sm">
-          {t("templates.variablesDescription", {
-            previousTag: templateVariableSyntax(".Previous.Tag"),
-          })}
+          {t("templates.variablesDescription")}
         </p>
         <Table>
           <TableHeader>

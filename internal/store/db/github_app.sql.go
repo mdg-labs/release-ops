@@ -94,6 +94,47 @@ func (q *Queries) CreateGitHubApp(ctx context.Context, arg CreateGitHubAppParams
 	return result.RowsAffected()
 }
 
+const getGitHubAppInfo = `-- name: GetGitHubAppInfo :one
+SELECT app_id, slug, client_id, html_url, owner_login, owner_type, webhook_active,
+       length(encrypted_private_key) > 0 AS has_private_key,
+       length(encrypted_client_secret) > 0 AS has_client_secret,
+       length(encrypted_webhook_secret) > 0 AS has_webhook_secret
+FROM github_app
+WHERE id = 1
+`
+
+type GetGitHubAppInfoRow struct {
+	AppID            int64  `json:"app_id"`
+	Slug             string `json:"slug"`
+	ClientID         string `json:"client_id"`
+	HtmlUrl          string `json:"html_url"`
+	OwnerLogin       string `json:"owner_login"`
+	OwnerType        string `json:"owner_type"`
+	WebhookActive    int64  `json:"webhook_active"`
+	HasPrivateKey    bool   `json:"has_private_key"`
+	HasClientSecret  bool   `json:"has_client_secret"`
+	HasWebhookSecret bool   `json:"has_webhook_secret"`
+}
+
+// The App's non-secret metadata and whether each secret is stored; no secret column is read.
+func (q *Queries) GetGitHubAppInfo(ctx context.Context) (GetGitHubAppInfoRow, error) {
+	row := q.db.QueryRowContext(ctx, getGitHubAppInfo)
+	var i GetGitHubAppInfoRow
+	err := row.Scan(
+		&i.AppID,
+		&i.Slug,
+		&i.ClientID,
+		&i.HtmlUrl,
+		&i.OwnerLogin,
+		&i.OwnerType,
+		&i.WebhookActive,
+		&i.HasPrivateKey,
+		&i.HasClientSecret,
+		&i.HasWebhookSecret,
+	)
+	return i, err
+}
+
 const getGitHubAppSignIn = `-- name: GetGitHubAppSignIn :one
 SELECT client_id, encrypted_client_secret, owner_login, owner_type FROM github_app WHERE id = 1
 `
@@ -153,6 +194,30 @@ func (q *Queries) GetGitHubAppWebhookSecret(ctx context.Context) (string, error)
 	var encrypted_webhook_secret string
 	err := row.Scan(&encrypted_webhook_secret)
 	return encrypted_webhook_secret, err
+}
+
+const replaceGitHubAppPrivateKey = `-- name: ReplaceGitHubAppPrivateKey :execrows
+UPDATE github_app SET encrypted_private_key = ?, key_id = ?, updated_at = ? WHERE id = 1 AND app_id = ?
+`
+
+type ReplaceGitHubAppPrivateKeyParams struct {
+	EncryptedPrivateKey string `json:"encrypted_private_key"`
+	KeyID               string `json:"key_id"`
+	UpdatedAt           string `json:"updated_at"`
+	AppID               int64  `json:"app_id"`
+}
+
+func (q *Queries) ReplaceGitHubAppPrivateKey(ctx context.Context, arg ReplaceGitHubAppPrivateKeyParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, replaceGitHubAppPrivateKey,
+		arg.EncryptedPrivateKey,
+		arg.KeyID,
+		arg.UpdatedAt,
+		arg.AppID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const setGitHubAppBotUserID = `-- name: SetGitHubAppBotUserID :execrows

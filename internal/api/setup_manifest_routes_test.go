@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -406,6 +407,59 @@ func TestSetupCallbackReplayIsRefused(t *testing.T) {
 	}
 	if f.github.calls.Load() != 1 {
 		t.Errorf("GitHub calls = %d, want 1: the replay must not reach GitHub", f.github.calls.Load())
+	}
+}
+
+func TestSetupCallbackConcurrentRedemptionsLetOneWin(t *testing.T) {
+	t.Parallel()
+
+	// The conversion is held back so every callback has read the setup session, still holding
+	// the state, before any of them finishes.
+	f := newManifestFlow(t, newFakeGitHub(t, func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusNotFound)
+	}), "", 0)
+	f.openSession(t)
+	_, state := f.startManifest(t, `{"owner":{"type":"user"}}`)
+
+	const requests = 8
+	locations := make([]string, requests)
+	statuses := make([]int, requests)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range requests {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			q := url.Values{"code": {"abc123"}, "state": {state}}
+			resp, err := f.client.Get(f.srv.URL + "/api/v1/setup/callback?" + q.Encode())
+			if err != nil {
+				return
+			}
+			_ = resp.Body.Close()
+			statuses[i], locations[i] = resp.StatusCode, resp.Header.Get("Location")
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	redeemed, refused := 0, 0
+	for i := range requests {
+		switch {
+		case statuses[i] == http.StatusFound && locations[i] == setupErrorRedirect("conversion_rejected"):
+			redeemed++
+		case statuses[i] == http.StatusFound && locations[i] == setupErrorRedirect("invalid_state"):
+			refused++
+		default:
+			t.Errorf("callback %d = %d to %q", i, statuses[i], locations[i])
+		}
+	}
+	if redeemed != 1 || refused != requests-1 {
+		t.Errorf("%d callbacks redeemed the state and %d were refused, want 1 and %d", redeemed, refused, requests-1)
+	}
+	if got := f.github.calls.Load(); got != 1 {
+		t.Errorf("GitHub calls = %d, want 1: only the winning callback may reach GitHub", got)
 	}
 }
 

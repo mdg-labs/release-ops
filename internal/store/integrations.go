@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"time"
 
+	"github.com/mdg-labs/release-ops/internal/logging"
 	"github.com/mdg-labs/release-ops/internal/store/db"
 )
 
@@ -41,6 +43,17 @@ type IntegrationRepository interface {
 	Delete(ctx context.Context, id string) error
 	CountReferences(ctx context.Context, id string) (int64, error)
 	DecryptPayload(ctx context.Context, id string) ([]byte, error)
+	// Credentials returns the kind, base URL and decrypted payload of one stored row, so the
+	// three always belong to the same revision of the integration.
+	Credentials(ctx context.Context, id string) (*IntegrationCredentials, error)
+}
+
+// IntegrationCredentials is an integration's connection details read from a single row.
+// Payload is the decrypted credential; it is empty when the integration has none.
+type IntegrationCredentials struct {
+	Kind    string
+	BaseURL *string
+	Payload []byte
 }
 
 type integrationRepo struct {
@@ -144,11 +157,37 @@ func (r integrationRepo) DecryptPayload(ctx context.Context, id string) ([]byte,
 	if err != nil {
 		return nil, err
 	}
+	return r.decryptRow(row)
+}
+
+func (r integrationRepo) Credentials(ctx context.Context, id string) (*IntegrationCredentials, error) {
+	row, err := r.store.reads.GetIntegration(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := r.decryptRow(row)
+	if err != nil {
+		return nil, err
+	}
+	return &IntegrationCredentials{Kind: row.Kind, BaseURL: nullStringPtr(row.BaseUrl), Payload: payload}, nil
+}
+
+func (r integrationRepo) decryptRow(row db.Integration) ([]byte, error) {
 	if row.EncryptedPayload == "" {
 		return []byte{}, nil
 	}
-	return r.store.cipher.Decrypt(row.EncryptedPayload)
+	payload, err := r.store.cipher.Decrypt(row.EncryptedPayload)
+	if err != nil {
+		return nil, err
+	}
+	// Whichever caller asked, the credentials are out of the logs from here on. The
+	// registration is renewed at each decrypt, so a credential in use stays covered.
+	logging.RegisterJSONFor(credentialLogTTL, payload)
+	return payload, nil
 }
+
+// credentialLogTTL is how long a decrypted integration credential is kept out of the logs.
+const credentialLogTTL = time.Hour
 
 func integrationFromRow(row db.Integration) *Integration {
 	return &Integration{

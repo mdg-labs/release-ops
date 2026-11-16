@@ -3,6 +3,7 @@ package internalapi_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -236,6 +237,37 @@ func TestHeartbeatResultAndReleaseThroughTheRoutes(t *testing.T) {
 	}
 }
 
+func TestSuspendedInstallationsJobIsNeverHandedToAWorker(t *testing.T) {
+	e := newEnv(t, 50*time.Millisecond)
+	auth := "Bearer " + secret
+	setStatus := func(status string) {
+		t.Helper()
+		if _, err := e.db.Writer.Exec(`UPDATE installations SET status = ?`, status); err != nil {
+			t.Fatalf("set installation status: %v", err)
+		}
+	}
+
+	e.enqueue(t, e.repos[0])
+	setStatus("suspended")
+	if status, body := e.post(t, queue.PathClaim, auth, struct{}{}); status != http.StatusNoContent {
+		t.Fatalf("claim of a suspended installation's job = %d %s, want 204", status, body)
+	}
+
+	setStatus("active")
+	var job queue.ClaimedJob
+	status, body := e.post(t, queue.PathClaim, auth, struct{}{})
+	if status != http.StatusOK || json.Unmarshal(body, &job) != nil {
+		t.Fatalf("claim after reactivating = %d %s, want the job", status, body)
+	}
+
+	setStatus("suspended")
+	heartbeat := strings.Replace(queue.PathHeartbeat, "{id}", job.ID, 1)
+	status, body = e.post(t, heartbeat, auth, queue.LeaseRequest{LeaseOwner: job.LeaseOwner})
+	if status != http.StatusOK || !strings.Contains(string(body), `"abort":true`) {
+		t.Fatalf("heartbeat after the suspension = %d %s, want an abort", status, body)
+	}
+}
+
 func TestResultBodyIsSizeLimited(t *testing.T) {
 	e := newEnv(t, time.Second)
 
@@ -430,5 +462,28 @@ func TestResultCallsAfterResultWithTheRepositoryOfTheJobOnlyWhenStored(t *testin
 	}
 	if !reflect.DeepEqual(got(), []string{repos[0], repos[1]}) {
 		t.Fatalf("told %v, want both repositories: a failed attempt may have changed PRs too", got())
+	}
+}
+
+// A result without a run record still leaves the attempt's job_runs row.
+func TestResultWithoutARunRecordStoresAMinimalRun(t *testing.T) {
+	e := newEnv(t, 50*time.Millisecond)
+	auth := "Bearer " + secret
+	for i, outcome := range []string{queue.OutcomeFailed, queue.OutcomeSucceeded} {
+		e.enqueue(t, e.repos[i])
+		job := e.claimJob(t)
+		path := strings.Replace(queue.PathResult, "{id}", job.ID, 1)
+		if status, body := e.post(t, path, auth, queue.ResultRequest{LeaseOwner: job.LeaseOwner, Outcome: outcome}); status != http.StatusNoContent {
+			t.Fatalf("%s result = %d %s", outcome, status, body)
+		}
+		var attempt int
+		var stored string
+		var code, message sql.NullString
+		if err := e.db.Reader.QueryRow(`SELECT attempt, outcome, error_code, error_message FROM job_runs WHERE job_id = ?`, job.ID).Scan(&attempt, &stored, &code, &message); err != nil {
+			t.Fatalf("%s result left no job_runs row: %v", outcome, err)
+		}
+		if attempt != 1 || stored != outcome || code.Valid || message.Valid {
+			t.Errorf("%s run = attempt %d, outcome %q, code %v, message %v", outcome, attempt, stored, code, message)
+		}
 	}
 }

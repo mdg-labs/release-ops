@@ -9,6 +9,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/mdg-labs/release-ops/internal/logging"
 )
 
 const (
@@ -26,6 +29,14 @@ const (
 	// hex), so an operator-supplied SETUP_TOKEN is never easier to guess than a generated one.
 	minSetupTokenLen = 64
 	defaultGitHubURL = "https://github.com"
+
+	// Retention windows, in days (specs.html § 4.6 and § 2.10). The delivery window must outlast
+	// GitHub's redelivery window of three days, so a record is never deleted while GitHub can
+	// still repeat the delivery it names.
+	DefaultJobHistoryRetentionDays      = 30
+	DefaultWebhookDeliveryRetentionDays = 7
+	minWebhookDeliveryRetentionDays     = 4
+	maxRetentionDays                    = 3650
 )
 
 // Config holds environment-backed server configuration.
@@ -71,6 +82,10 @@ type Config struct {
 	// GlobalConfigRef is GLOBAL_CONFIG_REF, the branch, tag or commit of GlobalConfigRepo the
 	// worker fetches the global Renovate config and tools from at job start.
 	GlobalConfigRef string
+	// JobHistoryRetention is how long a finished job and its history are kept
+	// (JOB_HISTORY_RETENTION_DAYS), and WebhookDeliveryRetention how long a webhook delivery's
+	// GUID is remembered (WEBHOOK_DELIVERY_RETENTION_DAYS).
+	JobHistoryRetention, WebhookDeliveryRetention time.Duration
 }
 
 // Load reads and validates configuration from the process environment.
@@ -96,12 +111,22 @@ func Load() (*Config, error) {
 		MetricsAddr:               envOrDefault("METRICS_ADDR", defaultMetricsAddr),
 	}
 
+	// The secrets are registered before anything can fail, so an error that quotes one is
+	// already covered.
+	logging.Register(cfg.SessionSecret, cfg.AppEncryptionKey, cfg.SetupToken, cfg.WorkerSecret, cfg.BootstrapAdminPassword)
+
 	var err error
 	if err = validateListenAddr(cfg.MetricsAddr); err != nil {
 		return nil, fmt.Errorf("METRICS_ADDR: %w", err)
 	}
 	if cfg.PresetRepositories, err = parseRepositoryList(os.Getenv("PRESET_REPOSITORIES")); err != nil {
 		return nil, fmt.Errorf("PRESET_REPOSITORIES: %w", err)
+	}
+	if cfg.JobHistoryRetention, err = retentionDays("JOB_HISTORY_RETENTION_DAYS", DefaultJobHistoryRetentionDays, 1); err != nil {
+		return nil, err
+	}
+	if cfg.WebhookDeliveryRetention, err = retentionDays("WEBHOOK_DELIVERY_RETENTION_DAYS", DefaultWebhookDeliveryRetentionDays, minWebhookDeliveryRetentionDays); err != nil {
+		return nil, err
 	}
 	if cfg.GoInternalPort, err = envIntOrDefault("GO_INTERNAL_PORT", defaultGoInternalPort); err != nil {
 		return nil, fmt.Errorf("GO_INTERNAL_PORT: %w", err)
@@ -193,8 +218,8 @@ func (c *Config) validate() error {
 	if c.SetupToken != "" && len(c.SetupToken) < minSetupTokenLen {
 		return fmt.Errorf("SETUP_TOKEN must be at least %d characters; generate one with: openssl rand -hex 32", minSetupTokenLen)
 	}
-	if c.BootstrapAdminGitHubLogin != "" && (len(c.BootstrapAdminGitHubLogin) > 39 || !githubLoginPattern.MatchString(c.BootstrapAdminGitHubLogin)) {
-		return fmt.Errorf("BOOTSTRAP_ADMIN_GITHUB_LOGIN must be a GitHub login: up to 39 letters, digits and single hyphens")
+	if c.BootstrapAdminGitHubLogin != "" && !validUserLogin(c.BootstrapAdminGitHubLogin) {
+		return fmt.Errorf("BOOTSTRAP_ADMIN_GITHUB_LOGIN must be a GitHub login: up to 39 letters, digits and single hyphens, with an Enterprise Managed User's _shortcode (mona-cat_octo) allowed")
 	}
 	for name, team := range map[string]string{"ADMIN_TEAM": c.AdminTeam, "VIEWER_TEAM": c.ViewerTeam} {
 		if team != "" && !validTeam(team) {
@@ -241,9 +266,17 @@ var repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[
 // it can never look like an option, a hidden name or a path.
 var refPattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._/+@-]{0,254}$`)
 
-// githubLoginPattern is GitHub's account name syntax: up to 39 letters, digits and single
-// hyphens, neither starting nor ending with a hyphen.
-var githubLoginPattern = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$`)
+// userLoginPattern is a GitHub user's login: letters, digits and single hyphens, neither
+// starting nor ending with a hyphen, followed for an Enterprise Managed User by an underscore
+// and the short code of the enterprise (mona-cat_octo). It is the rule internal/github applies
+// to the login a user signs in with; config does not import that package, because the worker
+// must not depend on the database, and a test keeps the two in step.
+var userLoginPattern = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*(?:_[A-Za-z0-9]{1,39})?$`)
+
+func validUserLogin(s string) bool {
+	name, _, _ := strings.Cut(s, "_")
+	return len(name) <= 39 && userLoginPattern.MatchString(s)
+}
 
 // teamPattern is org/team-slug: a GitHub account name and a team slug of letters, digits,
 // dots, hyphens and underscores.
@@ -348,6 +381,24 @@ func envIntOrDefault(key string, fallback int) (int, error) {
 		return 0, fmt.Errorf("must be positive, got %d", n)
 	}
 	return n, nil
+}
+
+// retentionDays reads a retention window in whole days from the environment. A value that is not
+// a whole number of days from floor to maxRetentionDays stops the server at startup, naming the
+// variable and the range, so a typo cannot silently keep history for a day or for good.
+func retentionDays(key string, fallback, floor int) (time.Duration, error) {
+	days := fallback
+	if raw := strings.TrimSpace(os.Getenv(key)); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			return 0, fmt.Errorf("%s must be a whole number of days from %d to %d, got %q", key, floor, maxRetentionDays, raw)
+		}
+		days = n
+	}
+	if days < floor || days > maxRetentionDays {
+		return 0, fmt.Errorf("%s must be a whole number of days from %d to %d, got %d", key, floor, maxRetentionDays, days)
+	}
+	return time.Duration(days) * 24 * time.Hour, nil
 }
 
 func isHex(s string) bool {

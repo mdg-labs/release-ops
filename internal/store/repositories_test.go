@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/mdg-labs/release-ops/internal/queue"
 	"github.com/mdg-labs/release-ops/internal/store"
@@ -104,7 +105,6 @@ func TestPausingKeepsTheAttemptHistoryOfAJobWaitingForItsRetry(t *testing.T) {
 	if err != nil || outcome != queue.FailRequeued {
 		t.Fatalf("Fail = %v, %v; want the job queued for its retry", outcome, err)
 	}
-	e.exec(t, `INSERT INTO job_events (id, job_id, job_run_id, at, kind) SELECT 'evt-1', job_id, id, 't', 'attempt_failed' FROM job_runs WHERE job_id = ?`, job.ID)
 	noRuns := e.enqueue(t, e.repos[1], queue.PriorityNormal)
 
 	for _, id := range e.repos {
@@ -129,8 +129,8 @@ func TestPausingKeepsTheAttemptHistoryOfAJobWaitingForItsRetry(t *testing.T) {
 		t.Errorf("queued jobs after the pauses = %d, want none", n)
 	}
 	var events int
-	if err := e.db.Writer.QueryRow(`SELECT COUNT(*) FROM job_events WHERE job_id = ?`, job.ID).Scan(&events); err != nil || events != 1 {
-		t.Errorf("job_events after the pause = %d, %v; want the one event kept", events, err)
+	if err := e.db.Writer.QueryRow(`SELECT COUNT(*) FROM job_events WHERE job_id = ? AND kind = 'retry_scheduled'`, job.ID).Scan(&events); err != nil || events != 1 {
+		t.Errorf("retry_scheduled events after the pause = %d, %v; want the one the failed attempt wrote kept", events, err)
 	}
 	if n := e.count(t, `id = ?`, noRuns.JobID); n != 0 {
 		t.Errorf("the queued job without attempts still exists, want it deleted")
@@ -184,5 +184,49 @@ func TestListScheduledKeepsOnlyTheRepositoriesTheSafetyNetEnqueues(t *testing.T)
 	e.exec(t, `UPDATE installations SET status = 'suspended'`)
 	if got, err := repos.ListScheduled(context.Background()); err != nil || len(got) != 0 {
 		t.Fatalf("ListScheduled in a suspended installation = %v, %v; want none", got, err)
+	}
+}
+
+// A queued retry whose attempt left no worker record is kept on a pause all the same: the
+// reaper and a result without a run record each leave the attempt's job_runs row.
+func TestPausingKeepsAJobWaitingForARetryThatLeftNoWorkerRecord(t *testing.T) {
+	for name, end := range map[string]struct {
+		do      func(t *testing.T, e *jobEnv, job *queue.ClaimedJob)
+		outcome string
+	}{
+		"a reaped attempt": {outcome: "lease_expired", do: func(t *testing.T, e *jobEnv, _ *queue.ClaimedJob) {
+			e.clock.Advance(3 * time.Minute)
+			if res, err := e.q.Reap(context.Background()); err != nil || res.Requeued != 1 {
+				t.Fatalf("Reap = %+v, %v; want the job requeued", res, err)
+			}
+		}},
+		"a failure reported without a run": {outcome: "failed", do: func(t *testing.T, e *jobEnv, job *queue.ClaimedJob) {
+			if out, err := e.q.Fail(context.Background(), job.ID, job.LeaseOwner, queue.FailParams{}); err != nil || out != queue.FailRequeued {
+				t.Fatalf("Fail = %v, %v; want the job requeued", out, err)
+			}
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newJobEnv(t, 1)
+			repos := newRepoStore(t, e)
+			e.enqueue(t, e.repos[0], queue.PriorityHigh)
+			job := e.claim(t)
+			end.do(t, e, job)
+			if got := e.row(t, job.ID); got.State != queue.StateQueued || got.Attempts != 1 {
+				t.Fatalf("job = %+v, want queued for its retry after one attempt", got)
+			}
+
+			if _, err := repos.SetEnabled(context.Background(), e.repos[0], false); err != nil {
+				t.Fatalf("SetEnabled(false): %v", err)
+			}
+
+			if got := e.row(t, job.ID); got.State != queue.StateFailed || got.Attempts != 1 {
+				t.Errorf("job after the pause = %+v, want state failed with its one attempt", got)
+			}
+			runs := e.runs(t, job.ID)
+			if len(runs) != 1 || runs[0].Outcome != end.outcome {
+				t.Errorf("job_runs after the pause = %+v, want the %s attempt kept", runs, end.outcome)
+			}
+		})
 	}
 }

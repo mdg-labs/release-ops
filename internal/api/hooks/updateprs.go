@@ -9,15 +9,18 @@ import (
 
 	"github.com/mdg-labs/release-ops/internal/github"
 	"github.com/mdg-labs/release-ops/internal/store"
+	"github.com/mdg-labs/release-ops/internal/updateprs"
 )
 
 // UpdatePRTracker applies a PR to its update_prs row and wakes the ticket engine.
 type UpdatePRTracker interface {
-	// ApplyTx is updateprs.Tracker.ApplyTx: it writes through the delivery's transaction and
-	// reports whether the row changed.
-	ApplyTx(ctx context.Context, tx *sql.Tx, repositoryID string, pr github.PullRequest, botUserID int64) (bool, error)
+	// ApplyTx is updateprs.Tracker.ApplyTx: it writes the PR, its dependencies and release notes
+	// through the delivery's transaction and reports whether anything changed.
+	ApplyTx(ctx context.Context, tx *sql.Tx, repositoryID string, pr github.PullRequest, botUserID int64) (updateprs.Outcome, error)
 	// Wake is updateprs.Notifier.Wake, run once the transaction has committed.
 	Wake()
+	// Publish is updateprs.Tracker.Publish, run once the transaction has committed.
+	Publish(events []updateprs.Event)
 }
 
 // UpdatePRs keeps update_prs current from pull_request deliveries (specs.html section 5.1).
@@ -88,11 +91,14 @@ func (u UpdatePRs) pullRequest(ctx context.Context, tx *sql.Tx, d Delivery) erro
 	if err != nil {
 		return err
 	}
-	changed, err := u.Tracker.ApplyTx(ctx, tx, repo.ID, p.PullRequest, bot.UserID)
+	out, err := u.Tracker.ApplyTx(ctx, tx, repo.ID, p.PullRequest, bot.UserID)
 	if err != nil {
 		return err
 	}
-	if changed {
+	if len(out.Events) > 0 {
+		d.AfterCommit(func() { u.Tracker.Publish(out.Events) })
+	}
+	if out.Changed {
 		d.AfterCommit(u.Tracker.Wake)
 		u.Logger.Info("webhook: update PR stored", "event", d.Event, "delivery", d.GUID, "repository", repo.FullName, "action", p.Action)
 	}

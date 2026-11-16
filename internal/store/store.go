@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,6 +41,13 @@ type Store struct {
 	reads  *db.Queries
 	writes *db.Queries
 	cipher *crypto.Cipher
+
+	// keyVersion counts the replacements of the GitHub App's private key made through this
+	// Store, so in-memory state derived from the old key can tell it is stale.
+	keyVersion atomic.Int64
+
+	// instanceConfig is the environment configuration the settings page shows.
+	instanceConfig atomic.Pointer[InstanceConfig]
 }
 
 // New creates a Store from an open database and encryption cipher.

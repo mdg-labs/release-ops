@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/mdg-labs/release-ops/internal/ratelimit"
 )
 
 // httpStatusError is a non-2xx answer from a ticket system. It carries the status code
@@ -13,6 +17,10 @@ import (
 type httpStatusError struct {
 	code   int
 	detail string
+	// limited marks an answer that refused the call because of a rate limit, and retryAfter is
+	// the delay it asked for (Retry-After, the reset time), at least ratelimit.DefaultBlock.
+	limited    bool
+	retryAfter time.Duration
 }
 
 func (e *httpStatusError) Error() string {
@@ -20,9 +28,44 @@ func (e *httpStatusError) Error() string {
 }
 
 // newHTTPStatusError builds the error for a non-2xx answer; detail is the (already
-// size-limited) response body, never the request.
-func newHTTPStatusError(code int, detail string) error {
-	return &httpStatusError{code: code, detail: detail}
+// size-limited) response body, never the request. A 429, and a 403 that carries a Retry-After
+// or an exhausted X-RateLimit-Remaining, is a rate limit, and so is the 400 with a RATELIMITED
+// error code that Linear's GraphQL API answers with; there the delay is the longer of its reset
+// time and a Retry-After.
+func newHTTPStatusError(resp *http.Response, detail string) error {
+	now := time.Now()
+	e := &httpStatusError{code: resp.StatusCode, detail: detail}
+	sig := ratelimit.Parse(resp.StatusCode, resp.Header, now)
+	switch {
+	case sig.Limited:
+		e.limited, e.retryAfter = true, sig.Until(now).Sub(now)
+	case resp.StatusCode == http.StatusBadRequest && strings.Contains(detail, `"RATELIMITED"`):
+		e.limited = true
+		e.retryAfter = min(max(sig.RetryAfter, linearResetDelay(resp.Header, now)), ratelimit.MaxUpstreamDelay)
+	}
+	return e
+}
+
+// linearResetDelay is the delay until Linear's X-RateLimit-Requests-Reset, a Unix time in
+// milliseconds, or ratelimit.DefaultBlock when the header is missing or unreadable.
+func linearResetDelay(h http.Header, now time.Time) time.Duration {
+	ms, err := strconv.ParseInt(strings.TrimSpace(h.Get("X-RateLimit-Requests-Reset")), 10, 64)
+	if err != nil || ms <= 0 {
+		return ratelimit.DefaultBlock
+	}
+	return min(max(time.UnixMilli(ms).Sub(now), ratelimit.DefaultBlock), ratelimit.MaxUpstreamDelay)
+}
+
+// RateLimitDelay reports whether err is a ticket system's rate-limit answer, and the delay it
+// asked for: work is retried no sooner than that. A rate-limit answer is a 4xx, so on a create it
+// is also one CreateDefinitelyNotStored accepts: the ticket system stored nothing, and the retry
+// cannot duplicate a ticket.
+func RateLimitDelay(err error) (time.Duration, bool) {
+	var status *httpStatusError
+	if errors.As(err, &status) && status.limited {
+		return status.retryAfter, true
+	}
+	return 0, false
 }
 
 // notSentError marks a failure that happened before any byte of the request could

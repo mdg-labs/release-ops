@@ -229,6 +229,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
   return proxyRequest(request, path, "POST");
 }
 
+export async function PUT(request: NextRequest, context: RouteContext) {
+  const { path } = await context.params;
+  return proxyRequest(request, path, "PUT");
+}
+
 export async function PATCH(request: NextRequest, context: RouteContext) {
   const { path } = await context.params;
   return proxyRequest(request, path, "PATCH");

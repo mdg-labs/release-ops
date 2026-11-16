@@ -2,42 +2,47 @@ package store
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/mdg-labs/release-ops/internal/store/db"
 )
 
 // TicketProject is a ticket provider project/team target.
 type TicketProject struct {
-	ID                 string
-	IntegrationID      string
-	ExternalProjectID  string
-	Name               string
-	CreateConfig       string
-	StatusMapping      string
-	ContentTemplates   string
-	OnOpenTicketPolicy string
-	CreatedAt          string
-	UpdatedAt          string
+	ID                string
+	IntegrationID     string
+	ExternalProjectID string
+	Name              string
+	CreateConfig      string
+	StatusMapping     string
+	ContentTemplates  string
+	// Filter is the JSON of which update PRs get a ticket (specs.html section 5.2).
+	Filter    string
+	CreatedAt string
+	UpdatedAt string
 }
 
 // CreateTicketProjectInput holds fields for a new ticket project.
 type CreateTicketProjectInput struct {
-	IntegrationID      string
-	ExternalProjectID  string
-	Name               string
-	CreateConfig       string
-	StatusMapping      string
-	ContentTemplates   string
-	OnOpenTicketPolicy string
+	IntegrationID     string
+	ExternalProjectID string
+	Name              string
+	CreateConfig      string
+	StatusMapping     string
+	ContentTemplates  string
+	// Filter is stored as given; empty stores the default, which lets every non-automerged PR
+	// through.
+	Filter string
 }
 
 // UpdateTicketProjectInput holds updatable ticket project fields.
 type UpdateTicketProjectInput struct {
-	Name               string
-	CreateConfig       string
-	StatusMapping      string
-	ContentTemplates   string
-	OnOpenTicketPolicy string
+	Name             string
+	CreateConfig     string
+	StatusMapping    string
+	ContentTemplates string
+	// Filter is stored as given; empty stores the default.
+	Filter string
 }
 
 // TicketProjectRepository manages ticket_projects rows.
@@ -55,11 +60,6 @@ type ticketProjectRepo struct {
 }
 
 func (r ticketProjectRepo) Create(ctx context.Context, input CreateTicketProjectInput) (*TicketProject, error) {
-	policy := input.OnOpenTicketPolicy
-	if policy == "" {
-		policy = "supersede"
-	}
-
 	now := nowUTC()
 	contentTemplates := input.ContentTemplates
 	if contentTemplates == "" {
@@ -67,16 +67,16 @@ func (r ticketProjectRepo) Create(ctx context.Context, input CreateTicketProject
 	}
 
 	row, err := r.store.writes.CreateTicketProject(ctx, db.CreateTicketProjectParams{
-		ID:                 newID(),
-		IntegrationID:      input.IntegrationID,
-		ExternalProjectID:  input.ExternalProjectID,
-		Name:               input.Name,
-		CreateConfig:       input.CreateConfig,
-		StatusMapping:      input.StatusMapping,
-		ContentTemplates:   contentTemplates,
-		OnOpenTicketPolicy: policy,
-		CreatedAt:          now,
-		UpdatedAt:          now,
+		ID:                newID(),
+		IntegrationID:     input.IntegrationID,
+		ExternalProjectID: input.ExternalProjectID,
+		Name:              input.Name,
+		CreateConfig:      input.CreateConfig,
+		StatusMapping:     input.StatusMapping,
+		ContentTemplates:  contentTemplates,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+		Filter:            orDefaultFilter(input.Filter),
 	})
 	if err != nil {
 		return nil, err
@@ -115,13 +115,13 @@ func (r ticketProjectRepo) Update(ctx context.Context, id string, input UpdateTi
 	}
 
 	row, err := r.store.writes.UpdateTicketProject(ctx, db.UpdateTicketProjectParams{
-		Name:               input.Name,
-		CreateConfig:       input.CreateConfig,
-		StatusMapping:      input.StatusMapping,
-		ContentTemplates:   contentTemplates,
-		OnOpenTicketPolicy: input.OnOpenTicketPolicy,
-		UpdatedAt:          nowUTC(),
-		ID:                 id,
+		Name:             input.Name,
+		CreateConfig:     input.CreateConfig,
+		StatusMapping:    input.StatusMapping,
+		ContentTemplates: contentTemplates,
+		Filter:           orDefaultFilter(input.Filter),
+		UpdatedAt:        nowUTC(),
+		ID:               id,
 	})
 	if err != nil {
 		return nil, err
@@ -129,25 +129,58 @@ func (r ticketProjectRepo) Update(ctx context.Context, id string, input UpdateTi
 	return ticketProjectFromRow(row), nil
 }
 
-// Delete removes a ticket project. It returns ErrInUse when an update ticket still references it.
+// Delete removes a ticket project. It returns ErrInUse, with nothing changed, when a repository
+// override, an installation default or an update ticket still references it. The foreign keys
+// of the first two clear the reference instead of refusing, so the check runs in the same
+// transaction as the delete.
 func (r ticketProjectRepo) Delete(ctx context.Context, id string) error {
-	return mapForeignKeyError(r.store.writes.DeleteTicketProject(ctx, id))
+	tx, err := r.store.db.Writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin ticket project delete: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	q := r.store.writes.WithTx(tx)
+
+	references, err := q.CountTicketProjectDefaultAndOverrideReferences(ctx, id)
+	if err != nil {
+		return fmt.Errorf("check ticket project references: %w", err)
+	}
+	if references > 0 {
+		return ErrInUse
+	}
+	if err := q.DeleteTicketProject(ctx, id); err != nil {
+		return mapForeignKeyError(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit ticket project delete: %w", err)
+	}
+	return nil
 }
 
-const defaultContentTemplatesJSON = `{"title":"","description":"","supersedeComment":""}`
+const defaultContentTemplatesJSON = `{"title":"","description":"","updateComment":"","supersedeComment":""}`
+
+// defaultFilterJSON lets every non-automerged update PR through (specs.html section 4.3).
+const defaultFilterJSON = `{"updateTypes":[],"labels":[],"skipAutomerged":true}`
+
+func orDefaultFilter(filter string) string {
+	if filter == "" {
+		return defaultFilterJSON
+	}
+	return filter
+}
 
 func ticketProjectFromRow(row db.TicketProject) *TicketProject {
 	return &TicketProject{
-		ID:                 row.ID,
-		IntegrationID:      row.IntegrationID,
-		ExternalProjectID:  row.ExternalProjectID,
-		Name:               row.Name,
-		CreateConfig:       row.CreateConfig,
-		StatusMapping:      row.StatusMapping,
-		ContentTemplates:   row.ContentTemplates,
-		OnOpenTicketPolicy: row.OnOpenTicketPolicy,
-		CreatedAt:          row.CreatedAt,
-		UpdatedAt:          row.UpdatedAt,
+		ID:                row.ID,
+		IntegrationID:     row.IntegrationID,
+		ExternalProjectID: row.ExternalProjectID,
+		Name:              row.Name,
+		CreateConfig:      row.CreateConfig,
+		StatusMapping:     row.StatusMapping,
+		ContentTemplates:  row.ContentTemplates,
+		Filter:            row.Filter,
+		CreatedAt:         row.CreatedAt,
+		UpdatedAt:         row.UpdatedAt,
 	}
 }
 

@@ -14,13 +14,6 @@ const (
 	StatusUnknown   = "unknown"
 )
 
-// On-open ticket policy values from ticket_projects.on_open_ticket_policy (specs §5.2.1).
-const (
-	PolicySupersede  = "supersede"
-	PolicyMerge      = "merge"
-	PolicySkipIfOpen = "skip_if_open"
-)
-
 // Ticket integration kinds (specs §6.4).
 const (
 	IntegrationKindKaneo  = "kaneo"
@@ -45,14 +38,13 @@ type StatusMapping struct {
 
 // TicketProject is the ticket target configuration: the integration, external project and ticket settings (specs §6).
 type TicketProject struct {
-	ID                 string
-	IntegrationID      string
-	IntegrationKind    string
-	ExternalProjectID  string
-	CreateConfig       map[string]any
-	StatusMapping      StatusMapping
-	ContentTemplates   ContentTemplates
-	OnOpenTicketPolicy string // supersede | merge | skip_if_open
+	ID                string
+	IntegrationID     string
+	IntegrationKind   string
+	ExternalProjectID string
+	CreateConfig      map[string]any
+	StatusMapping     StatusMapping
+	ContentTemplates  ContentTemplates
 }
 
 // TicketInput is passed to TicketProvider.CreateTicket (specs §6).

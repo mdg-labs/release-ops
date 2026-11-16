@@ -40,6 +40,15 @@ type GitHubAppRepository interface {
 	// App's JWTs. The caller keeps the key in memory only, for as long as it signs, and
 	// clears it afterwards. It returns ErrGitHubAppNotFound before an App is stored.
 	SigningKey(ctx context.Context) (appID int64, privateKeyPEM []byte, err error)
+	// ReplacePrivateKey stores a new private key (PEM) for the App with id appID, encrypted and
+	// with the key id of the cipher that sealed it, in place of the stored one, and counts the
+	// replacement in KeyVersion. The caller has verified the key against GitHub. It returns
+	// ErrGitHubAppNotFound, changing nothing, when no App with that id is stored. The old key
+	// is gone once it returns.
+	ReplacePrivateKey(ctx context.Context, appID int64, privateKeyPEM []byte) error
+	// KeyVersion changes whenever ReplacePrivateKey succeeds; a cache of anything minted with
+	// the private key compares it to the version it was minted under.
+	KeyVersion() int64
 	// WebhookSecret returns the decrypted webhook secret that signs the App's deliveries.
 	// The caller uses it only to verify a signature and never logs or stores it. It returns
 	// ErrGitHubAppNotFound before an App is stored.
@@ -154,6 +163,31 @@ func (r githubAppRepo) SigningKey(ctx context.Context) (int64, []byte, error) {
 		return 0, nil, errors.New("decrypt github app private key: the stored key does not match APP_ENCRYPTION_KEY")
 	}
 	return row.AppID, pem, nil
+}
+
+func (r githubAppRepo) ReplacePrivateKey(ctx context.Context, appID int64, privateKeyPEM []byte) error {
+	encrypted, err := r.store.cipher.Encrypt(privateKeyPEM)
+	if err != nil {
+		return errors.New("encrypt github app private key")
+	}
+	changed, err := r.store.writes.ReplaceGitHubAppPrivateKey(ctx, db.ReplaceGitHubAppPrivateKeyParams{
+		EncryptedPrivateKey: encrypted,
+		KeyID:               r.store.cipher.KeyID(),
+		UpdatedAt:           nowUTC(),
+		AppID:               appID,
+	})
+	if err != nil {
+		return fmt.Errorf("store github app private key: %w", err)
+	}
+	if changed == 0 {
+		return ErrGitHubAppNotFound
+	}
+	r.store.keyVersion.Add(1)
+	return nil
+}
+
+func (r githubAppRepo) KeyVersion() int64 {
+	return r.store.keyVersion.Load()
 }
 
 func (r githubAppRepo) WebhookSecret(ctx context.Context) ([]byte, error) {

@@ -1,35 +1,36 @@
 package tickettemplate
 
 const (
-	defaultTitleMarkdown = "Release: {{ .Repo.SourceKind }} {{ .Repo.ProjectPath }} {{ .Release.Tag }}"
+	defaultTitle = "{{ .PullRequest.Title }} ({{ .Repository }})"
 
-	defaultDescriptionMarkdown = "**Source:** {{ .Repo.SourceKind }}\n" +
-		"**Repository:** {{ .Repo.ProjectPath }} ({{ .Repo.URL }})\n\n" +
-		"**Release:** {{ .Release.Tag }} — {{ .Release.Name }}\n" +
-		"**URL:** {{ .Release.URL }}\n" +
-		"**Published:** {{ .Release.PublishedAt }}\n" +
-		"**Pre-release:** {{ yesNo .Release.IsPrerelease }}\n\n" +
-		"**Previous tag:** {{ .Previous.Tag }}\n\n" +
-		"**Release notes:**\n{{ .Release.Notes }}"
+	defaultDescriptionMarkdown = "**Repository:** {{ .Repository }}\n" +
+		"**Pull request:** [#{{ .PullRequest.Number }} {{ .PullRequest.Title }}]({{ .PullRequest.URL }})\n\n" +
+		"**Dependencies:**\n" +
+		"{{ range .Dependencies }}- {{ .Name }}: {{ .From }} → {{ .To }}{{ if .UpdateType }} ({{ .UpdateType }}){{ end }}\n" +
+		"{{ end }}\n" +
+		"**Release notes:**\n{{ .ReleaseNotes }}"
 
-	defaultDescriptionPlain = "Source: {{ .Repo.SourceKind }}\n" +
-		"Repository: {{ .Repo.ProjectPath }} ({{ .Repo.URL }})\n\n" +
-		"Release: {{ .Release.Tag }} — {{ .Release.Name }}\n" +
-		"URL: {{ .Release.URL }}\n" +
-		"Published: {{ .Release.PublishedAt }}\n" +
-		"Pre-release: {{ yesNo .Release.IsPrerelease }}\n\n" +
-		"Previous tag: {{ .Previous.Tag }}\n\n" +
-		"Release notes:\n{{ .Release.Notes }}"
+	defaultDescriptionPlain = "Repository: {{ .Repository }}\n" +
+		"Pull request: #{{ .PullRequest.Number }} {{ .PullRequest.Title }} ({{ .PullRequest.URL }})\n\n" +
+		"Dependencies:\n" +
+		"{{ range .Dependencies }}- {{ .Name }}: {{ .From }} → {{ .To }}{{ if .UpdateType }} ({{ .UpdateType }}){{ end }}\n" +
+		"{{ end }}\n" +
+		"Release notes:\n{{ .ReleaseNotes }}"
 
-	defaultSupersedeCommentMarkdown = "Superseded: {{ .Supersede.OldTag }} → {{ .Supersede.NewTag }}\n{{ .Release.URL }}\n\nNew ticket: {{ .Supersede.NewTicketURL }}"
+	defaultUpdateComment = "Pull request updated:\n" +
+		"{{ range .Dependencies }}- {{ .Name }}: {{ .From }} → {{ .To }}{{ if .UpdateType }} ({{ .UpdateType }}){{ end }}\n" +
+		"{{ end }}{{ .PullRequest.URL }}"
 
-	defaultSupersedeCommentPlain = "Superseded: {{ .Supersede.OldTag }} → {{ .Supersede.NewTag }}\n{{ .Release.URL }}\n\nNew ticket: {{ .Supersede.NewTicketURL }}"
+	defaultSupersedeComment = "Superseded by {{ .Supersede.NewPullRequest.URL }}\n" +
+		"{{ if .Supersede.NewTicketURL }}New ticket: {{ .Supersede.NewTicketURL }}{{ end }}"
 )
 
-// ContentTemplates mirrors ticket_projects.content_templates JSON (specs §5.4).
+// ContentTemplates mirrors ticket_projects.content_templates JSON (specs §5.4). An empty
+// key selects the integration-kind default.
 type ContentTemplates struct {
 	Title            string
 	Description      string
+	UpdateComment    string
 	SupersedeComment string
 }
 
@@ -38,20 +39,9 @@ func DefaultContentTemplates() ContentTemplates {
 	return ContentTemplates{}
 }
 
-func defaultTitleTemplate() string {
-	return defaultTitleMarkdown
-}
-
 func defaultDescriptionTemplate(integrationKind string) string {
 	if integrationKind == "jira" {
 		return defaultDescriptionPlain
 	}
 	return defaultDescriptionMarkdown
-}
-
-func defaultSupersedeCommentTemplate(integrationKind string) string {
-	if integrationKind == "jira" {
-		return defaultSupersedeCommentPlain
-	}
-	return defaultSupersedeCommentMarkdown
 }

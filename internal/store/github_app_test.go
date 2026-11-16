@@ -159,3 +159,73 @@ func TestGitHubAppCreateRollsBackWhenTheTokenCannotBeInvalidated(t *testing.T) {
 		t.Errorf("a failed Create left %d github_app rows", n)
 	}
 }
+
+func TestGitHubAppReplacePrivateKeyEncryptsAndRewritesTheKeyID(t *testing.T) {
+	t.Parallel()
+
+	s, db, cipher := newGitHubAppStore(t)
+	seedSetupToken(t, db)
+	app := sampleApp()
+	if err := s.GitHubApp().Create(context.Background(), app); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := db.Writer.Exec(`UPDATE github_app SET key_id = 'stale'`); err != nil {
+		t.Fatalf("set stale key id: %v", err)
+	}
+	before := readApp(t, db)
+	version := s.GitHubApp().KeyVersion()
+
+	newPEM := "-----BEGIN RSA PRIVATE KEY-----\nreplacement-key-body\n-----END RSA PRIVATE KEY-----\n"
+	if err := s.GitHubApp().ReplacePrivateKey(context.Background(), app.AppID, []byte(newPEM)); err != nil {
+		t.Fatalf("ReplacePrivateKey: %v", err)
+	}
+
+	row := readApp(t, db)
+	if strings.Contains(row.privateKey, "replacement-key-body") || strings.Contains(row.privateKey, "PRIVATE KEY") {
+		t.Error("the replacement key is stored in plaintext")
+	}
+	if plain, err := cipher.Decrypt(row.privateKey); err != nil || string(plain) != newPEM {
+		t.Errorf("stored key decrypts to %q, %v; want the replacement", plain, err)
+	}
+	if row.keyID != cipher.KeyID() {
+		t.Errorf("key_id = %q, want %q", row.keyID, cipher.KeyID())
+	}
+	if row.clientSecret != before.clientSecret || row.webhookSecret != before.webhookSecret {
+		t.Error("replacing the private key touched the other secrets")
+	}
+	if _, pem, err := s.GitHubApp().SigningKey(context.Background()); err != nil || string(pem) != newPEM {
+		t.Errorf("SigningKey = %q, %v; want the replacement", pem, err)
+	}
+	if got := s.GitHubApp().KeyVersion(); got == version {
+		t.Error("KeyVersion did not change")
+	}
+}
+
+func TestGitHubAppReplacePrivateKeyRefusesAnotherAppOrNone(t *testing.T) {
+	t.Parallel()
+
+	s, db, _ := newGitHubAppStore(t)
+	err := s.GitHubApp().ReplacePrivateKey(context.Background(), 1, []byte("pem"))
+	if !errors.Is(err, store.ErrGitHubAppNotFound) {
+		t.Fatalf("with no App stored: %v, want ErrGitHubAppNotFound", err)
+	}
+
+	seedSetupToken(t, db)
+	app := sampleApp()
+	if err := s.GitHubApp().Create(context.Background(), app); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	before := readApp(t, db)
+	version := s.GitHubApp().KeyVersion()
+
+	err = s.GitHubApp().ReplacePrivateKey(context.Background(), app.AppID+1, []byte("pem"))
+	if !errors.Is(err, store.ErrGitHubAppNotFound) {
+		t.Fatalf("for another App id: %v, want ErrGitHubAppNotFound", err)
+	}
+	if after := readApp(t, db); after != before {
+		t.Error("a refused replacement changed the row")
+	}
+	if s.GitHubApp().KeyVersion() != version {
+		t.Error("a refused replacement changed KeyVersion")
+	}
+}

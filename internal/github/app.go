@@ -12,6 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mdg-labs/release-ops/internal/logging"
+	"github.com/mdg-labs/release-ops/internal/ratelimit"
 )
 
 var (
@@ -21,6 +24,9 @@ var (
 	// ErrAppRejected is returned when GitHub refuses the App's credentials or the request
 	// (401, 403).
 	ErrAppRejected = errors.New("github rejected the app credentials")
+	// ErrAppMismatch is returned when GitHub answers a JWT for this instance's App id with a
+	// different App.
+	ErrAppMismatch = errors.New("github answered for another app than this instance's")
 	// ErrRepositoriesRejected is returned when GitHub refuses an installation token because
 	// a requested repository is not covered by the installation (422).
 	ErrRepositoriesRejected = errors.New("github refused the repositories requested for the token")
@@ -35,6 +41,12 @@ type Account struct {
 	ID    int64  `json:"id"`
 	Login string `json:"login"`
 	Type  string `json:"type"`
+}
+
+// App is GET /app: the App the JWT authenticates as.
+type App struct {
+	ID   int64  `json:"id"`
+	Slug string `json:"slug"`
 }
 
 // Installation is GET /app/installations/{id}.
@@ -72,6 +84,27 @@ func (t InstallationToken) GoString() string { return t.String() }
 // LogValue omits the token.
 func (t InstallationToken) LogValue() slog.Value {
 	return slog.GroupValue(slog.Time("expires_at", t.ExpiresAt))
+}
+
+// GetApp fetches the App that appJWT authenticates as. It answers ErrAppRejected when GitHub
+// does not accept the JWT.
+func (c *Client) GetApp(ctx context.Context, appJWT string) (*App, error) {
+	status, body, err := c.do(ctx, http.MethodGet, "/app", appJWT, nil)
+	if err != nil {
+		return nil, err
+	}
+	switch status {
+	case http.StatusOK:
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, ErrAppRejected
+	default:
+		return nil, fmt.Errorf("%w: status %d", ErrRequestFailed, status)
+	}
+	var out App
+	if err := json.Unmarshal(body, &out); err != nil || out.ID <= 0 {
+		return nil, fmt.Errorf("%w: response is not an app", ErrRequestFailed)
+	}
+	return &out, nil
 }
 
 // GetInstallation fetches an installation of the App that appJWT authenticates.
@@ -130,6 +163,7 @@ func (c *Client) CreateInstallationToken(ctx context.Context, appJWT string, ins
 	if err := json.Unmarshal(body, &out); err != nil || out.Token == "" || out.ExpiresAt.IsZero() {
 		return InstallationToken{}, fmt.Errorf("%w: response is not an installation token", ErrRequestFailed)
 	}
+	logging.RegisterFor(max(time.Until(out.ExpiresAt), 0), out.Token)
 	return InstallationToken{value: out.Token, ExpiresAt: out.ExpiresAt}, nil
 }
 
@@ -149,6 +183,9 @@ func (c *Client) sendTo(ctx context.Context, method, rawURL, bearer string, payl
 // sendWith is sendTo with extra request headers, such as a conditional request's
 // If-None-Match.
 func (c *Client) sendWith(ctx context.Context, method, rawURL, bearer string, payload io.Reader, limit int64, extra http.Header) (int, http.Header, []byte, error) {
+	if err := c.budget.GateToken(bearer); err != nil {
+		return 0, nil, nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, payload)
 	if err != nil {
 		return 0, nil, nil, ErrRequestFailed
@@ -169,6 +206,16 @@ func (c *Client) sendWith(ctx context.Context, method, rawURL, bearer string, pa
 		return 0, nil, nil, fmt.Errorf("%w: request did not complete", ErrRequestFailed)
 	}
 	defer func() { _ = resp.Body.Close() }()
+
+	// A response to a call made with an installation token tells its installation's budget;
+	// an answer that refuses the call for a rate limit is returned as such, with nothing of the
+	// response, before any caller reads its status.
+	now := c.budget.Now()
+	signal := ratelimit.Parse(resp.StatusCode, resp.Header, now)
+	c.budget.ObserveToken(bearer, signal)
+	if signal.Limited {
+		return 0, nil, nil, ratelimit.NewLimitedError(signal.Until(now), now)
+	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {

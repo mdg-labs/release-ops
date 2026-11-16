@@ -1,6 +1,7 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -38,6 +39,22 @@ type PullRequest struct {
 	Labels []struct {
 		Name string `json:"name"`
 	} `json:"labels"`
+	AutoMerge AutoMerge `json:"auto_merge"`
+}
+
+// AutoMerge is the auto_merge field of a pull request: null while auto-merge is not enabled and
+// an object once it is. A payload without the field leaves Present false, so "not reported" is
+// told from "not enabled".
+type AutoMerge struct {
+	Present bool
+	Enabled bool
+}
+
+// UnmarshalJSON reads the field, whether it is null or an object.
+func (a *AutoMerge) UnmarshalJSON(b []byte) error {
+	a.Present = true
+	a.Enabled = string(bytes.TrimSpace(b)) != "null"
+	return nil
 }
 
 // Valid reports whether the pull request carries what tracking it needs: its number, node id,

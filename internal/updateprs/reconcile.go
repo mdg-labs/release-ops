@@ -49,7 +49,9 @@ type TxBeginner interface {
 // Reconciler compares the stored open PRs of a repository with GitHub and repairs the drift
 // (specs.html section 5.1): a bot PR GitHub lists and the store lacks is created, and a stored
 // open PR that is no longer listed is fetched and set to merged or closed as GitHub reports.
-// It never marks a PR superseded.
+// A stored open PR that GitHub answers 404 for, after the listing succeeded with the same token,
+// is gone and is stored closed. Each PR it applies goes through Tracker.ApplyTx, so the
+// dependency and supersede rules run for it as they do for a webhook.
 type Reconciler struct {
 	Store   store.UpdatePRRepository
 	Tracker *Tracker
@@ -121,25 +123,29 @@ func (r *Reconciler) Reconcile(ctx context.Context, repositoryID string) error {
 	if err != nil {
 		return fmt.Errorf("list open pull requests: %w", err)
 	}
-	stored, err := r.Store.OpenNumbers(ctx, repo.ID)
+	stored, err := r.Store.OpenPRs(ctx, repo.ID)
 	if err != nil {
 		return err
 	}
+	versions := make(map[int64]string, len(stored))
 	seen := make(map[int64]bool, len(listed))
 	for _, pr := range listed {
 		seen[pr.Number] = true
 	}
 	var vanished []int64
-	for _, number := range stored {
-		if !seen[number] {
-			vanished = append(vanished, number)
+	for _, pr := range stored {
+		versions[pr.Number] = pr.Version
+		if !seen[pr.Number] {
+			vanished = append(vanished, pr.Number)
 		}
 	}
 	vanished = r.nextFetches(repo.ID, vanished)
+	listedCount := len(listed)
+	var gone []goneUpdatePR
 	for _, number := range vanished {
 		pr, err := r.API.PullRequest(ctx, token.Value(), repo.FullName, number)
 		if errors.Is(err, github.ErrPullRequestNotFound) {
-			r.logger().Warn("update PR reconcile: a stored open pull request is not known to GitHub", "repository", repo.FullName, "number", number)
+			gone = append(gone, goneUpdatePR{number: number, version: versions[number]})
 			continue
 		}
 		if err != nil {
@@ -148,17 +154,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, repositoryID string) error {
 		listed = append(listed, pr)
 	}
 
-	changed, err := r.apply(ctx, repo.ID, bot.UserID, listed)
+	changed, events, err := r.apply(ctx, repo.ID, bot.UserID, listed, gone)
 	if err != nil {
 		return err
 	}
+	r.Tracker.Publish(events)
 	if len(vanished) > 0 {
 		r.cursors[repo.ID] = vanished[len(vanished)-1]
 	}
 	if changed > 0 {
 		r.Wake.Wake()
 	}
-	r.logger().Debug("update PR reconcile done", "repository", repo.FullName, "listed", len(listed)-len(vanished), "fetched", len(vanished), "changed", changed)
+	r.logger().Debug("update PR reconcile done", "repository", repo.FullName, "listed", listedCount, "fetched", len(vanished), "gone", len(gone), "changed", changed)
 	return nil
 }
 
@@ -183,27 +190,48 @@ func (r *Reconciler) nextFetches(repositoryID string, vanished []int64) []int64 
 	return picked
 }
 
-// apply upserts the PRs in one transaction and returns how many rows changed.
-func (r *Reconciler) apply(ctx context.Context, repositoryID string, botUserID int64, prs []github.PullRequest) (int, error) {
+// goneUpdatePR is a stored open PR GitHub does not know, with the version of its row as the
+// reconcile read it before it asked GitHub.
+type goneUpdatePR struct {
+	number  int64
+	version string
+}
+
+// apply upserts the PRs and closes the gone ones in one transaction and returns how many rows
+// changed and the events of the PRs it applied; the caller publishes them once the commit
+// succeeded.
+func (r *Reconciler) apply(ctx context.Context, repositoryID string, botUserID int64, prs []github.PullRequest, gone []goneUpdatePR) (int, []Event, error) {
 	tx, err := r.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, fmt.Errorf("begin reconcile: %w", err)
+		return 0, nil, fmt.Errorf("begin reconcile: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	changed := 0
+	var events []Event
 	for _, pr := range prs {
-		c, err := r.Tracker.ApplyTx(ctx, tx, repositoryID, pr, botUserID)
+		out, err := r.Tracker.ApplyTx(ctx, tx, repositoryID, pr, botUserID)
 		if err != nil {
-			return 0, err
+			return 0, nil, err
+		}
+		if out.Changed {
+			changed++
+		}
+		events = append(events, out.Events...)
+	}
+	for _, g := range gone {
+		c, err := r.Store.CloseGone(ctx, tx, repositoryID, g.number, g.version, r.Tracker.now())
+		if err != nil {
+			return 0, nil, err
 		}
 		if c {
+			r.logger().Warn("update PR reconcile: a stored open pull request is not known to GitHub, stored closed", "repository", repositoryID, "number", g.number)
 			changed++
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit reconcile: %w", err)
+		return 0, nil, fmt.Errorf("commit reconcile: %w", err)
 	}
-	return changed, nil
+	return changed, events, nil
 }
 
 // list returns the open PRs of the repository that the bot authored and that carry Renovate's

@@ -13,6 +13,10 @@ type Result struct {
 	Err error
 	// RetryAfter is the minimum delay before a retry, when an upstream asked for one.
 	RetryAfter time.Duration
+	// RateLimit is the last rate-limit state of GitHub the attempt saw, when it saw any: it
+	// updates the installation's shared budget, and a Limited one makes the attempt a
+	// rate-limited failure.
+	RateLimit *queue.RateLimitReport
 	// Run is the attempt's record for the app to store; nil reports the outcome alone.
 	Run *queue.RunRecord
 }

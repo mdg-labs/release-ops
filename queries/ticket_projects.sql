@@ -7,9 +7,9 @@ INSERT INTO ticket_projects (
   create_config,
   status_mapping,
   content_templates,
-  on_open_ticket_policy,
   created_at,
-  updated_at
+  updated_at,
+  filter
 ) VALUES (
   ?,
   ?,
@@ -30,7 +30,6 @@ RETURNING
   create_config,
   status_mapping,
   content_templates,
-  on_open_ticket_policy,
   created_at,
   updated_at,
   filter;
@@ -44,11 +43,9 @@ INSERT INTO ticket_projects (
   create_config,
   status_mapping,
   content_templates,
-  on_open_ticket_policy,
   created_at,
   updated_at
 ) VALUES (
-  ?,
   ?,
   ?,
   ?,
@@ -64,7 +61,6 @@ ON CONFLICT (integration_id, external_project_id) DO UPDATE SET
   create_config = excluded.create_config,
   status_mapping = excluded.status_mapping,
   content_templates = excluded.content_templates,
-  on_open_ticket_policy = excluded.on_open_ticket_policy,
   updated_at = excluded.updated_at
 RETURNING
   id,
@@ -74,7 +70,6 @@ RETURNING
   create_config,
   status_mapping,
   content_templates,
-  on_open_ticket_policy,
   created_at,
   updated_at,
   filter;
@@ -88,7 +83,6 @@ SELECT
   create_config,
   status_mapping,
   content_templates,
-  on_open_ticket_policy,
   created_at,
   updated_at,
   filter
@@ -105,7 +99,6 @@ SELECT
   create_config,
   status_mapping,
   content_templates,
-  on_open_ticket_policy,
   created_at,
   updated_at,
   filter
@@ -121,7 +114,6 @@ SELECT
   create_config,
   status_mapping,
   content_templates,
-  on_open_ticket_policy,
   created_at,
   updated_at,
   filter
@@ -136,7 +128,7 @@ SET
   create_config = ?,
   status_mapping = ?,
   content_templates = ?,
-  on_open_ticket_policy = ?,
+  filter = ?,
   updated_at = ?
 WHERE id = ?
 RETURNING
@@ -147,7 +139,6 @@ RETURNING
   create_config,
   status_mapping,
   content_templates,
-  on_open_ticket_policy,
   created_at,
   updated_at,
   filter;
@@ -155,3 +146,9 @@ RETURNING
 -- name: DeleteTicketProject :exec
 DELETE FROM ticket_projects
 WHERE id = ?;
+
+-- name: CountTicketProjectDefaultAndOverrideReferences :one
+SELECT
+  (SELECT COUNT(*) FROM repositories WHERE ticket_project_id = CAST(sqlc.arg(id) AS TEXT))
+  + (SELECT COUNT(*) FROM installation_settings WHERE default_ticket_project_id = CAST(sqlc.arg(id) AS TEXT))
+  AS referenced;

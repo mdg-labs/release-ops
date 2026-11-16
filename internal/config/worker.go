@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/mdg-labs/release-ops/internal/logging"
 )
 
 // WorkerConfig is the configuration of `release-ops worker`. It holds the app's internal URL
@@ -31,6 +33,7 @@ func LoadWorker() (*WorkerConfig, error) {
 
 		GitHubBaseURL: strings.TrimRight(envOrDefault("GITHUB_BASE_URL", defaultGitHubURL), "/"),
 	}
+	logging.Register(cfg.WorkerSecret)
 	if err := validateURL("GITHUB_BASE_URL", cfg.GitHubBaseURL, true); err != nil {
 		return nil, err
 	}
