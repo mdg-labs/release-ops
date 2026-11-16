@@ -86,8 +86,16 @@ func walk(node parse.Node, dot scope) error {
 			return checkField(n.Ident[1:], scopeRoot)
 		}
 	case *parse.ChainNode:
-		if _, ok := n.Node.(*parse.DotNode); ok {
+		switch base := n.Node.(type) {
+		case *parse.DotNode:
 			return checkField(n.Field, dot)
+		case *parse.PipeNode:
+			if err := walk(base, dot); err != nil {
+				return err
+			}
+			return checkField(n.Field, pipeScope(base, dot))
+		default:
+			return walk(n.Node, dot)
 		}
 	case *parse.IfNode:
 		return walkBranch(&n.BranchNode, dot, dot)
