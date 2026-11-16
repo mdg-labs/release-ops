@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   defaultFilter,
   filterFromRecord,
+  formatLabels,
   isDefaultFilter,
+  labelsToSave,
   parseLabels,
 } from "@/lib/ticket-projects/filter";
 
@@ -39,5 +41,22 @@ describe("ticket project filter", () => {
       "security",
     ]);
     expect(parseLabels("")).toEqual([]);
+  });
+
+  it("keeps stored labels as they were while the labels field is untouched", () => {
+    const stored = ["needs, review", "deps"];
+    expect(labelsToSave(stored, formatLabels(stored))).toEqual(stored);
+    expect(labelsToSave([], "")).toEqual([]);
+  });
+
+  it("parses the labels field once it was edited", () => {
+    const stored = ["needs, review", "deps"];
+    expect(labelsToSave(stored, "needs, review, deps, security")).toEqual([
+      "needs",
+      "review",
+      "deps",
+      "security",
+    ]);
+    expect(labelsToSave(stored, "")).toEqual([]);
   });
 });

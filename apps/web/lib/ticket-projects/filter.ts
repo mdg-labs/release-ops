@@ -53,6 +53,20 @@ export function formatLabels(labels: readonly string[]): string {
   return labels.join(", ");
 }
 
+/**
+ * The labels to save. The field is comma-separated (docs/specs.html §8), so a stored label that
+ * holds a comma cannot survive a parse; while the text is what formatLabels gave for the stored
+ * labels they are kept as they were, and only an edited field is parsed.
+ */
+export function labelsToSave(
+  stored: readonly string[],
+  labelsText: string,
+): string[] {
+  return labelsText === formatLabels(stored)
+    ? [...stored]
+    : parseLabels(labelsText);
+}
+
 /** True when the filter is the default: every non-automerged PR gets a ticket. */
 export function isDefaultFilter(filter: TicketProjectFilter): boolean {
   return (

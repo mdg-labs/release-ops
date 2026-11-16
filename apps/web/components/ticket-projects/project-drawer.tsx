@@ -50,7 +50,7 @@ import {
   defaultFilter,
   filterFromRecord,
   formatLabels,
-  parseLabels,
+  labelsToSave,
 } from "@/lib/ticket-projects/filter";
 import {
   defaultStatusMapping,
@@ -389,7 +389,7 @@ export function ProjectDrawer({
       ),
       statusMapping: statusMappingToRecord(statusMapping),
       contentTemplates,
-      filter: { ...filter, labels: parseLabels(labelsText) },
+      filter: { ...filter, labels: labelsToSave(filter.labels, labelsText) },
     };
 
     try {

@@ -884,6 +884,64 @@ describe("TicketProjectsView", () => {
     });
   });
 
+  it("saves a stored label containing a comma unchanged when only the name is edited", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    pool
+      .intercept({ path: "/api/go/api/v1/ticket-projects", method: "GET" })
+      .reply(200, [
+        {
+          ...sampleProjects[0],
+          filter: {
+            updateTypes: [],
+            labels: ["needs, review"],
+            skipAutomerged: true,
+          },
+        },
+      ]);
+    pool
+      .intercept({ path: "/api/go/api/v1/integrations", method: "GET" })
+      .reply(200, ticketIntegrations);
+    pool
+      .intercept({
+        path: /\/api\/go\/api\/v1\/integrations\/int-jira\/ticket-metadata\/.*/,
+        method: "GET",
+      })
+      .reply(200, { items: [] })
+      .persist();
+
+    let patchBody: Record<string, unknown> | undefined;
+    pool
+      .intercept({
+        path: "/api/go/api/v1/ticket-projects/tp-1",
+        method: "PATCH",
+      })
+      .reply(200, (opts) => {
+        patchBody = JSON.parse(opts.body as string) as Record<string, unknown>;
+        return sampleProjects[0];
+      });
+
+    renderTicketProjectsPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit Jira — DEV" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/Display name/), {
+      target: { value: "DEV renamed" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await vi.waitFor(() => {
+      expect(patchBody).toBeDefined();
+    });
+    expect(patchBody?.name).toBe("DEV renamed");
+    expect(patchBody?.filter).toEqual({
+      updateTypes: [],
+      labels: ["needs, review"],
+      skipAutomerged: true,
+    });
+  });
+
   it("shows the server's template validation error and opens the templates tab", async () => {
     const pool = mockAgent.get(ORIGIN);
     pool
