@@ -44,9 +44,11 @@ type TicketCandidate struct {
 	RepositoryID string
 	// FullName is the repository's owner/name.
 	FullName string
-	Number   int64
-	URL      string
-	Title    string
+	// GitHubInstallationID is GitHub's id of the installation the repository belongs to.
+	GitHubInstallationID int64
+	Number               int64
+	URL                  string
+	Title                string
 	// State is open, merged, closed or superseded.
 	State  string
 	Labels []string
@@ -90,7 +92,16 @@ type UpdateTicket struct {
 	NextAttemptAt time.Time
 	// LastError is the error shown in the Problems view; empty when none.
 	LastError string
+	// PRCommentID is the id of the bot comment on the PR; 0 while none is stored.
+	PRCommentID int64
+	// PRCommentHash is the hash of the body last written to that comment; empty while the
+	// comment is due for a write.
+	PRCommentHash string
 }
+
+// PRCommentErrorPrefix starts the error recorded for a PR comment that could not be written, so
+// it is told from the error of a ticket operation (queries/update_tickets.sql matches it).
+const PRCommentErrorPrefix = "PR comment: "
 
 // FailSyncInput records a failed operation on an existing ticket.
 type FailSyncInput struct {
@@ -185,6 +196,20 @@ type UpdateTicketRepository interface {
 	// so the next event of its PR may create one. It returns ErrUpdateTicketNotFound for an
 	// unknown row and ErrNoPendingMarker, changing nothing, for a row without a marker.
 	ClearMarker(ctx context.Context, id string, now time.Time) error
+
+	// CommentablePRs returns the ids of the PRs whose ticket exists and whose PR comment is due:
+	// never written, or changed or failed since.
+	CommentablePRs(ctx context.Context) ([]string, error)
+	// StorePRComment stores the id of the bot comment and the hash of the body written to it for
+	// a ticket in state, and drops an error an earlier comment write recorded. When the ticket has
+	// moved on from state meanwhile only the id is stored and the comment stays due. It returns
+	// ErrTicketNotSyncable when the row has no ticket.
+	StorePRComment(ctx context.Context, id string, commentID int64, state, hash string, now time.Time) error
+	// NotePRCommentError records that the PR comment could not be written, for the Problems view,
+	// and makes the write due again. It sets no retry time and counts no attempt, so the ticket's
+	// operations are not held back, and it keeps the error of a ticket operation. It returns
+	// ErrTicketNotSyncable when the row has no ticket.
+	NotePRCommentError(ctx context.Context, id, message string, now time.Time) error
 }
 
 // UpdateTickets returns the update ticket repository.
@@ -211,7 +236,8 @@ func (r updateTicketRepo) Candidate(ctx context.Context, updatePRID string) (Tic
 	}
 	c := TicketCandidate{
 		ID: row.ID, RepositoryID: row.RepositoryID, FullName: row.FullName, Number: row.Number, URL: row.Url,
-		Title: row.Title, State: row.State, SupersededByID: row.SupersededByID.String, Labels: labels, ReleaseNotes: row.ReleaseNotes.String,
+		GitHubInstallationID: row.GithubInstallationID,
+		Title:                row.Title, State: row.State, SupersededByID: row.SupersededByID.String, Labels: labels, ReleaseNotes: row.ReleaseNotes.String,
 	}
 	if row.Automerge.Valid {
 		v := row.Automerge.Int64 == 1
@@ -245,6 +271,7 @@ func (r updateTicketRepo) Candidate(ctx context.Context, updatePRID string) (Tic
 			ID: t.ID, TicketProjectID: t.TicketProjectID, Created: t.ExternalID.Valid, ExternalID: t.ExternalID.String, ExternalURL: t.ExternalUrl.String,
 			State: t.State, TargetState: t.TargetState.String, SyncedHash: t.SyncedHash.String, HandsOff: t.HandsOffAt.Valid,
 			Unconfirmed: t.PendingSince.Valid, Attempts: t.Attempts, LastError: t.LastError.String,
+			PRCommentID: t.PrCommentID.Int64, PRCommentHash: t.PrCommentHash.String,
 		}
 		if t.NextAttemptAt.Valid {
 			if ticket.NextAttemptAt, err = time.Parse(timeLayout, t.NextAttemptAt.String); err != nil {
@@ -453,6 +480,28 @@ func (r updateTicketRepo) ClearMarker(ctx context.Context, id string, now time.T
 		return err
 	}
 	return ErrNoPendingMarker
+}
+
+func (r updateTicketRepo) CommentablePRs(ctx context.Context) ([]string, error) {
+	ids, err := r.store.reads.ListUpdatePRsToComment(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list update PRs whose comment is due: %w", err)
+	}
+	return ids, nil
+}
+
+func (r updateTicketRepo) StorePRComment(ctx context.Context, id string, commentID int64, state, hash string, now time.Time) error {
+	n, err := r.store.writes.StoreUpdateTicketPRComment(ctx, db.StoreUpdateTicketPRCommentParams{
+		CommentID: sql.NullInt64{Int64: commentID, Valid: true}, State: state, Hash: sql.NullString{String: hash, Valid: true}, At: formatTime(now), ID: id,
+	})
+	return syncWriteResult("store the PR comment", n, err)
+}
+
+func (r updateTicketRepo) NotePRCommentError(ctx context.Context, id, message string, now time.Time) error {
+	n, err := r.store.writes.NoteUpdateTicketCommentError(ctx, db.NoteUpdateTicketCommentErrorParams{
+		Message: sql.NullString{String: PRCommentErrorPrefix + message, Valid: true}, At: formatTime(now), ID: id,
+	})
+	return syncWriteResult("record the PR comment error", n, err)
 }
 
 // syncWriteResult turns the outcome of a write to an existing ticket into an error: a failed

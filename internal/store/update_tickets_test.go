@@ -333,3 +333,164 @@ func TestInstallationDefaultIsUpsertedAndRefusedForUnknownProjectsAndInstallatio
 		t.Fatalf("default = %q, want it cleared", list[0].DefaultTicketProjectID)
 	}
 }
+
+// ticketed stores a PR with its linked ticket and returns the ticket's row id.
+func (e *ticketEnv) ticketed(t *testing.T, prID, repo string, number int) string {
+	t.Helper()
+	e.addPR(t, prID, repo, number, "open", 1)
+	id, err := e.st.UpdateTickets().BeginCreate(context.Background(), store.BeginCreateInput{UpdatePRID: prID, TicketProjectID: e.project, Now: ticketEpoch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.UpdateTickets().LinkCreated(context.Background(), store.LinkCreatedInput{ID: id, ExternalID: "DEV-1", ExternalURL: "https://x/DEV-1", SyncedHash: "h", Now: ticketEpoch}); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func (e *ticketEnv) commentColumns(t *testing.T, id string) (commentID sql.NullInt64, hash, lastError sql.NullString) {
+	t.Helper()
+	if err := e.db.Reader.QueryRow(`SELECT pr_comment_id, pr_comment_hash, last_error FROM update_tickets WHERE id = ?`, id).Scan(&commentID, &hash, &lastError); err != nil {
+		t.Fatal(err)
+	}
+	return commentID, hash, lastError
+}
+
+// The PR comment is due for a ticket that exists and whose comment was never written, changed
+// state or failed since; a ticket without a link, one whose comment is current and one of a removed
+// repository are not listed.
+func TestCommentablePRsListsTheTicketsWhoseCommentIsDue(t *testing.T) {
+	e := newTicketEnv(t)
+	ctx := context.Background()
+	tickets := e.st.UpdateTickets()
+	e.addPR(t, "pr-pending", e.repos[0], 1, "open", 1)
+	if _, err := tickets.BeginCreate(ctx, store.BeginCreateInput{UpdatePRID: "pr-pending", TicketProjectID: e.project, Now: ticketEpoch}); err != nil {
+		t.Fatal(err)
+	}
+	e.ticketed(t, "pr-fresh", e.repos[0], 2)
+	current := e.ticketed(t, "pr-current", e.repos[0], 3)
+	e.ticketed(t, "pr-gone", e.repos[1], 4)
+	if err := tickets.StorePRComment(ctx, current, 11, "open", "h1", ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+	e.exec(t, `UPDATE repositories SET removed_at = '2026-11-15T10:00:00.000Z' WHERE id = ?`, e.repos[1])
+
+	ids, err := tickets.CommentablePRs(ctx)
+	if err != nil || !reflect.DeepEqual(ids, []string{"pr-fresh"}) {
+		t.Fatalf("CommentablePRs = %v, %v, want only pr-fresh", ids, err)
+	}
+
+	// A failed write makes the current one due again; a stored one takes it out.
+	if err := tickets.NotePRCommentError(ctx, current, "github request failed", ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if ids, _ = tickets.CommentablePRs(ctx); !reflect.DeepEqual(ids, []string{"pr-current", "pr-fresh"}) && !reflect.DeepEqual(ids, []string{"pr-fresh", "pr-current"}) {
+		t.Fatalf("CommentablePRs after a failed write = %v, want both", ids)
+	}
+}
+
+// A new state changes the comment, so completing the transition to it makes the comment due; a
+// completion that leaves the state as it is keeps the hash.
+func TestCompletingATransitionToANewStateMakesTheCommentDue(t *testing.T) {
+	e := newTicketEnv(t)
+	ctx := context.Background()
+	tickets := e.st.UpdateTickets()
+	id := e.ticketed(t, "pr-1", e.repos[0], 1)
+	if err := tickets.StorePRComment(ctx, id, 11, "open", "h-open", ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := tickets.CompleteTransition(ctx, id, "open", ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if _, hash, _ := e.commentColumns(t, id); hash.String != "h-open" {
+		t.Fatalf("hash = %q after a completion that left the state, want it kept", hash.String)
+	}
+
+	if err := tickets.CompleteTransition(ctx, id, "done", ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+	commentID, hash, _ := e.commentColumns(t, id)
+	if hash.Valid || commentID.Int64 != 11 {
+		t.Fatalf("comment id %v, hash %v: want the id kept and the hash dropped so the comment is due", commentID, hash)
+	}
+}
+
+// The hash is kept only for the state the body was written for: a ticket that moved on while the
+// comment was being written stays due, with the comment's id stored so it is edited, not posted.
+func TestStorePRCommentKeepsTheHashOnlyForTheStateItWasWrittenFor(t *testing.T) {
+	e := newTicketEnv(t)
+	ctx := context.Background()
+	tickets := e.st.UpdateTickets()
+	id := e.ticketed(t, "pr-1", e.repos[0], 1)
+	if err := tickets.CompleteTransition(ctx, id, "done", ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := tickets.StorePRComment(ctx, id, 11, "open", "h-open", ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+	commentID, hash, _ := e.commentColumns(t, id)
+	if hash.Valid || commentID.Int64 != 11 {
+		t.Fatalf("comment id %v, hash %v: want the id stored and the stale hash refused", commentID, hash)
+	}
+	if err := tickets.StorePRComment(ctx, id, 11, "done", "h-done", ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if _, hash, _ = e.commentColumns(t, id); hash.String != "h-done" {
+		t.Fatalf("hash = %v, want h-done", hash)
+	}
+	c, _ := tickets.Candidate(context.Background(), "pr-1")
+	if c.Ticket.PRCommentID != 11 || c.Ticket.PRCommentHash != "h-done" || c.GitHubInstallationID != 1 {
+		t.Fatalf("candidate = %+v, want the comment and the GitHub installation id read", c)
+	}
+}
+
+// A comment failure is recorded for the Problems view without a retry time or an attempt, the
+// error of a ticket operation is neither replaced nor cleared by it, and a row without a ticket
+// takes neither write.
+func TestPRCommentErrorsAreRecordedApartFromTheTicketsOwn(t *testing.T) {
+	e := newTicketEnv(t)
+	ctx := context.Background()
+	tickets := e.st.UpdateTickets()
+	id := e.ticketed(t, "pr-1", e.repos[0], 1)
+
+	if err := tickets.NotePRCommentError(ctx, id, "github request failed", ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+	var attempts int
+	var next sql.NullString
+	_ = e.db.Reader.QueryRow(`SELECT attempts, next_attempt_at FROM update_tickets WHERE id = ?`, id).Scan(&attempts, &next)
+	if _, _, msg := e.commentColumns(t, id); msg.String != "PR comment: github request failed" || attempts != 0 || next.Valid {
+		t.Fatalf("last_error = %q, attempts %d, next %v, want the prefixed message and no retry held against the ticket", msg.String, attempts, next)
+	}
+	if err := tickets.StorePRComment(ctx, id, 11, "open", "h", ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, msg := e.commentColumns(t, id); msg.Valid {
+		t.Fatalf("last_error = %q after the comment was written, want it cleared", msg.String)
+	}
+
+	e.exec(t, `UPDATE update_tickets SET last_error = 'update ticket: boom' WHERE id = ?`, id)
+	if err := tickets.NotePRCommentError(ctx, id, "github request failed", ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if err := tickets.StorePRComment(ctx, id, 11, "open", "h", ticketEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, msg := e.commentColumns(t, id); msg.String != "update ticket: boom" {
+		t.Fatalf("last_error = %q, want the ticket operation's error kept", msg.String)
+	}
+
+	e.addPR(t, "pr-2", e.repos[0], 2, "open", 1)
+	pendingID, err := tickets.BeginCreate(ctx, store.BeginCreateInput{UpdatePRID: "pr-2", TicketProjectID: e.project, Now: ticketEpoch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tickets.NotePRCommentError(ctx, pendingID, "x", ticketEpoch); !errors.Is(err, store.ErrTicketNotSyncable) {
+		t.Fatalf("NotePRCommentError on a row without a ticket = %v, want ErrTicketNotSyncable", err)
+	}
+	if err := tickets.StorePRComment(ctx, pendingID, 1, "open", "h", ticketEpoch); !errors.Is(err, store.ErrTicketNotSyncable) {
+		t.Fatalf("StorePRComment on a row without a ticket = %v, want ErrTicketNotSyncable", err)
+	}
+}

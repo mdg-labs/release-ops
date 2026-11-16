@@ -227,6 +227,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		Tickets:  appStore.UpdateTickets(),
 		Projects: appStore.TicketProjects(),
 		Targets:  integrationTargets{integrations: appStore.Integrations(), client: &http.Client{Timeout: ticketRequestTimeout}},
+		Comments: github.NewPRCommenter(githubClient, appClient, appStore.GitHubApp()),
 		Wake:     ticketWake,
 	}
 	prTracker := updateprs.NewTracker(appStore.UpdatePRs(), nil, ticketWake)

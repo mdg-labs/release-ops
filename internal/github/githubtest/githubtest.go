@@ -4,6 +4,7 @@
 package githubtest
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -39,6 +40,9 @@ var contentEntryFixture []byte
 
 //go:embed testdata/hook_delivery.json
 var hookDeliveryFixture []byte
+
+//go:embed testdata/issue_comment.json
+var issueCommentFixture []byte
 
 // TokenPrefix starts every token the fake mints; a counter follows.
 const TokenPrefix = "fixture-installation-token-"
@@ -113,6 +117,8 @@ type Fake struct {
 	deliveryStatus   int                              // status of GET /app/hook/deliveries; 0 answers the list
 	redeliveryStatus map[int64]int                    // delivery id -> status for its redelivery; 0 answers 202
 	onRedelivery     func(Delivery) int               // called for each accepted redelivery; returns the receiver's status
+
+	comments commentState
 
 	rateHeaders http.Header // added to every answer
 	limitStatus int         // answers every request with this status instead; 0 answers normally
@@ -488,6 +494,7 @@ func (f *Fake) TokenRequests() [][]string {
 
 func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	r.Body = io.NopCloser(bytes.NewReader(raw))
 	valid := f.checkJWT(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 
 	f.mu.Lock()
@@ -768,9 +775,13 @@ func (f *Fake) serveWithToken(w http.ResponseWriter, r *http.Request, token stri
 		http.NotFound(w, r)
 		return
 	}
-	parts := strings.SplitN(rest, "/", 4)
+	parts := strings.SplitN(rest, "/", 5)
 	if len(parts) >= 3 && parts[2] == "pulls" {
 		f.servePulls(w, r, parts[0]+"/"+parts[1], parts[3:])
+		return
+	}
+	if len(parts) >= 4 && parts[2] == "issues" {
+		f.serveComments(w, r, parts[0]+"/"+parts[1], parts[3:])
 		return
 	}
 	if len(parts) < 3 || parts[2] != "contents" {
@@ -788,8 +799,8 @@ func (f *Fake) serveWithToken(w http.ResponseWriter, r *http.Request, token stri
 		return
 	}
 	dir := ""
-	if len(parts) == 4 {
-		dir = parts[3] + "/"
+	if len(parts) >= 4 {
+		dir = strings.Join(parts[3:], "/") + "/"
 	}
 	seen := map[string]bool{}
 	var entries []any

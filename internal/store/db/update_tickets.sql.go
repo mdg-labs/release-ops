@@ -105,7 +105,8 @@ func (q *Queries) ClearUpdateTicketMarker(ctx context.Context, arg ClearUpdateTi
 
 const completeUpdateTicketTransition = `-- name: CompleteUpdateTicketTransition :execrows
 UPDATE update_tickets
-SET state = ?1, target_state = NULL, attempts = 0, next_attempt_at = NULL,
+SET pr_comment_hash = CASE WHEN state <> ?1 THEN NULL ELSE pr_comment_hash END,
+    state = ?1, target_state = NULL, attempts = 0, next_attempt_at = NULL,
     last_error = NULL, last_error_at = NULL, updated_at = ?2
 WHERE id = ?3 AND external_id IS NOT NULL AND hands_off_at IS NULL
 `
@@ -116,7 +117,9 @@ type CompleteUpdateTicketTransitionParams struct {
 	ID    string `json:"id"`
 }
 
-// Stores the state a recorded transition led to and drops the record and the retry.
+// Stores the state a recorded transition led to and drops the record and the retry. A new state
+// changes the PR comment, so the hash of the body last written to it is dropped and the comment
+// is due again; the right-hand sides read the row as it was, so state is still the old one.
 func (q *Queries) CompleteUpdateTicketTransition(ctx context.Context, arg CompleteUpdateTicketTransitionParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, completeUpdateTicketTransition, arg.State, arg.At, arg.ID)
 	if err != nil {
@@ -191,7 +194,7 @@ func (q *Queries) FailUpdateTicketSync(ctx context.Context, arg FailUpdateTicket
 
 const getUpdatePRForTicket = `-- name: GetUpdatePRForTicket :one
 SELECT p.id, p.repository_id, p.number, p.url, p.title, p.state, p.superseded_by_id, p.labels, p.automerge, p.release_notes,
-       r.full_name, r.ticket_project_id AS repository_ticket_project_id,
+       r.full_name, i.github_installation_id, r.ticket_project_id AS repository_ticket_project_id,
        s.default_ticket_project_id AS default_ticket_project_id
 FROM update_prs p
 JOIN repositories r ON r.id = p.repository_id
@@ -214,6 +217,7 @@ type GetUpdatePRForTicketRow struct {
 	Automerge                 sql.NullInt64  `json:"automerge"`
 	ReleaseNotes              sql.NullString `json:"release_notes"`
 	FullName                  string         `json:"full_name"`
+	GithubInstallationID      int64          `json:"github_installation_id"`
 	RepositoryTicketProjectID sql.NullString `json:"repository_ticket_project_id"`
 	DefaultTicketProjectID    sql.NullString `json:"default_ticket_project_id"`
 }
@@ -236,6 +240,7 @@ func (q *Queries) GetUpdatePRForTicket(ctx context.Context, id string) (GetUpdat
 		&i.Automerge,
 		&i.ReleaseNotes,
 		&i.FullName,
+		&i.GithubInstallationID,
 		&i.RepositoryTicketProjectID,
 		&i.DefaultTicketProjectID,
 	)
@@ -244,7 +249,7 @@ func (q *Queries) GetUpdatePRForTicket(ctx context.Context, id string) (GetUpdat
 
 const getUpdateTicketByPR = `-- name: GetUpdateTicketByPR :one
 SELECT id, ticket_project_id, external_id, external_url, state, pending_since, synced_hash, attempts, next_attempt_at, last_error,
-       target_state, hands_off_at
+       target_state, hands_off_at, pr_comment_id, pr_comment_hash
 FROM update_tickets
 WHERE update_pr_id = ?
 `
@@ -262,6 +267,8 @@ type GetUpdateTicketByPRRow struct {
 	LastError       sql.NullString `json:"last_error"`
 	TargetState     sql.NullString `json:"target_state"`
 	HandsOffAt      sql.NullString `json:"hands_off_at"`
+	PrCommentID     sql.NullInt64  `json:"pr_comment_id"`
+	PrCommentHash   sql.NullString `json:"pr_comment_hash"`
 }
 
 func (q *Queries) GetUpdateTicketByPR(ctx context.Context, updatePrID string) (GetUpdateTicketByPRRow, error) {
@@ -280,6 +287,8 @@ func (q *Queries) GetUpdateTicketByPR(ctx context.Context, updatePrID string) (G
 		&i.LastError,
 		&i.TargetState,
 		&i.HandsOffAt,
+		&i.PrCommentID,
+		&i.PrCommentHash,
 	)
 	return i, err
 }
@@ -415,6 +424,45 @@ func (q *Queries) ListUpdatePRsSupersededBy(ctx context.Context, supersededByID 
 	return items, nil
 }
 
+const listUpdatePRsToComment = `-- name: ListUpdatePRsToComment :many
+SELECT p.id
+FROM update_tickets t
+JOIN update_prs p ON p.id = t.update_pr_id
+JOIN repositories r ON r.id = p.repository_id
+JOIN installations i ON i.id = r.installation_id
+WHERE t.external_id IS NOT NULL
+  AND t.pr_comment_hash IS NULL
+  AND r.removed_at IS NULL
+  AND i.status <> 'removed'
+ORDER BY p.updated_at, p.id
+`
+
+// The update PRs whose ticket exists and whose PR comment is due: it was never written, or the
+// ticket changed or a write failed since, which drops the hash of the body last written (the
+// engine compares the body it renders with that hash). A removed repository is left out.
+func (q *Queries) ListUpdatePRsToComment(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listUpdatePRsToComment)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUpdatePRsToSync = `-- name: ListUpdatePRsToSync :many
 SELECT p.id
 FROM update_tickets t
@@ -525,6 +573,32 @@ func (q *Queries) MarkUpdateTicketSynced(ctx context.Context, arg MarkUpdateTick
 	return result.RowsAffected()
 }
 
+const noteUpdateTicketCommentError = `-- name: NoteUpdateTicketCommentError :execrows
+UPDATE update_tickets
+SET pr_comment_hash = NULL,
+    last_error = CASE WHEN last_error IS NULL OR last_error LIKE 'PR comment: %' THEN ?1 ELSE last_error END,
+    last_error_at = CASE WHEN last_error IS NULL OR last_error LIKE 'PR comment: %' THEN ?2 ELSE last_error_at END,
+    updated_at = ?2
+WHERE id = ?3 AND external_id IS NOT NULL
+`
+
+type NoteUpdateTicketCommentErrorParams struct {
+	Message sql.NullString `json:"message"`
+	At      string         `json:"at"`
+	ID      string         `json:"id"`
+}
+
+// Records that the PR comment could not be written, for the Problems view, and drops the hash so
+// the write is due again. It does not count an attempt or set a retry time, so the ticket's own
+// operations are never held back by it, and it does not replace the error of a ticket operation.
+func (q *Queries) NoteUpdateTicketCommentError(ctx context.Context, arg NoteUpdateTicketCommentErrorParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, noteUpdateTicketCommentError, arg.Message, arg.At, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const noteUpdateTicketError = `-- name: NoteUpdateTicketError :execrows
 UPDATE update_tickets
 SET last_error = ?, last_error_at = ?, updated_at = ?
@@ -548,6 +622,43 @@ func (q *Queries) NoteUpdateTicketError(ctx context.Context, arg NoteUpdateTicke
 		arg.UpdatedAt,
 		arg.ID,
 		arg.LastError_2,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const storeUpdateTicketPRComment = `-- name: StoreUpdateTicketPRComment :execrows
+UPDATE update_tickets
+SET pr_comment_id = ?1,
+    pr_comment_hash = CASE WHEN state = ?2 THEN ?3 ELSE NULL END,
+    last_error = CASE WHEN last_error LIKE 'PR comment: %' AND state = ?2 THEN NULL ELSE last_error END,
+    last_error_at = CASE WHEN last_error LIKE 'PR comment: %' AND state = ?2 THEN NULL ELSE last_error_at END,
+    updated_at = ?4
+WHERE id = ?5 AND external_id IS NOT NULL
+`
+
+type StoreUpdateTicketPRCommentParams struct {
+	CommentID sql.NullInt64  `json:"comment_id"`
+	State     string         `json:"state"`
+	Hash      sql.NullString `json:"hash"`
+	At        string         `json:"at"`
+	ID        string         `json:"id"`
+}
+
+// Stores the id of the bot comment on the PR and the hash of the body last written to it. The
+// body shows the ticket's state, so the hash is kept only while the ticket is still in the state
+// the body was written for; a ticket that moved on meanwhile stays due. A failure that an earlier
+// comment write recorded (its message starts with "PR comment: ") is dropped with it; the error
+// of a ticket operation is left alone.
+func (q *Queries) StoreUpdateTicketPRComment(ctx context.Context, arg StoreUpdateTicketPRCommentParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, storeUpdateTicketPRComment,
+		arg.CommentID,
+		arg.State,
+		arg.Hash,
+		arg.At,
+		arg.ID,
 	)
 	if err != nil {
 		return 0, err

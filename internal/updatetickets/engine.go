@@ -95,6 +95,9 @@ type Engine struct {
 	Tickets  store.UpdateTicketRepository
 	Projects Projects
 	Targets  Targets
+	// Comments, which may be nil, writes the ticket link comment on each ticketed PR (specs.html
+	// section 5.2.3). Without it no comment is written.
+	Comments PRComments
 	// Wake, which may be nil, starts a pass over the PRs without a ticket when it fires.
 	Wake *updateprs.Notifier
 	// Now defaults to time.Now.
@@ -109,11 +112,17 @@ type Engine struct {
 	// credentials, and PR text only through the redacted error message.
 	Logger *slog.Logger
 
-	mu      sync.Mutex // serializes Process: one create at a time
-	qmu     sync.Mutex
-	queued  []string
-	queuedS map[string]bool
-	signal  chan struct{}
+	mu sync.Mutex // serializes Process: one create at a time
+	// cmu serializes the PR comment writes, so two passes never both post a comment, and guards
+	// commentFailures, the pause after a failed write by ticket row id. It is separate from mu so
+	// a slow GitHub never holds back the ticket system calls, and the pause is lost on a
+	// restart, which only makes the next pass try at once.
+	cmu             sync.Mutex
+	commentFailures map[string]commentFailure
+	qmu             sync.Mutex
+	queued          []string
+	queuedS         map[string]bool
+	signal          chan struct{}
 }
 
 func (e *Engine) now() time.Time {
@@ -224,8 +233,9 @@ func (e *Engine) sweep(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		e.sync(ctx, id)
+		e.sync(ctx, id, false)
 	}
+	e.commentSweep(ctx)
 }
 
 // run creates the ticket of the PR when it qualifies, then keeps the ticket in step with it. A
@@ -238,7 +248,7 @@ func (e *Engine) run(ctx context.Context, updatePRID string) {
 	case outcome == OutcomeCreated:
 		e.logger().Info("update tickets: ticket created", "update_pr", updatePRID)
 	}
-	e.sync(ctx, updatePRID)
+	e.sync(ctx, updatePRID, outcome == OutcomeCreated)
 	if outcome != OutcomeCreated {
 		return
 	}
@@ -250,11 +260,14 @@ func (e *Engine) run(ctx context.Context, updatePRID string) {
 		return
 	}
 	for _, id := range replaced {
-		e.sync(ctx, id)
+		e.sync(ctx, id, false)
 	}
 }
 
-func (e *Engine) sync(ctx context.Context, updatePRID string) {
+// sync keeps the ticket in step with its PR, then its PR comment in step with the ticket. A
+// ticket that was just created or changed gets its comment written at once, whatever pause an
+// earlier failed write left; any other ticket waits for it.
+func (e *Engine) sync(ctx context.Context, updatePRID string, created bool) {
 	outcome, err := e.Sync(ctx, updatePRID)
 	switch {
 	case err != nil && ctx.Err() == nil:
@@ -262,6 +275,8 @@ func (e *Engine) sync(ctx context.Context, updatePRID string) {
 	case outcome != SyncNothing && outcome != SyncWaiting && err == nil:
 		e.logger().Info("update tickets: ticket synced", "update_pr", updatePRID, "outcome", outcome)
 	}
+	changed := err == nil && (outcome == SyncUpdated || outcome == SyncTransitioned || outcome == SyncSuperseded)
+	e.comment(ctx, updatePRID, created || changed)
 }
 
 // Process creates the ticket of the update PR when it qualifies: it is open, has dependencies, its
