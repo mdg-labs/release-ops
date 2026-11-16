@@ -84,7 +84,7 @@ The settings this guide uses:
 | `SETUP_TOKEN` | No | A setup token of your own, at least 64 characters (`openssl rand -hex 32`). Unset: the app generates one and prints it to its log. |
 | `BOOTSTRAP_ADMIN_GITHUB_LOGIN` | No | The GitHub login of your first admin. See [step 8](#8-sign-in). |
 | `ADMIN_TEAM`, `VIEWER_TEAM` | No | Organization teams in the form `org/team-slug`. Members of `ADMIN_TEAM` are admins. When `VIEWER_TEAM` is set, only its members and the admins can sign in as viewers. |
-| `GLOBAL_CONFIG_REPO`, `GLOBAL_CONFIG_REF` | No | The repository, and the branch, tag or commit in it, that holds the global Renovate configuration. The worker fetches it at the start of every job. Set both or neither. |
+| `GLOBAL_CONFIG_REPO`, `GLOBAL_CONFIG_REF` | One of two ways | The repository, and the branch, tag or commit in it, that holds the global Renovate configuration. The worker fetches it at the start of every job. Set both or neither. Every instance needs a global configuration, either this or a mounted file: see [Provide the global Renovate config](#provide-the-global-renovate-config). |
 | `PRESET_REPOSITORIES` | No | A comma-separated list of `owner/repo` repositories, such as a shared presets repository. Each job's GitHub token covers them besides the job's own repository, so Renovate can resolve presets from them. The App must be installed on them. |
 | `TRUSTED_PROXIES` | No | See step 1. |
 | `RELEASE_OPS_TAG` | No | The image tag. Both images use the same tag. Default `latest`. |
@@ -132,6 +132,8 @@ services:
     volumes:
       # Renovate's per-slot caches. They are disposable.
       - worker-cache:/cache
+      # The global Renovate config, read-only. See "Provide the global Renovate config" below.
+      - ./worker/config:/config:ro
     # The worker runs as an unprivileged user and starts Renovate as another one.
     # SETUID and SETGID are the only capabilities it keeps for that.
     cap_drop:
@@ -154,6 +156,25 @@ Keep these in place:
 - Do not publish port 9090, and do not mount a Docker socket anywhere. The worker needs none.
 - Do not add `no-new-privileges` to the worker. It disables the file capabilities the worker uses to switch users.
 - Mount no data volume on the worker. It has no database access.
+
+#### Provide the global Renovate config
+
+Every job needs a global (self-hosted) Renovate configuration. A repository's own `renovate.json` does not replace it. Without one, every job fails before Renovate starts, because no global config is mounted and none is configured to fetch. Choose one way.
+
+**A mounted file.** Create `worker/config/config.json` next to your Compose file, readable by every user, with this content:
+
+```json
+{
+  "onboarding": false,
+  "requireConfig": "required"
+}
+```
+
+The Compose file above mounts `./worker/config` read-only at `/config`. The worker uses `config.js` there when it exists and `config.json` otherwise.
+
+**A repository.** Commit the same file as `renovate-global/config.json` (or `config.js`) to a repository. Set `GLOBAL_CONFIG_REPO` to `owner/repo` and `GLOBAL_CONFIG_REF` to a branch, tag or commit in `.env`, and install the App on that repository in [step 6](#6-install-the-app-once). A mounted file wins over the repository, so leave `./worker/config` empty, or remove the mount, when you use a repository.
+
+The file must contain no secrets, and none of the settings Release Ops sets for every job: `platform`, `token`, `repositories` and `allowScripts`. `onboarding: false` and `requireConfig: "required"` stop Renovate from opening onboarding PRs and make it skip repositories without a Renovate configuration of their own. Add your other global settings, such as `prConcurrentLimit`, as you need them. [The global Renovate config](https://mdg-labs.github.io/release-ops/concepts/global-renovate-config/) explains where the file can live and what the worker does with it.
 
 ### 4. Start the services and find the setup token
 
