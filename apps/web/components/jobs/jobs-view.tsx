@@ -302,14 +302,11 @@ export function JobsView(): React.ReactElement {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { role } = useSessionRole();
-  // The view and the open job start from the address, so a link to a job or to the Problems view
-  // lands there, and follow what the user does afterwards.
-  const [view, setView] = useState<View>(
-    searchParams.get("view") === "problems" ? "problems" : "jobs",
-  );
-  const [jobId, setJobId] = useState<string | null>(
-    searchParams.get("job") || null,
-  );
+  // The address decides the view and the open job, so a link to a job or to the Problems view
+  // lands there and a link to /jobs without parameters goes back to the job list.
+  const view: View =
+    searchParams.get("view") === "problems" ? "problems" : "jobs";
+  const jobId = searchParams.get("job") || null;
 
   function sync(nextView: View, nextJob: string | null): void {
     const search = new URLSearchParams();
@@ -326,12 +323,10 @@ export function JobsView(): React.ReactElement {
   }
 
   function changeView(next: View): void {
-    setView(next);
     sync(next, jobId);
   }
 
   function openJob(id: string | null): void {
-    setJobId(id);
     sync(view, id);
   }
 

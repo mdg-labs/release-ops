@@ -8,6 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
+import { act, useSyncExternalStore } from "react";
 import { MockAgent, setGlobalDispatcher } from "undici";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JobsView } from "@/components/jobs/jobs-view";
@@ -26,12 +27,32 @@ const ORIGIN = "http://localhost:3000";
 const API = "/api/go/api/v1";
 
 let searchParams = new URLSearchParams();
+const searchListeners = new Set<() => void>();
 const replaceMock = vi.fn();
+
+// What a navigation does in Next.js: the address changes and the components that read it render
+// again.
+function navigate(query: string): void {
+  act(() => {
+    searchParams = new URLSearchParams(query);
+    for (const listener of searchListeners) {
+      listener();
+    }
+  });
+}
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/jobs",
   useRouter: () => ({ replace: replaceMock, push: vi.fn() }),
-  useSearchParams: () => searchParams,
+  useSearchParams: () =>
+    useSyncExternalStore(
+      (listener) => {
+        searchListeners.add(listener);
+        return () => searchListeners.delete(listener);
+      },
+      () => searchParams,
+      () => searchParams,
+    ),
 }));
 
 vi.mock("next/link", () => ({
@@ -92,7 +113,10 @@ describe("JobsView", () => {
     paths = [];
     writes = [];
     searchParams = new URLSearchParams();
-    replaceMock.mockClear();
+    replaceMock.mockReset();
+    replaceMock.mockImplementation((url: string) =>
+      navigate(url.split("?")[1] ?? ""),
+    );
     originalFetch = globalThis.fetch;
     mockAgent = new MockAgent();
     setGlobalDispatcher(mockAgent);
@@ -588,6 +612,37 @@ describe("JobsView", () => {
 
       const dialog = await screen.findByRole("dialog");
       expect(await within(dialog).findByText("Attempt 1")).toBeTruthy();
+    });
+
+    it("follows the address when it changes after mount", async () => {
+      session("viewer");
+      repositories();
+      serve("GET", "/jobs", jobs([job({ id: "j2", state: "failed" })]));
+      serve("GET", "/problems", problems([]));
+      serve("GET", "/jobs/j2", detail);
+      searchParams = new URLSearchParams("view=problems");
+      renderView();
+
+      expect(await screen.findByText("No problems")).toBeTruthy();
+      expect(
+        screen
+          .getByRole("tab", { name: "Problems" })
+          .getAttribute("aria-selected"),
+      ).toBe("true");
+
+      navigate("");
+      expect(await screen.findByText("acme/api")).toBeTruthy();
+      expect(
+        screen.getByRole("tab", { name: "Jobs" }).getAttribute("aria-selected"),
+      ).toBe("true");
+      expect(screen.queryByRole("dialog")).toBeNull();
+
+      navigate("job=j2");
+      const dialog = await screen.findByRole("dialog");
+      expect(await within(dialog).findByText("Attempt 1")).toBeTruthy();
+
+      navigate("");
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     });
 
     it("says a job is not available when the API answers 404, and shows a failure otherwise", async () => {
