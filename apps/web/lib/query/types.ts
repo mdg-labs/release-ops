@@ -102,7 +102,6 @@ export type TicketProject = {
   createConfig: Record<string, unknown>;
   statusMapping: Record<string, unknown>;
   contentTemplates: ContentTemplates;
-  onOpenTicketPolicy: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -114,7 +113,6 @@ export type CreateTicketProjectInput = {
   createConfig: Record<string, unknown>;
   statusMapping: Record<string, unknown>;
   contentTemplates: ContentTemplates;
-  onOpenTicketPolicy: string;
 };
 
 export type UpdateTicketProjectInput = {
@@ -122,5 +120,4 @@ export type UpdateTicketProjectInput = {
   createConfig: Record<string, unknown>;
   statusMapping: Record<string, unknown>;
   contentTemplates: ContentTemplates;
-  onOpenTicketPolicy: string;
 };

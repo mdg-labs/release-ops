@@ -20,6 +20,22 @@ var (
 	// ErrCreateUnconfirmed is returned by BeginCreate when an earlier create left its pending
 	// marker: a ticket may exist that Release Ops did not store.
 	ErrCreateUnconfirmed = errors.New("an earlier ticket creation for the update PR is unconfirmed")
+	// ErrUpdateTicketNotFound is returned for an update ticket that is not stored.
+	ErrUpdateTicketNotFound = errors.New("update ticket not found")
+	// ErrNoPendingMarker is returned by ClearMarker for a row with no pending marker to clear: it
+	// has its ticket, or its marker was cleared already.
+	ErrNoPendingMarker = errors.New("the update ticket has no pending marker")
+	// ErrTicketNotSyncable is returned when a write to an existing ticket finds no row it may
+	// change: the ticket is gone, has no external id, or was handed off.
+	ErrTicketNotSyncable = errors.New("the update ticket cannot take this change")
+)
+
+// Update ticket states (db/schema.sql update_tickets.state).
+const (
+	TicketStateOpen       = "open"
+	TicketStateDone       = "done"
+	TicketStateCancelled  = "cancelled"
+	TicketStateSuperseded = "superseded"
 )
 
 // TicketCandidate is an update PR as the ticket engine decides on it.
@@ -37,6 +53,8 @@ type TicketCandidate struct {
 	// Automerge is nil while it is unknown, which counts as not automerged.
 	Automerge    *bool
 	ReleaseNotes string
+	// SupersededByID is the PR that replaced this one; empty while none did.
+	SupersededByID string
 	// TicketProjectID is the repository's override, else the installation's default; empty when
 	// neither is set.
 	TicketProjectID string
@@ -45,17 +63,42 @@ type TicketCandidate struct {
 	Ticket *UpdateTicket
 }
 
-// UpdateTicket is the update_tickets row of a PR, as far as creation reads it.
+// UpdateTicket is the update_tickets row of a PR, as far as the ticket engine reads it.
 type UpdateTicket struct {
 	ID              string
 	TicketProjectID string
 	// Created reports that the ticket is stored: its external id is known.
 	Created bool
+	// ExternalID and ExternalURL are the ticket's link; empty until Created.
+	ExternalID  string
+	ExternalURL string
+	// State is the last state Release Ops put the ticket in: pending, open, done, cancelled or
+	// superseded.
+	State string
+	// TargetState is a transition recorded before the ticket system was called and not yet
+	// followed by State; empty when none is.
+	TargetState string
+	// SyncedHash is the hash of the dependency list the ticket content was last rendered for.
+	SyncedHash string
+	// HandsOff reports that the ticket was changed outside Release Ops, so no operation
+	// touches it.
+	HandsOff bool
 	// Unconfirmed reports the pending marker: a create was started and its ticket never stored.
 	Unconfirmed bool
 	Attempts    int64
 	// NextAttemptAt is when the next attempt may run; zero when none is waiting.
 	NextAttemptAt time.Time
+	// LastError is the error shown in the Problems view; empty when none.
+	LastError string
+}
+
+// FailSyncInput records a failed operation on an existing ticket.
+type FailSyncInput struct {
+	ID string
+	// Message is the redacted error shown in the Problems view.
+	Message       string
+	NextAttemptAt time.Time
+	Now           time.Time
 }
 
 // BeginCreateInput starts the creation of a PR's ticket.
@@ -113,6 +156,35 @@ type UpdateTicketRepository interface {
 	// clears the pending marker, in one write. It returns ErrTicketExists when the row has a
 	// ticket already.
 	LinkCreated(ctx context.Context, in LinkCreatedInput) error
+	// ClearCreateError drops the error and retry of a row that has no ticket and no marker; a
+	// row with either keeps them.
+	ClearCreateError(ctx context.Context, id string, now time.Time) error
+
+	// SyncablePRs returns the ids of the PRs whose ticket exists, was not handed off, is not
+	// waiting for a retry at now and may have an operation to run.
+	SyncablePRs(ctx context.Context, now time.Time) ([]string, error)
+	// SupersededBy returns the ids of the PRs that the PR replaced.
+	SupersededBy(ctx context.Context, updatePRID string) ([]string, error)
+	// BeginTransition records the state the ticket is about to be moved to, before the ticket
+	// system is called. It returns ErrTicketNotSyncable when the row may not take it.
+	BeginTransition(ctx context.Context, id, state string, now time.Time) error
+	// CompleteTransition stores the state a recorded transition led to and drops the record,
+	// the error and the retry. It returns ErrTicketNotSyncable when the row may not take it.
+	CompleteTransition(ctx context.Context, id, state string, now time.Time) error
+	// MarkSynced stores the hash of the dependency list the ticket now shows, and drops the
+	// error and the retry. It returns ErrTicketNotSyncable when the row may not take it.
+	MarkSynced(ctx context.Context, id, hash string, now time.Time) error
+	// FailSync records a failed operation on a ticket that exists; a recorded transition stays.
+	FailSync(ctx context.Context, in FailSyncInput) error
+	// HandOff records that the ticket was changed outside Release Ops: nothing touches it after.
+	HandOff(ctx context.Context, id string, now time.Time) error
+	// Repository returns the id of the repository of the update ticket, or
+	// ErrUpdateTicketNotFound.
+	Repository(ctx context.Context, id string) (string, error)
+	// ClearMarker drops the pending marker, the error and the retry of a row that has no ticket,
+	// so the next event of its PR may create one. It returns ErrUpdateTicketNotFound for an
+	// unknown row and ErrNoPendingMarker, changing nothing, for a row without a marker.
+	ClearMarker(ctx context.Context, id string, now time.Time) error
 }
 
 // UpdateTickets returns the update ticket repository.
@@ -139,7 +211,7 @@ func (r updateTicketRepo) Candidate(ctx context.Context, updatePRID string) (Tic
 	}
 	c := TicketCandidate{
 		ID: row.ID, RepositoryID: row.RepositoryID, FullName: row.FullName, Number: row.Number, URL: row.Url,
-		Title: row.Title, State: row.State, Labels: labels, ReleaseNotes: row.ReleaseNotes.String,
+		Title: row.Title, State: row.State, SupersededByID: row.SupersededByID.String, Labels: labels, ReleaseNotes: row.ReleaseNotes.String,
 	}
 	if row.Automerge.Valid {
 		v := row.Automerge.Int64 == 1
@@ -170,7 +242,9 @@ func (r updateTicketRepo) Candidate(ctx context.Context, updatePRID string) (Tic
 		return TicketCandidate{}, fmt.Errorf("read update ticket: %w", err)
 	default:
 		ticket := UpdateTicket{
-			ID: t.ID, TicketProjectID: t.TicketProjectID, Created: t.ExternalID.Valid, Unconfirmed: t.PendingSince.Valid, Attempts: t.Attempts,
+			ID: t.ID, TicketProjectID: t.TicketProjectID, Created: t.ExternalID.Valid, ExternalID: t.ExternalID.String, ExternalURL: t.ExternalUrl.String,
+			State: t.State, TargetState: t.TargetState.String, SyncedHash: t.SyncedHash.String, HandsOff: t.HandsOffAt.Valid,
+			Unconfirmed: t.PendingSince.Valid, Attempts: t.Attempts, LastError: t.LastError.String,
 		}
 		if t.NextAttemptAt.Valid {
 			if ticket.NextAttemptAt, err = time.Parse(timeLayout, t.NextAttemptAt.String); err != nil {
@@ -295,6 +369,100 @@ func (r updateTicketRepo) LinkCreated(ctx context.Context, in LinkCreatedInput) 
 	}
 	if n == 0 {
 		return ErrTicketExists
+	}
+	return nil
+}
+
+func (r updateTicketRepo) ClearCreateError(ctx context.Context, id string, now time.Time) error {
+	if _, err := r.store.writes.ClearUpdateTicketCreateError(ctx, db.ClearUpdateTicketCreateErrorParams{UpdatedAt: formatTime(now), ID: id}); err != nil {
+		return fmt.Errorf("clear ticket error: %w", err)
+	}
+	return nil
+}
+
+func (r updateTicketRepo) SyncablePRs(ctx context.Context, now time.Time) ([]string, error) {
+	ids, err := r.store.reads.ListUpdatePRsToSync(ctx, sql.NullString{String: formatTime(now), Valid: true})
+	if err != nil {
+		return nil, fmt.Errorf("list update PRs to sync: %w", err)
+	}
+	return ids, nil
+}
+
+func (r updateTicketRepo) SupersededBy(ctx context.Context, updatePRID string) ([]string, error) {
+	ids, err := r.store.reads.ListUpdatePRsSupersededBy(ctx, sql.NullString{String: updatePRID, Valid: true})
+	if err != nil {
+		return nil, fmt.Errorf("list the PRs replaced by an update PR: %w", err)
+	}
+	return ids, nil
+}
+
+func (r updateTicketRepo) BeginTransition(ctx context.Context, id, state string, now time.Time) error {
+	n, err := r.store.writes.BeginUpdateTicketTransition(ctx, db.BeginUpdateTicketTransitionParams{
+		TargetState: sql.NullString{String: state, Valid: true}, UpdatedAt: formatTime(now), ID: id,
+	})
+	return syncWriteResult("record the ticket transition", n, err)
+}
+
+func (r updateTicketRepo) CompleteTransition(ctx context.Context, id, state string, now time.Time) error {
+	n, err := r.store.writes.CompleteUpdateTicketTransition(ctx, db.CompleteUpdateTicketTransitionParams{State: state, At: formatTime(now), ID: id})
+	return syncWriteResult("store the ticket state", n, err)
+}
+
+func (r updateTicketRepo) MarkSynced(ctx context.Context, id, hash string, now time.Time) error {
+	n, err := r.store.writes.MarkUpdateTicketSynced(ctx, db.MarkUpdateTicketSyncedParams{
+		SyncedHash: sql.NullString{String: hash, Valid: true}, UpdatedAt: formatTime(now), ID: id,
+	})
+	return syncWriteResult("store the ticket hash", n, err)
+}
+
+func (r updateTicketRepo) FailSync(ctx context.Context, in FailSyncInput) error {
+	at := sql.NullString{String: formatTime(in.Now), Valid: true}
+	n, err := r.store.writes.FailUpdateTicketSync(ctx, db.FailUpdateTicketSyncParams{
+		NextAttemptAt: sql.NullString{String: formatTime(in.NextAttemptAt), Valid: true},
+		LastError:     sql.NullString{String: in.Message, Valid: true}, At: at, ID: in.ID,
+	})
+	return syncWriteResult("record the ticket failure", n, err)
+}
+
+func (r updateTicketRepo) HandOff(ctx context.Context, id string, now time.Time) error {
+	at := formatTime(now)
+	n, err := r.store.writes.HandOffUpdateTicket(ctx, db.HandOffUpdateTicketParams{HandsOffAt: sql.NullString{String: at, Valid: true}, UpdatedAt: at, ID: id})
+	return syncWriteResult("hand the ticket off", n, err)
+}
+
+func (r updateTicketRepo) Repository(ctx context.Context, id string) (string, error) {
+	repositoryID, err := r.store.reads.GetUpdateTicketRepository(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrUpdateTicketNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("read update ticket repository: %w", err)
+	}
+	return repositoryID, nil
+}
+
+func (r updateTicketRepo) ClearMarker(ctx context.Context, id string, now time.Time) error {
+	n, err := r.store.writes.ClearUpdateTicketMarker(ctx, db.ClearUpdateTicketMarkerParams{UpdatedAt: formatTime(now), ID: id})
+	if err != nil {
+		return fmt.Errorf("clear pending marker: %w", err)
+	}
+	if n > 0 {
+		return nil
+	}
+	if _, err := r.Repository(ctx, id); err != nil {
+		return err
+	}
+	return ErrNoPendingMarker
+}
+
+// syncWriteResult turns the outcome of a write to an existing ticket into an error: a failed
+// write is wrapped, and one that changed no row is ErrTicketNotSyncable.
+func syncWriteResult(what string, rows int64, err error) error {
+	if err != nil {
+		return fmt.Errorf("%s: %w", what, err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("%s: %w", what, ErrTicketNotSyncable)
 	}
 	return nil
 }

@@ -273,11 +273,11 @@ func TestTicketProjectFilterIsStoredDefaultedAndUpdated(t *testing.T) {
 		t.Fatalf("filter = %q, want the default", tp.Filter)
 	}
 	const f = `{"updateTypes":["major"],"labels":[],"skipAutomerged":false}`
-	updated, err := e.st.TicketProjects().Update(ctx, e.project, store.UpdateTicketProjectInput{Name: "DEV", CreateConfig: `{}`, StatusMapping: `{}`, OnOpenTicketPolicy: "supersede", Filter: f})
+	updated, err := e.st.TicketProjects().Update(ctx, e.project, store.UpdateTicketProjectInput{Name: "DEV", CreateConfig: `{}`, StatusMapping: `{}`, Filter: f})
 	if err != nil || updated.Filter != f {
 		t.Fatalf("Update = %+v, %v, want the filter stored", updated, err)
 	}
-	updated, _ = e.st.TicketProjects().Update(ctx, e.project, store.UpdateTicketProjectInput{Name: "DEV", CreateConfig: `{}`, StatusMapping: `{}`, OnOpenTicketPolicy: "supersede"})
+	updated, _ = e.st.TicketProjects().Update(ctx, e.project, store.UpdateTicketProjectInput{Name: "DEV", CreateConfig: `{}`, StatusMapping: `{}`})
 	if updated.Filter != `{"updateTypes":[],"labels":[],"skipAutomerged":true}` {
 		t.Fatalf("filter = %q, want an update without one to store the default", updated.Filter)
 	}

@@ -14,12 +14,6 @@ import (
 	"github.com/mdg-labs/release-ops/internal/updatetickets"
 )
 
-var validOnOpenTicketPolicies = map[string]struct{}{
-	"supersede":    {},
-	"merge":        {},
-	"skip_if_open": {},
-}
-
 const defaultContentTemplatesJSON = `{"title":"","description":"","updateComment":"","supersedeComment":""}`
 
 // requiredContentTemplateKeys are the keys a POST must carry. updateComment may be left out
@@ -40,37 +34,34 @@ type contentTemplatesResponse struct {
 }
 
 type ticketProjectResponse struct {
-	ID                 string                   `json:"id"`
-	IntegrationID      string                   `json:"integrationId"`
-	ExternalProjectID  string                   `json:"externalProjectId"`
-	Name               string                   `json:"name"`
-	CreateConfig       json.RawMessage          `json:"createConfig"`
-	StatusMapping      json.RawMessage          `json:"statusMapping"`
-	ContentTemplates   contentTemplatesResponse `json:"contentTemplates"`
-	Filter             json.RawMessage          `json:"filter"`
-	OnOpenTicketPolicy string                   `json:"onOpenTicketPolicy"`
-	CreatedAt          string                   `json:"createdAt"`
-	UpdatedAt          string                   `json:"updatedAt"`
+	ID                string                   `json:"id"`
+	IntegrationID     string                   `json:"integrationId"`
+	ExternalProjectID string                   `json:"externalProjectId"`
+	Name              string                   `json:"name"`
+	CreateConfig      json.RawMessage          `json:"createConfig"`
+	StatusMapping     json.RawMessage          `json:"statusMapping"`
+	ContentTemplates  contentTemplatesResponse `json:"contentTemplates"`
+	Filter            json.RawMessage          `json:"filter"`
+	CreatedAt         string                   `json:"createdAt"`
+	UpdatedAt         string                   `json:"updatedAt"`
 }
 
 type createTicketProjectRequest struct {
-	IntegrationID      string          `json:"integrationId"`
-	ExternalProjectID  string          `json:"externalProjectId"`
-	Name               string          `json:"name"`
-	CreateConfig       json.RawMessage `json:"createConfig"`
-	StatusMapping      json.RawMessage `json:"statusMapping"`
-	ContentTemplates   json.RawMessage `json:"contentTemplates"`
-	Filter             json.RawMessage `json:"filter"`
-	OnOpenTicketPolicy string          `json:"onOpenTicketPolicy"`
+	IntegrationID     string          `json:"integrationId"`
+	ExternalProjectID string          `json:"externalProjectId"`
+	Name              string          `json:"name"`
+	CreateConfig      json.RawMessage `json:"createConfig"`
+	StatusMapping     json.RawMessage `json:"statusMapping"`
+	ContentTemplates  json.RawMessage `json:"contentTemplates"`
+	Filter            json.RawMessage `json:"filter"`
 }
 
 type patchTicketProjectRequest struct {
-	Name               string          `json:"name"`
-	CreateConfig       json.RawMessage `json:"createConfig"`
-	StatusMapping      json.RawMessage `json:"statusMapping"`
-	ContentTemplates   json.RawMessage `json:"contentTemplates"`
-	Filter             json.RawMessage `json:"filter"`
-	OnOpenTicketPolicy string          `json:"onOpenTicketPolicy"`
+	Name             string          `json:"name"`
+	CreateConfig     json.RawMessage `json:"createConfig"`
+	StatusMapping    json.RawMessage `json:"statusMapping"`
+	ContentTemplates json.RawMessage `json:"contentTemplates"`
+	Filter           json.RawMessage `json:"filter"`
 }
 
 // List handles GET /api/v1/ticket-projects.
@@ -147,24 +138,14 @@ func (h *TicketProjectHandlers) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	policy := req.OnOpenTicketPolicy
-	if policy == "" {
-		policy = "supersede"
-	}
-	if err := validateOnOpenTicketPolicy(policy); err != nil {
-		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
-		return
-	}
-
 	created, err := h.TicketProjects.Create(r.Context(), store.CreateTicketProjectInput{
-		IntegrationID:      req.IntegrationID,
-		ExternalProjectID:  req.ExternalProjectID,
-		Name:               req.Name,
-		CreateConfig:       createConfig,
-		StatusMapping:      statusMapping,
-		ContentTemplates:   contentTemplates,
-		OnOpenTicketPolicy: policy,
-		Filter:             filter,
+		IntegrationID:     req.IntegrationID,
+		ExternalProjectID: req.ExternalProjectID,
+		Name:              req.Name,
+		CreateConfig:      createConfig,
+		StatusMapping:     statusMapping,
+		ContentTemplates:  contentTemplates,
+		Filter:            filter,
 	})
 	if err != nil {
 		if isUniqueConstraintError(err) {
@@ -238,22 +219,12 @@ func (h *TicketProjectHandlers) Patch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if req.OnOpenTicketPolicy == "" {
-		auth.WriteError(w, "VALIDATION_ERROR", "onOpenTicketPolicy is required", http.StatusBadRequest)
-		return
-	}
-	if err := validateOnOpenTicketPolicy(req.OnOpenTicketPolicy); err != nil {
-		auth.WriteError(w, "VALIDATION_ERROR", err.Error(), http.StatusBadRequest)
-		return
-	}
-
 	updated, err := h.TicketProjects.Update(r.Context(), id, store.UpdateTicketProjectInput{
-		Name:               req.Name,
-		CreateConfig:       createConfig,
-		StatusMapping:      statusMapping,
-		ContentTemplates:   contentTemplates,
-		OnOpenTicketPolicy: req.OnOpenTicketPolicy,
-		Filter:             filter,
+		Name:             req.Name,
+		CreateConfig:     createConfig,
+		StatusMapping:    statusMapping,
+		ContentTemplates: contentTemplates,
+		Filter:           filter,
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -309,17 +280,16 @@ func ticketProjectFromStore(item *store.TicketProject) ticketProjectResponse {
 	}
 
 	return ticketProjectResponse{
-		ID:                 item.ID,
-		IntegrationID:      item.IntegrationID,
-		ExternalProjectID:  item.ExternalProjectID,
-		Name:               item.Name,
-		CreateConfig:       json.RawMessage(item.CreateConfig),
-		StatusMapping:      json.RawMessage(item.StatusMapping),
-		ContentTemplates:   contentTemplates,
-		Filter:             json.RawMessage(filter),
-		OnOpenTicketPolicy: item.OnOpenTicketPolicy,
-		CreatedAt:          item.CreatedAt,
-		UpdatedAt:          item.UpdatedAt,
+		ID:                item.ID,
+		IntegrationID:     item.IntegrationID,
+		ExternalProjectID: item.ExternalProjectID,
+		Name:              item.Name,
+		CreateConfig:      json.RawMessage(item.CreateConfig),
+		StatusMapping:     json.RawMessage(item.StatusMapping),
+		ContentTemplates:  contentTemplates,
+		Filter:            json.RawMessage(filter),
+		CreatedAt:         item.CreatedAt,
+		UpdatedAt:         item.UpdatedAt,
 	}
 }
 
@@ -443,13 +413,6 @@ func validateTemplateContent(contentTemplates string) error {
 		return err
 	}
 	return tickettemplate.NewRenderer("", templates).Validate()
-}
-
-func validateOnOpenTicketPolicy(policy string) error {
-	if _, ok := validOnOpenTicketPolicies[policy]; !ok {
-		return errors.New("onOpenTicketPolicy must be one of: supersede, merge, skip_if_open")
-	}
-	return nil
 }
 
 func isUniqueConstraintError(err error) bool {

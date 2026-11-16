@@ -125,7 +125,6 @@ export function TicketProjectsView(): React.ReactElement {
                   <TableHead>{t("columns.integration")}</TableHead>
                   <TableHead>{t("columns.name")}</TableHead>
                   <TableHead>{t("columns.externalProjectId")}</TableHead>
-                  <TableHead>{t("columns.policy")}</TableHead>
                   <TableHead className="text-end">
                     {t("columns.actions")}
                   </TableHead>
@@ -134,7 +133,7 @@ export function TicketProjectsView(): React.ReactElement {
               <TableBody>
                 {Array.from({ length: 3 }, (_, index) => (
                   <TableRow key={`skeleton-${index}`}>
-                    <TableCell colSpan={5}>
+                    <TableCell colSpan={4}>
                       <Skeleton className="h-8 w-full" />
                     </TableCell>
                   </TableRow>
@@ -161,7 +160,6 @@ export function TicketProjectsView(): React.ReactElement {
                   <TableHead>{t("columns.integration")}</TableHead>
                   <TableHead>{t("columns.name")}</TableHead>
                   <TableHead>{t("columns.externalProjectId")}</TableHead>
-                  <TableHead>{t("columns.policy")}</TableHead>
                   <TableHead className="text-end">
                     {t("columns.actions")}
                   </TableHead>
@@ -192,11 +190,6 @@ export function TicketProjectsView(): React.ReactElement {
                       </TableCell>
                       <TableCell className="font-mono text-sm">
                         {project.externalProjectId}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">
-                          {t(`policies.${project.onOpenTicketPolicy}`)}
-                        </Badge>
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-1">

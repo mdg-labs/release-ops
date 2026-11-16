@@ -9,14 +9,13 @@ import (
 
 // TicketProject is a ticket provider project/team target.
 type TicketProject struct {
-	ID                 string
-	IntegrationID      string
-	ExternalProjectID  string
-	Name               string
-	CreateConfig       string
-	StatusMapping      string
-	ContentTemplates   string
-	OnOpenTicketPolicy string
+	ID                string
+	IntegrationID     string
+	ExternalProjectID string
+	Name              string
+	CreateConfig      string
+	StatusMapping     string
+	ContentTemplates  string
 	// Filter is the JSON of which update PRs get a ticket (specs.html section 5.2).
 	Filter    string
 	CreatedAt string
@@ -25,13 +24,12 @@ type TicketProject struct {
 
 // CreateTicketProjectInput holds fields for a new ticket project.
 type CreateTicketProjectInput struct {
-	IntegrationID      string
-	ExternalProjectID  string
-	Name               string
-	CreateConfig       string
-	StatusMapping      string
-	ContentTemplates   string
-	OnOpenTicketPolicy string
+	IntegrationID     string
+	ExternalProjectID string
+	Name              string
+	CreateConfig      string
+	StatusMapping     string
+	ContentTemplates  string
 	// Filter is stored as given; empty stores the default, which lets every non-automerged PR
 	// through.
 	Filter string
@@ -39,11 +37,10 @@ type CreateTicketProjectInput struct {
 
 // UpdateTicketProjectInput holds updatable ticket project fields.
 type UpdateTicketProjectInput struct {
-	Name               string
-	CreateConfig       string
-	StatusMapping      string
-	ContentTemplates   string
-	OnOpenTicketPolicy string
+	Name             string
+	CreateConfig     string
+	StatusMapping    string
+	ContentTemplates string
 	// Filter is stored as given; empty stores the default.
 	Filter string
 }
@@ -63,11 +60,6 @@ type ticketProjectRepo struct {
 }
 
 func (r ticketProjectRepo) Create(ctx context.Context, input CreateTicketProjectInput) (*TicketProject, error) {
-	policy := input.OnOpenTicketPolicy
-	if policy == "" {
-		policy = "supersede"
-	}
-
 	now := nowUTC()
 	contentTemplates := input.ContentTemplates
 	if contentTemplates == "" {
@@ -75,17 +67,16 @@ func (r ticketProjectRepo) Create(ctx context.Context, input CreateTicketProject
 	}
 
 	row, err := r.store.writes.CreateTicketProject(ctx, db.CreateTicketProjectParams{
-		ID:                 newID(),
-		IntegrationID:      input.IntegrationID,
-		ExternalProjectID:  input.ExternalProjectID,
-		Name:               input.Name,
-		CreateConfig:       input.CreateConfig,
-		StatusMapping:      input.StatusMapping,
-		ContentTemplates:   contentTemplates,
-		OnOpenTicketPolicy: policy,
-		CreatedAt:          now,
-		UpdatedAt:          now,
-		Filter:             orDefaultFilter(input.Filter),
+		ID:                newID(),
+		IntegrationID:     input.IntegrationID,
+		ExternalProjectID: input.ExternalProjectID,
+		Name:              input.Name,
+		CreateConfig:      input.CreateConfig,
+		StatusMapping:     input.StatusMapping,
+		ContentTemplates:  contentTemplates,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+		Filter:            orDefaultFilter(input.Filter),
 	})
 	if err != nil {
 		return nil, err
@@ -124,14 +115,13 @@ func (r ticketProjectRepo) Update(ctx context.Context, id string, input UpdateTi
 	}
 
 	row, err := r.store.writes.UpdateTicketProject(ctx, db.UpdateTicketProjectParams{
-		Name:               input.Name,
-		CreateConfig:       input.CreateConfig,
-		StatusMapping:      input.StatusMapping,
-		ContentTemplates:   contentTemplates,
-		OnOpenTicketPolicy: input.OnOpenTicketPolicy,
-		Filter:             orDefaultFilter(input.Filter),
-		UpdatedAt:          nowUTC(),
-		ID:                 id,
+		Name:             input.Name,
+		CreateConfig:     input.CreateConfig,
+		StatusMapping:    input.StatusMapping,
+		ContentTemplates: contentTemplates,
+		Filter:           orDefaultFilter(input.Filter),
+		UpdatedAt:        nowUTC(),
+		ID:               id,
 	})
 	if err != nil {
 		return nil, err
@@ -181,17 +171,16 @@ func orDefaultFilter(filter string) string {
 
 func ticketProjectFromRow(row db.TicketProject) *TicketProject {
 	return &TicketProject{
-		ID:                 row.ID,
-		IntegrationID:      row.IntegrationID,
-		ExternalProjectID:  row.ExternalProjectID,
-		Name:               row.Name,
-		CreateConfig:       row.CreateConfig,
-		StatusMapping:      row.StatusMapping,
-		ContentTemplates:   row.ContentTemplates,
-		OnOpenTicketPolicy: row.OnOpenTicketPolicy,
-		Filter:             row.Filter,
-		CreatedAt:          row.CreatedAt,
-		UpdatedAt:          row.UpdatedAt,
+		ID:                row.ID,
+		IntegrationID:     row.IntegrationID,
+		ExternalProjectID: row.ExternalProjectID,
+		Name:              row.Name,
+		CreateConfig:      row.CreateConfig,
+		StatusMapping:     row.StatusMapping,
+		ContentTemplates:  row.ContentTemplates,
+		Filter:            row.Filter,
+		CreatedAt:         row.CreatedAt,
+		UpdatedAt:         row.UpdatedAt,
 	}
 }
 

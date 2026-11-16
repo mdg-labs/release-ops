@@ -24,42 +24,147 @@ const testKeyHex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789ab
 
 var epoch = time.Date(2026, 11, 15, 10, 0, 0, 0, time.UTC)
 
-// tracker is a fake Kaneo: it records every create request and answers as status says.
+// tracker is a fake Kaneo: it keeps the tasks it was given, records every request and answers as
+// status says. A task is created by POST /task/{project}, read by GET /task/{id} and changed by
+// the PUT and POST routes of the Kaneo provider.
 type tracker struct {
 	srv *httptest.Server
 
 	mu       sync.Mutex
 	requests []trackerRequest
-	// status answers the nth create (1-based); 0 or 200 is a stored task.
+	// status answers the nth request (1-based); 0 or 200 is a stored task.
 	status func(n int) int
+	tasks  map[string]*task
+	// failures are consumed in order by the requests they match.
+	failures []*trackerFailure
+}
+
+// task is a ticket in the fake.
+type task struct {
+	ID, Title, Description, Status string
+	Comments                       []string
 }
 
 type trackerRequest struct {
+	Method      string
 	Path        string
 	Title       string
 	Description string
+	Status      string
+	Content     string
+}
+
+// trackerFailure makes the next Times requests whose method and path prefix match answer Code. With
+// Applied the request is carried out first, as a ticket system that stored the change and then
+// failed to answer.
+type trackerFailure struct {
+	Method, PathPrefix string
+	Code, Times        int
+	Applied            bool
 }
 
 func newTracker(t *testing.T) *tracker {
 	t.Helper()
-	tr := &tracker{status: func(int) int { return http.StatusOK }}
+	tr := &tracker{status: func(int) int { return http.StatusOK }, tasks: map[string]*task{}}
 	tr.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
-		var body struct{ Title, Description string }
+		var body struct{ Title, Description, Status, Content string }
 		_ = json.Unmarshal(raw, &body)
 		tr.mu.Lock()
-		tr.requests = append(tr.requests, trackerRequest{Path: r.URL.Path, Title: body.Title, Description: body.Description})
+		defer tr.mu.Unlock()
+		tr.requests = append(tr.requests, trackerRequest{Method: r.Method, Path: r.URL.Path, Title: body.Title, Description: body.Description, Status: body.Status, Content: body.Content})
 		n := len(tr.requests)
 		code := tr.status(n)
-		tr.mu.Unlock()
+		applied := false
+		for _, f := range tr.failures {
+			if f.Times > 0 && f.Method == r.Method && strings.HasPrefix(r.URL.Path, f.PathPrefix) {
+				f.Times--
+				code, applied = f.Code, f.Applied
+				break
+			}
+		}
+		if code != http.StatusOK && !applied {
+			http.Error(w, "tracker says no", code)
+			return
+		}
+		resp := tr.handle(r.Method, strings.TrimPrefix(r.URL.Path, "/api"), body.Title, body.Description, body.Status, body.Content)
 		if code != http.StatusOK {
 			http.Error(w, "tracker says no", code)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"id": fmt.Sprintf("task-%d", n), "status": "ready"})
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	t.Cleanup(tr.srv.Close)
 	return tr
+}
+
+// handle carries out a request on the tasks and returns the answer; tr.mu is held.
+func (tr *tracker) handle(method, path, title, description, status, content string) map[string]string {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	switch {
+	case method == http.MethodPost && len(parts) == 2 && parts[0] == "task":
+		id := fmt.Sprintf("task-%d", len(tr.tasks)+1)
+		tr.tasks[id] = &task{ID: id, Title: title, Description: description, Status: status}
+		return map[string]string{"id": id, "status": status}
+	case method == http.MethodGet && len(parts) == 2 && parts[0] == "task":
+		if t := tr.tasks[parts[1]]; t != nil {
+			return map[string]string{"id": t.ID, "status": t.Status}
+		}
+	case method == http.MethodPut && len(parts) == 3 && parts[0] == "task":
+		if t := tr.tasks[parts[2]]; t != nil {
+			switch parts[1] {
+			case "status":
+				t.Status = status
+			case "title":
+				t.Title = title
+			case "description":
+				t.Description = description
+			}
+		}
+	case method == http.MethodPost && len(parts) == 2 && parts[0] == "comment":
+		if t := tr.tasks[parts[1]]; t != nil {
+			t.Comments = append(t.Comments, content)
+		}
+	}
+	return map[string]string{}
+}
+
+// task returns a copy of the task.
+func (tr *tracker) task(id string) task {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	t := tr.tasks[id]
+	if t == nil {
+		return task{}
+	}
+	cp := *t
+	cp.Comments = append([]string(nil), t.Comments...)
+	return cp
+}
+
+// setTaskStatus moves a task as a person would, outside Release Ops.
+func (tr *tracker) setTaskStatus(id, status string) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	tr.tasks[id].Status = status
+}
+
+// fail adds a failure for the requests that match.
+func (tr *tracker) fail(f trackerFailure) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	tr.failures = append(tr.failures, &f)
+}
+
+// writes are the recorded requests that change something: everything but the reads.
+func (tr *tracker) writes() []trackerRequest {
+	var out []trackerRequest
+	for _, r := range tr.calls() {
+		if r.Method != http.MethodGet {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func (tr *tracker) calls() []trackerRequest {
@@ -133,7 +238,9 @@ func (e *env) addProject(t *testing.T, key string, in store.CreateTicketProjectI
 	}
 	in.IntegrationID, in.ExternalProjectID, in.Name = integ.ID, key, "Kaneo "+key
 	in.CreateConfig = `{"workspaceId":"ws-1","status":"ready","priority":"medium"}`
-	in.StatusMapping = `{"open":["ready"],"done":["done"],"cancelled":["cancelled"],"superseded":"cancelled"}`
+	if in.StatusMapping == "" {
+		in.StatusMapping = `{"open":["ready"],"done":["done"],"cancelled":["cancelled"],"superseded":"cancelled"}`
+	}
 	if in.ContentTemplates == "" {
 		in.ContentTemplates = `{"title":"","description":"","updateComment":"","supersedeComment":""}`
 	}
@@ -217,14 +324,15 @@ type ticketRow struct {
 	ID, ProjectID, State                  string
 	ExternalID, ExternalURL, PendingSince sql.NullString
 	SyncedHash, LastError, NextAttemptAt  sql.NullString
+	TargetState, HandsOffAt               sql.NullString
 	Attempts                              int
 }
 
 func (e *env) row(t *testing.T, prID string) (ticketRow, bool) {
 	t.Helper()
 	var r ticketRow
-	err := e.db.Reader.QueryRow(`SELECT id, ticket_project_id, state, external_id, external_url, pending_since, synced_hash, last_error, next_attempt_at, attempts
-		FROM update_tickets WHERE update_pr_id = ?`, prID).Scan(&r.ID, &r.ProjectID, &r.State, &r.ExternalID, &r.ExternalURL, &r.PendingSince, &r.SyncedHash, &r.LastError, &r.NextAttemptAt, &r.Attempts)
+	err := e.db.Reader.QueryRow(`SELECT id, ticket_project_id, state, external_id, external_url, pending_since, synced_hash, last_error, next_attempt_at, attempts, target_state, hands_off_at
+		FROM update_tickets WHERE update_pr_id = ?`, prID).Scan(&r.ID, &r.ProjectID, &r.State, &r.ExternalID, &r.ExternalURL, &r.PendingSince, &r.SyncedHash, &r.LastError, &r.NextAttemptAt, &r.Attempts, &r.TargetState, &r.HandsOffAt)
 	if err == sql.ErrNoRows {
 		return ticketRow{}, false
 	}

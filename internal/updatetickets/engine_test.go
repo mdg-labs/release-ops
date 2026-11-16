@@ -136,7 +136,7 @@ func TestAFailureThatProvesNothingWasStoredClearsTheMarkerAndTheRetryReusesTheRo
 		t.Fatalf("the due retry = %s, %v, want created", out, err)
 	}
 	row, _ := e.row(t, id)
-	if row.ID != first.ID || e.rowCount(t) != 1 || row.ExternalID.String != "task-2" || row.PendingSince.Valid || row.LastError.Valid || row.Attempts != 0 || row.NextAttemptAt.Valid {
+	if row.ID != first.ID || e.rowCount(t) != 1 || row.ExternalID.String != "task-1" || row.PendingSince.Valid || row.LastError.Valid || row.Attempts != 0 || row.NextAttemptAt.Valid {
 		t.Fatalf("row = %+v (first %+v), want the same row linked and its failure state cleared", row, first)
 	}
 }

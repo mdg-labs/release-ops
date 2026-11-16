@@ -5,11 +5,6 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { CreateConfigTabs } from "@/components/ticket-projects/create-config-tabs";
 import { ContentTemplateForm } from "@/components/ticket-projects/content-template-form";
 import { MetadataSelect } from "@/components/ticket-projects/metadata-select";
-import {
-  ON_OPEN_TICKET_POLICIES,
-  PolicySelect,
-  type OnOpenTicketPolicy,
-} from "@/components/ticket-projects/policy-select";
 import { StatusMappingForm } from "@/components/ticket-projects/status-mapping-form";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -88,7 +83,6 @@ type ProjectDrawerProps = {
     createConfig: Record<string, unknown>;
     statusMapping: Record<string, unknown>;
     contentTemplates: ContentTemplates;
-    onOpenTicketPolicy: string;
   }) => Promise<TicketProject>;
   onUpdate: (
     id: string,
@@ -97,7 +91,6 @@ type ProjectDrawerProps = {
       createConfig: Record<string, unknown>;
       statusMapping: Record<string, unknown>;
       contentTemplates: ContentTemplates;
-      onOpenTicketPolicy: string;
     },
   ) => Promise<TicketProject>;
   isSaving: boolean;
@@ -179,7 +172,6 @@ export function ProjectDrawer({
   const [workspaceId, setWorkspaceId] = useState("");
   const [externalProjectId, setExternalProjectId] = useState("");
   const [name, setName] = useState("");
-  const [policy, setPolicy] = useState<OnOpenTicketPolicy>("supersede");
   const [createConfig, setCreateConfig] = useState<Record<string, unknown>>({});
   const [statusMapping, setStatusMapping] =
     useState<StatusMappingValues>(defaultStatusMapping);
@@ -234,13 +226,6 @@ export function ProjectDrawer({
       setWorkspaceId("");
       setExternalProjectId(project.externalProjectId);
       setName(project.name);
-      setPolicy(
-        ON_OPEN_TICKET_POLICIES.includes(
-          project.onOpenTicketPolicy as OnOpenTicketPolicy,
-        )
-          ? (project.onOpenTicketPolicy as OnOpenTicketPolicy)
-          : "supersede",
-      );
       setCreateConfig(
         kind
           ? createConfigFromRecord(kind, project.createConfig)
@@ -258,7 +243,6 @@ export function ProjectDrawer({
     setWorkspaceId("");
     setExternalProjectId("");
     setName("");
-    setPolicy("supersede");
     setCreateConfig(kind ? defaultCreateConfig(kind) : {});
     setStatusMapping(defaultStatusMapping());
     setContentTemplates(defaultContentTemplates());
@@ -387,7 +371,6 @@ export function ProjectDrawer({
       ),
       statusMapping: statusMappingToRecord(statusMapping),
       contentTemplates,
-      onOpenTicketPolicy: policy,
     };
 
     try {
@@ -549,8 +532,6 @@ export function ProjectDrawer({
                     value={name}
                   />
                 </Field>
-
-                <PolicySelect onValueChange={setPolicy} value={policy} />
               </TabsPanel>
 
               <TabsPanel

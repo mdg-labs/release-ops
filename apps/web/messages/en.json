@@ -144,12 +144,12 @@
     "title": "Ticket projects",
     "add": "Add ticket project",
     "createTitle": "Add ticket project",
-    "createDescription": "Define a project or team target with status mapping and open-ticket policy.",
+    "createDescription": "Define a project or team target with status mapping and ticket content.",
     "editTitle": "Edit ticket project",
-    "editDescription": "Update status mapping, create defaults, and open-ticket policy.",
+    "editDescription": "Update status mapping, create defaults, and ticket content.",
     "empty": "No ticket projects yet. Add one to get started.",
     "emptyTitle": "No ticket projects yet",
-    "emptyDescription": "Define a project target with status mapping and ticket policy.",
+    "emptyDescription": "Define a project target with status mapping and ticket content.",
     "loadFailed": "Failed to load ticket projects.",
     "saveFailed": "Failed to save ticket project.",
     "integration": "Integration",
@@ -157,8 +157,6 @@
     "noTicketIntegrations": "Add a Kaneo, Jira, or Linear integration first.",
     "externalProjectId": "External project ID",
     "name": "Display name",
-    "policy": "Open ticket policy",
-    "policyPlaceholder": "Select policy",
     "tabs": {
       "general": "General",
       "createConfig": "Create config",
@@ -188,13 +186,7 @@
       "integration": "Integration",
       "name": "Name",
       "externalProjectId": "External project ID",
-      "policy": "Policy",
       "actions": "Actions"
-    },
-    "policies": {
-      "supersede": "Supersede",
-      "merge": "Merge",
-      "skip_if_open": "Skip if open"
     },
     "kinds": {
       "kaneo": "Kaneo",

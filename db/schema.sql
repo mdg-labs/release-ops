@@ -113,10 +113,7 @@ CREATE TABLE ticket_projects (
   name TEXT NOT NULL,
   create_config TEXT NOT NULL,
   status_mapping TEXT NOT NULL,
-  content_templates TEXT NOT NULL DEFAULT '{"title":"","description":"","supersedeComment":""}' CHECK (json_valid(content_templates)),
-  on_open_ticket_policy TEXT NOT NULL DEFAULT 'supersede' CHECK (
-    on_open_ticket_policy IN ('supersede', 'merge', 'skip_if_open')
-  ),
+  content_templates TEXT NOT NULL DEFAULT '{"title":"","description":"","updateComment":"","supersedeComment":""}' CHECK (json_valid(content_templates)),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   filter TEXT NOT NULL DEFAULT '{"updateTypes":[],"labels":[],"skipAutomerged":true}' CHECK (json_valid(filter)),
@@ -283,7 +280,12 @@ CREATE TABLE update_tickets (
   last_error TEXT,
   last_error_at TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  -- The transition recorded before the tracker is called and cleared when state follows it, so a
+  -- stop between the two is recognised on the next look (specs.html section 5.2.1).
+  target_state TEXT CHECK (target_state IN ('done', 'cancelled', 'superseded')),
+  -- Set when the ticket was found changed outside Release Ops; no operation touches it after.
+  hands_off_at TEXT
 ) STRICT;
 
 -- The persistent job queue (specs.html § 2.8): at most one queued and one running job per repository.

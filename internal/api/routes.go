@@ -21,8 +21,9 @@ import (
 //  4. Logout, behind a session alone, so a user whose role cannot be evaluated can still end it
 //  5. Protected group (Authenticate: a session with a role, re-evaluated every 15 minutes):
 //     status for any role; settings, installations (the default ticket project),
-//     integrations, ticket-projects, repositories (the list with ticket projects, run now,
-//     pause, enable and the ticket-project override) and users for an admin only
+//     integrations, ticket-projects, update-tickets (clearing a pending marker), repositories
+//     (the list with ticket projects, run now, pause, enable and the ticket-project override)
+//     and users for an admin only
 //     (RequireAdmin), a viewer getting 403
 func RegisterAll(api chi.Router, deps *ServerDeps) {
 	if deps == nil || deps.Session == nil {
@@ -154,6 +155,9 @@ func registerAdminRoutes(protected chi.Router, deps *ServerDeps, appURL string, 
 	protected.Post("/ticket-projects", ticketProjectHandlers.Create)
 	protected.Patch("/ticket-projects/{id}", ticketProjectHandlers.Patch)
 	protected.Delete("/ticket-projects/{id}", ticketProjectHandlers.Delete)
+
+	updateTicketHandlers := &handlers.UpdateTicketHandlers{Tickets: st.UpdateTickets()}
+	protected.Post("/update-tickets/{id}/clear-pending-marker", updateTicketHandlers.ClearPendingMarker)
 
 	installationHandlers := &handlers.InstallationHandlers{Installations: st.InstallationSettings()}
 	protected.Get("/installations", installationHandlers.List)

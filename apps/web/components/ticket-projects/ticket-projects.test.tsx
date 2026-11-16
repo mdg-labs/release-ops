@@ -60,7 +60,6 @@ const sampleProjects = [
       supersedeComment:
         "Superseded: {{ .Supersede.OldTag }} → {{ .Supersede.NewTag }}",
     },
-    onOpenTicketPolicy: "supersede",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   },
@@ -137,7 +136,7 @@ describe("TicketProjectsView", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Define a project target with status mapping and ticket policy.",
+        "Define a project target with status mapping and ticket content.",
       ),
     ).toBeInTheDocument();
     expect(
@@ -202,7 +201,9 @@ describe("TicketProjectsView", () => {
 
     expect(await screen.findByText("Jira — DEV")).toBeInTheDocument();
     expect(screen.getByText("Company Jira")).toBeInTheDocument();
-    expect(screen.getByText("Supersede")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("columnheader", { name: "Policy" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows only ticket integrations in create drawer", async () => {
@@ -743,6 +744,7 @@ describe("TicketProjectsView", () => {
       expect(patchBody).toBeDefined();
     });
 
+    expect(patchBody).not.toHaveProperty("onOpenTicketPolicy");
     expect(patchBody?.contentTemplates).toEqual({
       title: "Updated: {{ .Release.Tag }}",
       description: "**Release:** {{ .Release.Name }}",

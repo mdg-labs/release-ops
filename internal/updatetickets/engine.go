@@ -125,8 +125,9 @@ func (e *Engine) logger() *slog.Logger {
 	return slog.Default()
 }
 
-// Handle queues the PRs whose dependencies were recorded; Run processes them. It never blocks
-// and does no work of its own, so a caller that holds a request is not delayed.
+// Handle queues the PRs whose dependencies were recorded and the PRs that were replaced; Run
+// processes them. It never blocks and does no work of its own, so a caller that holds a request
+// is not delayed.
 func (e *Engine) Handle(events []updateprs.Event) {
 	e.qmu.Lock()
 	if e.queuedS == nil {
@@ -134,7 +135,7 @@ func (e *Engine) Handle(events []updateprs.Event) {
 		e.signal = make(chan struct{}, 1)
 	}
 	for _, ev := range events {
-		if ev.Kind == updateprs.EventDependenciesRecorded && !e.queuedS[ev.UpdatePRID] {
+		if (ev.Kind == updateprs.EventDependenciesRecorded || ev.Kind == updateprs.EventSuperseded) && !e.queuedS[ev.UpdatePRID] {
 			e.queuedS[ev.UpdatePRID] = true
 			e.queued = append(e.queued, ev.UpdatePRID)
 		}
@@ -156,8 +157,9 @@ func (e *Engine) takeQueued() []string {
 }
 
 // Run processes queued events and, on a wake and on every sweep interval, the PRs that still lack
-// a ticket, until ctx ends. The pass over the stored PRs is what picks up a PR whose event was
-// lost after its transaction committed, and the PRs whose retry has become due.
+// a ticket and the tickets that may have an operation to run, until ctx ends. The pass over the
+// stored PRs is what picks up a PR whose event was lost after its transaction committed, and the
+// PRs whose retry has become due.
 func (e *Engine) Run(ctx context.Context) {
 	e.qmu.Lock()
 	if e.queuedS == nil {
@@ -190,7 +192,8 @@ func (e *Engine) Run(ctx context.Context) {
 	}
 }
 
-// sweep processes every PR that lacks a ticket and is not waiting on a retry or a marker.
+// sweep processes every PR that lacks a ticket and is not waiting on a retry or a marker, then
+// the tickets that may have an operation to run.
 func (e *Engine) sweep(ctx context.Context) {
 	ids, err := e.Tickets.PendingPRs(ctx, e.now())
 	if err != nil {
@@ -205,8 +208,23 @@ func (e *Engine) sweep(ctx context.Context) {
 		}
 		e.run(ctx, id)
 	}
+	ids, err = e.Tickets.SyncablePRs(ctx, e.now())
+	if err != nil {
+		if ctx.Err() == nil {
+			e.logger().Error("update tickets: listing the tickets to sync failed", "error", err)
+		}
+		return
+	}
+	for _, id := range ids {
+		if ctx.Err() != nil {
+			return
+		}
+		e.sync(ctx, id)
+	}
 }
 
+// run creates the ticket of the PR when it qualifies, then keeps the ticket in step with it. A
+// created ticket also releases the PRs that wait for it to be superseded.
 func (e *Engine) run(ctx context.Context, updatePRID string) {
 	outcome, err := e.Process(ctx, updatePRID)
 	switch {
@@ -214,6 +232,30 @@ func (e *Engine) run(ctx context.Context, updatePRID string) {
 		e.logger().Error("update tickets: creating the ticket failed", "update_pr", updatePRID, "outcome", outcome, "error", err)
 	case outcome == OutcomeCreated:
 		e.logger().Info("update tickets: ticket created", "update_pr", updatePRID)
+	}
+	e.sync(ctx, updatePRID)
+	if outcome != OutcomeCreated {
+		return
+	}
+	replaced, err := e.Tickets.SupersededBy(ctx, updatePRID)
+	if err != nil {
+		if ctx.Err() == nil {
+			e.logger().Error("update tickets: listing the PRs the new PR replaced failed", "update_pr", updatePRID, "error", err)
+		}
+		return
+	}
+	for _, id := range replaced {
+		e.sync(ctx, id)
+	}
+}
+
+func (e *Engine) sync(ctx context.Context, updatePRID string) {
+	outcome, err := e.Sync(ctx, updatePRID)
+	switch {
+	case err != nil && ctx.Err() == nil:
+		e.logger().Error("update tickets: syncing the ticket failed", "update_pr", updatePRID, "outcome", outcome, "error", err)
+	case outcome != SyncNothing && outcome != SyncWaiting && err == nil:
+		e.logger().Info("update tickets: ticket synced", "update_pr", updatePRID, "outcome", outcome)
 	}
 }
 
@@ -234,10 +276,10 @@ func (e *Engine) Process(ctx context.Context, updatePRID string) (Outcome, error
 		return OutcomeFailed, err
 	}
 	if c.State != store.UpdatePROpen {
-		return OutcomeNotOpen, nil
+		return OutcomeNotOpen, e.dropStaleError(ctx, c)
 	}
 	if len(c.Dependencies) == 0 {
-		return OutcomeNoDependencies, nil
+		return OutcomeNoDependencies, e.dropStaleError(ctx, c)
 	}
 	if c.Ticket != nil {
 		switch {
@@ -250,13 +292,13 @@ func (e *Engine) Process(ctx context.Context, updatePRID string) (Outcome, error
 		}
 	}
 	if c.TicketProjectID == "" {
-		return OutcomeNoTicketProject, nil
+		return OutcomeNoTicketProject, e.dropStaleError(ctx, c)
 	}
 
 	project, err := e.Projects.Get(ctx, c.TicketProjectID)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		return OutcomeNoTicketProject, nil
+		return OutcomeNoTicketProject, e.dropStaleError(ctx, c)
 	case err != nil:
 		return OutcomeFailed, fmt.Errorf("read ticket project: %w", err)
 	}
@@ -265,7 +307,7 @@ func (e *Engine) Process(ctx context.Context, updatePRID string) (Outcome, error
 		return e.fail(ctx, c, project.ID, fmt.Errorf("ticket project %s: %w", project.ID, err), false)
 	}
 	if !filter.Allows(c) {
-		return OutcomeFiltered, nil
+		return OutcomeFiltered, e.dropStaleError(ctx, c)
 	}
 
 	// Everything that can fail without touching the tracker comes before the marker, so a
@@ -298,9 +340,32 @@ func (e *Engine) Process(ctx context.Context, updatePRID string) (Outcome, error
 
 	externalURL, _ := target.Provider.TicketWebURL(input.Project, externalID)
 	if err := e.link(ctx, store.LinkCreatedInput{ID: key, ExternalID: externalID, ExternalURL: externalURL, SyncedHash: dependenciesHash(c.Dependencies)}); err != nil {
-		return OutcomeFailed, err
+		return OutcomeFailed, e.noteUnlinked(ctx, key, err)
 	}
 	return OutcomeCreated, nil
+}
+
+// noteUnlinked records that a created ticket's link could not be stored, so the PR that sits
+// behind its pending marker shows the ticket's id in the Problems view. It returns cause, joined
+// with the error of the write when that fails too.
+func (e *Engine) noteUnlinked(ctx context.Context, rowID string, cause error) error {
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), failureWriteTimeout)
+	defer cancel()
+	if err := e.Tickets.NoteError(writeCtx, rowID, redact(cause), e.now()); err != nil {
+		return errors.Join(cause, fmt.Errorf("record the failure: %w", err))
+	}
+	return cause
+}
+
+// dropStaleError clears the error of a failed create for a PR that is not going to be ticketed,
+// so the Problems view does not keep showing it. A row that has its ticket or its marker keeps
+// its error.
+func (e *Engine) dropStaleError(ctx context.Context, c store.TicketCandidate) error {
+	t := c.Ticket
+	if t == nil || t.Created || t.Unconfirmed || t.LastError == "" {
+		return nil
+	}
+	return e.Tickets.ClearCreateError(ctx, t.ID, e.now())
 }
 
 // refuse records that a create is not repeated while the pending marker is set.
@@ -377,7 +442,6 @@ func ticketInput(c store.TicketCandidate, project *store.TicketProject, kind str
 
 	tp := ticket.TicketProject{
 		ID: project.ID, IntegrationID: project.IntegrationID, IntegrationKind: kind, ExternalProjectID: project.ExternalProjectID,
-		OnOpenTicketPolicy: project.OnOpenTicketPolicy,
 	}
 	if err := json.Unmarshal([]byte(project.CreateConfig), &tp.CreateConfig); err != nil {
 		return ticket.TicketInput{}, fmt.Errorf("parse create_config: %w", err)
