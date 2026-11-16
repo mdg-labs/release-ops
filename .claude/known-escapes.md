@@ -60,7 +60,7 @@ existing line by adding its PR number.
 ## Docs
 - **docs** — a worked example or table row that contradicts the rule it illustrates, or states an invariant without the gap the same doc records elsewhere (or the partial-failure path the code takes) — PR 133, PR 140, PR 153, PR 167, PR 246
 - **docs** — a page that declares itself a mirror of a canonical file (`db/schema.sql`, `docs/specs.html`) left stale when that file changes, because only the canonical file was edited — PR 140
-- **docs** — a name or command in prose that differs from the canonical file it describes (Compose service names vs `docker-compose.yml`), or two policy documents that state contradicting rules (SECURITY.md vs threat-model §7) — PR 246
+- **docs** — a name or command in prose that differs from the canonical file it describes (Compose service names vs `docker-compose.yml`), or two policy documents that state contradicting rules (SECURITY.md vs threat-model §7) — PR 246, PR 286
 - **docs** — an operational procedure that discards data it should keep (a restore step that deletes a volume snapshot's WAL) — PR 246
 - **docs** — a README or overview that presents planned features as available — PR 246
 
