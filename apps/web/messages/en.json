@@ -338,16 +338,103 @@
     "title": "Settings",
     "general": "General",
     "navAria": "Settings sections",
-    "saved": "Settings saved",
-    "savedDescription": "Your changes will apply to the next scheduled run.",
-    "pollIntervalSection": "Polling",
-    "pollIntervalDescription": "Configure how often Release Ops checks monitored repositories for new releases.",
-    "pollInterval": "Poll interval (minutes)",
-    "pollIntervalHint": "Minimum 5 minutes between automated polls.",
     "loadFailed": "Failed to load settings.",
-    "saveFailed": "Failed to save settings.",
-    "validation": {
-      "minInterval": "Poll interval must be at least 5 minutes."
+    "instance": {
+      "title": "Updates",
+      "description": "How many Renovate jobs run at the same time.",
+      "concurrencyCap": "Concurrency cap (jobs)",
+      "concurrencyCapHint": "At least 1. A change applies to the next job that starts; a running job is never interrupted.",
+      "saved": "Settings saved",
+      "savedDescription": "The new cap applies to the next job that starts.",
+      "saveFailed": "Failed to save settings.",
+      "minCap": "The concurrency cap must be a whole number of at least 1.",
+      "pollingTitle": "Polling mode",
+      "pollingDescription": "No webhook URL is configured, so GitHub sends no events. Release Ops re-reads installations and repositories on a timer, and changes reach it with minutes of latency. Set WEBHOOK_URL to receive webhooks."
+    },
+    "defaultProject": {
+      "title": "Default ticket project",
+      "description": "Tickets for update PRs go to this project unless a repository sets its own. A change applies to tickets created afterwards.",
+      "label": "Default ticket project",
+      "placeholder": "Choose a ticket project",
+      "none": "No default",
+      "saved": "Default ticket project saved",
+      "saveFailed": "Failed to save the default ticket project.",
+      "loadFailed": "Failed to load the installation or the ticket projects.",
+      "noInstallation": "The App has no installation yet, so there is nothing to set a default for.",
+      "noProjects": "There are no ticket projects yet. Create one to choose it as the default.",
+      "manageProjects": "Go to ticket projects"
+    },
+    "globalConfig": {
+      "title": "Global Renovate config",
+      "description": "The file as the worker last used it, shown as plain text and never parsed. Token-shaped strings are hidden. It is edited where it lives, not here.",
+      "source": "Source",
+      "sourceRepository": "Repository {repository} at {ref}",
+      "sourceRepositoryDefaultRef": "Repository {repository} at its default branch",
+      "sourceMounted": "A file mounted into the worker",
+      "sourceUnknown": "Not known yet",
+      "capturedAt": "Last used",
+      "notCaptured": "No job has returned the config yet. It appears here after the first run.",
+      "contentLabel": "Config file contents",
+      "loadFailed": "Failed to load the global Renovate config."
+    },
+    "app": {
+      "title": "GitHub App",
+      "description": "The App this instance runs as. Nothing secret is shown.",
+      "loadFailed": "Failed to load the GitHub App.",
+      "notConfigured": "The GitHub App is not set up yet.",
+      "appId": "App ID",
+      "slug": "Slug",
+      "owner": "Owner",
+      "ownerValue": "{login} ({type})",
+      "ownerTypeUser": "personal account",
+      "ownerTypeOrganization": "organization",
+      "webhook": "Webhook",
+      "webhookActive": "Active",
+      "webhookInactive": "Not active (polling mode)",
+      "privateKey": "Private key",
+      "clientSecret": "Client secret",
+      "webhookSecret": "Webhook secret",
+      "stored": "Stored",
+      "missing": "Missing"
+    },
+    "installation": {
+      "title": "Installation",
+      "none": "The App has no installation yet. Install it on your account or organization to start.",
+      "account": "Account",
+      "accountValue": "{login} ({type})",
+      "status": "Status",
+      "statusActive": "Active",
+      "statusSuspended": "Suspended",
+      "statusRemoved": "Removed",
+      "repositories": "Repositories",
+      "repositoriesValue": "{count, plural, one {# repository} other {# repositories}}, {selection}",
+      "selectionAll": "all repositories",
+      "selectionSelected": "selected repositories",
+      "permissions": "Permissions",
+      "permissionsNone": "None granted",
+      "permissionsMissing": "Missing or too low: {names}",
+      "permissionsComplete": "Every permission the App requests is granted.",
+      "rateLimit": "Rate limit budget",
+      "rateLimitValue": "{remaining} of {limit} left, resets {resetAt}",
+      "rateLimitUnknown": "Not read yet"
+    },
+    "roles": {
+      "title": "Role mapping",
+      "description": "Roles come from GitHub and are not edited here.",
+      "adminTeam": "ADMIN_TEAM",
+      "viewerTeam": "VIEWER_TEAM",
+      "notSet": "Not set",
+      "rules": "Resulting rules",
+      "noInstallation": "Roles apply once the App is installed. Until then only the bootstrap admin can sign in.",
+      "personalAdmin": "Admin: the account owner and the bootstrap admin.",
+      "personalNone": "Everyone else has no access.",
+      "orgAdmin": "Admin: organization owners, the bootstrap admin and active members of ADMIN_TEAM when it is set.",
+      "orgViewerAll": "Viewer: every other active member of the organization.",
+      "orgViewerTeam": "Viewer: active members of VIEWER_TEAM. Admins are never excluded by it.",
+      "orgNone": "Everyone else, including pending invitees, has no access.",
+      "problemTitle": "Configuration problem",
+      "problem_team_of_another_organization": "{variable} names a team of another organization. It grants nothing (ADMIN_TEAM) or admits nobody (VIEWER_TEAM).",
+      "problem_ignored_on_personal_account": "{variable} is ignored on a personal-account installation."
     }
   },
   "githubAppKey": {
@@ -378,6 +465,28 @@
     "integrations": "Integrations",
     "ticketProjects": "Ticket projects",
     "settings": "Settings",
-    "homeAriaLabel": "Home"
+    "homeAriaLabel": "Home",
+    "about": "About"
+  },
+  "about": {
+    "title": "About",
+    "loadFailed": "Failed to load the version information.",
+    "app": {
+      "title": "Release Ops",
+      "version": "Version",
+      "license": "Licence",
+      "licenseValue": "GNU Affero General Public License, version 3 (AGPL-3.0-only)",
+      "licenseLink": "Licence text",
+      "noticeLink": "NOTICE",
+      "sourceLink": "Source code"
+    },
+    "renovate": {
+      "title": "Renovate",
+      "description": "Release Ops runs Renovate unmodified, as a separate process in the worker image.",
+      "version": "Pinned version",
+      "license": "Licence",
+      "notice": "Renovate is licensed under the GNU Affero General Public License, version 3. This notice also ships in the images. Release Ops is not affiliated with or endorsed by Renovate's authors or by Mend.",
+      "sourceLink": "Source code of this Renovate version"
+    }
   }
 }

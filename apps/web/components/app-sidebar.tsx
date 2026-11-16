@@ -2,6 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  InfoIcon,
   LayoutDashboardIcon,
   LogOutIcon,
   PlugIcon,
@@ -54,6 +55,12 @@ const NAV_ITEMS = [
     icon: SettingsIcon,
     labelKey: "settings",
     adminOnly: true,
+  },
+  {
+    href: "/about",
+    icon: InfoIcon,
+    labelKey: "about",
+    adminOnly: false,
   },
 ] as const;
 

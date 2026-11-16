@@ -168,6 +168,14 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 	appStore := store.New(db, cipher)
 
+	appStore.SetInstanceConfig(store.InstanceConfig{
+		PresetRepositories: cfg.PresetRepositories,
+		GlobalConfigRepo:   cfg.GlobalConfigRepo,
+		GlobalConfigRef:    cfg.GlobalConfigRef,
+		AdminTeam:          cfg.AdminTeam,
+		ViewerTeam:         cfg.ViewerTeam,
+	})
+
 	if err := appStore.Settings().EnsureDefault(context.Background()); err != nil {
 		return fmt.Errorf("app settings: %w", err)
 	}

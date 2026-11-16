@@ -52,3 +52,12 @@ UPDATE github_app SET bot_user_id = ?, updated_at = ? WHERE id = 1 AND bot_user_
 
 -- name: ReplaceGitHubAppPrivateKey :execrows
 UPDATE github_app SET encrypted_private_key = ?, key_id = ?, updated_at = ? WHERE id = 1 AND app_id = ?;
+
+-- The App's non-secret metadata and whether each secret is stored; no secret column is read.
+-- name: GetGitHubAppInfo :one
+SELECT app_id, slug, client_id, html_url, owner_login, owner_type, webhook_active,
+       length(encrypted_private_key) > 0 AS has_private_key,
+       length(encrypted_client_secret) > 0 AS has_client_secret,
+       length(encrypted_webhook_secret) > 0 AS has_webhook_secret
+FROM github_app
+WHERE id = 1;

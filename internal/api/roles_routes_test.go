@@ -147,6 +147,7 @@ func ageSession(t *testing.T, deps *ServerDeps, evaluatedAt time.Time) {
 // viewer 403, so a route added without the admin guard fails TestViewerGets403OnEveryAdminRoute.
 var viewerRoutes = []string{
 	"GET /api/v1/status",
+	"GET /api/v1/about",
 	"POST /api/v1/auth/logout", // last: it ends the session
 }
 

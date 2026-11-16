@@ -1,6 +1,10 @@
 package buildinfo
 
-import "testing"
+import (
+	"os"
+	"regexp"
+	"testing"
+)
 
 func TestNormalize(t *testing.T) {
 	t.Parallel()
@@ -31,5 +35,29 @@ func TestCurrentReadsVersion(t *testing.T) {
 	Version = ""
 	if got := Current(); got != "dev" {
 		t.Fatalf("Current() with empty Version = %q, want dev", got)
+	}
+}
+
+func TestRenovateVersionIsTheOneTheWorkerImageIsBuiltOn(t *testing.T) {
+	t.Parallel()
+
+	dockerfile, err := os.ReadFile("../../Dockerfile")
+	if err != nil {
+		t.Fatalf("read Dockerfile: %v", err)
+	}
+	m := regexp.MustCompile(`(?m)^ARG WORKER_RENOVATE_TAG=(\S+)$`).FindSubmatch(dockerfile)
+	if m == nil {
+		t.Fatal("the Dockerfile has no ARG WORKER_RENOVATE_TAG default")
+	}
+	if string(m[1]) != RenovateVersion {
+		t.Errorf("RenovateVersion = %q, the Dockerfile builds the worker on %q", RenovateVersion, m[1])
+	}
+}
+
+func TestRenovateSourceURLNamesThePinnedVersion(t *testing.T) {
+	t.Parallel()
+
+	if got, want := RenovateSourceURL(), "https://github.com/renovatebot/renovate/tree/"+RenovateVersion; got != want {
+		t.Errorf("RenovateSourceURL() = %q, want %q", got, want)
 	}
 }

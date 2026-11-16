@@ -42,11 +42,78 @@ export type StatusResponse = {
   version: string;
 };
 
-export type Settings = {
-  pollIntervalMinutes: number;
+/** Where the worker reads the global Renovate config from (docs/specs.html §7.2). */
+export type GlobalConfigOrigin = {
+  source: "repository" | "mounted" | null;
+  repository: string | null;
+  ref: string | null;
 };
 
-export type SettingsPatch = Partial<Settings>;
+export type Settings = {
+  concurrencyCap: number;
+  mode: "webhook" | "polling";
+  presetRepositories: string[];
+  globalConfig: GlobalConfigOrigin;
+};
+
+export type SettingsPatch = { concurrencyCap?: number };
+
+/** The global Renovate config as the worker last used it: the raw text, never parsed. */
+export type GlobalConfig = GlobalConfigOrigin & {
+  capturedAt: string | null;
+  content: string | null;
+};
+
+export type Installation = {
+  id: string;
+  accountLogin: string;
+  accountType: "User" | "Organization";
+  status: "active" | "suspended" | "removed";
+  repositorySelection: "all" | "selected";
+  repositoryCount: number;
+  permissions: Record<string, string>;
+  missingPermissions: string[];
+  rateLimit: {
+    remaining: number | null;
+    limit: number | null;
+    resetAt: string | null;
+  } | null;
+  defaultTicketProjectId: string | null;
+};
+
+export type InstallationsResponse = { items: Installation[] };
+
+export type RoleMappingProblem = {
+  variable: "ADMIN_TEAM" | "VIEWER_TEAM";
+  code: "team_of_another_organization" | "ignored_on_personal_account";
+};
+
+/** The App without any secret: only whether each one is stored. */
+export type GitHubAppResponse = {
+  app: {
+    appId: number;
+    slug: string;
+    clientId: string;
+    htmlUrl: string;
+    ownerLogin: string;
+    ownerType: "User" | "Organization";
+    webhookActive: boolean;
+    hasPrivateKey: boolean;
+    hasClientSecret: boolean;
+    hasWebhookSecret: boolean;
+  };
+  installation: Installation | null;
+  roleMapping: {
+    adminTeam: string | null;
+    viewerTeam: string | null;
+    problems: RoleMappingProblem[];
+  };
+};
+
+export type AboutResponse = {
+  version: string;
+  renovate: { version: string; license: string; sourceUrl: string };
+};
 
 export type Integration = {
   id: string;

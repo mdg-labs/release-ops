@@ -17,6 +17,7 @@ const NAV_ROUTES = [
   "/integrations",
   "/ticket-projects",
   "/settings",
+  "/about",
 ] as const;
 
 const ADMIN_ROUTES = [
@@ -155,7 +156,7 @@ describe("AppSidebar", () => {
     }
   });
 
-  it("shows a viewer the dashboard only, not the admin pages", async () => {
+  it("shows a viewer the dashboard and About, not the admin pages", async () => {
     const pool = mockAgent.get(ORIGIN);
     interceptSession(pool, { role: "viewer" });
     renderSidebar();
@@ -163,6 +164,10 @@ describe("AppSidebar", () => {
     expect(
       await screen.findByRole("link", { name: "nav.dashboard" }),
     ).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "nav.about" })).toHaveAttribute(
+      "href",
+      "/about",
+    );
     await waitFor(() =>
       expect(mockAgent.pendingInterceptors()).toHaveLength(0),
     );
@@ -177,6 +182,7 @@ describe("AppSidebar", () => {
     expect(
       screen.getByRole("link", { name: "nav.dashboard" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "nav.about" })).toBeInTheDocument();
     for (const href of ADMIN_ROUTES) {
       expect(document.querySelector(`a[href="${href}"]`)).toBeNull();
     }
