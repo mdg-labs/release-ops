@@ -131,6 +131,18 @@ func (m *mockIntegrationRepo) DecryptPayload(_ context.Context, id string) ([]by
 	return secret, nil
 }
 
+func (m *mockIntegrationRepo) Credentials(ctx context.Context, id string) (*store.IntegrationCredentials, error) {
+	item, err := m.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	secret, err := m.DecryptPayload(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &store.IntegrationCredentials{Kind: item.Kind, BaseURL: item.BaseURL, Payload: secret}, nil
+}
+
 type mockIntegrationTester struct {
 	err error
 	got struct {

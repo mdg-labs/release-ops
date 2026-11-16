@@ -57,22 +57,20 @@ const ticketRequestTimeout = 30 * time.Second
 
 // integrationTargets builds the provider of a ticket integration from its stored, decrypted
 // credentials each time a ticket is created, so a changed credential applies at once. The
-// credentials stay in this call: they are never logged or stored beside the provider.
+// credentials stay in this call: they are never logged or stored beside the provider. The
+// kind, base URL and credential come from one read of the integration, so they always belong
+// to the same revision.
 type integrationTargets struct {
 	integrations store.IntegrationRepository
 	client       *http.Client
 }
 
 func (t integrationTargets) Target(ctx context.Context, integrationID string) (updatetickets.Target, error) {
-	integration, err := t.integrations.Get(ctx, integrationID)
-	if err != nil {
-		return updatetickets.Target{}, fmt.Errorf("read integration: %w", err)
-	}
-	secret, err := t.integrations.DecryptPayload(ctx, integrationID)
+	integration, err := t.integrations.Credentials(ctx, integrationID)
 	if err != nil {
 		return updatetickets.Target{}, fmt.Errorf("read integration credentials: %w", err)
 	}
-	provider, err := ticket.NewProviderFromIntegration(integration.Kind, integration.BaseURL, secret, t.client)
+	provider, err := ticket.NewProviderFromIntegration(integration.Kind, integration.BaseURL, integration.Payload, t.client)
 	if err != nil {
 		return updatetickets.Target{}, err
 	}
