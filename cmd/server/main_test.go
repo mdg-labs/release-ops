@@ -466,12 +466,20 @@ func TestServerStartUpgradesADatabaseWithLocalAccounts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load migrations: %v", err)
 	}
-	newest := all[len(all)-1]
-	if !strings.HasSuffix(newest.Slug, "remove_local_accounts") {
-		t.Skipf("remove_local_accounts is no longer the newest migration (%s)", newest.Slug)
+	// Later migrations may follow remove_local_accounts: seed the database as it stood just
+	// before it, and let the server's start apply the complete set.
+	removeAt := -1
+	for i, m := range all {
+		if strings.HasSuffix(m.Slug, "remove_local_accounts") {
+			removeAt = i
+			break
+		}
+	}
+	if removeAt < 0 {
+		t.Fatalf("no migration with a slug ending in remove_local_accounts among %d migrations", len(all))
 	}
 	runner := &sqlitemigrate.Runner{DBPath: dbPath}
-	if _, err := runner.Apply(ctx, all[:len(all)-1]); err != nil {
+	if _, err := runner.Apply(ctx, all[:removeAt]); err != nil {
 		t.Fatalf("apply the earlier migrations: %v", err)
 	}
 	seed, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=foreign_keys(1)")
