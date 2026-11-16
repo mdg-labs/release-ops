@@ -122,6 +122,7 @@ type Fake struct {
 
 	rateHeaders http.Header // added to every answer
 	limitStatus int         // answers every request with this status instead; 0 answers normally
+	limitBody   string      // the body of those answers
 }
 
 // Delivery is a webhook delivery of the App as GET /app/hook/deliveries lists it.
@@ -240,6 +241,15 @@ func (f *Fake) RefuseAll(status int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.limitStatus = status
+	f.limitBody = ""
+}
+
+// RefuseAllWithBody is RefuseAll with a response body, such as GitHub's JSON error message.
+func (f *Fake) RefuseAllWithBody(status int, body string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.limitStatus = status
+	f.limitBody = body
 }
 
 // SetBotUser makes the public GET /users/{slug}[bot] answer the bot user of the App with that
@@ -499,13 +509,14 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 
 	f.mu.Lock()
 	f.requests = append(f.requests, Request{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, IfNoneMatch: r.Header.Get("If-None-Match"), Body: string(raw), JWTValid: valid})
-	rateHeaders, limitStatus := f.rateHeaders, f.limitStatus
+	rateHeaders, limitStatus, limitBody := f.rateHeaders, f.limitStatus, f.limitBody
 	f.mu.Unlock()
 	for name, values := range rateHeaders {
 		w.Header()[name] = values
 	}
 	if limitStatus != 0 {
 		w.WriteHeader(limitStatus)
+		_, _ = io.WriteString(w, limitBody)
 		return
 	}
 

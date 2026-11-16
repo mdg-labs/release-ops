@@ -224,6 +224,13 @@ func (c *Client) sendWith(ctx context.Context, method, rawURL, bearer string, pa
 	if int64(len(body)) > limit {
 		return 0, nil, nil, fmt.Errorf("%w: response too large", ErrRequestFailed)
 	}
+	// A secondary limit can answer 403 with neither Retry-After nor an exhausted count; GitHub
+	// then says so only in the message of the (bounded) body, which is not carried further.
+	if resp.StatusCode == http.StatusForbidden && ratelimit.SecondaryLimitBody(body) {
+		signal = signal.WithSecondaryLimit()
+		c.budget.ObserveToken(bearer, signal)
+		return 0, nil, nil, ratelimit.NewLimitedError(signal.Until(now), now)
+	}
 	return resp.StatusCode, resp.Header, body, nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -187,6 +188,117 @@ func TestAPlainForbiddenIsNotARateLimit(t *testing.T) {
 	}
 	if _, ok := r.budget.Until(1000); ok {
 		t.Error("a plain 403 held the installation back")
+	}
+}
+
+const secondaryLimitBody = `{"message":"You have exceeded a secondary rate limit. Please wait a few minutes before you try again.","documentation_url":"https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`
+
+// A secondary limit that answers 403 with no Retry-After and a count that is not exhausted is
+// recognised by the message of its body: it is deferred for a minute and the installation's
+// shared budget refuses every consumer until then.
+func TestASecondaryLimitForbiddenWithoutHeadersIsBackedOffForAMinute(t *testing.T) {
+	t.Parallel()
+
+	for name, h := range map[string]http.Header{
+		"no rate-limit headers":       nil,
+		"requests remain":             rateHeaders(4000, t0.Add(time.Hour)),
+		"uppercase message in a body": nil,
+	} {
+		body := secondaryLimitBody
+		if name == "uppercase message in a body" {
+			body = `{"message":"YOU HAVE EXCEEDED A SECONDARY RATE LIMIT."}`
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			r := newRateRig(t)
+			ctx := context.Background()
+			if _, err := r.app.Repositories(ctx, 1000); err != nil {
+				t.Fatal(err)
+			}
+			r.fake.SetRateLimitHeaders(h)
+			r.fake.RefuseAllWithBody(http.StatusForbidden, body)
+
+			_, err := r.app.Repositories(ctx, 1000)
+			var limited *ratelimit.LimitedError
+			if !errors.Is(err, ratelimit.ErrRateLimited) || !errors.As(err, &limited) {
+				t.Fatalf("Repositories = %v, want ErrRateLimited", err)
+			}
+			if limited.After != time.Minute || !limited.Until.Equal(t0.Add(time.Minute)) {
+				t.Fatalf("error = %+v, want a retry in one minute", limited)
+			}
+			if strings.Contains(err.Error(), "secondary") || strings.Contains(err.Error(), "exceeded") {
+				t.Errorf("error %q carries the response body", err)
+			}
+			if until, ok := r.budget.Until(1000); !ok || !until.Equal(t0.Add(time.Minute)) {
+				t.Fatalf("budget until = %v, %v, want the installation held back until %v", until, ok, t0.Add(time.Minute))
+			}
+
+			r.fake.RefuseAll(0)
+			before := len(r.fake.Requests())
+			if _, err := r.app.JobToken(ctx, 1000, "acme/api", nil); !errors.Is(err, ratelimit.ErrRateLimited) {
+				t.Fatalf("JobToken while held back = %v, want ErrRateLimited", err)
+			}
+			if after := len(r.fake.Requests()); after != before {
+				t.Fatalf("GitHub received %d calls while the budget was held back, want none", after-before)
+			}
+			r.clock.Advance(time.Minute)
+			if _, err := r.app.JobToken(ctx, 1000, "acme/api", nil); err != nil {
+				t.Fatalf("JobToken after the minute = %v, want it to resume", err)
+			}
+		})
+	}
+}
+
+// A 403 whose message does not name a secondary rate limit stays an ordinary refusal, whatever
+// else the body says.
+func TestAForbiddenWithoutTheSecondaryLimitMessageIsNotARateLimit(t *testing.T) {
+	t.Parallel()
+
+	for name, body := range map[string]string{
+		"permission denied":          `{"message":"Resource not accessible by integration","documentation_url":"https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`,
+		"primary limit wording":      `{"message":"API rate limit exceeded for installation."}`,
+		"not json":                   "You have exceeded a secondary rate limit.",
+		"empty":                      "",
+		"message is not a string":    `{"message":{"text":"secondary rate limit"}}`,
+		"secondary limit in a field": `{"message":"Forbidden","errors":["secondary rate limit"]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			r := newRateRig(t)
+			ctx := context.Background()
+			if _, err := r.app.Repositories(ctx, 1000); err != nil {
+				t.Fatal(err)
+			}
+			r.fake.RefuseAllWithBody(http.StatusForbidden, body)
+
+			_, err := r.app.Repositories(ctx, 1000)
+			if errors.Is(err, ratelimit.ErrRateLimited) || !errors.Is(err, github.ErrAppRejected) {
+				t.Fatalf("Repositories = %v, want the usual refusal and no deferral", err)
+			}
+			if _, ok := r.budget.Until(1000); ok {
+				t.Error("a 403 that is not a secondary limit held the installation back")
+			}
+		})
+	}
+}
+
+// The message identifies a secondary limit on a 403 only: another status with the same body is
+// answered as before.
+func TestTheSecondaryLimitMessageOnAnotherStatusIsNotARateLimit(t *testing.T) {
+	t.Parallel()
+	r := newRateRig(t)
+	ctx := context.Background()
+	if _, err := r.app.Repositories(ctx, 1000); err != nil {
+		t.Fatal(err)
+	}
+	r.fake.RefuseAllWithBody(http.StatusUnauthorized, secondaryLimitBody)
+
+	_, err := r.app.Repositories(ctx, 1000)
+	if errors.Is(err, ratelimit.ErrRateLimited) {
+		t.Fatalf("Repositories = %v, want no deferral for a 401", err)
+	}
+	if _, ok := r.budget.Until(1000); ok {
+		t.Error("a 401 held the installation back")
 	}
 }
 
