@@ -119,6 +119,7 @@ type Fake struct {
 	onRedelivery     func(Delivery) int               // called for each accepted redelivery; returns the receiver's status
 
 	comments commentState
+	writes   writeState
 	watch    watchState
 
 	rateHeaders http.Header // added to every answer
@@ -503,6 +504,35 @@ func (f *Fake) TokenRequests() [][]string {
 	return out
 }
 
+// TokenGrant is what one token request asked for.
+type TokenGrant struct {
+	// Repositories are the repository names the token was scoped to; nil for every repository.
+	Repositories []string
+	// Permissions are the permissions the token was narrowed to; nil for the installation's own.
+	Permissions map[string]string
+}
+
+// TokenGrants returns what every token request asked for, in order.
+func (f *Fake) TokenGrants() []TokenGrant {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []TokenGrant
+	for _, r := range f.requests {
+		if r.Method != http.MethodPost || !strings.HasSuffix(r.Path, "/access_tokens") {
+			continue
+		}
+		var body TokenGrant
+		var raw struct {
+			Repositories []string          `json:"repositories"`
+			Permissions  map[string]string `json:"permissions"`
+		}
+		_ = json.Unmarshal([]byte(r.Body), &raw)
+		body.Repositories, body.Permissions = raw.Repositories, raw.Permissions
+		out = append(out, body)
+	}
+	return out
+}
+
 func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	r.Body = io.NopCloser(bytes.NewReader(raw))
@@ -794,6 +824,14 @@ func (f *Fake) serveWithToken(w http.ResponseWriter, r *http.Request, token stri
 	}
 	if len(parts) == 3 && parts[2] == "issues" {
 		f.serveIssues(w, r, parts[0]+"/"+parts[1])
+		return
+	}
+	if len(parts) >= 4 && parts[2] == "git" && parts[3] == "refs" {
+		f.serveRefs(w, r, parts[0]+"/"+parts[1], parts[4:])
+		return
+	}
+	if len(parts) >= 4 && parts[2] == "contents" && r.Method == http.MethodPut {
+		f.servePutContents(w, r, parts[0]+"/"+parts[1], strings.Join(parts[3:], "/"))
 		return
 	}
 	if len(parts) == 5 && parts[2] == "git" && strings.HasPrefix(parts[3]+"/"+parts[4], "ref/heads/") {

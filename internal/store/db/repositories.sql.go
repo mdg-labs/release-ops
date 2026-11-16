@@ -16,26 +16,36 @@ FROM repositories r
 JOIN installations i ON i.id = r.installation_id
 WHERE r.removed_at IS NULL
   AND i.status <> 'removed'
-  AND (?1 = '' OR instr(lower(r.full_name), lower(?1)) > 0)
-  AND (?2 IS NULL OR r.enabled = ?2)
-  AND (?3 = '' OR r.config_state = ?3)
+  AND (?1 = 1 OR r.id IN (SELECT j.value FROM json_each(?2) j))
+  AND (?3 = '' OR instr(lower(r.full_name), lower(?3)) > 0)
+  AND (?4 IS NULL OR r.enabled = ?4)
+  AND (?5 = '' OR r.config_state = ?5)
 `
 
 type CountManageableRepositoriesParams struct {
-	Search      interface{} `json:"search"`
-	Enabled     interface{} `json:"enabled"`
-	ConfigState interface{} `json:"config_state"`
+	AllRepositories interface{} `json:"all_repositories"`
+	ScopeIds        interface{} `json:"scope_ids"`
+	Search          interface{} `json:"search"`
+	Enabled         interface{} `json:"enabled"`
+	ConfigState     interface{} `json:"config_state"`
 }
 
 func (q *Queries) CountManageableRepositories(ctx context.Context, arg CountManageableRepositoriesParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countManageableRepositories, arg.Search, arg.Enabled, arg.ConfigState)
+	row := q.db.QueryRowContext(ctx, countManageableRepositories,
+		arg.AllRepositories,
+		arg.ScopeIds,
+		arg.Search,
+		arg.Enabled,
+		arg.ConfigState,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
 }
 
 const getManageableRepository = `-- name: GetManageableRepository :one
-SELECT r.id, r.full_name, r.default_branch, r.enabled, r.config_state, i.status AS installation_status
+SELECT r.id, r.full_name, r.default_branch, r.enabled, r.config_state, i.status AS installation_status,
+       i.github_installation_id
 FROM repositories r
 JOIN installations i ON i.id = r.installation_id
 WHERE r.id = ?
@@ -44,12 +54,13 @@ WHERE r.id = ?
 `
 
 type GetManageableRepositoryRow struct {
-	ID                 string `json:"id"`
-	FullName           string `json:"full_name"`
-	DefaultBranch      string `json:"default_branch"`
-	Enabled            int64  `json:"enabled"`
-	ConfigState        string `json:"config_state"`
-	InstallationStatus string `json:"installation_status"`
+	ID                   string `json:"id"`
+	FullName             string `json:"full_name"`
+	DefaultBranch        string `json:"default_branch"`
+	Enabled              int64  `json:"enabled"`
+	ConfigState          string `json:"config_state"`
+	InstallationStatus   string `json:"installation_status"`
+	GithubInstallationID int64  `json:"github_installation_id"`
 }
 
 // A repository an admin can act on: not removed, and of an installation that is not removed.
@@ -63,6 +74,7 @@ func (q *Queries) GetManageableRepository(ctx context.Context, id string) (GetMa
 		&i.Enabled,
 		&i.ConfigState,
 		&i.InstallationStatus,
+		&i.GithubInstallationID,
 	)
 	return i, err
 }
@@ -70,11 +82,17 @@ func (q *Queries) GetManageableRepository(ctx context.Context, id string) (GetMa
 const getManageableRepositoryListing = `-- name: GetManageableRepositoryListing :one
 SELECT r.id, r.full_name, r.default_branch, r.enabled, r.config_state, r.ticket_project_id, i.status AS installation_status,
        CASE WHEN r.ticket_project_id IS NOT NULL THEN r.ticket_project_id ELSE s.default_ticket_project_id END AS effective_ticket_project_id,
-       tp.name AS effective_ticket_project_name
+       tp.name AS effective_ticket_project_name,
+       r.dashboard_issue_number,
+       (SELECT COUNT(*) FROM update_prs p WHERE p.repository_id = r.id AND p.state = 'open') AS open_update_prs,
+       lj.id AS last_job_id, lj.state AS last_job_state, lj.finished_at AS last_job_finished_at
 FROM repositories r
 JOIN installations i ON i.id = r.installation_id
 LEFT JOIN installation_settings s ON s.installation_id = r.installation_id
 LEFT JOIN ticket_projects tp ON tp.id = CASE WHEN r.ticket_project_id IS NOT NULL THEN r.ticket_project_id ELSE s.default_ticket_project_id END
+LEFT JOIN jobs lj ON lj.id = (
+  SELECT j.id FROM jobs j WHERE j.repository_id = r.id ORDER BY j.created_at DESC, j.rowid DESC LIMIT 1
+)
 WHERE r.id = ?
   AND r.removed_at IS NULL
   AND i.status <> 'removed'
@@ -90,6 +108,11 @@ type GetManageableRepositoryListingRow struct {
 	InstallationStatus         string         `json:"installation_status"`
 	EffectiveTicketProjectID   interface{}    `json:"effective_ticket_project_id"`
 	EffectiveTicketProjectName sql.NullString `json:"effective_ticket_project_name"`
+	DashboardIssueNumber       sql.NullInt64  `json:"dashboard_issue_number"`
+	OpenUpdatePrs              int64          `json:"open_update_prs"`
+	LastJobID                  sql.NullString `json:"last_job_id"`
+	LastJobState               sql.NullString `json:"last_job_state"`
+	LastJobFinishedAt          sql.NullString `json:"last_job_finished_at"`
 }
 
 func (q *Queries) GetManageableRepositoryListing(ctx context.Context, id string) (GetManageableRepositoryListingRow, error) {
@@ -105,6 +128,11 @@ func (q *Queries) GetManageableRepositoryListing(ctx context.Context, id string)
 		&i.InstallationStatus,
 		&i.EffectiveTicketProjectID,
 		&i.EffectiveTicketProjectName,
+		&i.DashboardIssueNumber,
+		&i.OpenUpdatePrs,
+		&i.LastJobID,
+		&i.LastJobState,
+		&i.LastJobFinishedAt,
 	)
 	return i, err
 }
@@ -209,26 +237,35 @@ func (q *Queries) ListActiveRepositoryIDs(ctx context.Context, installationID st
 const listManageableRepositories = `-- name: ListManageableRepositories :many
 SELECT r.id, r.full_name, r.default_branch, r.enabled, r.config_state, r.ticket_project_id, i.status AS installation_status,
        CASE WHEN r.ticket_project_id IS NOT NULL THEN r.ticket_project_id ELSE s.default_ticket_project_id END AS effective_ticket_project_id,
-       tp.name AS effective_ticket_project_name
+       tp.name AS effective_ticket_project_name,
+       r.dashboard_issue_number,
+       (SELECT COUNT(*) FROM update_prs p WHERE p.repository_id = r.id AND p.state = 'open') AS open_update_prs,
+       lj.id AS last_job_id, lj.state AS last_job_state, lj.finished_at AS last_job_finished_at
 FROM repositories r
 JOIN installations i ON i.id = r.installation_id
 LEFT JOIN installation_settings s ON s.installation_id = r.installation_id
 LEFT JOIN ticket_projects tp ON tp.id = CASE WHEN r.ticket_project_id IS NOT NULL THEN r.ticket_project_id ELSE s.default_ticket_project_id END
+LEFT JOIN jobs lj ON lj.id = (
+  SELECT j.id FROM jobs j WHERE j.repository_id = r.id ORDER BY j.created_at DESC, j.rowid DESC LIMIT 1
+)
 WHERE r.removed_at IS NULL
   AND i.status <> 'removed'
-  AND (?1 = '' OR instr(lower(r.full_name), lower(?1)) > 0)
-  AND (?2 IS NULL OR r.enabled = ?2)
-  AND (?3 = '' OR r.config_state = ?3)
+  AND (?1 = 1 OR r.id IN (SELECT j.value FROM json_each(?2) j))
+  AND (?3 = '' OR instr(lower(r.full_name), lower(?3)) > 0)
+  AND (?4 IS NULL OR r.enabled = ?4)
+  AND (?5 = '' OR r.config_state = ?5)
 ORDER BY r.full_name, r.id
-LIMIT ?5 OFFSET ?4
+LIMIT ?7 OFFSET ?6
 `
 
 type ListManageableRepositoriesParams struct {
-	Search      interface{} `json:"search"`
-	Enabled     interface{} `json:"enabled"`
-	ConfigState interface{} `json:"config_state"`
-	PageOffset  int64       `json:"page_offset"`
-	PageSize    int64       `json:"page_size"`
+	AllRepositories interface{} `json:"all_repositories"`
+	ScopeIds        interface{} `json:"scope_ids"`
+	Search          interface{} `json:"search"`
+	Enabled         interface{} `json:"enabled"`
+	ConfigState     interface{} `json:"config_state"`
+	PageOffset      int64       `json:"page_offset"`
+	PageSize        int64       `json:"page_size"`
 }
 
 type ListManageableRepositoriesRow struct {
@@ -241,13 +278,21 @@ type ListManageableRepositoriesRow struct {
 	InstallationStatus         string         `json:"installation_status"`
 	EffectiveTicketProjectID   interface{}    `json:"effective_ticket_project_id"`
 	EffectiveTicketProjectName sql.NullString `json:"effective_ticket_project_name"`
+	DashboardIssueNumber       sql.NullInt64  `json:"dashboard_issue_number"`
+	OpenUpdatePrs              int64          `json:"open_update_prs"`
+	LastJobID                  sql.NullString `json:"last_job_id"`
+	LastJobState               sql.NullString `json:"last_job_state"`
+	LastJobFinishedAt          sql.NullString `json:"last_job_finished_at"`
 }
 
-// The repositories an admin can act on, with the ticket project of the repository and the one
-// it effectively uses: its own, else the installation's default. search is a substring of the
-// full name, matched without case; empty arguments filter nothing.
+// The repositories of the caller's scope (every one, or those whose ids are in scope_ids), with
+// the ticket project of the repository and the one it effectively uses: its own, else the
+// installation's default, the number of its open update PRs and its latest job. search is a
+// substring of the full name, matched without case; empty arguments filter nothing.
 func (q *Queries) ListManageableRepositories(ctx context.Context, arg ListManageableRepositoriesParams) ([]ListManageableRepositoriesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listManageableRepositories,
+		arg.AllRepositories,
+		arg.ScopeIds,
 		arg.Search,
 		arg.Enabled,
 		arg.ConfigState,
@@ -271,6 +316,11 @@ func (q *Queries) ListManageableRepositories(ctx context.Context, arg ListManage
 			&i.InstallationStatus,
 			&i.EffectiveTicketProjectID,
 			&i.EffectiveTicketProjectName,
+			&i.DashboardIssueNumber,
+			&i.OpenUpdatePrs,
+			&i.LastJobID,
+			&i.LastJobState,
+			&i.LastJobFinishedAt,
 		); err != nil {
 			return nil, err
 		}

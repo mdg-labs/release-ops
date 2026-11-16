@@ -129,6 +129,72 @@
       "next": "Next"
     }
   },
+  "repositories": {
+    "title": "Repositories",
+    "description": "The repositories the GitHub App is installed on and what Release Ops does with them.",
+    "searchLabel": "Search repositories",
+    "searchPlaceholder": "Search by name",
+    "loadFailed": "Could not load the repositories.",
+    "retry": "Try again",
+    "emptyTitle": "No repositories yet",
+    "emptyDescription": "The GitHub App has no repository installed. Install it on the repositories Renovate should update.",
+    "emptyDescriptionViewer": "There are no repositories you can see yet.",
+    "emptyAction": "Install the GitHub App on repositories",
+    "emptySearch": "No repositories match this search.",
+    "columns": {
+      "repository": "Repository",
+      "config": "Renovate config",
+      "openPrs": "Open update PRs",
+      "lastJob": "Last job",
+      "dashboard": "Dependency Dashboard",
+      "enabled": "Enabled",
+      "ticketProject": "Ticket project",
+      "actions": "Actions"
+    },
+    "configStates": {
+      "present": "Present",
+      "missing": "Missing",
+      "unknown": "Unknown"
+    },
+    "jobStates": {
+      "queued": "Queued",
+      "running": "Running",
+      "succeeded": "Succeeded",
+      "failed": "Failed"
+    },
+    "noJob": "No job yet",
+    "dashboardLink": "Open",
+    "noDashboard": "Unknown",
+    "paused": "Paused",
+    "enabledSwitch": "Run Renovate for {repository}",
+    "toggleFailed": "Could not change {repository}: {message}",
+    "ticketProjectLabel": "Ticket project of {repository}",
+    "installationDefault": "Installation default ({project})",
+    "installationDefaultNone": "none",
+    "noTicketProject": "No ticket project: its update pull requests get no tickets.",
+    "ticketProjectSaveFailed": "Could not set the ticket project of {repository}: {message}",
+    "ticketProjectsUnavailable": "The ticket projects could not be loaded.",
+    "runNow": "Run now",
+    "runNowQueued": "Run queued for {repository}",
+    "runNowView": "View jobs",
+    "runNowFailed": "Could not start a run for {repository}: {message}",
+    "enableRepo": "Enable repo",
+    "enableRepoTitle": "Open a pull request that adds renovate.json?",
+    "enableRepoDescription": "{repository} has no Renovate config. Release Ops opens a pull request that adds a renovate.json extending {preset}. It never merges the pull request.",
+    "enableRepoPresetUnavailable": "The preset could not be loaded, so the pull request cannot be opened right now.",
+    "enableRepoConfirm": "Open pull request",
+    "enableRepoOpened": "Pull request #{number} is open for {repository}",
+    "enableRepoFailed": "The pull request could not be opened: {message}",
+    "enableRepoLink": "Pull request #{number}",
+    "actionFailedUnknown": "the request did not finish",
+    "pagination": {
+      "summary": "{from}–{to} of {total}",
+      "pageSize": "Rows per page",
+      "pageSizeOption": "{count} per page",
+      "previous": "Previous",
+      "next": "Next"
+    }
+  },
   "integrations": {
     "title": "Integrations",
     "add": "Add integration",
@@ -516,6 +582,7 @@
   },
   "nav": {
     "dashboard": "Dashboard",
+    "repositories": "Repositories",
     "integrations": "Integrations",
     "ticketProjects": "Ticket projects",
     "settings": "Settings",

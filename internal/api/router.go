@@ -41,6 +41,10 @@ type ServerDeps struct {
 	WebhookURL    string
 	GitHubBaseURL string
 	GitHub        *github.Client
+	// GitHubApp mints the installation tokens of "Enable repo". It must carry the rate-limit
+	// budget GitHub uses, so the action draws on the installation's shared budget; without it
+	// the route is not mounted.
+	GitHubApp *github.AppClient
 	// GitHubOAuth runs the OAuth sign-in. When nil it is built from GitHub and GitHubBaseURL;
 	// tests set it to a fake.
 	GitHubOAuth auth.OAuthProvider

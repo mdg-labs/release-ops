@@ -252,3 +252,50 @@ export type UpdatePrsResponse = {
   pageSize: number;
   total: number;
 };
+
+export type RepositoryConfigState = "unknown" | "present" | "missing";
+
+export type RepositoryJobState = "queued" | "running" | "succeeded" | "failed";
+
+/** The repository's most recently created job (docs/specs.html §7.5). */
+export type RepositoryJob = {
+  id: string;
+  state: RepositoryJobState;
+  finishedAt: string | null;
+};
+
+/**
+ * An installed repository (docs/specs.html §7.5). A viewer's response has no `ticketProject*`
+ * fields; they are present, possibly null, in an admin's.
+ */
+export type Repository = {
+  id: string;
+  fullName: string;
+  defaultBranch: string;
+  enabled: boolean;
+  configState: RepositoryConfigState;
+  htmlUrl: string | null;
+  dashboardUrl: string | null;
+  openUpdatePrs: number;
+  lastJob: RepositoryJob | null;
+  ticketProjectId?: string | null;
+  effectiveTicketProjectId?: string | null;
+  effectiveTicketProjectName?: string | null;
+};
+
+export type RepositoriesResponse = {
+  items: Repository[];
+  page: number;
+  pageSize: number;
+  total: number;
+};
+
+export type RepositoryPatch = {
+  enabled?: boolean;
+  ticketProjectId?: string | null;
+};
+
+export type EnableRenovateResult = {
+  pullRequestUrl: string;
+  number: number;
+};

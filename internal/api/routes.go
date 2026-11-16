@@ -20,13 +20,13 @@ import (
 //     only the setup routes; GET /setup/installed is public
 //  4. Logout, behind a session alone, so a user whose role cannot be evaluated can still end it
 //  5. Protected group (Authenticate: a session with a role, re-evaluated every 15 minutes):
-//     status, about and the update PR list for any role (the list limited to the caller's
-//     repositories); settings (the concurrency cap, the global Renovate
+//     status, about, the update PR list and the repository list and detail for any role (the
+//     data limited to the caller's repositories); settings (the concurrency cap, the global Renovate
 //     config), github-app (its metadata and role mapping), installations (the default ticket
 //     project),
 //     integrations, ticket-projects, update-tickets (clearing a pending marker), repositories
-//     (the list with ticket projects, run now, pause, enable and the ticket-project override)
-//     and users for an admin only
+//     (run now, pause, enable, the ticket-project override and, with a GitHub client, "Enable
+//     repo") and users for an admin only
 //     (RequireAdmin), a viewer getting 403; the GitHub App's private key rotation
 //     (PUT /github-app/private-key, only with a GitHub client) is one of them
 func RegisterAll(api chi.Router, deps *ServerDeps) {
@@ -86,16 +86,33 @@ func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps) {
 	protected.Get("/status", statusHandlers.Get)
 	protected.Get("/about", (&handlers.AboutHandlers{}).Get)
 	protected.Get("/update-prs", (&handlers.UpdatePRHandlers{PRs: deps.Store.UpdatePRList()}).List)
+	repositoryHandlers := newRepositoryHandlers(deps)
+	protected.Get("/repositories", repositoryHandlers.List)
+	protected.Get("/repositories/{id}", repositoryHandlers.Get)
 
 	protected.Group(func(admin chi.Router) {
 		admin.Use(apimw.RequireAdmin)
-		registerAdminRoutes(admin, deps)
+		registerAdminRoutes(admin, deps, repositoryHandlers)
 	})
+}
+
+func newRepositoryHandlers(deps *ServerDeps) *handlers.RepositoryHandlers {
+	st := deps.Store
+	h := &handlers.RepositoryHandlers{
+		Repositories:       st.Repositories(),
+		Queue:              deps.Queue,
+		PresetRepositories: func() []string { return st.InstanceConfig().PresetRepositories },
+		DashboardBaseURL:   deps.GitHubBaseURL,
+	}
+	if deps.GitHub != nil && deps.GitHubApp != nil {
+		h.Enabler = github.NewRenovateEnabler(deps.GitHub, deps.GitHubApp)
+	}
+	return h
 }
 
 // registerAdminRoutes registers the routes only an admin may call. Every route added to the
 // protected API that is not meant for a viewer belongs here, behind RequireAdmin.
-func registerAdminRoutes(protected chi.Router, deps *ServerDeps) {
+func registerAdminRoutes(protected chi.Router, deps *ServerDeps, repositoryHandlers *handlers.RepositoryHandlers) {
 	st := deps.Store
 	settingsHandlers := &handlers.SettingsHandlers{
 		Settings:    st.InstanceSettings(),
@@ -142,10 +159,11 @@ func registerAdminRoutes(protected chi.Router, deps *ServerDeps) {
 	protected.Get("/installations", installationHandlers.List)
 	protected.Patch("/installations/{id}", installationHandlers.Patch)
 
-	repositoryHandlers := &handlers.RepositoryHandlers{Repositories: st.Repositories(), Queue: deps.Queue}
-	protected.Get("/repositories", repositoryHandlers.List)
 	protected.Patch("/repositories/{id}", repositoryHandlers.Patch)
 	protected.Post("/repositories/{id}/run", repositoryHandlers.Run)
+	if repositoryHandlers.Enabler != nil {
+		protected.Post("/repositories/{id}/enable-renovate", repositoryHandlers.EnableRenovate)
+	}
 
 	githubAppHandlers := &handlers.GitHubAppHandlers{
 		Info:                st.GitHubAppInfo(),

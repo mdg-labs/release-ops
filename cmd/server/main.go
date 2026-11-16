@@ -249,6 +249,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		WebhookURL:        cfg.WebhookURL,
 		GitHubBaseURL:     cfg.GitHubBaseURL,
 		GitHub:            githubClient,
+		GitHubApp:         appClient,
 		Roles: &auth.GitHubRoles{
 			Access:     appStore.Access(),
 			Users:      appStore.SignIn(),

@@ -131,11 +131,25 @@ func (c *Client) GetInstallation(ctx context.Context, appJWT string, installatio
 
 // CreateInstallationToken mints an installation access token. With repositories (names
 // without the owner) the token covers only those; without, every repository of the
-// installation.
+// installation. It carries every permission the installation holds.
 func (c *Client) CreateInstallationToken(ctx context.Context, appJWT string, installationID int64, repositories []string) (InstallationToken, error) {
+	return c.CreateInstallationTokenWith(ctx, appJWT, installationID, repositories, nil)
+}
+
+// CreateInstallationTokenWith is CreateInstallationToken for a token narrowed to permissions
+// (permission name to "read" or "write"); without permissions the token carries every
+// permission the installation holds.
+func (c *Client) CreateInstallationTokenWith(ctx context.Context, appJWT string, installationID int64, repositories []string, permissions map[string]string) (InstallationToken, error) {
 	var payload io.Reader
-	if len(repositories) > 0 {
-		raw, err := json.Marshal(map[string][]string{"repositories": repositories})
+	if len(repositories) > 0 || len(permissions) > 0 {
+		body := map[string]any{}
+		if len(repositories) > 0 {
+			body["repositories"] = repositories
+		}
+		if len(permissions) > 0 {
+			body["permissions"] = permissions
+		}
+		raw, err := json.Marshal(body)
 		if err != nil {
 			return InstallationToken{}, ErrRequestFailed
 		}

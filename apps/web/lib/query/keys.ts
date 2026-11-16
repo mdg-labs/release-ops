@@ -12,6 +12,8 @@ export const queryKeys = {
   installations: () => ["installations"] as const,
   about: () => ["about"] as const,
   updatePrs: (params: object) => ["update-prs", params] as const,
+  repositories: (params: object) => ["repositories", params] as const,
+  repositoriesAll: () => ["repositories"] as const,
   ticketMetadata: (
     integrationId: string | null | undefined,
     resource: string,

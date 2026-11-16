@@ -71,6 +71,7 @@ func TestAllConsumersDeferWhileTheSharedBudgetIsExhaustedAndResumeAfterTheReset(
 
 	consumers := map[string]func() error{
 		"renovate run start": func() error { _, err := r.app.JobToken(ctx, 1000, "acme/api", nil); return err },
+		"enable repo":        func() error { _, err := r.app.EnableToken(ctx, 1000, "acme/api"); return err },
 		"reconcile (token)":  func() error { _, err := r.app.RepositoryToken(ctx, 1000, "acme/api", nil); return err },
 		"reconcile (sync)":   func() error { _, err := r.app.Repositories(ctx, 1000); return err },
 		"reconcile (config)": func() error { _, err := r.app.HasRenovateConfig(ctx, 1000, "acme/api"); return err },

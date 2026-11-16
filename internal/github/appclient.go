@@ -73,6 +73,10 @@ type tokenKey struct {
 	// after a fallback covers the target alone, so two targets never share an entry even
 	// when their requested sets are equal.
 	target string
+	// permissions is the sorted permission=access list the token is narrowed to, joined by
+	// commas; empty for a token with every permission of the installation. A narrowed token
+	// is never served for a request that wants the full one, and the reverse.
+	permissions string
 }
 
 type tokenEntry struct {
@@ -171,7 +175,7 @@ func (c *AppClient) tokenFor(ctx context.Context, installationID int64, consumer
 		return InstallationToken{}, err
 	}
 	return c.cached(tokenKey{installationID: installationID}, tokenRefreshMargin, func() (InstallationToken, error) {
-		return c.mint(ctx, installationID, nil)
+		return c.mint(ctx, installationID, nil, nil)
 	})
 }
 
@@ -184,7 +188,7 @@ func (c *AppClient) RepositoryToken(ctx context.Context, installationID int64, t
 	if err := c.budget.Gate(installationID, ratelimit.ConsumerReconcile); err != nil {
 		return InstallationToken{}, err
 	}
-	return c.repositoryToken(ctx, installationID, target, presets, tokenRefreshMargin)
+	return c.repositoryToken(ctx, installationID, target, presets, nil, tokenRefreshMargin)
 }
 
 // JobToken is RepositoryToken for a token that a job will use unrenewed: a cached token with
@@ -193,10 +197,12 @@ func (c *AppClient) JobToken(ctx context.Context, installationID int64, target s
 	if err := c.budget.Gate(installationID, ratelimit.ConsumerRenovateRun); err != nil {
 		return InstallationToken{}, err
 	}
-	return c.repositoryToken(ctx, installationID, target, presets, JobTokenMinLife)
+	return c.repositoryToken(ctx, installationID, target, presets, nil, JobTokenMinLife)
 }
 
-func (c *AppClient) repositoryToken(ctx context.Context, installationID int64, target string, presets []string, minLife time.Duration) (InstallationToken, error) {
+// repositoryToken returns the cached or a newly minted token for the target and presets,
+// narrowed to permissions when it is not nil.
+func (c *AppClient) repositoryToken(ctx context.Context, installationID int64, target string, presets []string, permissions map[string]string, minLife time.Duration) (InstallationToken, error) {
 	owner, name, ok := ownerAndName(target)
 	if !ok {
 		return InstallationToken{}, fmt.Errorf("repository %q is not owner/name", target)
@@ -221,24 +227,34 @@ func (c *AppClient) repositoryToken(ctx context.Context, installationID int64, t
 		lowered[i] = strings.ToLower(n)
 	}
 	slices.Sort(lowered)
-	key := tokenKey{installationID: installationID, repositories: strings.Join(lowered, ","), target: strings.ToLower(name)}
+	key := tokenKey{installationID: installationID, repositories: strings.Join(lowered, ","), target: strings.ToLower(name), permissions: permissionsKey(permissions)}
 
 	return c.cached(key, minLife, func() (InstallationToken, error) {
-		tok, err := c.mint(ctx, installationID, names)
+		tok, err := c.mint(ctx, installationID, names, permissions)
 		if errors.Is(err, ErrRepositoriesRejected) && len(names) > 1 {
 			c.warnOnce("a preset repository is not covered by the installation; the token covers the target repository only", strconv.FormatInt(installationID, 10))
-			return c.mint(ctx, installationID, names[:1])
+			return c.mint(ctx, installationID, names[:1], permissions)
 		}
 		return tok, err
 	})
 }
 
-func (c *AppClient) mint(ctx context.Context, installationID int64, names []string) (InstallationToken, error) {
+// permissionsKey is the cache key of a permission set: sorted name=access pairs.
+func permissionsKey(permissions map[string]string) string {
+	pairs := make([]string, 0, len(permissions))
+	for name, access := range permissions {
+		pairs = append(pairs, name+"="+access)
+	}
+	slices.Sort(pairs)
+	return strings.Join(pairs, ",")
+}
+
+func (c *AppClient) mint(ctx context.Context, installationID int64, names []string, permissions map[string]string) (InstallationToken, error) {
 	jwt, _, err := c.appJWT(ctx)
 	if err != nil {
 		return InstallationToken{}, err
 	}
-	tok, err := c.api.CreateInstallationToken(ctx, jwt, installationID, names)
+	tok, err := c.api.CreateInstallationTokenWith(ctx, jwt, installationID, names, permissions)
 	if err != nil {
 		return InstallationToken{}, err
 	}

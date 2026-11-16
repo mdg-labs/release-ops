@@ -475,7 +475,7 @@ func TestRepositoryActionsAreRefusedToAViewerAndToAnAnonymousCaller(t *testing.T
 		{http.MethodPost, "/api/v1/repositories/repo-1/run", ""},
 		{http.MethodPatch, "/api/v1/repositories/repo-1", `{"enabled":false}`},
 		{http.MethodPatch, "/api/v1/repositories/repo-1", `{"ticketProjectId":null}`},
-		{http.MethodGet, "/api/v1/repositories", ""},
+		{http.MethodPost, "/api/v1/repositories/repo-1/enable-renovate", ""},
 		{http.MethodGet, "/api/v1/installations", ""},
 		{http.MethodPatch, "/api/v1/installations/inst-1", `{"defaultTicketProjectId":null}`},
 	} {

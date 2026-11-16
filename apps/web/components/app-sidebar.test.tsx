@@ -14,6 +14,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 const ORIGIN = "http://localhost:3000";
 const NAV_ROUTES = [
   "/",
+  "/repositories",
   "/integrations",
   "/ticket-projects",
   "/settings",
@@ -156,7 +157,7 @@ describe("AppSidebar", () => {
     }
   });
 
-  it("shows a viewer the dashboard and About, not the admin pages", async () => {
+  it("shows a viewer the dashboard, the repositories and About, not the admin pages", async () => {
     const pool = mockAgent.get(ORIGIN);
     interceptSession(pool, { role: "viewer" });
     renderSidebar();
@@ -164,6 +165,9 @@ describe("AppSidebar", () => {
     expect(
       await screen.findByRole("link", { name: "nav.dashboard" }),
     ).toHaveAttribute("href", "/");
+    expect(
+      screen.getByRole("link", { name: "nav.repositories" }),
+    ).toHaveAttribute("href", "/repositories");
     expect(screen.getByRole("link", { name: "nav.about" })).toHaveAttribute(
       "href",
       "/about",

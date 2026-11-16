@@ -54,7 +54,12 @@ func (c *AppClient) HasRenovateConfig(ctx context.Context, installationID int64,
 	if err != nil {
 		return false, err
 	}
-	root, err := c.api.ListDirectory(ctx, tok.Value(), fullName, "")
+	return c.api.hasRenovateConfig(ctx, tok.Value(), fullName)
+}
+
+// hasRenovateConfig is HasRenovateConfig with a token the caller holds.
+func (c *Client) hasRenovateConfig(ctx context.Context, token, fullName string) (bool, error) {
+	root, err := c.ListDirectory(ctx, token, fullName, "")
 	if err != nil {
 		return false, err
 	}
@@ -65,7 +70,7 @@ func (c *AppClient) HasRenovateConfig(ctx context.Context, installationID int64,
 		if !slices.ContainsFunc(root, func(e ContentEntry) bool { return e.Type == "dir" && e.Name == dir }) {
 			continue
 		}
-		entries, err := c.api.ListDirectory(ctx, tok.Value(), fullName, dir)
+		entries, err := c.ListDirectory(ctx, token, fullName, dir)
 		if err != nil {
 			return false, err
 		}

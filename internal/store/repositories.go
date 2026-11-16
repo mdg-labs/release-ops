@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -23,20 +24,25 @@ type Repository struct {
 	ConfigState string
 	// InstallationStatus is active or suspended.
 	InstallationStatus string
+	// GitHubInstallationID is the id of the repository's installation on GitHub; set by Get.
+	GitHubInstallationID int64
 }
 
 // RepositoryRepository reads and changes the repositories of the installation.
 type RepositoryRepository interface {
 	// Get returns the repository, or ErrRepositoryNotFound.
 	Get(ctx context.Context, id string) (Repository, error)
+	// GetListing returns the repository as List does, or ErrRepositoryNotFound for one Get
+	// would not find.
+	GetListing(ctx context.Context, id string) (RepositoryListing, error)
 	// SetEnabled pauses (false) or enables (true) the repository and returns it as stored. In
 	// the same transaction a pause ends its queued job: one that already ran an attempt (a
 	// retry waiting its turn) is marked failed and keeps its runs and events, one that never
 	// ran is deleted. A running job is aborted at its next heartbeat. It returns
 	// ErrRepositoryNotFound for a repository Get would not find.
 	SetEnabled(ctx context.Context, id string, enabled bool) (Repository, error)
-	// List returns the repositories an admin can act on with their ticket projects, filtered and
-	// paged, and the number the filter matches in all.
+	// List returns the repositories of the filter's scope with their ticket projects, filtered
+	// and paged, and the number the filter matches in all.
 	List(ctx context.Context, filter RepositoryFilter) ([]RepositoryListing, int, error)
 	// Update applies the change in one transaction and returns the repository as stored: a
 	// pause ends its queued job as SetEnabled does, and a ticket-project override is set or
@@ -63,10 +69,30 @@ type RepositoryListing struct {
 	// means no tickets.
 	EffectiveTicketProjectID   string
 	EffectiveTicketProjectName string
+	// DashboardIssueNumber is the number of the Dependency Dashboard issue Renovate reported;
+	// 0 when unknown.
+	DashboardIssueNumber int64
+	// OpenUpdatePRs is the number of the repository's open update PRs.
+	OpenUpdatePRs int
+	// LastJob is the repository's most recently created job; nil when it never had one.
+	LastJob *RepositoryJob
+}
+
+// RepositoryJob is a job of a repository as the repository list shows it.
+type RepositoryJob struct {
+	ID string
+	// State is queued, running, succeeded or failed.
+	State string
+	// FinishedAt is the stored UTC time the job ended; empty while it has not.
+	FinishedAt string
 }
 
 // RepositoryFilter selects and pages the repositories List returns; empty fields filter nothing.
 type RepositoryFilter struct {
+	// Restrict limits the list to the repositories in RepositoryIDs (a viewer's scope); an
+	// empty RepositoryIDs then lists none. Without it every repository is listed.
+	Restrict      bool
+	RepositoryIDs []string
 	// Search is a substring of the full name, matched without regard to case.
 	Search string
 	// Enabled, when set, keeps the repositories that are enabled (true) or paused (false).
@@ -120,12 +146,13 @@ type repositoryRepo struct {
 
 func repositoryFromRow(r db.GetManageableRepositoryRow) Repository {
 	return Repository{
-		ID:                 r.ID,
-		FullName:           r.FullName,
-		DefaultBranch:      r.DefaultBranch,
-		Enabled:            r.Enabled == 1,
-		ConfigState:        r.ConfigState,
-		InstallationStatus: r.InstallationStatus,
+		ID:                   r.ID,
+		FullName:             r.FullName,
+		DefaultBranch:        r.DefaultBranch,
+		Enabled:              r.Enabled == 1,
+		ConfigState:          r.ConfigState,
+		InstallationStatus:   r.InstallationStatus,
+		GitHubInstallationID: r.GithubInstallationID,
 	}
 }
 
@@ -204,10 +231,46 @@ func (r repositoryRepo) Update(ctx context.Context, id string, change Repository
 	if err := tx.Commit(); err != nil {
 		return RepositoryListing{}, fmt.Errorf("commit repository update: %w", err)
 	}
-	return listingFromRow(row.ID, row.FullName, row.DefaultBranch, row.Enabled, row.ConfigState, row.InstallationStatus, row.TicketProjectID, row.EffectiveTicketProjectID, row.EffectiveTicketProjectName), nil
+	return listingFromGetRow(row), nil
+}
+
+func listingFromGetRow(row db.GetManageableRepositoryListingRow) RepositoryListing {
+	return listingFromColumns(listingColumns{
+		id: row.ID, fullName: row.FullName, defaultBranch: row.DefaultBranch, enabled: row.Enabled,
+		configState: row.ConfigState, installationStatus: row.InstallationStatus, override: row.TicketProjectID,
+		effectiveID: row.EffectiveTicketProjectID, effectiveName: row.EffectiveTicketProjectName,
+		dashboardIssue: row.DashboardIssueNumber, openUpdatePRs: row.OpenUpdatePrs,
+		lastJobID: row.LastJobID, lastJobState: row.LastJobState, lastJobFinishedAt: row.LastJobFinishedAt,
+	})
+}
+
+func (r repositoryRepo) GetListing(ctx context.Context, id string) (RepositoryListing, error) {
+	row, err := r.store.reads.GetManageableRepositoryListing(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return RepositoryListing{}, ErrRepositoryNotFound
+	}
+	if err != nil {
+		return RepositoryListing{}, fmt.Errorf("read repository: %w", err)
+	}
+	return listingFromGetRow(row), nil
 }
 
 func (r repositoryRepo) List(ctx context.Context, f RepositoryFilter) ([]RepositoryListing, int, error) {
+	if f.Restrict && len(f.RepositoryIDs) == 0 {
+		return []RepositoryListing{}, 0, nil
+	}
+	ids := f.RepositoryIDs
+	if ids == nil {
+		ids = []string{}
+	}
+	scope, err := json.Marshal(ids)
+	if err != nil {
+		return nil, 0, fmt.Errorf("encode repository scope: %w", err)
+	}
+	all := int64(1)
+	if f.Restrict {
+		all = 0
+	}
 	enabled := sql.NullInt64{}
 	if f.Enabled != nil {
 		enabled.Valid = true
@@ -216,13 +279,23 @@ func (r repositoryRepo) List(ctx context.Context, f RepositoryFilter) ([]Reposit
 		}
 	}
 	page, size := max(f.Page, 1), max(f.PageSize, 1)
-	rows, err := r.store.reads.ListManageableRepositories(ctx, db.ListManageableRepositoriesParams{
+
+	tx, err := r.store.db.Reader.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, 0, fmt.Errorf("begin repository list read: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	q := r.store.reads.WithTx(tx)
+
+	rows, err := q.ListManageableRepositories(ctx, db.ListManageableRepositoriesParams{
+		AllRepositories: all, ScopeIds: string(scope),
 		Search: f.Search, Enabled: nullable(enabled), ConfigState: f.ConfigState, PageSize: int64(size), PageOffset: int64((page - 1) * size),
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("list repositories: %w", err)
 	}
-	total, err := r.store.reads.CountManageableRepositories(ctx, db.CountManageableRepositoriesParams{
+	total, err := q.CountManageableRepositories(ctx, db.CountManageableRepositoriesParams{
+		AllRepositories: all, ScopeIds: string(scope),
 		Search: f.Search, Enabled: nullable(enabled), ConfigState: f.ConfigState,
 	})
 	if err != nil {
@@ -230,7 +303,13 @@ func (r repositoryRepo) List(ctx context.Context, f RepositoryFilter) ([]Reposit
 	}
 	out := make([]RepositoryListing, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, listingFromRow(row.ID, row.FullName, row.DefaultBranch, row.Enabled, row.ConfigState, row.InstallationStatus, row.TicketProjectID, row.EffectiveTicketProjectID, row.EffectiveTicketProjectName))
+		out = append(out, listingFromColumns(listingColumns{
+			id: row.ID, fullName: row.FullName, defaultBranch: row.DefaultBranch, enabled: row.Enabled,
+			configState: row.ConfigState, installationStatus: row.InstallationStatus, override: row.TicketProjectID,
+			effectiveID: row.EffectiveTicketProjectID, effectiveName: row.EffectiveTicketProjectName,
+			dashboardIssue: row.DashboardIssueNumber, openUpdatePRs: row.OpenUpdatePrs,
+			lastJobID: row.LastJobID, lastJobState: row.LastJobState, lastJobFinishedAt: row.LastJobFinishedAt,
+		}))
 	}
 	return out, int(total), nil
 }
@@ -243,14 +322,31 @@ func nullable(v sql.NullInt64) any {
 	return v.Int64
 }
 
-func listingFromRow(id, fullName, defaultBranch string, enabled int64, configState, installationStatus string, override sql.NullString, effectiveID any, effectiveName sql.NullString) RepositoryListing {
+type listingColumns struct {
+	id, fullName, defaultBranch                string
+	enabled                                    int64
+	configState, installationStatus            string
+	override                                   sql.NullString
+	effectiveID                                any
+	effectiveName                              sql.NullString
+	dashboardIssue                             sql.NullInt64
+	openUpdatePRs                              int64
+	lastJobID, lastJobState, lastJobFinishedAt sql.NullString
+}
+
+func listingFromColumns(c listingColumns) RepositoryListing {
 	l := RepositoryListing{
-		Repository:                 Repository{ID: id, FullName: fullName, DefaultBranch: defaultBranch, Enabled: enabled == 1, ConfigState: configState, InstallationStatus: installationStatus},
-		TicketProjectID:            override.String,
-		EffectiveTicketProjectName: effectiveName.String,
+		Repository:                 Repository{ID: c.id, FullName: c.fullName, DefaultBranch: c.defaultBranch, Enabled: c.enabled == 1, ConfigState: c.configState, InstallationStatus: c.installationStatus},
+		TicketProjectID:            c.override.String,
+		EffectiveTicketProjectName: c.effectiveName.String,
+		DashboardIssueNumber:       c.dashboardIssue.Int64,
+		OpenUpdatePRs:              int(c.openUpdatePRs),
 	}
-	if v, ok := effectiveID.(string); ok {
+	if v, ok := c.effectiveID.(string); ok {
 		l.EffectiveTicketProjectID = v
+	}
+	if c.lastJobID.Valid {
+		l.LastJob = &RepositoryJob{ID: c.lastJobID.String, State: c.lastJobState.String, FinishedAt: c.lastJobFinishedAt.String}
 	}
 	return l
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/api/auth"
 	"github.com/mdg-labs/release-ops/internal/github"
 	"github.com/mdg-labs/release-ops/internal/github/githubtest"
+	"github.com/mdg-labs/release-ops/internal/ratelimit"
 	"github.com/mdg-labs/release-ops/internal/store/storetest"
 )
 
@@ -40,33 +41,42 @@ type rolesServer struct {
 	srv  *httptest.Server
 	deps *ServerDeps
 	fake *githubtest.Fake
+	// budget is the rate-limit budget shared by the app's GitHub client and its tokens.
+	budget *ratelimit.Budget
 }
 
 func newRolesServer(t *testing.T, user github.User, accessible ...int64) *rolesServer {
 	t.Helper()
 	deps := newRoutesTestDeps(t)
 	deps.AppURL = "https://release-ops.example.com"
+	deps.GitHubBaseURL = "https://github.example.com"
 	deps.GitHubOAuth = stubOAuth{user: user, repoIDs: accessible}
 	storetest.SeedRepositories(t, deps.Store.DB(), 2)
-	if err := deps.Store.GitHubApp().Create(context.Background(), sampleSignInApp()); err != nil {
+	fake := githubtest.New(t, time.Now)
+	app := sampleSignInApp()
+	app.AppID, app.PrivateKey = githubtest.AppID, string(fake.PEM)
+	if err := deps.Store.GitHubApp().Create(context.Background(), app); err != nil {
 		t.Fatalf("store app: %v", err)
 	}
 
-	fake := githubtest.New(t, time.Now)
 	fake.AddInstallation(1, githubtest.AppID)
 	fake.SetUser(rolesOwnerID, "acme-owner")
 	fake.SetUser(rolesMemberID, "acme-member")
 	fake.SetOrganizationMember("acme", "acme-owner", "active", "admin")
 	fake.SetOrganizationMember("acme", "acme-member", "active", "member")
+	budget := ratelimit.NewBudget(ratelimit.Options{})
+	api := github.NewClient(fake.URL, 5*time.Second).UseRateLimits(budget)
+	deps.GitHub = api
+	deps.GitHubApp = github.NewAppClient(api, fixedCreds{appID: githubtest.AppID, pem: fake.PEM}, github.AppClientOptions{Budget: budget})
 	deps.Roles = &auth.GitHubRoles{
 		Access: deps.Store.Access(),
 		Users:  deps.Store.SignIn(),
-		GitHub: github.NewAppClient(github.NewClient(fake.URL, 5*time.Second), fixedCreds{appID: githubtest.AppID, pem: fake.PEM}, github.AppClientOptions{}),
+		GitHub: github.NewAppClient(api, fixedCreds{appID: githubtest.AppID, pem: fake.PEM}, github.AppClientOptions{}),
 	}
 
 	srv := httptest.NewServer(NewServerRouter(deps))
 	t.Cleanup(srv.Close)
-	return &rolesServer{srv: srv, deps: deps, fake: fake}
+	return &rolesServer{srv: srv, deps: deps, fake: fake, budget: budget}
 }
 
 // signIn runs the whole GitHub sign-in through the router and returns the signed-in client.
@@ -149,6 +159,8 @@ var viewerRoutes = []string{
 	"GET /api/v1/status",
 	"GET /api/v1/about",
 	"GET /api/v1/update-prs",
+	"GET /api/v1/repositories",
+	"GET /api/v1/repositories/{id}",
 	"POST /api/v1/auth/logout", // last: it ends the session
 }
 
@@ -187,6 +199,7 @@ func TestViewerGets403OnEveryAdminRoute(t *testing.T) {
 
 	for _, route := range viewerRoutes {
 		method, path, _ := strings.Cut(route, " ")
+		path = strings.ReplaceAll(path, "{id}", "repo-1")
 		if code, body := s.do(t, viewer, method, path); code != http.StatusOK {
 			t.Errorf("viewer %s = %d %s, want 200", route, code, body)
 		}

@@ -148,7 +148,7 @@ func (c *AppClient) CommentToken(ctx context.Context, installationID int64, repo
 	if err := c.budget.Gate(installationID, ConsumerPRComment); err != nil {
 		return InstallationToken{}, err
 	}
-	return c.repositoryToken(ctx, installationID, repository, nil, tokenRefreshMargin)
+	return c.repositoryToken(ctx, installationID, repository, nil, nil, tokenRefreshMargin)
 }
 
 // PRCommenter keeps one comment of the App's bot user on a pull request.
