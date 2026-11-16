@@ -123,27 +123,29 @@ func (r *Reconciler) Reconcile(ctx context.Context, repositoryID string) error {
 	if err != nil {
 		return fmt.Errorf("list open pull requests: %w", err)
 	}
-	stored, err := r.Store.OpenNumbers(ctx, repo.ID)
+	stored, err := r.Store.OpenPRs(ctx, repo.ID)
 	if err != nil {
 		return err
 	}
+	versions := make(map[int64]string, len(stored))
 	seen := make(map[int64]bool, len(listed))
 	for _, pr := range listed {
 		seen[pr.Number] = true
 	}
 	var vanished []int64
-	for _, number := range stored {
-		if !seen[number] {
-			vanished = append(vanished, number)
+	for _, pr := range stored {
+		versions[pr.Number] = pr.Version
+		if !seen[pr.Number] {
+			vanished = append(vanished, pr.Number)
 		}
 	}
 	vanished = r.nextFetches(repo.ID, vanished)
 	listedCount := len(listed)
-	var gone []int64
+	var gone []goneUpdatePR
 	for _, number := range vanished {
 		pr, err := r.API.PullRequest(ctx, token.Value(), repo.FullName, number)
 		if errors.Is(err, github.ErrPullRequestNotFound) {
-			gone = append(gone, number)
+			gone = append(gone, goneUpdatePR{number: number, version: versions[number]})
 			continue
 		}
 		if err != nil {
@@ -188,10 +190,17 @@ func (r *Reconciler) nextFetches(repositoryID string, vanished []int64) []int64 
 	return picked
 }
 
+// goneUpdatePR is a stored open PR GitHub does not know, with the version of its row as the
+// reconcile read it before it asked GitHub.
+type goneUpdatePR struct {
+	number  int64
+	version string
+}
+
 // apply upserts the PRs and closes the gone ones in one transaction and returns how many rows
 // changed and the events of the PRs it applied; the caller publishes them once the commit
 // succeeded.
-func (r *Reconciler) apply(ctx context.Context, repositoryID string, botUserID int64, prs []github.PullRequest, gone []int64) (int, []Event, error) {
+func (r *Reconciler) apply(ctx context.Context, repositoryID string, botUserID int64, prs []github.PullRequest, gone []goneUpdatePR) (int, []Event, error) {
 	tx, err := r.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, nil, fmt.Errorf("begin reconcile: %w", err)
@@ -209,13 +218,13 @@ func (r *Reconciler) apply(ctx context.Context, repositoryID string, botUserID i
 		}
 		events = append(events, out.Events...)
 	}
-	for _, number := range gone {
-		c, err := r.Store.CloseGone(ctx, tx, repositoryID, number, r.Tracker.now())
+	for _, g := range gone {
+		c, err := r.Store.CloseGone(ctx, tx, repositoryID, g.number, g.version, r.Tracker.now())
 		if err != nil {
 			return 0, nil, err
 		}
 		if c {
-			r.logger().Warn("update PR reconcile: a stored open pull request is not known to GitHub, stored closed", "repository", repositoryID, "number", number)
+			r.logger().Warn("update PR reconcile: a stored open pull request is not known to GitHub, stored closed", "repository", repositoryID, "number", g.number)
 			changed++
 		}
 	}

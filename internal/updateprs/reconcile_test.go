@@ -268,6 +268,41 @@ func TestReconcileClosesAStoredPRGitHubDoesNotKnow(t *testing.T) {
 	}
 }
 
+// racingAPI runs after, once a PullRequest call has answered, to stand for a delivery that lands
+// while the reconcile still has to apply what it found.
+type racingAPI struct {
+	updateprs.API
+	after func()
+}
+
+func (a racingAPI) PullRequest(ctx context.Context, token, fullName string, number int64) (github.PullRequest, error) {
+	pr, err := a.API.PullRequest(ctx, token, fullName, number)
+	a.after()
+	return pr, err
+}
+
+// A PR that GitHub answered 404 for is closed only when its row is the one the reconcile read: a
+// webhook that stored a newer event for it meanwhile keeps it open.
+func TestReconcileLeavesAGonePROpenWhenAWebhookUpdatedItMeanwhile(t *testing.T) {
+	r := newRig(t, true)
+	r.bot(1)
+	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
+		t.Fatal(err)
+	}
+	r.fake.FailPullRequest("acme/repo-1", 1, 404)
+	r.bot(1, func(p *githubtest.PullRequest) { p.State = "closed" })
+	newer := at(20)
+	r.rec.API = racingAPI{API: r.rec.API, after: func() {
+		r.apply(t, prOf(1, botID, renovateBody, func(p *github.PullRequest) { p.UpdatedAt = &newer }), botID)
+	}}
+	if err := r.rec.Reconcile(context.Background(), r.repo); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.states(t); !reflect.DeepEqual(got, map[int64]string{1: "open"}) {
+		t.Fatalf("rows = %v, want the PR a webhook updated after the reconcile read it left open", got)
+	}
+}
+
 // A PR stored closed because GitHub did not know it is reopened when a later reconcile lists it
 // open again, even when its updated_at has not moved.
 func TestReconcileReopensAGoneClosedPRThatGitHubListsAgain(t *testing.T) {

@@ -50,6 +50,14 @@ type ReconcileRepository struct {
 	GitHubInstallationID int64
 }
 
+// OpenUpdatePR is a stored open PR as a reconcile reads it.
+type OpenUpdatePR struct {
+	Number int64
+	// Version is the row's last_seen_at when it was read; CloseGone closes the PR only while the
+	// row still has it.
+	Version string
+}
+
 // UpsertResult says what Upsert did with a report.
 type UpsertResult struct {
 	// Accepted is false for a report the row's state outranks, a stale one or one that would
@@ -76,9 +84,10 @@ type UpdatePRRepository interface {
 	Upsert(ctx context.Context, tx *sql.Tx, in UpdatePRInput) (UpsertResult, error)
 	// CloseGone stores the repository's open PR with the number as closed, stamped closed at
 	// now, through tx, for a PR GitHub no longer knows, and reports whether it did. A row that
-	// is not open, or absent, is left as it is. It keeps last_seen_at, and a later report that
-	// lists the PR open reopens it.
-	CloseGone(ctx context.Context, tx *sql.Tx, repositoryID string, number int64, now time.Time) (changed bool, err error)
+	// is not open, or absent, or whose version (see OpenUpdatePR) is no longer the given one
+	// because a newer report was stored since, is left as it is. It keeps last_seen_at, and a
+	// later report that lists the PR open reopens it.
+	CloseGone(ctx context.Context, tx *sql.Tx, repositoryID string, number int64, version string, now time.Time) (changed bool, err error)
 	// LatestReport returns the newest readable Renovate report of the repository through tx, and
 	// false when it has none.
 	LatestReport(ctx context.Context, tx *sql.Tx, repositoryID string) (RenovateReport, bool, error)
@@ -91,8 +100,8 @@ type UpdatePRRepository interface {
 	// SupersedeIfReplaced marks the closed PR with the id and number as superseded through tx
 	// when an open PR replaces it, and returns it; a replay returns none.
 	SupersedeIfReplaced(ctx context.Context, tx *sql.Tx, repositoryID, id string, number int64, now time.Time) ([]Superseded, error)
-	// OpenNumbers returns the numbers of the repository's open PRs, ascending.
-	OpenNumbers(ctx context.Context, repositoryID string) ([]int64, error)
+	// OpenPRs returns the repository's open PRs with their versions, ascending by number.
+	OpenPRs(ctx context.Context, repositoryID string) ([]OpenUpdatePR, error)
 	// OpenCounts returns the number of open PRs of every repository that is not removed, by
 	// full name; a repository without any is present with 0.
 	OpenCounts(ctx context.Context) (map[string]int, error)
@@ -193,10 +202,10 @@ func closedAsGone(row db.GetUpdatePRRow, seen time.Time) bool {
 	return err == nil && closed.After(seen)
 }
 
-func (r updatePRRepo) CloseGone(ctx context.Context, tx *sql.Tx, repositoryID string, number int64, now time.Time) (bool, error) {
+func (r updatePRRepo) CloseGone(ctx context.Context, tx *sql.Tx, repositoryID string, number int64, version string, now time.Time) (bool, error) {
 	n, err := r.store.writes.WithTx(tx).CloseGoneUpdatePR(ctx, db.CloseGoneUpdatePRParams{
 		ClosedAt: sql.NullString{String: formatTime(now), Valid: true}, UpdatedAt: formatTime(now),
-		RepositoryID: repositoryID, Number: number,
+		RepositoryID: repositoryID, Number: number, LastSeenAt: version,
 	})
 	if err != nil {
 		return false, fmt.Errorf("close update PR: %w", err)
@@ -204,12 +213,16 @@ func (r updatePRRepo) CloseGone(ctx context.Context, tx *sql.Tx, repositoryID st
 	return n > 0, nil
 }
 
-func (r updatePRRepo) OpenNumbers(ctx context.Context, repositoryID string) ([]int64, error) {
-	numbers, err := r.store.reads.ListOpenUpdatePRNumbers(ctx, repositoryID)
+func (r updatePRRepo) OpenPRs(ctx context.Context, repositoryID string) ([]OpenUpdatePR, error) {
+	rows, err := r.store.reads.ListOpenUpdatePRs(ctx, repositoryID)
 	if err != nil {
 		return nil, fmt.Errorf("list open update PRs: %w", err)
 	}
-	return numbers, nil
+	out := make([]OpenUpdatePR, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, OpenUpdatePR{Number: row.Number, Version: row.LastSeenAt})
+	}
+	return out, nil
 }
 
 func (r updatePRRepo) OpenCounts(ctx context.Context) (map[string]int, error) {

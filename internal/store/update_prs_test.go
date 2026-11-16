@@ -255,15 +255,16 @@ func TestUpsertRollsBackWithItsTransaction(t *testing.T) {
 	}
 }
 
-func TestOpenNumbersCountsAndReconcileRepositories(t *testing.T) {
+func TestOpenPRsCountsAndReconcileRepositories(t *testing.T) {
 	e := newPREnv(t)
 	for number, state := range map[int64]string{21: "open", 22: "open", 23: "merged", 24: "closed"} {
 		e.upsert(t, store.UpdatePRInput{Number: number, State: state, EventAt: at(0), OpenedAt: at(0)})
 	}
 	ctx := context.Background()
-	numbers, err := e.repos.OpenNumbers(ctx, e.repo)
-	if err != nil || !reflect.DeepEqual(numbers, []int64{21, 22}) {
-		t.Fatalf("OpenNumbers = %v, %v, want [21 22]", numbers, err)
+	open, err := e.repos.OpenPRs(ctx, e.repo)
+	want := []store.OpenUpdatePR{{Number: 21, Version: "2026-11-15T10:00:00.000Z"}, {Number: 22, Version: "2026-11-15T10:00:00.000Z"}}
+	if err != nil || !reflect.DeepEqual(open, want) {
+		t.Fatalf("OpenPRs = %v, %v, want %v", open, err, want)
 	}
 	counts, err := e.repos.OpenCounts(ctx)
 	if err != nil || !reflect.DeepEqual(counts, map[string]int{"acme/repo-1": 2, "acme/repo-2": 0}) {
@@ -293,13 +294,16 @@ func TestOpenNumbersCountsAndReconcileRepositories(t *testing.T) {
 	}
 }
 
-func (e *prEnv) closeGone(t *testing.T, repositoryID string, number int64) bool {
+// seen is the version (last_seen_at) of a row last reported at the given minute.
+func seen(minutes int) string { return at(minutes).Format("2006-01-02T15:04:05.000Z") }
+
+func (e *prEnv) closeGone(t *testing.T, repositoryID string, number int64, version string) bool {
 	t.Helper()
 	tx, err := e.db.Writer.BeginTx(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	changed, err := e.repos.CloseGone(context.Background(), tx, repositoryID, number, at(90))
+	changed, err := e.repos.CloseGone(context.Background(), tx, repositoryID, number, version, at(90))
 	if err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("CloseGone: %v", err)
@@ -322,13 +326,19 @@ func TestCloseGoneClosesOnlyTheOpenRowOfTheRepository(t *testing.T) {
 	e.upsert(t, store.UpdatePRInput{RepositoryID: other, EventAt: at(5), OpenedAt: at(0)})
 	e.upsert(t, store.UpdatePRInput{Number: 22, EventAt: at(6), OpenedAt: at(0), State: store.UpdatePRMerged, MergedAt: at(6)})
 
-	if e.closeGone(t, e.repo, 99) {
+	if e.closeGone(t, e.repo, 99, seen(5)) {
 		t.Fatal("closing an absent row reported a change")
 	}
-	if e.closeGone(t, e.repo, 22) {
+	if e.closeGone(t, e.repo, 22, seen(6)) {
 		t.Fatal("closing a merged row reported a change")
 	}
-	if !e.closeGone(t, e.repo, 21) {
+	if e.closeGone(t, e.repo, 21, seen(4)) {
+		t.Fatal("closing a row that was reported after it was read reported a change")
+	}
+	if got := e.row(t); got.State != "open" || got.ClosedAt.Valid {
+		t.Fatalf("row = %+v, want it left open", got)
+	}
+	if !e.closeGone(t, e.repo, 21, seen(5)) {
 		t.Fatal("closing an open row reported no change")
 	}
 	got := e.row(t)
@@ -345,7 +355,7 @@ func TestCloseGoneClosesOnlyTheOpenRowOfTheRepository(t *testing.T) {
 	if otherState != "open" || mergedState != "merged" {
 		t.Fatalf("another repository's PR is %q, the merged PR is %q, want open and merged", otherState, mergedState)
 	}
-	if e.closeGone(t, e.repo, 21) {
+	if e.closeGone(t, e.repo, 21, seen(5)) {
 		t.Fatal("closing a closed row again reported a change")
 	}
 }
@@ -358,7 +368,7 @@ func TestUpsertReopensARowCloseGoneClosedAtTheSameEventAt(t *testing.T) {
 	e.upsert(t, store.UpdatePRInput{EventAt: at(5), OpenedAt: at(0)})
 	e.upsert(t, store.UpdatePRInput{Number: 22, EventAt: at(5), OpenedAt: at(0)})
 	e.upsert(t, store.UpdatePRInput{Number: 22, EventAt: at(6), OpenedAt: at(0), State: store.UpdatePRClosed, ClosedAt: at(6)})
-	if !e.closeGone(t, e.repo, 21) {
+	if !e.closeGone(t, e.repo, 21, seen(5)) {
 		t.Fatal("closing an open row reported no change")
 	}
 

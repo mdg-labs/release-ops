@@ -13,7 +13,7 @@ import (
 const closeGoneUpdatePR = `-- name: CloseGoneUpdatePR :execrows
 UPDATE update_prs
 SET state = 'closed', closed_at = ?, updated_at = ?
-WHERE repository_id = ? AND number = ? AND state = 'open'
+WHERE repository_id = ? AND number = ? AND state = 'open' AND last_seen_at = ?
 `
 
 type CloseGoneUpdatePRParams struct {
@@ -21,16 +21,19 @@ type CloseGoneUpdatePRParams struct {
 	UpdatedAt    string         `json:"updated_at"`
 	RepositoryID string         `json:"repository_id"`
 	Number       int64          `json:"number"`
+	LastSeenAt   string         `json:"last_seen_at"`
 }
 
-// Closes an open row GitHub no longer knows; a row in any other state is left as it is. The
-// last_seen_at stays, so a later report from GitHub is ordered as it was before.
+// Closes an open row GitHub no longer knows; a row in any other state is left as it is, and so is
+// one whose last_seen_at is no longer the one the caller read, because a newer report from GitHub
+// stored since. The last_seen_at stays, so a later report from GitHub is ordered as it was before.
 func (q *Queries) CloseGoneUpdatePR(ctx context.Context, arg CloseGoneUpdatePRParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, closeGoneUpdatePR,
 		arg.ClosedAt,
 		arg.UpdatedAt,
 		arg.RepositoryID,
 		arg.Number,
+		arg.LastSeenAt,
 	)
 	if err != nil {
 		return 0, err
@@ -198,23 +201,28 @@ func (q *Queries) InsertUpdatePR(ctx context.Context, arg InsertUpdatePRParams) 
 	return err
 }
 
-const listOpenUpdatePRNumbers = `-- name: ListOpenUpdatePRNumbers :many
-SELECT number FROM update_prs WHERE repository_id = ? AND state = 'open' ORDER BY number
+const listOpenUpdatePRs = `-- name: ListOpenUpdatePRs :many
+SELECT number, last_seen_at FROM update_prs WHERE repository_id = ? AND state = 'open' ORDER BY number
 `
 
-func (q *Queries) ListOpenUpdatePRNumbers(ctx context.Context, repositoryID string) ([]int64, error) {
-	rows, err := q.db.QueryContext(ctx, listOpenUpdatePRNumbers, repositoryID)
+type ListOpenUpdatePRsRow struct {
+	Number     int64  `json:"number"`
+	LastSeenAt string `json:"last_seen_at"`
+}
+
+func (q *Queries) ListOpenUpdatePRs(ctx context.Context, repositoryID string) ([]ListOpenUpdatePRsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOpenUpdatePRs, repositoryID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []int64
+	var items []ListOpenUpdatePRsRow
 	for rows.Next() {
-		var number int64
-		if err := rows.Scan(&number); err != nil {
+		var i ListOpenUpdatePRsRow
+		if err := rows.Scan(&i.Number, &i.LastSeenAt); err != nil {
 			return nil, err
 		}
-		items = append(items, number)
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
