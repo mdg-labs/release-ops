@@ -30,6 +30,9 @@ existing line by adding its PR number.
 - **partial-failure** — a file written before the validation meant to guard it, so an edit the tool reports as refused is already on disk — PR 133
 - **data-safety** — a generated migration that drops and recreates a table loses existing rows; additive changes must come out as `ALTER TABLE … ADD COLUMN` — #96
 - **data-safety** — a cleanup `DELETE` whose `ON DELETE CASCADE` erases history the spec keeps (pausing a repository deleted a retry-waiting job and its `job_runs`); end such rows in a terminal state instead — PR 255
+- **atomicity** — values that must belong together read in separate queries (an integration's host and its credential; a PR row, its dependencies and its ticket), so a write between the reads pairs two revisions; read them from one row or one read transaction — PR 271
+- **atomicity** — a conditional write or claim decided from a read or a clock taken before the lock or transaction it runs in (a gone PR closed after a webhook updated it; a state's expiry checked before the claim lock); re-check the version, or read the clock, inside it — PR 271
+- **atomicity** — a step that runs after a gate without checking the gate's verdict (dependencies and release notes recorded for a payload the upsert rejected) — PR 271
 
 ## Fail-open and error handling
 - **fail-open** — a failed fetch or ticket call recorded as a successful run (engine error actions not counted), so the run status hides the failure — PR 112
@@ -38,6 +41,8 @@ existing line by adding its PR number.
 - **fail-open** — a stand-in handler registered in production that reports success for work it never did (a no-op `renovate_run` handler); leave the kind unregistered so the attempt fails visibly — PR 246
 - **fail-open** — a read error inside a handler whose transaction marks the work as done (a webhook delivery GUID) treated as "nothing to do", so the delivery commits as handled and its redelivery is deduplicated away — PR 255
 - **limit** — a body-size cap sized from the raw field caps without the encoding's worst-case expansion (JSON `\u003c` is six bytes), so a valid maximal request is refused — PR 255
+- **rate-limit** — an upstream rate-limit answer whose delay is dropped or lifted early: a 429 that still lists remaining requests, a `Retry-After` on a non-429 status branch ignored, a cooldown replaced by a later window's reset, a huge header value that overflows on conversion to a duration — PR 271
+- **scope** — a rule enforced for one shape of its input only (a report entry without a commit taken as the current head; a template validator that skips `with` scopes, parenthesised chains, variables and invoked templates; a JSON `null` label decoded to `""`) — PR 271
 
 ## Security
 - **auth** — session token not renewed on login, invitation accept, password reset or email change (session fixation); a password reset that leaves other sessions alive — PR 112
@@ -48,6 +53,7 @@ existing line by adding its PR number.
 - **input** — email addresses compared case-sensitively, or display-name forms (`Name <a@b>`) accepted where a bare address is expected — PR 112
 - **credential** — a token cache keyed on less than what decides the token's scope, so a narrower fallback token minted for one request is served to another it does not cover — PR 246
 - **redaction** — a secret shape or tail cut that stops at a delimiter the secret may contain or that misses an encoding it travels in (`@`/`#` in URL user-info, quoted `NAME="…"`, JSON `\/`, a truncated line with no newline) — PR 255
+- **redaction** — a redaction path that covers attribute keys but not group names, a registry renewal that keeps the first deadline, or an unauthenticated value registered before it is validated (spending the bounded budget) — PR 271
 - **untrusted-path** — a file the untrusted side can create opened with a blocking `open` (a FIFO at the report path hangs the worker slot); open non-blocking and check the type first — PR 255
 - **owned-config** — settings the app owns removed from the top level of a user-supplied config but not from a nested override that wins over them (Renovate `force`) — PR 255
 
@@ -64,10 +70,13 @@ existing line by adding its PR number.
 - **ui** — an async action's result applied to whatever dialog is open when it settles, so a dismissed dialog's late failure (or success) lands on the next one; guard each attempt and invalidate it on close — PR 167
 - **ui** — state set just before navigating away (a hand-off flag) never cleared when the page comes back from the back-forward cache, leaving the form disabled; also an error message whose recovery step cannot work (re-enter a single-use token) — PR 246
 - **ui** — a "cannot check right now" answer (503 from the session check) treated as "no session", sending a signed-in user to the login page — PR 255
+- **ui** — a form control left enabled while its save is pending, so the success message describes a value that was not saved; a late async result (a slower file read, an in-flight GET) overwriting a newer one — PR 271
+- **ui** — an unedited field re-parsed through a lossy text form on save (labels joined with `, ` and split on `,`), so an unrelated edit rewrites stored data — PR 271
 
 ## Tests
 - **test** — a rejection test whose input fails an earlier validation, so it passes with the guard it claims to cover removed; a test that uses a listener started in a goroutine before waiting for it to answer — PR 246
 - **test** — a test that depends on the row order of random ids or on variables leaking in from the process environment, or a filtered-deletion test with no similar-but-distinct record asserted to survive; a privileged-only fixture step run on the unprivileged path — PR 255
+- **test** — a test whose failure fires before the code path it claims to cover (an error injected before the publication callback is registered); a helper that calls `t.Fatal` from a goroutine, or a held handler never released when the test fails; a leak check missing the encoded forms a secret is logged in; a third-party log fixture guessed instead of taken from its serializer (Renovate's `err.options.url`); an input guard without a rejection case for each malformed shape — PR 271
 
 ## Release and CI
 - **ci** — a release workflow that builds from the branch head at publish time instead of the release tag, so the tagged image and the tag differ — PR 112
