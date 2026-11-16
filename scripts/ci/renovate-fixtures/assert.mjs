@@ -27,8 +27,11 @@ export function loadRun(dir) {
   return { report: read("report.json"), log: read("log.ndjson"), exitCode: read("exit_code") };
 }
 
-/** The ingest contract of the report: repositories.<repo>.branches and .packageFiles. */
-function repositoryOf(reportText, problems) {
+/**
+ * The repository's report entry: the one repository the run reported. With needsPackageFiles
+ * it must also hold the ingest contract of the report, branches and packageFiles.
+ */
+function repositoryOf(reportText, problems, needsPackageFiles = true) {
   let report;
   try {
     report = JSON.parse(reportText);
@@ -42,6 +45,7 @@ function repositoryOf(reportText, problems) {
     return null;
   }
   const repo = report.repositories[names[0]];
+  if (!needsPackageFiles) return repo;
   if (!Array.isArray(repo.branches)) problems.push("report.repositories.<repo>.branches is not an array");
   if (typeof repo.packageFiles !== "object" || repo.packageFiles === null) {
     problems.push("report.repositories.<repo>.packageFiles is not an object");
@@ -100,6 +104,39 @@ function depsOf(file, expected) {
   return (file.deps ?? []).filter((d) => (!d.skipReason || allowed.has(d.skipReason)) && !ignored.has(d.datasource));
 }
 
+/**
+ * A repository with no config under requireConfig=required: exactly what the worker reads
+ * (skippedForNoConfig in internal/renovate/handler.go) to record a run as skipped for a
+ * missing config. Renovate exits 0 and the report entry for the repository has status
+ * "disabled". Nothing else about the run is expected: it ends before it extracts anything.
+ */
+function verifyNoConfigRun(phase, run, renovateVersion) {
+  const problems = [];
+  if (run.exitCode === null || run.report === null || run.log === null) {
+    return [`${phase}: the run left no ${[run.exitCode === null && "exit_code", run.report === null && "report.json", run.log === null && "log.ndjson"].filter(Boolean).join(", ")}`];
+  }
+  if (run.exitCode.trim() !== "0") problems.push(`renovate exited with ${run.exitCode.trim()}`);
+  const started = run.log
+    .split("\n")
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .find((r) => r?.msg === "Repository started");
+  if (!started) problems.push('the log has no "Repository started" record');
+  else if (started.renovateVersion !== renovateVersion) {
+    problems.push(`the log says Renovate ${started.renovateVersion}, expected the pinned ${renovateVersion}`);
+  }
+  const repo = repositoryOf(run.report, problems, false);
+  if (repo && repo.status !== "disabled") {
+    problems.push(`the repository reports status ${JSON.stringify(repo.status)}, expected "disabled" (no config with requireConfig=required)`);
+  }
+  return problems.map((p) => `${phase}: ${p}`);
+}
+
 const updateKey = (u) => `${u.newVersion}|${u.newValue}|${u.updateType}`;
 
 /**
@@ -109,6 +146,7 @@ const updateKey = (u) => `${u.newVersion}|${u.newValue}|${u.updateType}`;
 export function verifyRun(phase, expected, run, renovateVersion) {
   const problems = [];
   const wanted = expected[phase];
+  if (expected.noConfig) return verifyNoConfigRun(phase, run, renovateVersion);
   if (run.exitCode === null || run.report === null || run.log === null) {
     return [`${phase}: the run left no ${[run.exitCode === null && "exit_code", run.report === null && "report.json", run.log === null && "log.ndjson"].filter(Boolean).join(", ")}`];
   }
@@ -116,6 +154,7 @@ export function verifyRun(phase, expected, run, renovateVersion) {
   checkLog(run.log, renovateVersion, problems);
   const repo = repositoryOf(run.report, problems);
   if (!repo) return problems.map((p) => `${phase}: ${p}`);
+  if (repo.status === "disabled") problems.push('the repository reports status "disabled", the status of a repository with no config');
   const file = packageFileOf(repo, expected, problems);
   if (file) {
     const deps = depsOf(file, expected);
@@ -164,6 +203,12 @@ export function verifyFixture(expected, runs, renovateVersion) {
 export function mutations(expected) {
   const out = [];
   const copy = () => structuredClone(expected);
+  if (expected.noConfig) {
+    const configured = { manager: "npm", packageFile: "package.json", extract: [{ depName: "fixture-lib", currentValue: "1.0.0", datasource: "npm" }] };
+    out.push(["a fixture that has a config", configured]);
+    return out;
+  }
+  out.push(["a fixture that has no config", { noConfig: true }]);
   for (const phase of ["extract", "lookup"]) {
     if (!expected[phase]) continue;
     let e = copy();

@@ -24,8 +24,11 @@ For every directory under `repos/` the script runs `renovate --platform=local` w
 | `docker-compose` | `docker-compose` | local registry |
 | `github-actions` | `github-actions` | none |
 | `gomod` | `gomod` | local Go proxy |
+| `no-config` | none (no Renovate config; see below) | none |
 | `npm` | `npm` | local npm registry |
 | `regex` | `regex` (a custom regex manager in the fixture's `renovate.json`) | local npm registry |
+
+The `no-config` fixture has a dependency file and no Renovate config, so under the run's `requireConfig=required` (with `onboarding=false`, as the worker's defaults set) Renovate skips the repository before it extracts anything. The worker records such a run as skipped for a missing config (`skippedForNoConfig` in `internal/renovate/handler.go`) when Renovate exits 0 and the report entry for the repository has `status: "disabled"`; the fixture proves that Renovate still does that, so a bump that changes the status fails here instead of silently stopping the `no_config` signal. Its expectation is `{ "noConfig": true }`: exit 0, the pinned version in the log, and that status, nothing else. Every other fixture has a config and must not report `disabled`.
 
 `assert.mjs` then checks each run against `expectations.json`:
 

@@ -17,6 +17,7 @@ const logLines = (version = VERSION) =>
 
 /** What Renovate's report holds for a fixture, built from its expectations. */
 function runFor(expected, phase, { exitCode = "0", log = logLines(), mutate = (r) => r } = {}) {
+  if (expected.noConfig) return noConfigRun({ exitCode, log, mutate });
   const deps = expected[phase].map((want) => {
     const dep = { depName: want.depName, currentValue: want.currentValue, datasource: want.datasource ?? "npm" };
     if (want.skipReason) dep.skipReason = want.skipReason;
@@ -29,11 +30,18 @@ function runFor(expected, phase, { exitCode = "0", log = logLines(), mutate = (r
     repositories: {
       local: {
         problems: [],
+        status: "activated",
         branches: [],
         packageFiles: { [expected.manager]: [{ packageFile: expected.packageFile, deps }] },
       },
     },
   };
+  return { report: JSON.stringify(mutate(report)), log, exitCode };
+}
+
+/** The report of a repository Renovate skipped for having no config: status "disabled", nothing extracted. */
+function noConfigRun({ exitCode = "0", log = logLines(), mutate = (r) => r } = {}) {
+  const report = { problems: [], repositories: { local: { problems: [], status: "disabled", enabled: false, onboarded: false } } };
   return { report: JSON.stringify(mutate(report)), log, exitCode };
 }
 
@@ -151,4 +159,48 @@ test("a report without the branches array the worker reads fails", () => {
     },
   });
   assert.notDeepEqual(verifyFixture(expected, { extract: run, lookup: runFor(expected, "lookup") }, VERSION), []);
+});
+
+test("the no-config fixture passes only for exit 0 and a disabled report entry", () => {
+  const expected = expectations["no-config"];
+  assert.deepEqual(expected, { noConfig: true });
+  const check = (run) => verifyFixture(expected, { extract: run, lookup: null }, VERSION);
+  assert.deepEqual(check(noConfigRun()), []);
+  assert.notDeepEqual(check(noConfigRun({ exitCode: "1" })), [], "a failed run");
+  assert.notDeepEqual(check({ ...noConfigRun(), report: null }), [], "no report");
+  assert.notDeepEqual(check(noConfigRun({ log: logLines("44.0.0") })), [], "another Renovate version");
+  for (const status of ["activated", "onboarding", undefined]) {
+    assert.notDeepEqual(
+      check(
+        noConfigRun({
+          mutate: (r) => {
+            r.repositories.local.status = status;
+            return r;
+          },
+        }),
+      ),
+      [],
+      `status ${status}`,
+    );
+  }
+  assert.notDeepEqual(check(noConfigRun({ mutate: () => ({ repositories: {} }) })), [], "no repository entry");
+  assert.notDeepEqual(check({ ...noConfigRun(), report: "not json" }), [], "a report that is not JSON");
+});
+
+test("a fixture with a config fails when its report entry is disabled", () => {
+  for (const [name, expected] of Object.entries(expectations)) {
+    if (expected.noConfig) continue;
+    const runs = runsFor(expected, {
+      mutate: (r) => {
+        Object.values(r.repositories)[0].status = "disabled";
+        return r;
+      },
+    });
+    assert.notDeepEqual(verifyFixture(expected, runs, VERSION), [], name);
+  }
+});
+
+test("the report of a repository with a config is not accepted as a no-config run", () => {
+  const configured = expectations.npm;
+  assert.notDeepEqual(verifyFixture(expectations["no-config"], runsFor(configured), VERSION), []);
 });

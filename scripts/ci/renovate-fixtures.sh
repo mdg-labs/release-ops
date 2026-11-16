@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Runs the worker image's Renovate against the fixture repositories and checks what it reports,
 # with no token and no live host: --platform=local, extract for every fixture and lookup for the
-# fixtures served by the local registry fakes. Renovate runs as the renovate user, as the worker
+# fixtures served by the local registry fakes; the no-config fixture checks the report status the
+# worker reads for a repository without a config. Renovate runs as the renovate user, as the worker
 # starts it, with every capability dropped and a resolver that knows no host name except the
 # one the fakes are reached at. Needs a Docker daemon and node; CI is the only place it runs.
 #

@@ -59,6 +59,9 @@
       }
     ]
   },
+  "no-config": {
+    "noConfig": true
+  },
   "npm": {
     "manager": "npm",
     "packageFile": "package.json",
