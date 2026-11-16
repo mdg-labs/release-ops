@@ -111,3 +111,39 @@ func TestValidateChecksFieldsOfVariablesAgainstWhatTheyAreBoundTo(t *testing.T) 
 		}
 	}
 }
+
+func TestValidateChecksTheTemplatesAnInvocationNames(t *testing.T) {
+	t.Parallel()
+
+	for name, tmpl := range map[string]string{
+		"a missing field in a definition":                 `{{define "x"}}{{.Foo}}{{end}}{{template "x" .}}`,
+		"a field of the release contract in a definition": `{{define "x"}}{{.Release.Tag}}{{end}}{{template "x" .}}`,
+		"a definition invoked with a field":               `{{define "x"}}{{.Foo}}{{end}}{{template "x" .PullRequest}}`,
+		"a definition invoked from inside a range":        `{{define "x"}}{{.Foo}}{{end}}{{range .Dependencies}}{{template "x" .}}{{end}}`,
+		"a definition that reaches the root through $":    `{{define "x"}}{{$.Foo}}{{end}}{{template "x" .}}`,
+		"a definition invoked by another definition":      `{{define "x"}}{{template "y" .}}{{end}}{{define "y"}}{{.Foo}}{{end}}{{template "x" .}}`,
+		"a definition invoked with the pull request":      `{{define "x"}}{{.Dependencies}}{{end}}{{template "x" .PullRequest}}`,
+		"a block":                          `{{block "x" .}}{{.Foo}}{{end}}`,
+		"a definition that invokes itself": `{{define "x"}}{{.Foo}}{{template "x" .}}{{end}}{{template "x" .}}`,
+	} {
+		if err := validate(tmpl); err == nil {
+			t.Errorf("%s: Validate() accepted %q", name, tmpl)
+		}
+	}
+	for name, tmpl := range map[string]string{
+		"a definition of fields the root has":             `{{define "x"}}{{.PullRequest.Title}}{{end}}{{template "x" .}}`,
+		"a definition invoked with the pull request":      `{{define "x"}}{{.Title}}{{end}}{{template "x" .PullRequest}}`,
+		"a definition invoked for each dependency":        `{{define "x"}}{{.Name}}{{end}}{{range .Dependencies}}{{template "x" .}}{{end}}`,
+		"a definition invoked without an argument":        `{{define "x"}}{{.Whatever}}{{end}}{{template "x"}}`,
+		"a definition that is never invoked":              `{{define "x"}}{{.Foo}}{{end}}ok`,
+		"a definition that invokes itself":                `{{define "x"}}{{.Name}}{{if false}}{{template "x" .}}{{end}}{{end}}{{range .Dependencies}}{{template "x" .}}{{end}}`,
+		"definitions that invoke each other":              `{{define "a"}}{{.Name}}{{template "b" .}}{{end}}{{define "b"}}{{.To}}{{template "a" .}}{{end}}{{range .Dependencies}}{{template "a" .}}{{end}}`,
+		"a definition that reaches the root through $":    `{{define "x"}}{{$.Title}}{{end}}{{template "x" .PullRequest}}`,
+		"an invocation that is not tracked":               `{{define "x"}}{{.Whatever}}{{end}}{{template "x" len .Dependencies}}`,
+		"an invocation of a template that is not defined": `{{template "missing" .}}`,
+	} {
+		if err := validate(tmpl); err != nil {
+			t.Errorf("%s: Validate() = %v for %q", name, err, tmpl)
+		}
+	}
+}

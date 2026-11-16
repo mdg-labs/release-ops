@@ -88,9 +88,22 @@ func (f *frame) assign(name string, s scope) {
 type env struct {
 	dot  scope
 	vars *frame
+	defs *definitions
 }
 
-func (e env) inner(dot scope) env { return env{dot: dot, vars: newFrame(e.vars)} }
+func (e env) inner(dot scope) env { return env{dot: dot, vars: newFrame(e.vars), defs: e.defs} }
+
+// definitions are the named templates a template can invoke. Each is checked once for every
+// scope it is invoked with, which also ends a definition that invokes itself.
+type definitions struct {
+	t       *template.Template
+	visited map[invocation]bool
+}
+
+type invocation struct {
+	name string
+	arg  scope
+}
 
 // checkVariables refuses a template that names a field the context does not have. Execution
 // would fail on the same fields, but only on the branches it takes; walking the parse tree
@@ -101,7 +114,8 @@ func checkVariables(t *template.Template) error {
 	}
 	root := newFrame(nil)
 	root.declare("$", scopeRoot)
-	return walk(t.Root, env{dot: scopeRoot, vars: root})
+	defs := &definitions{t: t, visited: map[invocation]bool{{t.Name(), scopeRoot}: true}}
+	return walk(t.Root, env{dot: scopeRoot, vars: root, defs: defs})
 }
 
 func walk(node parse.Node, e env) error {
@@ -143,9 +157,31 @@ func walk(node parse.Node, e env) error {
 	case *parse.RangeNode:
 		return walkBranch(&n.BranchNode, e, elementScope(pipeScope(n.Pipe, e)), pipeScope(n.Pipe, e), true)
 	case *parse.TemplateNode:
-		return walkPipe(n.Pipe, e, false)
+		if err := walkPipe(n.Pipe, e, false); err != nil {
+			return err
+		}
+		return walkDefinition(n, e)
 	}
 	return nil
+}
+
+// walkDefinition checks the body of the template an invocation names, with the argument of the
+// invocation as its dot and as its `$`. An invocation without an argument leaves the dot
+// untracked.
+func walkDefinition(n *parse.TemplateNode, e env) error {
+	called := e.defs.t.Lookup(n.Name)
+	if called == nil || called.Tree == nil || called.Root == nil {
+		return nil
+	}
+	arg := pipeScope(n.Pipe, e)
+	key := invocation{n.Name, arg}
+	if e.defs.visited[key] {
+		return nil
+	}
+	e.defs.visited[key] = true
+	root := newFrame(nil)
+	root.declare("$", arg)
+	return walk(called.Root, env{dot: arg, vars: root, defs: e.defs})
 }
 
 // walkPipe checks the arguments of a pipeline. With bind, the variables it declares or assigns
