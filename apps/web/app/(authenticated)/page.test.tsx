@@ -340,6 +340,46 @@ describe("DashboardPage", () => {
     ).toBe(false);
   });
 
+  it("announces a filter that empties a list through a status element that was already there", async () => {
+    mockAgent
+      .get(ORIGIN)
+      .intercept({
+        path: (path: string) => path.startsWith(`${PATH}?`),
+        method: "GET",
+      })
+      .reply((opts) => {
+        const query = new URLSearchParams(String(opts.path).split("?")[1]);
+        const items =
+          query.get("state") === "open" && !query.get("updateType")
+            ? [pr({ id: "pr-1" })]
+            : [];
+        return {
+          statusCode: 200,
+          data: JSON.stringify(page(items)),
+          responseOptions: { headers: { "content-type": "application/json" } },
+        };
+      })
+      .persist();
+    renderPage();
+    await screen.findByText("Update dependency foo to v2");
+
+    const openSection = screen.getByRole("region", {
+      name: "Open update pull requests",
+    });
+    const status = within(openSection).getByRole("status");
+    expect(status.textContent).toBe("");
+
+    openSelect("Update type");
+    choose(await screen.findByRole("option", { name: "Major" }));
+
+    await waitFor(() =>
+      expect(status.textContent).toBe(
+        "No open update pull requests match these filters.",
+      ),
+    );
+    expect(within(openSection).getByRole("status")).toBe(status);
+  });
+
   it("shows the empty state when there are no update PRs yet", async () => {
     serve(page([]), page([]));
     renderPage();

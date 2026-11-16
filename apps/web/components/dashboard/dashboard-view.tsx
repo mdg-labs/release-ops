@@ -102,9 +102,7 @@ function ListSection({
             ))}
           </FramePanel>
         </Frame>
-      ) : data && items.length === 0 ? (
-        <p className="text-muted-foreground text-sm">{emptyText}</p>
-      ) : data ? (
+      ) : data && items.length > 0 ? (
         <Frame>
           <FramePanel
             aria-busy={isPlaceholderData}
@@ -113,6 +111,16 @@ function ListSection({
             <UpdatePrTable items={items} timeColumn={timeColumn} />
           </FramePanel>
         </Frame>
+      ) : null}
+      {data ? (
+        <p
+          className={
+            items.length === 0 ? "text-muted-foreground text-sm" : "sr-only"
+          }
+          role="status"
+        >
+          {items.length === 0 ? emptyText : null}
+        </p>
       ) : null}
       {paginated && data && total > 0 ? (
         <TablePaginationControls
