@@ -292,6 +292,54 @@ describe("DashboardPage", () => {
     );
   });
 
+  it("moves the open list to the last page that exists when it shrinks under the reader", async () => {
+    const all = Array.from({ length: 21 }, (_, i) =>
+      pr({ id: `pr-${i + 1}`, number: i + 1, title: `Update dep ${i + 1}` }),
+    );
+    let shrunk = false;
+    mockAgent
+      .get(ORIGIN)
+      .intercept({
+        path: (path: string) => path.startsWith(`${PATH}?`),
+        method: "GET",
+      })
+      .reply((opts) => {
+        const query = new URLSearchParams(String(opts.path).split("?")[1]);
+        const pageNumber = Number(query.get("page"));
+        const total = shrunk ? 20 : 21;
+        const open = query.get("state") === "open";
+        const items = open
+          ? all.slice(0, total).slice((pageNumber - 1) * 10, pageNumber * 10)
+          : [];
+        return {
+          statusCode: 200,
+          data: JSON.stringify({
+            items,
+            page: pageNumber,
+            pageSize: 10,
+            total: open ? total : 0,
+          }),
+          responseOptions: { headers: { "content-type": "application/json" } },
+        };
+      })
+      .persist();
+    renderPage();
+    await screen.findByText("Update dep 1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("Update dep 11");
+    shrunk = true;
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(await screen.findByText("11–20 of 20")).toBeTruthy();
+    expect(screen.getByText("Update dep 20")).toBeTruthy();
+    expect(screen.queryByText(/No open update pull requests/)).toBeNull();
+    expect(
+      (screen.getByRole("button", { name: "Previous" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
   it("shows the empty state when there are no update PRs yet", async () => {
     serve(page([]), page([]));
     renderPage();

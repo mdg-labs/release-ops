@@ -527,6 +527,47 @@ describe("RepositoriesView", () => {
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 
+  it("moves to the last page that exists when the list shrinks under the reader", async () => {
+    session("viewer");
+    const all = Array.from({ length: 21 }, (_, i) =>
+      repo({ id: `r${i + 1}`, fullName: `acme/repo-${i + 1}` }),
+    );
+    let shrunk = false;
+    mockAgent
+      .get(ORIGIN)
+      .intercept({
+        path: (p: string) => p.startsWith(`${API}/repositories?`),
+        method: "GET",
+      })
+      .reply((opts) => {
+        const query = new URLSearchParams(String(opts.path).split("?")[1]);
+        const page = Number(query.get("page"));
+        const total = shrunk ? 20 : 21;
+        const items = all.slice(0, total).slice((page - 1) * 10, page * 10);
+        return {
+          statusCode: 200,
+          data: JSON.stringify({ items, page, pageSize: 10, total }),
+          responseOptions: json,
+        };
+      })
+      .persist();
+    renderView();
+    await screen.findByRole("link", { name: "acme/repo-1" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByRole("link", { name: "acme/repo-11" });
+    shrunk = true;
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(await screen.findByText("11–20 of 20")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "acme/repo-20" })).toBeTruthy();
+    expect(screen.queryByText("No repositories match this search.")).toBeNull();
+    expect(
+      (screen.getByRole("button", { name: "Previous" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
   it("searches by name and starts again from the first page", async () => {
     admin([repo({ id: "r1", fullName: "acme/api" })]);
     renderView();

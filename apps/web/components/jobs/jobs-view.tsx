@@ -28,6 +28,7 @@ import { usePersistedPageSize } from "@/lib/hooks/use-persisted-page-size";
 import { useSessionRole } from "@/lib/hooks/use-session";
 import { PAGE_SIZE_OPTIONS } from "@/lib/pagination/constants";
 import { TablePaginationControls } from "@/lib/pagination/table-pagination-controls";
+import { useClampPage } from "@/lib/pagination/use-clamp-page";
 import { useJobs, useProblems } from "@/lib/query/jobs";
 import { useRepositoryOptions } from "@/lib/query/repositories";
 import type { JobState } from "@/lib/query/types";
@@ -128,6 +129,13 @@ function JobsSection({
   const filtered = repositoryId !== "" || state !== "";
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
+  useClampPage({
+    page,
+    pageSize,
+    result:
+      data && !isPlaceholderData ? { itemCount: items.length, total } : null,
+    onPageChange: setPage,
+  });
 
   let body: React.ReactElement | null = null;
   if (isError) {

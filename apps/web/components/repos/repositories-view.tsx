@@ -33,6 +33,7 @@ import { useSettings } from "@/lib/hooks/use-settings";
 import { useTicketProjects } from "@/lib/hooks/use-ticket-projects";
 import { PAGE_SIZE_OPTIONS } from "@/lib/pagination/constants";
 import { TablePaginationControls } from "@/lib/pagination/table-pagination-controls";
+import { useClampPage } from "@/lib/pagination/use-clamp-page";
 import { useRepositories } from "@/lib/query/repositories";
 
 const SEARCH_DEBOUNCE_MS = 250;
@@ -120,6 +121,13 @@ export function RepositoriesView(): React.ReactElement {
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
+  useClampPage({
+    page,
+    pageSize,
+    result:
+      data && !isPlaceholderData ? { itemCount: items.length, total } : null,
+    onPageChange: setPage,
+  });
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
   const nothingInstalled = !isError && data && total === 0 && search === "";

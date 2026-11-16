@@ -396,6 +396,43 @@ describe("JobsView", () => {
       expect(screen.queryByRole("option", { name: "acme/repo-1" })).toBeNull();
     });
 
+    it("moves to the last page that exists when the jobs shrink under the reader", async () => {
+      session("viewer");
+      repositories();
+      const all = Array.from({ length: 21 }, (_, i) =>
+        job({
+          id: `j${i + 1}`,
+          repository: { id: "r1", fullName: `acme/job-${i + 1}` },
+        }),
+      );
+      let shrunk = false;
+      serve("GET", "/jobs", (requested) => {
+        const page = Number(
+          new URLSearchParams(requested.split("?")[1]).get("page"),
+        );
+        const total = shrunk ? 20 : 21;
+        return jobs(
+          all.slice(0, total).slice((page - 1) * 10, page * 10),
+          total,
+        );
+      });
+      renderView();
+      await screen.findByText("acme/job-1");
+
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      await screen.findByText("acme/job-11");
+      shrunk = true;
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+      expect(await screen.findByText("11–20 of 20")).toBeTruthy();
+      expect(screen.getByText("acme/job-20")).toBeTruthy();
+      expect(screen.queryByText("No jobs match these filters.")).toBeNull();
+      expect(
+        (screen.getByRole("button", { name: "Previous" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false);
+    });
+
     it("shows the empty state when no job exists yet", async () => {
       session("viewer");
       repositories();

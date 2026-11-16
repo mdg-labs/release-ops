@@ -25,6 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { usePersistedPageSize } from "@/lib/hooks/use-persisted-page-size";
 import { TablePaginationControls } from "@/lib/pagination/table-pagination-controls";
 import { PAGE_SIZE_OPTIONS } from "@/lib/pagination/constants";
+import { useClampPage } from "@/lib/pagination/use-clamp-page";
 import { useRepositoryOptions } from "@/lib/query/repositories";
 import type { UpdatePrType } from "@/lib/query/types";
 import { type UpdatePrsParams, useUpdatePrs } from "@/lib/query/update-prs";
@@ -62,6 +63,15 @@ function ListSection({
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
+  useClampPage({
+    page: params.page,
+    pageSize: params.pageSize,
+    result:
+      paginated && data && !isPlaceholderData
+        ? { itemCount: items.length, total }
+        : null,
+    onPageChange: (next) => paginated?.onPageChange(next),
+  });
   const from = total === 0 ? 0 : (params.page - 1) * params.pageSize + 1;
   const to = Math.min(params.page * params.pageSize, total);
 
