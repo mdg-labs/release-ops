@@ -21,6 +21,7 @@ type BreadcrumbSegment = {
 export const ROUTE_BREADCRUMBS: Record<string, BreadcrumbSegment[]> = {
   "/": [],
   "/repositories": [{ labelKey: "repositories" }],
+  "/jobs": [{ labelKey: "jobs" }],
   "/integrations": [{ labelKey: "integrations" }],
   "/ticket-projects": [{ labelKey: "ticketProjects" }],
   "/settings": [{ labelKey: "settings" }],

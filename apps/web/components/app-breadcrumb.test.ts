@@ -20,6 +20,11 @@ describe("ROUTE_BREADCRUMBS", () => {
     expect(messages.nav.repositories).toBe("Repositories");
   });
 
+  it("labels the jobs page with the Jobs entry", () => {
+    expect(ROUTE_BREADCRUMBS["/jobs"]).toEqual([{ labelKey: "jobs" }]);
+    expect(messages.nav.jobs).toBe("Jobs");
+  });
+
   it("labels the about page with the About entry", () => {
     expect(ROUTE_BREADCRUMBS["/about"]).toEqual([{ labelKey: "about" }]);
     expect(messages.nav.about).toBe("About");

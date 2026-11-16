@@ -20,8 +20,8 @@ import (
 //     only the setup routes; GET /setup/installed is public
 //  4. Logout, behind a session alone, so a user whose role cannot be evaluated can still end it
 //  5. Protected group (Authenticate: a session with a role, re-evaluated every 15 minutes):
-//     status, about, the update PR list and the repository list and detail for any role (the
-//     data limited to the caller's repositories); settings (the concurrency cap, the global Renovate
+//     status, about, the update PR list, the repository list and detail, the job list and detail
+//     and the problems for any role (the data limited to the caller's repositories); settings (the concurrency cap, the global Renovate
 //     config), github-app (its metadata and role mapping), installations (the default ticket
 //     project),
 //     integrations, ticket-projects, update-tickets (clearing a pending marker), repositories
@@ -89,6 +89,13 @@ func registerProtectedAPIRoutes(protected chi.Router, deps *ServerDeps) {
 	repositoryHandlers := newRepositoryHandlers(deps)
 	protected.Get("/repositories", repositoryHandlers.List)
 	protected.Get("/repositories/{id}", repositoryHandlers.Get)
+	jobHandlers := &handlers.JobHandlers{Jobs: deps.Store.JobList()}
+	protected.Get("/jobs", jobHandlers.List)
+	protected.Get("/jobs/{id}", jobHandlers.Get)
+	protected.Get("/problems", (&handlers.ProblemHandlers{
+		Problems:            deps.Store.Problems(),
+		RequiredPermissions: setup.BuildManifest("", "", "").DefaultPermissions,
+	}).List)
 
 	protected.Group(func(admin chi.Router) {
 		admin.Use(apimw.RequireAdmin)

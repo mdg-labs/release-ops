@@ -420,6 +420,75 @@ func (q *Queries) LinkUpdateTicket(ctx context.Context, arg LinkUpdateTicketPara
 	return result.RowsAffected()
 }
 
+const listScopedTicketProblems = `-- name: ListScopedTicketProblems :many
+SELECT t.id AS update_ticket_id, p.id AS update_pr_id, p.url AS update_pr_url, p.repository_id,
+       r.full_name AS repository_full_name,
+       CAST(COALESCE(t.last_error_at, t.pending_since, t.updated_at) AS TEXT) AS since,
+       t.last_error,
+       CAST(t.external_id IS NULL AND t.pending_since IS NOT NULL AS INTEGER) AS clearable
+FROM update_tickets t
+JOIN update_prs p ON p.id = t.update_pr_id
+JOIN repositories r ON r.id = p.repository_id
+JOIN installations i ON i.id = r.installation_id
+WHERE r.removed_at IS NULL
+  AND i.status <> 'removed'
+  AND (?1 = 1 OR p.repository_id IN (SELECT s.value FROM json_each(?2) s))
+  AND (t.last_error IS NOT NULL OR t.pending_since IS NOT NULL)
+ORDER BY since DESC, t.id
+`
+
+type ListScopedTicketProblemsParams struct {
+	AllRepositories interface{} `json:"all_repositories"`
+	ScopeIds        interface{} `json:"scope_ids"`
+}
+
+type ListScopedTicketProblemsRow struct {
+	UpdateTicketID     string         `json:"update_ticket_id"`
+	UpdatePrID         string         `json:"update_pr_id"`
+	UpdatePrUrl        string         `json:"update_pr_url"`
+	RepositoryID       string         `json:"repository_id"`
+	RepositoryFullName string         `json:"repository_full_name"`
+	Since              string         `json:"since"`
+	LastError          sql.NullString `json:"last_error"`
+	Clearable          int64          `json:"clearable"`
+}
+
+// The ticket_failed problems of the caller's scope (specs.html section 7.7): a row with an error
+// or a pending marker. since is the error's time, else the marker's. clearable marks the rows an
+// admin may clear: a marker set and no ticket stored. The caller drops last_error and the row id
+// for anyone but an admin.
+func (q *Queries) ListScopedTicketProblems(ctx context.Context, arg ListScopedTicketProblemsParams) ([]ListScopedTicketProblemsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listScopedTicketProblems, arg.AllRepositories, arg.ScopeIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListScopedTicketProblemsRow
+	for rows.Next() {
+		var i ListScopedTicketProblemsRow
+		if err := rows.Scan(
+			&i.UpdateTicketID,
+			&i.UpdatePrID,
+			&i.UpdatePrUrl,
+			&i.RepositoryID,
+			&i.RepositoryFullName,
+			&i.Since,
+			&i.LastError,
+			&i.Clearable,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUpdatePRsSupersededBy = `-- name: ListUpdatePRsSupersededBy :many
 SELECT id FROM update_prs WHERE superseded_by_id = ? ORDER BY number
 `

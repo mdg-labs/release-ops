@@ -161,6 +161,9 @@ var viewerRoutes = []string{
 	"GET /api/v1/update-prs",
 	"GET /api/v1/repositories",
 	"GET /api/v1/repositories/{id}",
+	"GET /api/v1/jobs",
+	"GET /api/v1/jobs/{id}",
+	"GET /api/v1/problems",
 	"POST /api/v1/auth/logout", // last: it ends the session
 }
 
@@ -197,9 +200,17 @@ func TestViewerGets403OnEveryAdminRoute(t *testing.T) {
 		t.Fatalf("only %d admin routes were checked; the route walk is not seeing the protected API", checked)
 	}
 
+	if _, err := s.deps.DB.Exec(`INSERT INTO jobs (id, kind, repository_id, priority, state, run_after, "trigger", created_at)
+		VALUES ('job-1', 'renovate_run', 'repo-1', 'normal', 'queued', '2026-11-16T08:00:00.000Z', 'schedule', '2026-11-16T08:00:00.000Z')`); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
 	for _, route := range viewerRoutes {
 		method, path, _ := strings.Cut(route, " ")
-		path = strings.ReplaceAll(path, "{id}", "repo-1")
+		id := "repo-1"
+		if strings.Contains(path, "/jobs/") {
+			id = "job-1"
+		}
+		path = strings.ReplaceAll(path, "{id}", id)
 		if code, body := s.do(t, viewer, method, path); code != http.StatusOK {
 			t.Errorf("viewer %s = %d %s, want 200", route, code, body)
 		}

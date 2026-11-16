@@ -14,6 +14,10 @@ export const queryKeys = {
   updatePrs: (params: object) => ["update-prs", params] as const,
   repositories: (params: object) => ["repositories", params] as const,
   repositoriesAll: () => ["repositories"] as const,
+  jobs: (params: object) => ["jobs", params] as const,
+  job: (id: string) => ["job", id] as const,
+  problems: (params: object) => ["problems", params] as const,
+  problemsAll: () => ["problems"] as const,
   ticketMetadata: (
     integrationId: string | null | undefined,
     resource: string,

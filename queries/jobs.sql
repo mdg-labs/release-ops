@@ -233,3 +233,69 @@ WHERE id IN (
   ORDER BY old.finished_at, old.id
   LIMIT sqlc.arg(batch)
 );
+
+-- The jobs of the caller's scope, newest first (specs.html section 7.7): all_repositories is 1 for
+-- the admin scope, and otherwise a job needs a repository in scope_ids, a JSON array of
+-- repository ids where an empty one matches none. Empty repository_id and state arguments filter
+-- nothing. The history of a repository that left its installation is kept and listed.
+-- name: ListScopedJobs :many
+SELECT j.id, j.repository_id, r.full_name AS repository_full_name, j.kind, j.state, j.priority, j."trigger",
+       j.matched_markers, j.attempts, j.created_at, j.started_at, j.finished_at, j.webhook_received_at
+FROM jobs j
+JOIN repositories r ON r.id = j.repository_id
+WHERE (sqlc.arg(all_repositories) = 1 OR j.repository_id IN (SELECT s.value FROM json_each(sqlc.arg(scope_ids)) s))
+  AND (sqlc.arg(repository_id) = '' OR j.repository_id = sqlc.arg(repository_id))
+  AND (sqlc.arg(state) = '' OR j.state = sqlc.arg(state))
+ORDER BY j.created_at DESC, j.id DESC
+LIMIT sqlc.arg(page_size) OFFSET sqlc.arg(page_offset);
+
+-- name: CountScopedJobs :one
+SELECT COUNT(*)
+FROM jobs j
+WHERE (sqlc.arg(all_repositories) = 1 OR j.repository_id IN (SELECT s.value FROM json_each(sqlc.arg(scope_ids)) s))
+  AND (sqlc.arg(repository_id) = '' OR j.repository_id = sqlc.arg(repository_id))
+  AND (sqlc.arg(state) = '' OR j.state = sqlc.arg(state));
+
+-- One job of the caller's scope; a job of another repository is not found, exactly as an unknown
+-- id is.
+-- name: GetScopedJob :one
+SELECT j.id, j.repository_id, r.full_name AS repository_full_name, j.kind, j.state, j.priority, j."trigger",
+       j.matched_markers, j.attempts, j.created_at, j.started_at, j.finished_at, j.webhook_received_at
+FROM jobs j
+JOIN repositories r ON r.id = j.repository_id
+WHERE j.id = sqlc.arg(id)
+  AND (sqlc.arg(all_repositories) = 1 OR j.repository_id IN (SELECT s.value FROM json_each(sqlc.arg(scope_ids)) s));
+
+-- name: ListJobRunsForJob :many
+SELECT attempt, started_at, finished_at, outcome, exit_code, error_code, error_message, report_status, log_excerpt
+FROM job_runs
+WHERE job_id = ?
+ORDER BY attempt;
+
+-- name: ListJobEventsForJob :many
+SELECT at, kind, message
+FROM job_events
+WHERE job_id = ?
+ORDER BY at, rowid;
+
+-- The repositories whose latest finished job failed (the job_failed problem, specs.html section
+-- 7.7), with the error of that job's last attempt. A repository that left its installation has
+-- no problem.
+-- name: ListScopedJobProblems :many
+SELECT j.id AS job_id, j.repository_id, r.full_name AS repository_full_name,
+       CAST(j.finished_at AS TEXT) AS finished_at,
+       (SELECT jr.error_message FROM job_runs jr WHERE jr.job_id = j.id ORDER BY jr.attempt DESC LIMIT 1) AS error_message
+FROM jobs j
+JOIN repositories r ON r.id = j.repository_id
+JOIN installations i ON i.id = r.installation_id
+WHERE r.removed_at IS NULL
+  AND i.status <> 'removed'
+  AND (sqlc.arg(all_repositories) = 1 OR j.repository_id IN (SELECT s.value FROM json_each(sqlc.arg(scope_ids)) s))
+  AND j.state = 'failed'
+  AND j.id = (
+    SELECT l.id FROM jobs l
+    WHERE l.repository_id = j.repository_id AND l.state IN ('succeeded', 'failed')
+    ORDER BY l.finished_at DESC, l.id DESC
+    LIMIT 1
+  )
+ORDER BY j.finished_at DESC, j.id DESC;

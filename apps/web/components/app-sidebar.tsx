@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   InfoIcon,
+  ListChecksIcon,
   LayoutDashboardIcon,
   FolderGit2Icon,
   LogOutIcon,
@@ -43,6 +44,12 @@ const NAV_ITEMS = [
     href: "/repositories",
     icon: FolderGit2Icon,
     labelKey: "repositories",
+    adminOnly: false,
+  },
+  {
+    href: "/jobs",
+    icon: ListChecksIcon,
+    labelKey: "jobs",
     adminOnly: false,
   },
   {

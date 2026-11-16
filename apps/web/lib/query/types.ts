@@ -299,3 +299,101 @@ export type EnableRenovateResult = {
   pullRequestUrl: string;
   number: number;
 };
+
+export type JobState = "queued" | "running" | "succeeded" | "failed";
+
+export type JobTrigger =
+  | "dashboard_checkbox"
+  | "pr_checkbox"
+  | "pr_closed"
+  | "push"
+  | "repository_added"
+  | "schedule"
+  | "polling"
+  | "run_now";
+
+export type JobPriority = "high" | "normal";
+
+/** A job as the Jobs page lists it (docs/specs.html §7.7). */
+export type Job = {
+  id: string;
+  repository: { id: string; fullName: string };
+  kind: string;
+  state: JobState;
+  priority: JobPriority;
+  trigger: JobTrigger;
+  matchedMarkers: string[];
+  attempts: number;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  startLatencyMs: number | null;
+};
+
+export type JobsResponse = {
+  items: Job[];
+  page: number;
+  pageSize: number;
+  total: number;
+};
+
+export type JobRunOutcome =
+  | "running"
+  | "succeeded"
+  | "no_config"
+  | "failed"
+  | "aborted"
+  | "lease_expired";
+
+/** One attempt of a job; `logExcerpt` is the stored, already redacted tail of Renovate's log. */
+export type JobRun = {
+  attempt: number;
+  startedAt: string;
+  finishedAt: string | null;
+  outcome: JobRunOutcome;
+  exitCode: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  reportStatus: "ok" | "missing" | "unreadable" | null;
+  logExcerpt: string | null;
+};
+
+export type JobEvent = {
+  at: string;
+  kind: string;
+  message: string | null;
+};
+
+export type JobDetail = Job & {
+  runs: JobRun[];
+  events: JobEvent[];
+};
+
+export type ProblemKind =
+  "job_failed" | "ticket_failed" | "rate_limited" | "permissions_lost";
+
+/**
+ * A problem of the Problems view (docs/specs.html §7.7). `repository` is null for the
+ * installation-level kinds, which only an admin receives. A viewer's `ticket_failed` has no
+ * `message`; `ref.updateTicketId` is given to an admin for a ticket whose pending marker may be
+ * cleared.
+ */
+export type Problem = {
+  kind: ProblemKind;
+  repository: { id: string; fullName: string } | null;
+  since: string;
+  message: string | null;
+  ref: {
+    jobId?: string;
+    updatePrId?: string;
+    updatePrUrl?: string;
+    updateTicketId?: string;
+  } | null;
+};
+
+export type ProblemsResponse = {
+  items: Problem[];
+  page: number;
+  pageSize: number;
+  total: number;
+};

@@ -210,3 +210,23 @@ SET pr_comment_hash = NULL,
     last_error_at = CASE WHEN last_error IS NULL OR last_error LIKE 'PR comment: %' THEN sqlc.arg(at) ELSE last_error_at END,
     updated_at = sqlc.arg(at)
 WHERE id = sqlc.arg(id) AND external_id IS NOT NULL;
+
+-- The ticket_failed problems of the caller's scope (specs.html section 7.7): a row with an error
+-- or a pending marker. since is the error's time, else the marker's. clearable marks the rows an
+-- admin may clear: a marker set and no ticket stored. The caller drops last_error and the row id
+-- for anyone but an admin.
+-- name: ListScopedTicketProblems :many
+SELECT t.id AS update_ticket_id, p.id AS update_pr_id, p.url AS update_pr_url, p.repository_id,
+       r.full_name AS repository_full_name,
+       CAST(COALESCE(t.last_error_at, t.pending_since, t.updated_at) AS TEXT) AS since,
+       t.last_error,
+       CAST(t.external_id IS NULL AND t.pending_since IS NOT NULL AS INTEGER) AS clearable
+FROM update_tickets t
+JOIN update_prs p ON p.id = t.update_pr_id
+JOIN repositories r ON r.id = p.repository_id
+JOIN installations i ON i.id = r.installation_id
+WHERE r.removed_at IS NULL
+  AND i.status <> 'removed'
+  AND (sqlc.arg(all_repositories) = 1 OR p.repository_id IN (SELECT s.value FROM json_each(sqlc.arg(scope_ids)) s))
+  AND (t.last_error IS NOT NULL OR t.pending_since IS NOT NULL)
+ORDER BY since DESC, t.id;

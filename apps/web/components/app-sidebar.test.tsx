@@ -15,6 +15,7 @@ const ORIGIN = "http://localhost:3000";
 const NAV_ROUTES = [
   "/",
   "/repositories",
+  "/jobs",
   "/integrations",
   "/ticket-projects",
   "/settings",
@@ -157,7 +158,7 @@ describe("AppSidebar", () => {
     }
   });
 
-  it("shows a viewer the dashboard, the repositories and About, not the admin pages", async () => {
+  it("shows a viewer the dashboard, the repositories, the jobs and About, not the admin pages", async () => {
     const pool = mockAgent.get(ORIGIN);
     interceptSession(pool, { role: "viewer" });
     renderSidebar();
@@ -168,6 +169,10 @@ describe("AppSidebar", () => {
     expect(
       screen.getByRole("link", { name: "nav.repositories" }),
     ).toHaveAttribute("href", "/repositories");
+    expect(screen.getByRole("link", { name: "nav.jobs" })).toHaveAttribute(
+      "href",
+      "/jobs",
+    );
     expect(screen.getByRole("link", { name: "nav.about" })).toHaveAttribute(
       "href",
       "/about",
