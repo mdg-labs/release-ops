@@ -44,6 +44,9 @@ type Handlers struct {
 	TTL time.Duration
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+
+	// spent is the manifest states already redeemed; Handlers is used by pointer only.
+	spent spentStates
 }
 
 func (h *Handlers) now() time.Time {
