@@ -47,8 +47,10 @@ ARG WORKER_RENOVATE_TAG
 USER root
 # The binary carries the setuid and setgid file capabilities so the unprivileged worker can
 # start Renovate as the renovate user under cap_drop ALL; it is not executable by renovate.
+# tini is the container's init (below): the grandchildren of a Renovate process group the
+# deadline killed are reparented to PID 1, which the Go worker would never reap.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libcap2-bin && \
+    apt-get install -y --no-install-recommends libcap2-bin tini && \
     rm -rf /var/lib/apt/lists/* && \
     groupadd --gid 12032 worker && \
     useradd --uid 12032 --gid worker --groups 0 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin worker && \
@@ -59,7 +61,10 @@ RUN setcap cap_setuid,cap_setgid+ep /usr/local/bin/release-ops
 COPY --chmod=0644 NOTICE /NOTICE
 RUN sed -i "s|@RENOVATE_VERSION@|${WORKER_RENOVATE_TAG}|g" /NOTICE
 USER worker
-ENTRYPOINT ["/usr/local/bin/release-ops", "worker"]
+# tini is PID 1 so orphaned processes are reaped, and forwards SIGTERM and SIGINT to the worker,
+# so a `docker stop` still shuts it down gracefully. -s registers it as a child subreaper when
+# something else is PID 1 (`docker run --init`, a shared process namespace).
+ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/usr/local/bin/release-ops", "worker"]
 CMD []
 
 FROM node:22-bookworm-slim AS runtime

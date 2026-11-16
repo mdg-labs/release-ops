@@ -10,7 +10,9 @@
 #   deadline  a stand-in for renovate that ignores SIGTERM, started under a token that expires
 #             in minutes; the deadline must stop it, SIGKILL included, for its whole process
 #             group, which the worker, without CAP_KILL, can only do through the helper it
-#             starts as the second user (internal/renovate/process.go).
+#             starts as the second user (internal/renovate/process.go). The killed group's
+#             orphans must be reaped: no zombie may remain.
+# Both also check that tini is PID 1 and that a docker stop ends the worker gracefully.
 # Needs a Docker daemon and node; CI is the only place it runs.
 #
 # Usage: docker/worker-run-smoke.sh <worker image>
@@ -52,8 +54,8 @@ in_container() { docker exec "$container" /bin/bash -c "$@"; }
 
 # The scripts run in the container are single-quoted on purpose: they expand there, not here.
 #
-# The pids of the processes in the container owned by a uid. A zombie does not count: the worker
-# is the container's init and does not reap the orphans of a killed process group.
+# The pids of the processes in the container owned by a uid. A zombie does not count here; the
+# deadline scenario checks for zombies on their own (zombie_pids).
 # shellcheck disable=SC2016
 pids_of_uid() {
   in_container '
@@ -66,6 +68,20 @@ pids_of_uid() {
       [[ $uid == "$1" && $state != Z ]] && basename "$(dirname "$status")"
     done
     true' bash "$1"
+}
+
+# The pids of the zombies in the container, whoever owns them.
+# shellcheck disable=SC2016
+zombie_pids() {
+  in_container '
+    for status in /proc/[0-9]*/status; do
+      state=""
+      while read -r key value _; do
+        [[ $key == State: ]] && state=$value
+      done <"$status" 2>/dev/null || true
+      [[ $state == Z ]] && basename "$(dirname "$status")"
+    done
+    true'
 }
 
 # shellcheck disable=SC2016
@@ -134,12 +150,21 @@ run_scenario() {
     fail "$name: the worker could not signal the renovate process group"
   fi
 
+  [[ $(in_container 'cat /proc/1/comm') == tini ]] || fail "$name: PID 1 in the worker container is not tini"
+  local zombies
+  zombies=$(zombie_pids)
+  [[ -z $zombies ]] || fail "$name: zombie processes are left in the worker container: $(tr '\n' ' ' <<<"$zombies")"
+
   if [[ $name == deadline ]]; then
     [[ $saw_job_dir == yes ]] || fail "$name: no job scratch directory was seen while the job ran"
     [[ $saw_process == yes ]] || fail "$name: no process of the renovate user was seen while the job ran"
   fi
   node "$smoke/check-result.mjs" "$name" "$state" "$renovate_uid" || fail "$name: the result is not what was expected"
 
+  # A stop reaches the worker through tini: it shuts down on SIGTERM well inside the grace
+  # period instead of being killed (exit status 137).
+  docker stop --time 30 "$container" >/dev/null
+  [[ $(docker inspect -f '{{.State.ExitCode}}' "$container") != 137 ]] || fail "$name: the worker did not stop on SIGTERM"
   docker rm -f "$container" >/dev/null
   kill "$fake_pid" 2>/dev/null || true
   wait "$fake_pid" 2>/dev/null || true
