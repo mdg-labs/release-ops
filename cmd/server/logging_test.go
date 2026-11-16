@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -77,26 +78,101 @@ func registerSecretKinds() {
 	}
 }
 
+// leak is one form of a secret kind found in a log output.
+type leak struct{ kind, form string }
+
+// secretForms are the texts a secret kind can show up as: the value, each long line of it and,
+// for a JSON document, each string in it, each also path-escaped, query-escaped and escaped
+// as the inside of a JSON string, which is how a value in a JSON log line is written.
+func secretForms(value string) []string {
+	bases := []string{value}
+	for _, line := range strings.Split(value, "\n") {
+		if len(line) > 20 && !strings.HasPrefix(line, "-----") {
+			bases = append(bases, line)
+		}
+	}
+	var doc any
+	if json.Unmarshal([]byte(value), &doc) == nil {
+		bases = appendJSONStrings(bases, doc)
+	}
+	var forms []string
+	for _, b := range bases {
+		forms = append(forms, b, url.PathEscape(b), url.QueryEscape(b))
+		if quoted, err := json.Marshal(b); err == nil {
+			forms = append(forms, string(quoted[1:len(quoted)-1]))
+		}
+	}
+	return forms
+}
+
+func appendJSONStrings(out []string, doc any) []string {
+	switch v := doc.(type) {
+	case string:
+		out = append(out, v)
+	case []any:
+		for _, e := range v {
+			out = appendJSONStrings(out, e)
+		}
+	case map[string]any:
+		for _, e := range v {
+			out = appendJSONStrings(out, e)
+		}
+	}
+	return out
+}
+
+// leakedForms lists every form of every secret kind that out contains. Whatever else out
+// holds, a redaction marker included, does not hide one.
+func leakedForms(out string) []leak {
+	var leaks []leak
+	for _, s := range secretKinds {
+		for _, f := range secretForms(s.value) {
+			if strings.Contains(out, f) {
+				leaks = append(leaks, leak{s.kind, f})
+			}
+		}
+	}
+	return leaks
+}
+
 func assertNoSecretKind(t *testing.T, path, out string) {
 	t.Helper()
 	if out == "" {
 		t.Fatalf("%s: nothing was logged", path)
 	}
-	for _, s := range secretKinds {
-		forms := []string{s.value, url.PathEscape(s.value), url.QueryEscape(s.value)}
-		for _, line := range strings.Split(s.value, "\n") {
-			if len(line) > 20 && !strings.HasPrefix(line, "-----") {
-				forms = append(forms, line)
-			}
-		}
-		for _, f := range forms {
-			if strings.Contains(out, f) {
-				t.Errorf("%s: the %s (%.24q...) is in the log:\n%s", path, s.kind, f, out)
-			}
-		}
+	for _, l := range leakedForms(out) {
+		t.Errorf("%s: the %s (%.24q...) is in the log:\n%s", path, l.kind, l.form, out)
 	}
 	if !strings.Contains(out, logging.Placeholder) {
 		t.Errorf("%s: the log holds no redaction marker:\n%s", path, out)
+	}
+}
+
+func TestLeakedFormsFindsASecretNextToARedactionMarker(t *testing.T) {
+	jsonEscaped := func(v string) string {
+		quoted, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(quoted[1 : len(quoted)-1])
+	}
+	cases := []struct {
+		name, out, kind string
+	}{
+		{"the credential document as a JSON log line escapes it", `{"msg":"` + logging.Placeholder + ` {\"apiKey\":\"opaque-integration-key-table-0001\"}"}`, "integration credentials"},
+		{"the scalar credential alone", "token " + logging.Placeholder + " opaque-integration-key-table-0001", "integration credentials"},
+		{"a multi-line key escaped in a JSON string", `{"err":"` + logging.Placeholder + " " + jsonEscaped(secretKinds[0].value) + `"}`, "App private key"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			leaks := leakedForms(c.out)
+			if !slices.ContainsFunc(leaks, func(l leak) bool { return l.kind == c.kind }) {
+				t.Fatalf("a leak of the %s next to %q is not reported: %v", c.kind, logging.Placeholder, leaks)
+			}
+		})
+	}
+	if leaks := leakedForms("line " + logging.Placeholder + " and " + logging.Placeholder); len(leaks) != 0 {
+		t.Fatalf("an output with only redaction markers reports leaks: %v", leaks)
 	}
 }
 
