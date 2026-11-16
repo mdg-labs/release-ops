@@ -89,9 +89,15 @@ function packageFileOf(repo, expected, problems) {
   return file;
 }
 
+/**
+ * The dependencies a fixture is checked against. A skipped one is left out unless the fixture
+ * lists its skip reason in allowSkipReasons: the GitHub Actions fixture runs without a GitHub
+ * token, so Renovate extracts its actions but skips them with github-token-required.
+ */
 function depsOf(file, expected) {
   const ignored = new Set(expected.ignoreDatasources ?? []);
-  return (file.deps ?? []).filter((d) => !d.skipReason && !ignored.has(d.datasource));
+  const allowed = new Set(expected.allowSkipReasons ?? []);
+  return (file.deps ?? []).filter((d) => (!d.skipReason || allowed.has(d.skipReason)) && !ignored.has(d.datasource));
 }
 
 const updateKey = (u) => `${u.newVersion}|${u.newValue}|${u.updateType}`;

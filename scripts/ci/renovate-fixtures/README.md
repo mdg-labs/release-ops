@@ -25,13 +25,13 @@ For every directory under `repos/` the script runs `renovate --platform=local` w
 | `github-actions` | `github-actions` | none |
 | `gomod` | `gomod` | local Go proxy |
 | `npm` | `npm` | local npm registry |
-| `regex` | `custom.regex` (a custom regex manager in the fixture's `renovate.json`) | local npm registry |
+| `regex` | `regex` (a custom regex manager in the fixture's `renovate.json`) | local npm registry |
 
 `assert.mjs` then checks each run against `expectations.json`:
 
 - Renovate exited 0, the log is JSON lines, and its `Repository started` record names the pinned Renovate version (so the image under test is the pinned one) and a `Repository finished` record follows.
 - The report is valid JSON with one repository whose `branches` is an array and whose `packageFiles` is an object, the shape the app reads (`internal/updateprs/report.go`).
-- The expected manager and package file hold exactly the expected dependencies (`depName`, `currentValue`, `datasource`; `skipReason` and `ignoreDatasources` entries are not counted). On lookup each also has the expected `currentVersion` and exactly the expected `updates` (`newVersion`, `newValue`, `updateType`).
+- The expected manager and package file hold exactly the expected dependencies (`depName`, `currentValue`, `datasource`; entries with a `skipReason` and those in `ignoreDatasources` are not counted). A fixture's `allowSkipReasons` names skip reasons it does count: such a dependency is checked like any other, including its expected `skipReason`. The GitHub Actions fixture runs without a GitHub token, so Renovate extracts its actions and skips them with `github-token-required`. On lookup each also has the expected `currentVersion` and exactly the expected `updates` (`newVersion`, `newValue`, `updateType`).
 - Every fake registry received the requests that serve the lookups.
 - With `--self-check`, each expectation is deliberately made wrong in several ways (another dependency, current version, datasource, manager, new version, update type, a missing entry) and the check must fail for each, so the assertions are not vacuous. `assert.test.mjs` does the same against synthetic reports.
 

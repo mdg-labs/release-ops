@@ -30,9 +30,20 @@
     "manager": "github-actions",
     "packageFile": ".github/workflows/ci.yml",
     "ignoreDatasources": ["github-runners"],
+    "allowSkipReasons": ["github-token-required"],
     "extract": [
-      { "depName": "actions/checkout", "currentValue": "v4", "datasource": "github-tags" },
-      { "depName": "actions/setup-node", "currentValue": "v4.1.0", "datasource": "github-tags" }
+      {
+        "depName": "actions/checkout",
+        "currentValue": "v4",
+        "datasource": "github-tags",
+        "skipReason": "github-token-required"
+      },
+      {
+        "depName": "actions/setup-node",
+        "currentValue": "v4.1.0",
+        "datasource": "github-tags",
+        "skipReason": "github-token-required"
+      }
     ],
     "lookup": null
   },
@@ -69,7 +80,7 @@
     ]
   },
   "regex": {
-    "manager": "custom.regex",
+    "manager": "regex",
     "packageFile": "versions.env",
     "extract": [{ "depName": "fixture-tool", "currentValue": "3.2.0", "datasource": "npm" }],
     "lookup": [

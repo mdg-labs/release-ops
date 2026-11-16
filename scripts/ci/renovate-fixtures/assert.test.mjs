@@ -19,6 +19,7 @@ const logLines = (version = VERSION) =>
 function runFor(expected, phase, { exitCode = "0", log = logLines(), mutate = (r) => r } = {}) {
   const deps = expected[phase].map((want) => {
     const dep = { depName: want.depName, currentValue: want.currentValue, datasource: want.datasource ?? "npm" };
+    if (want.skipReason) dep.skipReason = want.skipReason;
     if (phase === "extract") return dep;
     const source = expected.extract.find((e) => e.depName === want.depName);
     return { ...dep, ...source, currentVersion: want.currentVersion, updates: want.updates.map((u) => ({ ...u, bucket: "x" })) };
@@ -96,6 +97,40 @@ test("a dependency with a skip reason or an ignored datasource is not unexpected
     },
   });
   assert.deepEqual(verifyFixture(expected, { extract: run, lookup: null }, VERSION), []);
+});
+
+test("a dependency skipped for a reason the fixture expects is still checked", () => {
+  const expected = expectations["github-actions"];
+  assert.ok(expected.allowSkipReasons?.length, "the github-actions fixture expects a skip reason");
+  const check = (mutate) => verifyFixture(expected, { extract: runFor(expected, "extract", { mutate }), lookup: null }, VERSION);
+  assert.deepEqual(
+    check((r) => r),
+    [],
+  );
+  assert.notDeepEqual(
+    check((r) => {
+      first(r)["github-actions"][0].deps.shift();
+      return r;
+    }),
+    [],
+    "a missing dependency with an allowed skip reason fails",
+  );
+  assert.notDeepEqual(
+    check((r) => {
+      first(r)["github-actions"][0].deps[0].skipReason = "local-dependency";
+      return r;
+    }),
+    [],
+    "a dependency skipped for a reason the fixture does not list is not counted, so it fails as missing",
+  );
+  assert.notDeepEqual(
+    check((r) => {
+      delete first(r)["github-actions"][0].deps[0].skipReason;
+      return r;
+    }),
+    [],
+    "a dependency without the expected skip reason fails",
+  );
 });
 
 test("a nonzero exit, a missing file or another Renovate version fails", () => {
