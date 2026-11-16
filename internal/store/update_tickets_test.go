@@ -102,6 +102,75 @@ func TestCandidateReadsThePRItsDependenciesAndTheResolvedTicketProject(t *testin
 	}
 }
 
+// A candidate is read from one snapshot: while a writer flips a PR between two revisions (open
+// with one dependency, closed with three) in single transactions, no candidate mixes the two.
+func TestCandidateIsReadFromOneSnapshot(t *testing.T) {
+	e := newTicketEnv(t)
+	ctx := context.Background()
+	e.addPR(t, "pr-1", e.repos[0], 1, "open", 1)
+	revision := func(tx *sql.Tx, state string, deps int) error {
+		if _, err := tx.Exec(`UPDATE update_prs SET state = ? WHERE id = 'pr-1'`, state); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM update_pr_dependencies WHERE update_pr_id = 'pr-1'`); err != nil {
+			return err
+		}
+		for i := range deps {
+			if _, err := tx.Exec(`INSERT INTO update_pr_dependencies (id, update_pr_id, name, source) VALUES (?, 'pr-1', ?, 'report')`,
+				"d"+string(rune('a'+i)), "dep"+string(rune('a'+i))); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	stop := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				done <- nil
+				return
+			default:
+			}
+			tx, err := e.db.Writer.BeginTx(ctx, nil)
+			if err != nil {
+				done <- err
+				return
+			}
+			state, deps := "open", 1
+			if i%2 == 1 {
+				state, deps = "closed", 3
+			}
+			if err := revision(tx, state, deps); err != nil {
+				_ = tx.Rollback()
+				done <- err
+				return
+			}
+			if err := tx.Commit(); err != nil {
+				done <- err
+				return
+			}
+		}
+	}()
+	var failure string
+	for i := 0; i < 500 && failure == ""; i++ {
+		c, err := e.st.UpdateTickets().Candidate(ctx, "pr-1")
+		if err != nil {
+			failure = err.Error()
+		} else if (c.State == "open") != (len(c.Dependencies) == 1) {
+			failure = "candidate mixes revisions: state " + c.State + " with " + string(rune('0'+len(c.Dependencies))) + " dependencies"
+		}
+	}
+	close(stop)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if failure != "" {
+		t.Fatal(failure)
+	}
+}
+
 func TestBeginCreateWritesTheMarkerOnceAndRefusesARepeat(t *testing.T) {
 	e := newTicketEnv(t)
 	ctx := context.Background()

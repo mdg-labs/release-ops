@@ -147,7 +147,7 @@ type LinkCreatedInput struct {
 // rows.
 type UpdateTicketRepository interface {
 	// Candidate returns the update PR with its dependencies, its resolved ticket project and
-	// its ticket row, or ErrUpdatePRNotFound.
+	// its ticket row, read from one snapshot, or ErrUpdatePRNotFound.
 	Candidate(ctx context.Context, updatePRID string) (TicketCandidate, error)
 	// PendingPRs returns the ids of the open update PRs that have dependencies and no ticket,
 	// no pending marker and no retry that is not due at now.
@@ -222,7 +222,14 @@ type updateTicketRepo struct {
 }
 
 func (r updateTicketRepo) Candidate(ctx context.Context, updatePRID string) (TicketCandidate, error) {
-	q := r.store.reads
+	// One read transaction, so the PR, its dependencies and its ticket come from the same
+	// snapshot even when a write commits between the reads.
+	tx, err := r.store.db.Reader.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return TicketCandidate{}, fmt.Errorf("begin candidate read: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	q := r.store.reads.WithTx(tx)
 	row, err := q.GetUpdatePRForTicket(ctx, updatePRID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return TicketCandidate{}, ErrUpdatePRNotFound
