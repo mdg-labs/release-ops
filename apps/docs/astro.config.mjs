@@ -51,6 +51,12 @@ export default defineConfig({
         {
           label: "User guide",
           items: [
+            { label: "Dashboard", slug: "guide/dashboard" },
+            { label: "Repositories", slug: "guide/repositories" },
+            { label: "Jobs and Problems", slug: "guide/jobs" },
+            { label: "Integrations", slug: "guide/integrations" },
+            { label: "Ticket projects", slug: "guide/ticket-projects" },
+            { label: "Settings", slug: "guide/settings" },
             {
               label: "Migrating from Renovate",
               slug: "guide/migrating-from-renovate",
