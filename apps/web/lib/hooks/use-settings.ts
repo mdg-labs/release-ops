@@ -19,7 +19,8 @@ export function useUpdateSettings() {
   return useMutation({
     mutationFn: (input: SettingsPatch) =>
       apiClient.patch<Settings>("/settings", input),
-    onSuccess: (settings) => {
+    onSuccess: async (settings) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.settings() });
       queryClient.setQueryData(queryKeys.settings(), settings);
     },
   });
