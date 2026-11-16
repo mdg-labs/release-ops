@@ -139,3 +139,42 @@ func TestANewEntryIsKeptWhenItsBudgetIsFull(t *testing.T) {
 		t.Fatal("a secret registered into a full budget was dropped at once")
 	}
 }
+
+// A secret registered again keeps covering the lifetime of the latest registration, however
+// soon after the first one it was renewed.
+func TestARenewedSecretIsCoveredUntilTheEndOfItsLatestRegistration(t *testing.T) {
+	c := &clock{now: time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)}
+	reg := logging.NewRegistry(c.Now)
+	const secret = "opaque-renewed-token-1"
+	reg.AddFor(time.Hour, secret)
+
+	c.Advance(15 * time.Minute)
+	reg.AddFor(time.Hour, secret)
+
+	// Past the first registration's end (an hour and the grace) but not the second's.
+	c.Advance(time.Hour + 10*time.Minute - 15*time.Minute + time.Minute)
+	if !removed(reg, secret) {
+		t.Fatal("a renewed secret is not removed after the end of its first registration")
+	}
+	if reg.Len() != 1 {
+		t.Fatalf("entries = %d, want the renewed secret still registered", reg.Len())
+	}
+	c.Advance(20 * time.Minute)
+	if removed(reg, secret) {
+		t.Fatal("a renewed secret is still registered after the end of its latest registration")
+	}
+}
+
+// An earlier end never replaces a later one.
+func TestARegistrationForAShorterTimeDoesNotShortenTheEnd(t *testing.T) {
+	c := &clock{now: time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)}
+	reg := logging.NewRegistry(c.Now)
+	const secret = "opaque-renewed-token-2"
+	reg.AddFor(2*time.Hour, secret)
+	reg.AddFor(time.Minute, secret)
+
+	c.Advance(time.Hour)
+	if !removed(reg, secret) {
+		t.Fatal("a shorter registration shortened the end of a longer one")
+	}
+}

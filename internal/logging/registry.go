@@ -101,8 +101,8 @@ func (r *Registry) Add(secrets ...string) {
 }
 
 // AddFor registers secrets for ttl from now. A secret registered again has its end moved
-// later, but only once a quarter of ttl has passed, so a secret that is registered on every
-// request does not rebuild the redactor on every request.
+// later every time; only a secret that is new changes what the redactor holds, so one that is
+// registered on every request does not rebuild the redactor on every request.
 func (r *Registry) AddFor(ttl time.Duration, secrets ...string) {
 	r.addFor(&r.temporary, ttl, secrets)
 }
@@ -125,7 +125,10 @@ func (r *Registry) addFor(b *budget, ttl time.Duration, secrets []string) {
 		if _, ok := r.permanent[s]; ok {
 			continue
 		}
-		if old, ok := b.entries[s]; ok && end.Sub(old.end) <= ttl/4 {
+		if old, ok := b.entries[s]; ok {
+			if end.After(old.end) {
+				b.entries[s] = entry{end: end, at: now}
+			}
 			continue
 		}
 		b.entries[s] = entry{end: end, at: now}
