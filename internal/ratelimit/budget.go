@@ -172,6 +172,10 @@ func (b *Budget) Observe(installationID int64, s Signal) {
 		next.Remaining, next.ResetAt = 0, s.Until(now)
 	case s.Limited && s.Remaining == 0 && !s.ResetAt.After(now):
 		next.ResetAt = s.Until(now)
+	case s.Limited && s.Remaining > 0:
+		// Refused although the count says requests remain: hold work back for the fallback
+		// delay, not until the primary reset.
+		next.Remaining, next.ResetAt = 0, s.Until(now)
 	}
 	// A reset time is trusted for at most MaxUpstreamDelay, even in a signal not made by Parse.
 	if limit := now.Add(MaxUpstreamDelay); next.ResetAt.After(limit) {

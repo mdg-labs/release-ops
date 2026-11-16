@@ -139,6 +139,45 @@ func TestBudgetRetryAfterCountsAsExhaustedUntilItLapses(t *testing.T) {
 	}
 }
 
+func TestBudgetHoldsBackAfterALimitedAnswerThatStillListsRemainingRequests(t *testing.T) {
+	t.Parallel()
+
+	c := &clock{t: now}
+	b := ratelimit.NewBudget(ratelimit.Options{Now: c.Now})
+	reset := now.Add(30 * time.Minute)
+
+	b.Observe(1, sig(4000, reset))
+	b.Observe(1, ratelimit.Parse(http.StatusTooManyRequests, header(
+		"X-RateLimit-Remaining", "4000", "X-RateLimit-Limit", "5000",
+		"X-RateLimit-Reset", strconv.FormatInt(reset.Unix(), 10)), now))
+	if err := b.Gate(1, ""); !errors.Is(err, ratelimit.ErrRateLimited) {
+		t.Fatalf("Gate after a 429 = %v, want it refused although 4000 requests were listed", err)
+	}
+	if until, ok := b.Until(1); !ok || !until.Equal(now.Add(ratelimit.DefaultBlock)) {
+		t.Errorf("Until = %v, %v, want the default block", until, ok)
+	}
+	c.Advance(ratelimit.DefaultBlock - time.Second)
+	if err := b.Gate(1, ""); err == nil {
+		t.Error("Gate before the default block lapsed = nil")
+	}
+	c.Advance(time.Second)
+	if err := b.Gate(1, ""); err != nil {
+		t.Errorf("Gate after the default block = %v, want work to resume", err)
+	}
+}
+
+func TestBudgetFirstLimitedAnswerWithRemainingRequestsHoldsBack(t *testing.T) {
+	t.Parallel()
+
+	c := &clock{t: now}
+	b := ratelimit.NewBudget(ratelimit.Options{Now: c.Now})
+	b.Observe(1, ratelimit.Parse(http.StatusTooManyRequests, header(
+		"X-RateLimit-Remaining", "4000", "X-RateLimit-Reset", strconv.FormatInt(now.Add(30*time.Minute).Unix(), 10)), now))
+	if until, ok := b.Until(1); !ok || !until.Equal(now.Add(ratelimit.DefaultBlock)) {
+		t.Fatalf("Until = %v, %v, want the default block", until, ok)
+	}
+}
+
 func TestBudgetKeepsTheLowestRemainingOfAWindowAndTakesALaterWindow(t *testing.T) {
 	t.Parallel()
 
