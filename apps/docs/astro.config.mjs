@@ -24,7 +24,10 @@ export default defineConfig({
       sidebar: [
         {
           label: "Start here",
-          items: [{ label: "Getting started", slug: "getting-started" }],
+          items: [
+            { label: "Getting started", slug: "getting-started" },
+            { label: "FAQ", slug: "faq" },
+          ],
         },
         {
           label: "Concepts",
@@ -53,6 +56,10 @@ export default defineConfig({
               slug: "guide/migrating-from-renovate",
             },
           ],
+        },
+        {
+          label: "Reference",
+          items: [{ label: "Metrics and alert rules", slug: "metrics" }],
         },
       ],
       head: [

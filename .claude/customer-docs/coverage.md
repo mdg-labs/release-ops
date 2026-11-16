@@ -19,5 +19,5 @@ Status values: `current` (checked against the route's source at the SHA), `missi
 | `/ticket-projects` | guide/ticket-projects.md | missing | — | #225 |
 | `/settings` | guide/settings.md | missing | — | #225, includes key rotation |
 | `/about` | — | missing | — | Not in #225's list; decide there whether it gets a page |
-| (reference) `/metrics` and alert rules | metrics.md | missing | — | #226 |
-| (FAQ) | faq.md | missing | — | #226 |
+| (reference) `/metrics` and alert rules | metrics.md | current | 7bb8356 | #226 |
+| (FAQ) | faq.md | current | 7bb8356 | #226 |
