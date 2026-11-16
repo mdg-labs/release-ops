@@ -58,7 +58,7 @@ The ticket follows its PR. The statuses it moves to come from the ticket project
 | The PR is merged. | The ticket moves to the first **Done statuses** entry. |
 | The PR is closed without a merge and nothing has replaced it. | The ticket moves to the first **Cancelled statuses** entry. If a replacement appears later, the ticket is superseded instead. |
 
-Before it changes a ticket, Release Ops reads the ticket's current status. If someone closed, reopened or moved the ticket by hand, Release Ops leaves it alone from then on: it does not reopen, edit or supersede it, and it does not create a second ticket for the PR. A ticket in the done or superseded state gets no further changes.
+Before it changes a ticket, Release Ops reads the ticket's current status and sorts it into open, done or cancelled with the project's [status mapping](../status-mapping/). It compares that with the group it last put the ticket in. If the groups differ, for example someone closed or reopened the ticket by hand, Release Ops leaves it alone from then on: it does not reopen, edit or supersede it, and it does not create a second ticket for the PR. A move between two statuses of the same group, for example from To Do to In Progress when both are open statuses, is not a hand change, and the ticket keeps following its PR. A status that is in none of the mapping's lists cannot be sorted. Release Ops then changes nothing, shows **Ticket error** for the PR and retries later, so add the status to the right list. A ticket in the done or superseded state gets no further changes.
 
 The ticket's title, description, update note and supersede comment come from the content templates of the ticket project. The **Ticket projects** page lists the variables a template can use.
 
