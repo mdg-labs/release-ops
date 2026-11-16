@@ -14,3 +14,12 @@ updates:
     open-pull-requests-limit: 1
     commit-message:
       prefix: "chore(deps)"
+  # The actions in .github/workflows/ are pinned to a commit SHA with the release in a trailing
+  # comment; a bump PR moves both.
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
