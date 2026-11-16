@@ -159,7 +159,8 @@ func (b *Budget) ObserveToken(token string, s Signal) {
 
 // Observe records what a response says about the installation's budget. Within one reset
 // window the lowest remaining count wins, so responses that arrive out of order cannot raise
-// it; a later window replaces an earlier one. A Retry-After counts as exhausted until it
+// it; a later window replaces an earlier one, except that an exhausted budget is kept until its
+// reset by any answer that is not itself limited. A Retry-After counts as exhausted until it
 // lapses, which is stored as remaining 0 with the reset at that time.
 func (b *Budget) Observe(installationID int64, s Signal) {
 	if b == nil || s.Empty() {
@@ -200,7 +201,10 @@ func (b *Budget) Observe(installationID int64, s Signal) {
 		next.Limit = cur.Limit
 	}
 	replace := !known || !cur.ResetAt.After(now)
-	if !replace {
+	// An exhausted budget is only lifted by a limited answer or once its reset has passed: an
+	// answer to a call that was already in flight, carrying a later primary reset, must not end
+	// a Retry-After cooldown early.
+	if !replace && (!wasExhausted || s.Limited) {
 		switch {
 		case next.ResetAt.After(cur.ResetAt):
 			replace = true

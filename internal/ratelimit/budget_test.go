@@ -178,6 +178,53 @@ func TestBudgetFirstLimitedAnswerWithRemainingRequestsHoldsBack(t *testing.T) {
 	}
 }
 
+func TestBudgetRetryAfterCooldownSurvivesALaterPrimaryReset(t *testing.T) {
+	t.Parallel()
+
+	c := &clock{t: now}
+	b := ratelimit.NewBudget(ratelimit.Options{Now: c.Now})
+
+	b.Observe(1, ratelimit.Parse(http.StatusForbidden, header("Retry-After", "60"), now))
+	// An answer to a call that was already in flight, from the primary window.
+	b.Observe(1, sig(4999, now.Add(50*time.Minute)))
+	if err := b.Gate(1, ""); !errors.Is(err, ratelimit.ErrRateLimited) {
+		t.Fatalf("Gate after a later primary reset = %v, want the cooldown kept", err)
+	}
+	c.Advance(59 * time.Second)
+	if err := b.Gate(1, ""); err == nil {
+		t.Error("Gate before the cooldown lapsed = nil")
+	}
+	c.Advance(time.Second)
+	if err := b.Gate(1, ""); err != nil {
+		t.Errorf("Gate after the cooldown = %v, want work to resume", err)
+	}
+
+	next := now.Add(50 * time.Minute)
+	b.Observe(1, sig(4999, next))
+	if got := b.Snapshot()[0]; got.Remaining != 4999 || !got.ResetAt.Equal(next) {
+		t.Errorf("state = %+v, want the first answer after the cooldown to replace it", got)
+	}
+}
+
+func TestBudgetPrimaryExhaustionIsReplacedByTheNextWindow(t *testing.T) {
+	t.Parallel()
+
+	c := &clock{t: now}
+	b := ratelimit.NewBudget(ratelimit.Options{Now: c.Now})
+	reset := now.Add(20 * time.Minute)
+
+	b.Observe(1, sig(0, reset))
+	c.Advance(20 * time.Minute)
+	next := c.Now().Add(time.Hour)
+	b.Observe(1, sig(4999, next))
+	if err := b.Gate(1, ""); err != nil {
+		t.Fatalf("Gate in the new window = %v", err)
+	}
+	if got := b.Snapshot()[0]; got.Remaining != 4999 || !got.ResetAt.Equal(next) {
+		t.Errorf("state = %+v, want the new window", got)
+	}
+}
+
 func TestBudgetKeepsTheLowestRemainingOfAWindowAndTakesALaterWindow(t *testing.T) {
 	t.Parallel()
 
