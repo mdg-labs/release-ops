@@ -76,7 +76,7 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 	next := h.inner
 	for _, o := range h.ops {
 		if o.group != "" {
-			next = next.WithGroup(o.group)
+			next = next.WithGroup(redactString(redactor, o.group))
 			continue
 		}
 		attrs := make([]slog.Attr, len(o.attrs))

@@ -167,6 +167,26 @@ func TestASecretRegisteredAfterWithAttrsIsStillRemoved(t *testing.T) {
 	}
 }
 
+// A secret registered after a handler was derived with a group is removed from the group's name.
+func TestASecretRegisteredAfterWithGroupIsRemovedFromTheGroupName(t *testing.T) {
+	const secret = "late-group-secret-value-2"
+	for name, json := range map[string]bool{"text": false, "json": true} {
+		t.Run(name, func(t *testing.T) {
+			reg := logging.NewRegistry(nil)
+			l, out := newLogger(reg, json)
+			child := l.WithGroup(secret)
+			reg.Add(secret)
+			child.Info("m", "k", "v")
+			if strings.Contains(out.String(), secret) {
+				t.Fatalf("a secret registered after WithGroup is in the output: %s", out.String())
+			}
+			if !strings.Contains(out.String(), logging.Placeholder) {
+				t.Fatalf("the group name is not replaced by the placeholder: %s", out.String())
+			}
+		})
+	}
+}
+
 func TestCredentialHeadersAreMaskedByName(t *testing.T) {
 	l, out := newLogger(logging.NewRegistry(nil), false)
 	l.Info("request",
