@@ -11,28 +11,43 @@
   "threatModel": "docs/threat-model.md",
   "labels": {
     "areas": [
-      { "name": "backend", "description": "Go API, polling, providers" },
-      { "name": "web", "description": "Next.js UI, COSS, Go API proxy" },
-      { "name": "db", "description": "SQLite schema, migrations, queries" },
-      { "name": "config", "description": "App settings, env bootstrap" },
-      { "name": "ci", "description": "GitHub Actions, Docker, GHCR" },
-      { "name": "docs", "description": "Spec docs and customer docs site" }
+      { "name": "backend", "description": "Go app and worker: API, webhooks, setup, queue, Renovate runner, GitHub client, ticket engine" },
+      { "name": "web", "description": "Next.js UI, COSS, /setup and sign-in pages, Go API proxy" },
+      { "name": "db", "description": "SQLite schema, migrations, queries, store" },
+      { "name": "config", "description": "Environment settings and startup validation, Compose reference" },
+      { "name": "ci", "description": "GitHub Actions, Dockerfile (app and worker images), Renovate pin and fixture scripts, GHCR" },
+      { "name": "docs", "description": "Spec docs, threat model, customer docs site, agent workflow config" }
     ],
     "maintainerOnly": { "name": "maintainer", "description": "Maintainer-only work (deploys, live checks, merges, releases); never dispatched to an agent" },
-    "risk": { "name": "risk", "description": "Can lose data or break upgrades: schema, migrations, credential crypto" }
+    "risk": { "name": "risk", "description": "Can lose data or break upgrades: schema, migrations, credential crypto, GitHub App key, setup, token minting, worker auth" }
   },
   "checks": [
     { "paths": ["apps/web/**", "package.json", "package-lock.json"], "run": "npm test && npm run lint && npm run typecheck", "requires": ["npm"] },
     { "paths": ["db/schema.sql", "migrations/**"], "run": "npm run db:check", "requires": ["go"] },
-    { "paths": ["cmd/**", "internal/**", "queries/**", "tools/**", "sqlc.yaml", "go.mod", "go.sum"], "run": "gofmt -l . && go vet ./... && go test ./... && golangci-lint run", "requires": ["go", "golangci-lint"] },
+    { "paths": ["cmd/**", "internal/**", "queries/**", "sqlc.yaml", "go.mod", "go.sum"], "run": "gofmt -l . && go vet ./... && go test ./... && golangci-lint run", "requires": ["go", "golangci-lint"] },
+    { "paths": ["scripts/ci/**", "docker/**", "Dockerfile"], "run": "node scripts/ci/check-renovate-pin.mjs && node --test \"scripts/ci/**/*.test.mjs\" \"docker/**/*.test.mjs\"", "requires": ["node"] },
     { "paths": ["apps/docs/**"], "run": "npm run docs:build", "requires": ["npm"] }
   ],
   "bootstrap": "npm ci",
-  "riskPaths": ["db/schema.sql", "migrations/**", "internal/crypto/**", "internal/store/**"],
+  "riskPaths": [
+    "db/schema.sql",
+    "migrations/**",
+    "internal/crypto/**",
+    "internal/store/**",
+    "queries/github_app.sql",
+    "queries/integrations.sql",
+    "internal/github/appclient.go",
+    "internal/github/jwt.go",
+    "internal/github/manifest.go",
+    "internal/api/setup/**",
+    "internal/api/handlers/github_app.go",
+    "internal/queue/internalapi/**",
+    "internal/renovate/redact/**"
+  ],
   "signoff": { "mode": "none" },
   "act": {
     "platforms": { "ubuntu-latest": "catthehacker/ubuntu:act-latest" },
-    "neverRun": ["build", "push-image", "deploy", "prepare", "prepare-release"]
+    "neverRun": ["build", "push-image", "deploy", "prepare", "prepare-release", "app-image", "worker-image", "renovate-fixtures", "worker-run-smoke"]
   },
   "docs": {
     "paths": ["apps/docs/"],
