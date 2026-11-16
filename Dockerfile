@@ -40,8 +40,10 @@ RUN VERSION="${APP_VERSION:-dev}" && \
 # create the per-slot cache directories inside it.
 # The official Renovate OSS image (never a Mend Renovate CE or EE image), pinned by tag and
 # digest; one version per release. Dependabot bumps both together. A different Renovate is a
-# change to this line, at your own risk: the report and log handling is tested against the
-# pinned version only.
+# change to this line's tag and digest, to the ARG WORKER_RENOVATE_TAG default at the top of
+# this file and to RenovateVersion in internal/buildinfo/buildinfo.go, all to the same version
+# (CI checks that they agree), at your own risk: the report and log handling is tested against
+# the pinned version only.
 FROM ghcr.io/renovatebot/renovate:44.239.1@sha256:7dba1a3b916a2cf302ba0df458ddcc8fcbac3c92d0fe9882ac13ba0363de656b AS worker
 ARG WORKER_RENOVATE_TAG
 USER root
