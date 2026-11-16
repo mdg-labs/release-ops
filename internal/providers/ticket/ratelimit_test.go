@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mdg-labs/release-ops/internal/providers/ticket"
+	"github.com/mdg-labs/release-ops/internal/ratelimit"
 )
 
 // Every provider reports the delay a rate-limit answer asked for, and a rate-limited create is
@@ -55,6 +56,48 @@ func TestRateLimitAnswersCarryTheDelayTheTicketSystemAskedFor(t *testing.T) {
 				if tc.limited && !ticket.CreateDefinitelyNotStored(err) {
 					t.Errorf("%s: a rate-limited create must be one that stored nothing", kind)
 				}
+			}
+		})
+	}
+}
+
+func TestLinearRateLimitedDelayIsTheLongerOfRetryAfterAndTheReset(t *testing.T) {
+	t.Parallel()
+
+	resetIn := func(d time.Duration) string {
+		return strconv.FormatInt(time.Now().Add(d).UnixMilli(), 10)
+	}
+	for name, tc := range map[string]struct {
+		header    map[string]string
+		low, high time.Duration
+	}{
+		"retry-after only":           {map[string]string{"Retry-After": "600"}, 10 * time.Minute, 10 * time.Minute},
+		"reset only":                 {map[string]string{"X-RateLimit-Requests-Reset": resetIn(20 * time.Minute)}, 20*time.Minute - 10*time.Second, 20 * time.Minute},
+		"retry-after beyond reset":   {map[string]string{"Retry-After": "1800", "X-RateLimit-Requests-Reset": resetIn(20 * time.Minute)}, 30 * time.Minute, 30 * time.Minute},
+		"reset beyond retry-after":   {map[string]string{"Retry-After": "600", "X-RateLimit-Requests-Reset": resetIn(20 * time.Minute)}, 20*time.Minute - 10*time.Second, 20 * time.Minute},
+		"neither":                    {nil, ratelimit.DefaultBlock, ratelimit.DefaultBlock},
+		"retry-after beyond the cap": {map[string]string{"Retry-After": "99999999"}, ratelimit.MaxUpstreamDelay, ratelimit.MaxUpstreamDelay},
+		"reset beyond the cap":       {map[string]string{"X-RateLimit-Requests-Reset": resetIn(72 * time.Hour)}, ratelimit.MaxUpstreamDelay, ratelimit.MaxUpstreamDelay},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				for k, v := range tc.header {
+					w.Header().Set(k, v)
+				}
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"errors":[{"message":"Rate limit exceeded","extensions":{"code":"RATELIMITED"}}]}`))
+			}))
+			t.Cleanup(server.Close)
+			linear, err := ticket.NewLinearProviderWithEndpoint("key", server.URL, server.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = linear.CreateTicket(context.Background(), createInput())
+			d, limited := ticket.RateLimitDelay(err)
+			if !limited || d < tc.low-time.Second || d > tc.high {
+				t.Errorf("RateLimitDelay = %v, %v, want within [%v, %v]", d, limited, tc.low, tc.high)
 			}
 		})
 	}

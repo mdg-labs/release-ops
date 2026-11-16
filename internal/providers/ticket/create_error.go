@@ -30,7 +30,8 @@ func (e *httpStatusError) Error() string {
 // newHTTPStatusError builds the error for a non-2xx answer; detail is the (already
 // size-limited) response body, never the request. A 429, and a 403 that carries a Retry-After
 // or an exhausted X-RateLimit-Remaining, is a rate limit, and so is the 400 with a RATELIMITED
-// error code that Linear's GraphQL API answers with.
+// error code that Linear's GraphQL API answers with; there the delay is the longer of its reset
+// time and a Retry-After.
 func newHTTPStatusError(resp *http.Response, detail string) error {
 	now := time.Now()
 	e := &httpStatusError{code: resp.StatusCode, detail: detail}
@@ -39,7 +40,8 @@ func newHTTPStatusError(resp *http.Response, detail string) error {
 	case sig.Limited:
 		e.limited, e.retryAfter = true, sig.Until(now).Sub(now)
 	case resp.StatusCode == http.StatusBadRequest && strings.Contains(detail, `"RATELIMITED"`):
-		e.limited, e.retryAfter = true, linearResetDelay(resp.Header, now)
+		e.limited = true
+		e.retryAfter = min(max(sig.RetryAfter, linearResetDelay(resp.Header, now)), ratelimit.MaxUpstreamDelay)
 	}
 	return e
 }
