@@ -25,109 +25,267 @@ reviews:
   - '!.agents/**'
   path_instructions:
   - path: '**/*'
-    instructions: 'Release Ops polls GitHub, GitLab, Gitea, Forgejo, and Codeberg for new
-
-      releases and creates tickets in configured integrations. Single-container
-
-      app: Go API (cmd/server, internal/) + Next.js UI (apps/web). Auth lives
-
-      in Go; the web app proxies API calls. Do not invent endpoints, fields, or
-
-      IDs not defined in docs/specs.html. Prefer minimal, focused diffs.
-
-      '
+    instructions: |
+      Release Ops is a self-hosted dependency-update bot. One GitHub App is the bot
+      (its update PRs are opened by Renovate), the webhook sender and the sign-in
+      provider; a ticket is created per update PR in the configured integration
+      (Jira, Linear, Kaneo) and kept in step with the PR. Webhooks drive it; with no
+      WEBHOOK_URL a degraded polling fallback runs instead. One Dockerfile builds two
+      images: the app (Go API + Next.js UI, owns the database, the App private key
+      and APP_ENCRYPTION_KEY, mints installation tokens) and the worker (claims jobs
+      from the internal listener with WORKER_SECRET, no database, runs the pinned
+      Renovate as a second Unix user). Judge security against docs/threat-model.md.
+      Do not invent endpoints, fields, or IDs not defined in docs/specs.html. Prefer
+      minimal, focused diffs.
   - path: internal/api/**
-    instructions: 'Go HTTP API (chi router). Review auth/session handling, input validation,
-
-      error responses, and SQL injection risks. Credentials and integration
-
-      tokens must never be logged. Handlers should stay thin; business logic
-
-      belongs in internal/ packages. Match existing handler patterns and tests.
-
-      '
+    instructions: |
+      Go HTTP API (chi router). Every /api/v1/* route outside the public auth and
+      setup paths needs a session, enforced in Go; role and repository scope are
+      checked in the handler from the server-side session, never only in the UI.
+      Review input validation, error responses (fixed error codes, no upstream text
+      or secrets), and SQL injection risks. Secrets are never logged or returned.
+      Handlers stay thin; business logic belongs in internal/ packages. Match
+      existing handler patterns and tests.
+  - path: internal/api/hooks/**
+    instructions: |
+      POST /hooks/github. The HMAC-SHA256 of the raw body must be checked in
+      constant time against X-Hub-Signature-256 before anything is parsed, stored or
+      enqueued. Check the 1 MiB body cap, that only subscribed events are handled,
+      that the delivery GUID and the enqueue commit in one transaction (a read error
+      must fail the request, never mark the delivery handled), that a repeated GUID
+      does nothing, and that no GitHub call runs in the request path. Bot PRs and the
+      Dependency Dashboard are identified by the author's numeric id, never by
+      repository content.
+  - path: internal/api/setup/**
+    instructions: |
+      Setup and GitHub App manifest flow. Setup is possible only while no App is
+      configured. The setup token and OAuth/manifest state are single use, compared
+      in constant time and consumed with a guarded write before any side effect.
+      The App private key, client secret and webhook secret are stored encrypted and
+      never appear in a response, log or error. Only one installation is ever bound;
+      the installation id from the redirect is untrusted until fetched with the App
+      JWT. Redirects must be same-origin or a fixed GitHub URL.
+  - path: internal/api/auth/**
+    instructions: |
+      GitHub sign-in and sessions. OAuth state and PKCE are bound to the pre-login
+      session and consumed once. The session token is renewed on every sign-in and
+      the pre-login one discarded; the cookie is HttpOnly and SameSite=Lax. A
+      post-sign-in redirect must be a same-origin relative path. Failures return a
+      fixed error code, never GitHub's text. Public sign-in routes are rate limited
+      per client IP.
+  - path: internal/api/middleware/**
+    instructions: |
+      Session authentication, role checks and rate limiting. Membership is
+      re-evaluated when a session's last check is over 15 minutes old and a session
+      never outlives its authority. Client IP comes from the trusted forwarded
+      header only. Fail closed when the session or role cannot be determined.
+  - path: internal/github/**
+    instructions: |
+      GitHub client, OAuth, App JWT and installation-token minting. The App JWT and
+      installation tokens go only to the configured GitHub API base (and github.com
+      for git), the OAuth client secret and code only to GitHub's token endpoint;
+      redirects never carry a credential to another host. Outbound calls need
+      timeouts and size-limited bodies. Check rate-limit handling (429, Retry-After,
+      remaining budget), pagination, conditional requests (ETag/304 keep the headers
+      the loop needs), and that tests use githubtest fakes or fixtures, never live
+      GitHub. Tokens and keys are never logged.
+  - path: internal/queue/**
+    instructions: |
+      Job queue and the internal listener (/internal/v1/jobs/*: claim, token,
+      heartbeat, result, release). Every route requires WORKER_SECRET compared in
+      constant time before anything else is evaluated; the listener mounts only the
+      worker routes. A job's installation token is issued only to the worker holding
+      the job under a live lease (409 otherwise), covers only the target repository
+      plus the preset and global-config repositories, and is held in memory only.
+      Claim must be atomic; paused or removed repositories get no job, no token, and
+      their running job is told to abort. Never store or log the worker secret or a
+      token.
+  - path: internal/renovate/**
+    instructions: |
+      Worker-side Renovate runner. Renovate runs as an unprivileged Unix user with a
+      minimal environment (PATH, its own HOME, the job's RENOVATE_* values); it must
+      never see WORKER_SECRET, the encryption key or the App key. allowScripts is
+      always false; allowedCommands comes only from the admin global config file;
+      platform, token and repositories are removed from it. Treat the Renovate
+      report and logs as untrusted: parse defensively, redact secrets in every
+      encoding, open untrusted-side files non-blocking after a type check.
+  - path: internal/updateprs/**
+    instructions: |
+      Update-PR tracking and reconcile. Bot PRs are identified by the bot user's
+      numeric id plus Renovate's markers, never by labels or repository content.
+      Check idempotency under duplicate and out-of-order deliveries, that a reconcile
+      is triggered for removal as well as addition, and that every row belongs to
+      the single bound installation. Dependency and release-note data is untrusted.
+  - path: internal/scheduler/**
+    instructions: |
+      Scheduler and hourly safety net. Check that bounded per-pass work does not
+      starve later items, that jobs coalesce per repository, that run_after and rate
+      limit budgets are honoured, and for races and missing tests.
+  - path: internal/pollwatch/**
+    instructions: |
+      Polling fallback used when WEBHOOK_URL is unset. Check that conditional
+      requests are used so an unchanged repository costs no rate-limit budget, that
+      at most one job is asked for per repository per pass, that the first pass only
+      records state, and that a failed or partial pass is not treated as "nothing
+      changed".
+  - path: internal/updatetickets/**
+    instructions: |
+      Ticket lifecycle for update PRs. Check idempotency (a retry must not create a
+      second ticket), that the created ticket is persisted immediately so a later
+      failing step cannot orphan it, retry/backoff and terminal states, and that the
+      ticket follows PR state changes (merged, closed, updated). Ticket errors shown
+      to users must not carry credentials.
   - path: internal/providers/**
-    instructions: 'Source and ticket provider integrations. Check API error handling, rate
-
-      limits, pagination, and idempotency for ticket creation. Validate that
-
-      provider-specific quirks (GitLab vs GitHub vs Gitea-compatible) are handled
-
-      correctly. Never persist or log raw API tokens.
-
-      '
-  - path: internal/poll/**
-    instructions: 'Release polling scheduler and run logic. Watch for race conditions,
-
-      duplicate ticket creation, missed releases, and incorrect semver/pre-release
-
-      handling. Scheduler changes should be covered by tests.
-
-      '
+    instructions: |
+      Ticket integrations (Jira, Linear, Kaneo) and connection tests. Check API
+      error handling, rate limits, and payload fields the remote API rejects when
+      empty or unset. Credentials go only to the integration's own host; changing a
+      base URL requires a new secret; no redirect may carry a credential elsewhere.
+      Outbound calls need timeouts and size-limited response bodies. Never persist
+      or log raw API tokens.
+  - path: internal/tickettemplate/**
+    instructions: |
+      Ticket title/body templates. Only the admin-authored template is parsed
+      (text/template); PR titles, bodies, labels, dependency names, release notes
+      and log excerpts reach it only as plain-string context values and are output
+      literally. Release notes are truncated to 4,000 characters. Validators must
+      cover every template construct, not only the common ones.
+  - path: internal/crypto/**
+    instructions: |
+      AES-256-GCM encryption of stored secrets under APP_ENCRYPTION_KEY: random
+      12-byte nonce per write, no nonce reuse, authenticated decrypt errors handled,
+      key never logged. Flag any custom crypto or weakened parameters.
+  - path: internal/config/**
+    instructions: |
+      Environment configuration and startup checks. Startup must refuse a missing,
+      short or .env.example-placeholder SESSION_SECRET, APP_ENCRYPTION_KEY or
+      WORKER_SECRET, a weak operator-supplied SETUP_TOKEN and a missing APP_URL.
+      Worker config must not require or accept database, encryption or App-key
+      settings. Keep .env.example, docker-compose.yml and docs in step.
+  - path: internal/logging/**
+    instructions: |
+      Log redaction. Check that secrets (App key, client and webhook secrets,
+      WORKER_SECRET, session, installation and OAuth tokens, codes, state, setup
+      token) are redacted in every shape they travel in: URL user-info, quoted
+      NAME="value", JSON escapes, group names and attribute keys.
+  - path: internal/ratelimit/**
+    instructions: |
+      Rate-limit budgets and limiters. Check that an upstream delay is never dropped
+      or lifted early (429 with remaining requests, Retry-After on any status, huge
+      header values overflowing a duration), and that the clock is read inside the
+      lock or transaction that decides.
   - path: internal/store/**
-    instructions: 'SQLite persistence via sqlc. Edit queries in queries/*.sql, not generated
-
-      internal/store/db/*.sql.go. Review transaction boundaries, nullable
-
-      columns, and encryption of stored credentials.
-
-      '
+    instructions: |
+      SQLite persistence via sqlc. Edit queries in queries/*.sql, not generated
+      internal/store/db/*.sql.go. Review transaction boundaries (values that belong
+      together are read in one row or transaction), nullable columns, one-time
+      tokens consumed with a guarded write, encryption of stored secrets, and that a
+      cleanup DELETE does not cascade away history the spec keeps.
   - path: queries/**
-    instructions: 'sqlc query definitions. Ensure SQL matches db/schema.sql types and
-
-      constraints. Prefer explicit column lists over SELECT *.
-
-      '
+    instructions: |
+      sqlc query definitions. Ensure SQL matches db/schema.sql types and
+      constraints, uses bound parameters only, and carries the installation or
+      repository-scope filter where the row is scoped. Prefer explicit column lists
+      over SELECT *.
   - path: db/schema.sql
-    instructions: "Canonical DDL \u2014 source of truth for the database. Schema changes must be\nfollowed\
-      \ by `make db-migration name=<slug>`; never hand-write migrations.\nEvery table must be declared\
-      \ STRICT. Flag any breaking column/type changes\nand missing indexes on foreign keys.\n"
+    instructions: |
+      Canonical DDL — source of truth for the database. Schema changes must be
+      followed by `make db-migration name=<slug>`; never hand-write migrations.
+      Every table must be declared STRICT. Flag breaking column/type changes, new
+      columns that are neither nullable nor defaulted (existing app.db files must
+      upgrade without data loss), and missing indexes on foreign keys.
   - path: migrations/**
-    instructions: 'Migrations must be generated from db/schema.sql by sqlite-migrate via
-
+    instructions: |
+      Migrations must be generated from db/schema.sql by sqlite-migrate via
       `make db-migration name=<slug>`. Flag hand-edited or copy-pasted migration SQL
-
       and any edit to a migration that already exists (its checksum header must
-
-      still match). Verify that CI `npm run db:check` would pass.
-
-      '
+      still match). Additive changes must be ALTER TABLE ... ADD COLUMN, not a table
+      drop and recreate that loses rows. Verify that CI `npm run db:check` would
+      pass.
+  - path: cmd/server/**
+    instructions: |
+      Wiring for the app (server, `admin login-link`) and the worker
+      (`release-ops worker`). Check that every service built here is actually passed
+      to its consumer, that the app and worker keep separate secrets (the worker
+      never gets database, encryption or App-key config), that both Go listeners
+      set timeouts, and that startup fails visibly instead of registering stand-in
+      handlers.
   - path: apps/web/**
-    instructions: "Next.js App Router + COSS UI + next-intl. Zero hardcoded user-facing\nstrings \u2014\
-      \ all copy via message keys in apps/web/messages/en.json\n(eslint-plugin-i18next enforces this).\
-      \ Use existing hooks/components\npatterns. Client components only when needed. API calls go through\
-      \ the\nGo proxy route, not direct external calls.\n"
+    instructions: |
+      Next.js App Router + COSS UI + next-intl. Zero hardcoded user-facing
+      strings — all copy via message keys in apps/web/messages/en.json
+      (eslint-plugin-i18next enforces this). Use existing hooks/components
+      patterns. Client components only when needed. API calls go through the Go
+      proxy route, not direct external calls. No dangerouslySetInnerHTML; PR text
+      and the global config render as escaped plain text. Treat 429 and 5xx as
+      their own states, not as "invalid credentials" or "no session".
+  - path: apps/web/app/api/**
+    instructions: |
+      The /api/go proxy. It is not a security boundary: Go enforces auth. Check that
+      request bodies are forwarded byte for byte, the forwarded client address is
+      set from the trusted peer only, hop-by-hop and internal headers are stripped,
+      redirects never leave the origin, and that nothing under /internal or
+      /metrics is reachable through it.
+  - path: apps/web/next.config.ts
+    instructions: |
+      Rewrites and headers. The /hooks/github rewrite must pass the body through
+      untouched; no rewrite may expose the internal listener or /metrics.
+  - path: apps/web/middleware.ts
+    instructions: |
+      Login redirect and session presence check. Redirect targets must be
+      same-origin relative paths. Do not treat this as authorization: Go enforces
+      it.
   - path: apps/web/messages/**
-    instructions: 'next-intl message files. Keys use namespace.feature.element naming.
-
-      Namespaces: common, auth, dashboard, repos, integrations, ticket-projects,
-
-      notifications, settings. Keep keys stable; avoid duplicate strings.
-
-      '
+    instructions: |
+      next-intl message files. Keys use namespace.feature.element naming.
+      Namespaces: common, auth, setup, dashboard, integrations, ticket-projects,
+      settings, githubAppKey, nav, about. Keep keys stable; avoid duplicate strings.
+  - path: apps/docs/**
+    instructions: |
+      Customer documentation (Starlight). Check accuracy against the implemented
+      behaviour and docs/specs.html: webhook mode vs the degraded polling fallback,
+      the app and worker images, setup and sign-in, roles, tickets. Flag planned
+      features presented as available, wrong commands or env var names, and broken
+      links. Do not nitpick prose style.
   - path: Dockerfile
-    instructions: 'Single-image build for Go + Next.js. Check layer caching, non-root user,
-
-      minimal attack surface, and that secrets are not baked into layers.
-
-      '
+    instructions: |
+      One Dockerfile, two targets: `runtime` (the app) and `worker`. Check layer
+      caching, non-root users (node for the app; the worker and Renovate as two
+      separate non-root users), that the Renovate version stays pinned, that the
+      worker image has no /data, database or App key, that no secret is baked into
+      a layer, and that the worker runs under tini as PID 1.
+  - path: docker/**
+    instructions: |
+      Container entrypoint and worker smoke-test fixtures. The app entrypoint runs
+      migrations, then Go in the background, then Next in the foreground; one
+      process dying must not leave the other running. Shell scripts must be
+      shellcheck-clean, quote variables and never echo a secret.
+  - path: docker-compose.yml
+    instructions: |
+      Reference Compose file. The internal listener and the metrics listener are
+      never published to the host; no container gets the Docker socket; secrets
+      arrive as runtime env, not image content; the worker has no /data volume.
+      Service names must match the docs.
   - path: docs/**
-    instructions: 'Product spec and roadmap docs. Focus on accuracy vs implementation,
-
-      broken links, and contradictions with docs/specs.html or db/schema.sql.
-
-      Do not nitpick prose style.
-
-      '
+    instructions: |
+      Product spec and threat model. docs/specs.html is the contract, then
+      db/schema.sql, docs/stack.html and docs/index.html; docs/threat-model.md is
+      the security yardstick; docs/roadmap.html is historical. Focus on accuracy vs
+      implementation, broken links, anchors that no longer resolve, and
+      contradictions between documents. Do not nitpick prose style.
   - path: .github/**
-    instructions: 'CI/CD workflows. Verify jobs match the local gate (go test/lint, web
-
-      test/lint/typecheck, db:check). Avoid redundant or missing checks.
-
-      '
+    instructions: |
+      CI/CD workflows. Verify jobs match the local gate (go test/lint, web
+      test/lint/typecheck, db:check) and that the Renovate fixture jobs and image
+      builds still run. Check that workflow permissions are minimal, third-party
+      actions are pinned, and a release workflow builds from the release tag, not
+      the branch head. Avoid redundant or missing checks.
   labeling_instructions:
   - label: api
-    instructions: Go API, handlers, auth, polling, or provider changes under internal/ or cmd/.
+    instructions: |
+      Go backend changes under cmd/ or internal/: API handlers, auth, webhooks, setup, the GitHub
+      client, the job queue and internal listener, the Renovate worker, update-PR tracking, the
+      scheduler and polling fallback, or ticket integrations.
   - label: web
     instructions: Next.js UI changes under apps/web/.
   - label: db
@@ -141,9 +299,13 @@ reviews:
   pre_merge_checks:
     title:
       mode: warning
-      requirements: "Conventional Commits: <type>(<scope>)[#N]: <imperative summary>\nAllowed types: feat,\
-        \ fix, chore, refactor, docs, test, ci, build, perf\nAllowed scopes: release-ops, api, db, config,\
-        \ ci, docs, deps\nSubject \u226472 chars. Include [#N] GitHub issue number when task-linked.\n"
+      requirements: |
+        Conventional Commits: <type>(<scope>): <imperative summary>
+        Allowed types: feat, fix, chore, refactor, docs, test, ci, build, perf
+        Allowed scopes: release-ops, api, db, config, ci, docs, deps
+        The scope may be left out only when the pull request spans several areas.
+        Subject at most 72 chars. No issue number or [#N] in the title; issues are linked by
+        "Fixes #N" trailers in the commits and the PR body.
   tools:
     golangci-lint:
       enabled: true
