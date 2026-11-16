@@ -80,6 +80,7 @@ export function InstanceSettingsSection({
         <Field invalid={validationError}>
           <FieldLabel>{t("concurrencyCap")}</FieldLabel>
           <NumberField
+            disabled={updateSettings.isPending}
             min={MIN_CONCURRENCY_CAP}
             onValueChange={(value) => {
               setDraft(value);

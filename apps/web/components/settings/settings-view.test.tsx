@@ -366,6 +366,38 @@ describe("SettingsView", () => {
     ).toBeInTheDocument();
   });
 
+  it("locks the concurrency cap field while it saves", async () => {
+    const pool = mockAgent.get(ORIGIN);
+    replyAll(pool);
+    pool
+      .intercept({
+        path: `${V1}/settings`,
+        method: "PATCH",
+        body: JSON.stringify({ concurrencyCap: 5 }),
+      })
+      .reply(200, { ...settings, concurrencyCap: 5 }, JSON_HEADERS)
+      .delay(150);
+    renderView();
+
+    const field = await screen.findByLabelText(
+      messages.settings.instance.concurrencyCap,
+    );
+    fireEvent.change(field, { target: { value: "5" } });
+    fireEvent.click(
+      screen.getAllByRole("button", { name: messages.common.save })[0],
+    );
+
+    await waitFor(() => expect(field).toBeDisabled());
+    expect(
+      screen.queryByText(messages.settings.instance.saved),
+    ).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(messages.settings.instance.saved),
+    ).toBeInTheDocument();
+    expect(field).toBeEnabled();
+    expect(field).toHaveValue("5");
+  });
+
   it("refuses an empty cap without sending it", async () => {
     replyAll(mockAgent.get(ORIGIN));
     renderView();
