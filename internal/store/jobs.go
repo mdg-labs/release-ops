@@ -758,6 +758,9 @@ func (q *JobQueue) endAttempt(ctx context.Context, qtx *db.Queries, job db.Job, 
 	if rateLimited {
 		maxAttempts = q.cfg.RateLimitMaxAttempts
 	}
+	if err := captureGlobalConfig(ctx, qtx, job, run, now); err != nil {
+		return "", err
+	}
 	state := queue.StateSucceeded
 	outcome := queue.FailOutcome("")
 	switch {
@@ -813,6 +816,22 @@ func (q *JobQueue) endAttempt(ctx context.Context, qtx *db.Queries, job db.Job, 
 		}
 	}
 	return outcome, nil
+}
+
+// captureGlobalConfig stores the global config the attempt ran with on the settings of the
+// installation of the job's repository, read from the app's own rows. An attempt that
+// returned none leaves the stored copy as it is.
+func captureGlobalConfig(ctx context.Context, qtx *db.Queries, job db.Job, run *queue.RunRecord, now time.Time) error {
+	if run == nil || run.GlobalConfig == nil {
+		return nil
+	}
+	c := run.GlobalConfig
+	if c.Source != queue.GlobalConfigSourceRepository && c.Source != queue.GlobalConfigSourceMounted {
+		return fmt.Errorf("global config source %q", c.Source)
+	}
+	return qtx.CaptureJobGlobalConfig(ctx, db.CaptureJobGlobalConfigParams{
+		Content: c.Content, Source: c.Source, CapturedAt: formatTime(now), RepositoryID: job.RepositoryID,
+	})
 }
 
 // Kinds of the job_events rows the queue writes for a failed attempt that is retried.

@@ -984,3 +984,59 @@ func TestTheJobTokenIsKeptOutOfTheProcessLogs(t *testing.T) {
 		t.Fatalf("the job token is not removed from log text: %q", got)
 	}
 }
+
+// The result carries the global config text the run used, raw and never parsed, with token
+// shapes and the job's own secrets replaced before it leaves the worker.
+func TestTheRunRecordCarriesTheRedactedRawGlobalConfig(t *testing.T) {
+	ghp := "ghp_" + strings.Repeat("A", 36)
+	raw := "module.exports = {\r\n  // not JSON\r\n  token: '" + ghp + "',\r\n  other: '" + jobToken + "', w: '" + workerSecret + "',\r\n};\n"
+	gh := &fakeContents{files: map[string]string{"renovate-global/config.js": raw}}
+	e, j := fetchEnv(t, `true`, gh)
+
+	res := e.h.Run(context.Background(), j)
+	if res.Err != nil {
+		t.Fatalf("Run: %v", res.Err)
+	}
+	got := res.Run.GlobalConfig
+	if got == nil || got.Source != queue.GlobalConfigSourceRepository {
+		t.Fatalf("GlobalConfig = %+v, want one from the repository", got)
+	}
+	for _, leaked := range []string{ghp, jobToken, workerSecret} {
+		if strings.Contains(got.Content, leaked) {
+			t.Errorf("the global config carries %q", leaked)
+		}
+	}
+	want := strings.NewReplacer(ghp, "[REDACTED]", jobToken, "[REDACTED]", workerSecret, "[REDACTED]").Replace(raw)
+	if got.Content != want {
+		t.Errorf("content = %q, want the file as it is with only the secrets replaced: %q", got.Content, want)
+	}
+}
+
+func TestTheRunRecordNamesAMountAsTheGlobalConfigSource(t *testing.T) {
+	e := newEnv(t, `true`)
+	res := e.h.Run(context.Background(), job(0))
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	if g := res.Run.GlobalConfig; g == nil || g.Source != queue.GlobalConfigSourceMounted || g.Content != `{"onboarding": false, "requireConfig": "required"}` {
+		t.Errorf("GlobalConfig = %+v", g)
+	}
+}
+
+// A failed Renovate run still used the config, so it still reports it; a run that never found
+// one reports none, and the app keeps the copy it has.
+func TestAFailedRunReportsTheConfigItReadAndAMissingOneReportsNone(t *testing.T) {
+	e := newEnv(t, `exit 3`)
+	res := e.h.Run(context.Background(), job(0))
+	wantFailure(t, res, renovate.CodeRenovateExit)
+	if res.Run.GlobalConfig == nil || res.Run.GlobalConfig.Source != queue.GlobalConfigSourceMounted {
+		t.Errorf("a failed run's record = %+v, want the config it read", res.Run.GlobalConfig)
+	}
+
+	e, j := fetchEnv(t, `true`, &fakeContents{fail: 403})
+	res = e.h.Run(context.Background(), j)
+	wantFailure(t, res, renovate.CodeGlobalConfig)
+	if res.Run.GlobalConfig != nil {
+		t.Errorf("a run whose config was not found reports %+v", res.Run.GlobalConfig)
+	}
+}

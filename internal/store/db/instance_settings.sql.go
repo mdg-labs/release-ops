@@ -10,6 +10,39 @@ import (
 	"database/sql"
 )
 
+const captureJobGlobalConfig = `-- name: CaptureJobGlobalConfig :exec
+INSERT INTO installation_settings (installation_id, global_config_content, global_config_source, global_config_captured_at, updated_at)
+SELECT r.installation_id, CAST(?1 AS TEXT), CAST(?2 AS TEXT), CAST(?3 AS TEXT), CAST(?3 AS TEXT)
+FROM repositories r
+WHERE r.id = ?4
+ON CONFLICT (installation_id) DO UPDATE SET
+  global_config_content = excluded.global_config_content,
+  global_config_source = excluded.global_config_source,
+  global_config_captured_at = excluded.global_config_captured_at,
+  updated_at = excluded.updated_at
+`
+
+type CaptureJobGlobalConfigParams struct {
+	Content      string `json:"content"`
+	Source       string `json:"source"`
+	CapturedAt   string `json:"captured_at"`
+	RepositoryID string `json:"repository_id"`
+}
+
+// Stores the global Renovate config a worker used for a job, on the settings row of the
+// installation of the job's own repository: the installation is read from the app's rows,
+// never from the worker. The row may not exist yet, so the first capture creates it; the
+// row's other columns are untouched.
+func (q *Queries) CaptureJobGlobalConfig(ctx context.Context, arg CaptureJobGlobalConfigParams) error {
+	_, err := q.db.ExecContext(ctx, captureJobGlobalConfig,
+		arg.Content,
+		arg.Source,
+		arg.CapturedAt,
+		arg.RepositoryID,
+	)
+	return err
+}
+
 const getLiveInstallationGlobalConfig = `-- name: GetLiveInstallationGlobalConfig :one
 SELECT s.global_config_content, s.global_config_source, s.global_config_captured_at
 FROM installation_settings s
