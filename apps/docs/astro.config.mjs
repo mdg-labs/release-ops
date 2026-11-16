@@ -12,7 +12,7 @@ export default defineConfig({
     starlight({
       title: "Release Ops",
       description:
-        "Self-hosted release monitor — poll GitHub, GitLab, Gitea, Forgejo, and Codeberg; create tickets when releases ship.",
+        "Self-hosted dependency-update bot — a GitHub App runs Renovate on your repositories, and every update PR becomes a ticket in Kaneo, Jira or Linear.",
       social: [
         {
           icon: "github",
@@ -24,41 +24,7 @@ export default defineConfig({
       sidebar: [
         {
           label: "Start here",
-          items: [
-            { label: "Getting started", slug: "getting-started" },
-            { label: "FAQ", slug: "faq" },
-          ],
-        },
-        {
-          label: "User guide",
-          items: [
-            { label: "First steps", slug: "guide/first-steps" },
-            { label: "Dashboard", slug: "guide/dashboard" },
-            { label: "Integrations", slug: "guide/integrations" },
-            { label: "Ticket projects", slug: "guide/ticket-projects" },
-            { label: "Repos", slug: "guide/repos" },
-            { label: "Poll runs", slug: "guide/poll-runs" },
-            { label: "Notifications", slug: "guide/notifications" },
-            { label: "Settings", slug: "guide/settings" },
-            { label: "Users", slug: "guide/users" },
-            { label: "Profile", slug: "guide/profile" },
-            { label: "Signing in", slug: "guide/signing-in" },
-          ],
-        },
-        {
-          label: "Concepts",
-          items: [
-            { label: "Product overview", slug: "concepts/product-overview" },
-            {
-              label: "How release detection works",
-              slug: "concepts/release-detection",
-            },
-            { label: "Status mapping", slug: "concepts/status-mapping" },
-            {
-              label: "Open-ticket policy",
-              slug: "concepts/open-ticket-policy",
-            },
-          ],
+          items: [{ label: "Getting started", slug: "getting-started" }],
         },
       ],
       head: [

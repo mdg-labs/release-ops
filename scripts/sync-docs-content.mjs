@@ -32,7 +32,6 @@ const repoOnlyDocs = [
   "specs.html",
   "stack.html",
   "schema.html",
-  "mvp-checklist.md",
   "roadmap.html",
 ];
 
@@ -68,7 +67,7 @@ description: ${JSON.stringify(description)}
 mdToDoc({
   slug: "getting-started",
   title: "Getting started",
-  description: "Docker Compose setup, environment variables, admin bootstrap, and troubleshooting.",
+  description: "Run Release Ops with Docker Compose, create and install the GitHub App, sign in, and operate the instance: network access, backups and upgrades.",
   sourceFile: "getting-started.md",
 });
 
