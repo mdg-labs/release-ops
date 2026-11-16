@@ -23,38 +23,12 @@ func (q *Queries) AddSessionRepository(ctx context.Context, arg AddSessionReposi
 	return err
 }
 
-const deleteOtherSessionsByUserID = `-- name: DeleteOtherSessionsByUserID :exec
-DELETE FROM sessions
-WHERE user_id = ?
-  AND token != ?
-`
-
-type DeleteOtherSessionsByUserIDParams struct {
-	UserID string `json:"user_id"`
-	Token  string `json:"token"`
-}
-
-func (q *Queries) DeleteOtherSessionsByUserID(ctx context.Context, arg DeleteOtherSessionsByUserIDParams) error {
-	_, err := q.db.ExecContext(ctx, deleteOtherSessionsByUserID, arg.UserID, arg.Token)
-	return err
-}
-
 const deleteSessionRepositories = `-- name: DeleteSessionRepositories :exec
 DELETE FROM session_repositories WHERE session_token = ?
 `
 
 func (q *Queries) DeleteSessionRepositories(ctx context.Context, sessionToken string) error {
 	_, err := q.db.ExecContext(ctx, deleteSessionRepositories, sessionToken)
-	return err
-}
-
-const deleteSessionsByUserID = `-- name: DeleteSessionsByUserID :exec
-DELETE FROM sessions
-WHERE user_id = ?
-`
-
-func (q *Queries) DeleteSessionsByUserID(ctx context.Context, userID string) error {
-	_, err := q.db.ExecContext(ctx, deleteSessionsByUserID, userID)
 	return err
 }
 

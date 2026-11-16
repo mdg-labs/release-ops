@@ -65,11 +65,6 @@ func (s *Store) DB() *DB {
 	return s.db
 }
 
-// Settings returns the app settings repository.
-func (s *Store) Settings() SettingsRepository {
-	return settingsRepo{store: s}
-}
-
 // Integrations returns the integrations repository.
 func (s *Store) Integrations() IntegrationRepository {
 	return integrationRepo{store: s}

@@ -12,24 +12,6 @@ import (
 	"github.com/mdg-labs/release-ops/internal/store/db"
 )
 
-func TestGetAppSettingsTokenWindowDefaults(t *testing.T) {
-	t.Parallel()
-
-	s, _ := testStore(t)
-	ctx := context.Background()
-
-	got, err := s.Settings().Get(ctx)
-	if err != nil {
-		t.Fatalf("GetAppSettings: %v", err)
-	}
-	if got.ID != 1 {
-		t.Fatalf("ID = %d, want 1", got.ID)
-	}
-	if got.InviteTokenExpiryHours != 168 || got.PasswordResetTokenExpiryMinutes != 60 {
-		t.Fatalf("settings = %+v, want default 168 hours and 60 minutes", got)
-	}
-}
-
 func TestIntegrationCRUDRoundtrip(t *testing.T) {
 	t.Parallel()
 

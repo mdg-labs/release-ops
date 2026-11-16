@@ -10,23 +10,16 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/mdg-labs/release-ops/internal/logging"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
 )
 
-// Token kinds stored in auth_tokens.kind.
-const (
-	TokenKindInvitation    = "invitation"
-	TokenKindPasswordReset = "password_reset"
-	TokenKindEmailChange   = "email_change"
-	TokenKindSetup         = "setup"
-)
+// TokenKindSetup is the auth_tokens.kind of the first-start setup token, the only kind.
+const TokenKindSetup = "setup"
 
 const tokenByteLength = 32
 
-// rawTokenLogTTL is how long a one-time token is kept out of the logs: as long as the longest
-// an invitation can be valid (settings cap it at 720 hours).
+// rawTokenLogTTL is how long a one-time token is kept out of the logs.
 const rawTokenLogTTL = 30 * 24 * time.Hour
 
 var (
@@ -107,70 +100,6 @@ func (s *TokenService) Consume(ctx context.Context, id string) error {
 		return ErrTokenInvalid
 	}
 	return err
-}
-
-// CreateInvitation stores a pending invitation token and returns the raw secret.
-func (s *TokenService) CreateInvitation(ctx context.Context, email, invitedByUserID string, expiryHours int64) (string, storedb.AuthToken, error) {
-	raw, err := GenerateRawToken()
-	if err != nil {
-		return "", storedb.AuthToken{}, err
-	}
-
-	now := nowUTC()
-	expiresAt := time.Now().UTC().Add(time.Duration(expiryHours) * time.Hour).Format(isoTimeFormat)
-
-	row, err := s.Queries.CreateAuthToken(ctx, storedb.CreateAuthTokenParams{
-		ID:        uuid.NewString(),
-		Kind:      TokenKindInvitation,
-		Email:     email,
-		TokenHash: HashToken(raw),
-		NewEmail:  sql.NullString{},
-		InvitedByUserID: sql.NullString{
-			String: invitedByUserID,
-			Valid:  invitedByUserID != "",
-		},
-		ExpiresAt: expiresAt,
-		CreatedAt: now,
-	})
-	if err != nil {
-		return "", storedb.AuthToken{}, err
-	}
-	return raw, row, nil
-}
-
-// CreateEmailChange stores a pending email-change token and returns the raw secret.
-func (s *TokenService) CreateEmailChange(ctx context.Context, currentEmail, newEmail string, expiryMinutes int64) (string, storedb.AuthToken, error) {
-	raw, err := GenerateRawToken()
-	if err != nil {
-		return "", storedb.AuthToken{}, err
-	}
-
-	now := nowUTC()
-	if err := s.Queries.InvalidateEmailChangeTokensForEmail(ctx, storedb.InvalidateEmailChangeTokensForEmailParams{
-		UsedAt: sql.NullString{String: now, Valid: true},
-		Email:  currentEmail,
-	}); err != nil {
-		return "", storedb.AuthToken{}, err
-	}
-
-	expiresAt := time.Now().UTC().Add(time.Duration(expiryMinutes) * time.Minute).Format(isoTimeFormat)
-	row, err := s.Queries.CreateAuthToken(ctx, storedb.CreateAuthTokenParams{
-		ID:        uuid.NewString(),
-		Kind:      TokenKindEmailChange,
-		Email:     currentEmail,
-		TokenHash: HashToken(raw),
-		NewEmail: sql.NullString{
-			String: newEmail,
-			Valid:  true,
-		},
-		InvitedByUserID: sql.NullString{},
-		ExpiresAt:       expiresAt,
-		CreatedAt:       now,
-	})
-	if err != nil {
-		return "", storedb.AuthToken{}, err
-	}
-	return raw, row, nil
 }
 
 const isoTimeFormat = "2006-01-02T15:04:05.000Z"

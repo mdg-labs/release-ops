@@ -21,7 +21,6 @@ import (
 	"github.com/mdg-labs/release-ops/internal/crypto"
 	"github.com/mdg-labs/release-ops/internal/github"
 	"github.com/mdg-labs/release-ops/internal/logging"
-	"github.com/mdg-labs/release-ops/internal/mail"
 	"github.com/mdg-labs/release-ops/internal/metrics"
 	"github.com/mdg-labs/release-ops/internal/providers/integrationtester"
 	"github.com/mdg-labs/release-ops/internal/providers/ticket"
@@ -152,9 +151,6 @@ func run(ctx context.Context, cfg *config.Config) error {
 	}()
 
 	queries := storedb.New(db.Writer)
-	if err := auth.BootstrapFromEnv(context.Background(), queries, cfg.BootstrapAdminEmail, cfg.BootstrapAdminPassword); err != nil {
-		return fmt.Errorf("bootstrap admin: %w", err)
-	}
 
 	if err := setup.EnsureToken(ctx, db.Writer, cfg.SetupToken, cfg.AppURL, setupLogf); err != nil {
 		return fmt.Errorf("setup token: %w", err)
@@ -174,15 +170,6 @@ func run(ctx context.Context, cfg *config.Config) error {
 		AdminTeam:          cfg.AdminTeam,
 		ViewerTeam:         cfg.ViewerTeam,
 	})
-
-	if err := appStore.Settings().EnsureDefault(context.Background()); err != nil {
-		return fmt.Errorf("app settings: %w", err)
-	}
-
-	mailer, err := mail.NewFromEnv()
-	if err != nil {
-		return fmt.Errorf("mail: %w", err)
-	}
 
 	// One rate-limit budget per installation, shared by every consumer of its tokens and kept on
 	// the installation row, so an exhausted budget is still honoured after a restart.
@@ -257,7 +244,6 @@ func run(ctx context.Context, cfg *config.Config) error {
 		Queries:           queries,
 		Store:             appStore,
 		IntegrationTester: integrationtester.New(nil),
-		Mailer:            mailer,
 		AppURL:            cfg.AppURL,
 		WebhookURL:        cfg.WebhookURL,
 		GitHubBaseURL:     cfg.GitHubBaseURL,

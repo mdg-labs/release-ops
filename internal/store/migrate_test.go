@@ -17,7 +17,6 @@ import (
 )
 
 var wantTables = []string{
-	"app_settings",
 	"auth_identities",
 	"auth_tokens",
 	"github_app",
@@ -367,7 +366,7 @@ func TestV2SchemaConstraints(t *testing.T) {
 		t.Fatalf("job_runs and job_events after deleting their job = %d, %v; want them cascaded away", left, err)
 	}
 
-	mustExec(`INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES ('u1', 'u1@example.com', 'x', 't', 't')`)
+	mustExec(`INSERT INTO users (id, created_at, updated_at) VALUES ('u1', 't', 't')`)
 	const identity = `INSERT INTO auth_identities (id, user_id, provider, subject, login, created_at) VALUES (?, 'u1', ?, ?, 'octo', 't')`
 	mustExec(identity, "ai-1", "github", "4242")
 	mustFail("the same provider and subject twice", identity, "ai-2", "github", "4242")
@@ -460,7 +459,7 @@ func TestSessionsUserIDForeignKey(t *testing.T) {
 	}
 
 	if _, err := db.Writer.Exec(
-		`INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES ('u1', 'u1@example.com', 'x', 't', 't')`,
+		`INSERT INTO users (id, created_at, updated_at) VALUES ('u1', 't', 't')`,
 	); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}

@@ -77,7 +77,7 @@ func TestReadCompletesWhileWriteTransactionIsOpen(t *testing.T) {
 		t.Fatalf("BeginTx: %v", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO app_settings (id, updated_at) VALUES (1, 't')`); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO instance_settings (id, updated_at) VALUES (1, 't')`); err != nil {
 		t.Fatalf("insert in tx: %v", err)
 	}
 
@@ -88,7 +88,7 @@ func TestReadCompletesWhileWriteTransactionIsOpen(t *testing.T) {
 	done := make(chan result, 1)
 	go func() {
 		var n int
-		err := db.Reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM app_settings`).Scan(&n)
+		err := db.Reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM instance_settings`).Scan(&n)
 		done <- result{n, err}
 	}()
 
@@ -121,7 +121,7 @@ func TestReadCompletesWhileWriteTransactionIsOpen(t *testing.T) {
 	readCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
 	defer cancel()
 	var n int
-	err = legacy.QueryRowContext(readCtx, `SELECT COUNT(*) FROM app_settings`).Scan(&n)
+	err = legacy.QueryRowContext(readCtx, `SELECT COUNT(*) FROM instance_settings`).Scan(&n)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("legacy read while its transaction is open: err = %v, want the deadline to expire", err)
 	}
@@ -135,7 +135,7 @@ func TestWriteIsVisibleToReadPoolAfterCommit(t *testing.T) {
 
 	count := func() int {
 		var n int
-		if err := db.Reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM app_settings`).Scan(&n); err != nil {
+		if err := db.Reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM instance_settings`).Scan(&n); err != nil {
 			t.Fatalf("read: %v", err)
 		}
 		return n
@@ -144,7 +144,7 @@ func TestWriteIsVisibleToReadPoolAfterCommit(t *testing.T) {
 		t.Fatalf("rows before write = %d, want 0", got)
 	}
 
-	if _, err := db.Writer.ExecContext(ctx, `INSERT INTO app_settings (id, updated_at) VALUES (1, 't')`); err != nil {
+	if _, err := db.Writer.ExecContext(ctx, `INSERT INTO instance_settings (id, updated_at) VALUES (1, 't')`); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	if got := count(); got != 1 {
@@ -158,13 +158,13 @@ func TestReadPoolRejectsWrites(t *testing.T) {
 	db, _ := openTestDB(t)
 	ctx := context.Background()
 
-	_, err := db.Reader.ExecContext(ctx, `INSERT INTO app_settings (id, updated_at) VALUES (1, 't')`)
+	_, err := db.Reader.ExecContext(ctx, `INSERT INTO instance_settings (id, updated_at) VALUES (1, 't')`)
 	if err == nil {
 		t.Fatal("write on the read pool succeeded, want an error")
 	}
 
 	var n int
-	if err := db.Writer.QueryRowContext(ctx, `SELECT COUNT(*) FROM app_settings`).Scan(&n); err != nil {
+	if err := db.Writer.QueryRowContext(ctx, `SELECT COUNT(*) FROM instance_settings`).Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if n != 0 {
@@ -185,7 +185,7 @@ func TestOpenPathConvertsRollbackJournalDatabaseToWAL(t *testing.T) {
 	if got := pragmaString(t, old, "journal_mode"); got == "wal" {
 		t.Fatalf("migrated database already in %q mode, want a rollback journal", got)
 	}
-	if _, err := old.Exec(`INSERT INTO app_settings (id, invite_token_expiry_hours, updated_at) VALUES (1, 90, 't')`); err != nil {
+	if _, err := old.Exec(`INSERT INTO instance_settings (id, concurrency_cap, updated_at) VALUES (1, 7, 't')`); err != nil {
 		t.Fatalf("seed old db: %v", err)
 	}
 	if err := old.Close(); err != nil {
@@ -201,12 +201,12 @@ func TestOpenPathConvertsRollbackJournalDatabaseToWAL(t *testing.T) {
 	if got := pragmaString(t, db.Writer, "journal_mode"); got != "wal" {
 		t.Fatalf("journal_mode after open = %q, want wal", got)
 	}
-	var hours int
-	if err := db.Reader.QueryRow(`SELECT invite_token_expiry_hours FROM app_settings WHERE id = 1`).Scan(&hours); err != nil {
+	var cap int
+	if err := db.Reader.QueryRow(`SELECT concurrency_cap FROM instance_settings WHERE id = 1`).Scan(&cap); err != nil {
 		t.Fatalf("read existing row: %v", err)
 	}
-	if hours != 90 {
-		t.Fatalf("invite_token_expiry_hours = %d, want 90", hours)
+	if cap != 7 {
+		t.Fatalf("concurrency_cap = %d, want 7", cap)
 	}
 }
 
@@ -227,8 +227,8 @@ func TestStoreRoutesReadsToPoolAndWritesToWriter(t *testing.T) {
 
 	readCtx, cancelRead := context.WithTimeout(ctx, 5*time.Second)
 	defer cancelRead()
-	if _, err := s.Settings().Get(readCtx); err != nil {
-		t.Fatalf("Settings().Get while the writer is held: %v", err)
+	if _, err := s.InstanceSettings().ConcurrencyCap(readCtx); err != nil {
+		t.Fatalf("ConcurrencyCap while the writer is held: %v", err)
 	}
 	if _, err := s.Integrations().List(readCtx); err != nil {
 		t.Fatalf("Integrations().List while the writer is held: %v", err)
@@ -236,9 +236,9 @@ func TestStoreRoutesReadsToPoolAndWritesToWriter(t *testing.T) {
 
 	writeCtx, cancelWrite := context.WithTimeout(ctx, 300*time.Millisecond)
 	defer cancelWrite()
-	err = s.Settings().EnsureDefault(writeCtx)
+	err = s.InstanceSettings().SetConcurrencyCap(writeCtx, 3)
 	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("EnsureDefault while the writer is held: err = %v, want it to wait for the writer connection", err)
+		t.Fatalf("SetConcurrencyCap while the writer is held: err = %v, want it to wait for the writer connection", err)
 	}
 }
 

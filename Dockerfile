@@ -29,8 +29,7 @@ ENV CGO_ENABLED=0
 # Release tag (v1.2.3) or nightly-<short sha>; empty or unset builds as "dev".
 ARG APP_VERSION=dev
 RUN VERSION="${APP_VERSION:-dev}" && \
-    go build -trimpath -ldflags="-s -w -X github.com/mdg-labs/release-ops/internal/buildinfo.Version=${VERSION}" -o /out/server ./cmd/server && \
-    go build -trimpath -ldflags="-s -w" -o /out/seed-admin ./cmd/seed-admin
+    go build -trimpath -ldflags="-s -w -X github.com/mdg-labs/release-ops/internal/buildinfo.Version=${VERSION}" -o /out/server ./cmd/server
 
 # The worker image: the pinned Renovate image plus the release-ops binary. It has no data
 # volume and no Docker socket. Two Unix users: "worker" runs `release-ops worker` and holds the
@@ -67,9 +66,8 @@ RUN apt-get update && \
 WORKDIR /app
 
 COPY --from=go-build /out/server /app/server
-COPY --from=go-build /out/seed-admin /app/seed-admin
 COPY docker/entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh /app/server /app/seed-admin
+RUN chmod +x /app/entrypoint.sh /app/server
 # `release-ops admin login-link` (specs.html § 3.6) runs from a shell in this container.
 RUN ln -s /app/server /usr/local/bin/release-ops
 

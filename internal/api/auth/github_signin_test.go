@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -258,14 +259,14 @@ func newSignInHarness(t *testing.T, opts harnessOptions) *signInHarness {
 	}
 	h.handlers.Roles = opts.roles
 	h.handlers.Access = st.Access()
-	linkHandlers := &auth.LoginLinkHandlers{Sessions: sm, Users: st.SignIn()}
+	linkHandlers := &auth.LoginLinkHandlers{Sessions: sm, Users: st.SignIn(), Now: h.handlers.Now}
 
 	r := chi.NewRouter()
 	r.Use(sm.LoadAndSave)
 	r.Get("/auth/github/login", h.handlers.Login)
 	r.Get("/auth/github/callback", h.handlers.Callback)
 	r.Post("/auth/login-link", linkHandlers.Redeem)
-	r.Get("/auth/session", (&auth.Handlers{SessionManager: sm}).Session)
+	r.Get("/auth/session", (&auth.Handlers{SessionManager: sm, Authorizer: &auth.Authorizer{Sessions: sm, Roles: opts.roles, Now: h.handlers.Now}}).Session)
 	r.With(apimw.RequireSession(sm)).Get("/protected", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	h.srv = httptest.NewServer(r)
 	t.Cleanup(h.srv.Close)
@@ -978,15 +979,22 @@ func TestSafeRedirectPath(t *testing.T) {
 	}
 }
 
-func TestPublicAuthPathsListTheGitHubSignInPaths(t *testing.T) {
+// PublicAuthPaths is exactly the GitHub sign-in, the break-glass link, the session read and the
+// setup flow: no path of the removed local accounts is public.
+func TestPublicAuthPathsAreExactlyTheGitHubAndSetupPaths(t *testing.T) {
 	t.Parallel()
-	for _, want := range []string{"/api/v1/auth/github/login", "/api/v1/auth/github/callback", "/api/v1/auth/login-link", "/api/v1/auth/session"} {
-		found := false
-		for _, p := range auth.PublicAuthPaths {
-			found = found || p == want
-		}
-		if !found {
-			t.Errorf("PublicAuthPaths is missing %s", want)
-		}
+	want := []string{
+		"/api/v1/auth/session",
+		"/api/v1/auth/github/login",
+		"/api/v1/auth/github/callback",
+		"/api/v1/auth/login-link",
+		"/api/v1/setup/status",
+		"/api/v1/setup/session",
+		"/api/v1/setup/manifest",
+		"/api/v1/setup/callback",
+		"/api/v1/setup/installed",
+	}
+	if !slices.Equal(auth.PublicAuthPaths, want) {
+		t.Errorf("PublicAuthPaths = %v, want exactly %v", auth.PublicAuthPaths, want)
 	}
 }

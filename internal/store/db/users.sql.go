@@ -10,18 +10,6 @@ import (
 	"database/sql"
 )
 
-const countUsers = `-- name: CountUsers :one
-SELECT COUNT(*) AS count
-FROM users
-`
-
-func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countUsers)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createGitHubIdentity = `-- name: CreateGitHubIdentity :exec
 INSERT INTO auth_identities (id, user_id, provider, subject, login, created_at)
 VALUES (?, ?, 'github', ?, ?, ?)
@@ -59,64 +47,6 @@ type CreateGitHubUserParams struct {
 
 func (q *Queries) CreateGitHubUser(ctx context.Context, arg CreateGitHubUserParams) error {
 	_, err := q.db.ExecContext(ctx, createGitHubUser, arg.ID, arg.CreatedAt, arg.UpdatedAt)
-	return err
-}
-
-const createUser = `-- name: CreateUser :one
-
-INSERT INTO users (
-  id,
-  email,
-  password_hash,
-  created_at,
-  updated_at
-) VALUES (
-  ?1,
-  CAST(?2 AS TEXT),
-  CAST(?3 AS TEXT),
-  ?4,
-  ?5
-)
-RETURNING id, created_at, updated_at
-`
-
-type CreateUserParams struct {
-	ID           string `json:"id"`
-	Email        string `json:"email"`
-	PasswordHash string `json:"password_hash"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
-}
-
-type CreateUserRow struct {
-	ID        string `json:"id"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
-}
-
-// A user who signs in with GitHub only has no email and no password_hash, so the queries of
-// the local-account code read both through COALESCE and keep plain strings. The writes return
-// only what they generate: sqlc cannot give a COALESCE in RETURNING a name.
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
-	row := q.db.QueryRowContext(ctx, createUser,
-		arg.ID,
-		arg.Email,
-		arg.PasswordHash,
-		arg.CreatedAt,
-		arg.UpdatedAt,
-	)
-	var i CreateUserRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
-const deleteUser = `-- name: DeleteUser :exec
-DELETE FROM users
-WHERE id = ?
-`
-
-func (q *Queries) DeleteUser(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, deleteUser, id)
 	return err
 }
 
@@ -164,85 +94,21 @@ func (q *Queries) GetGitHubIdentity(ctx context.Context, subject string) (AuthId
 	return i, err
 }
 
-const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT
-  id,
-  CAST(COALESCE(email, '') AS TEXT) AS email,
-  CAST(COALESCE(password_hash, '') AS TEXT) AS password_hash,
-  created_at,
-  updated_at
-FROM users
-WHERE lower(email) = lower(?1)
-LIMIT 1
-`
-
-type GetUserByEmailRow struct {
-	ID           string `json:"id"`
-	Email        string `json:"email"`
-	PasswordHash string `json:"password_hash"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
-}
-
-func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error) {
-	row := q.db.QueryRowContext(ctx, getUserByEmail, email)
-	var i GetUserByEmailRow
-	err := row.Scan(
-		&i.ID,
-		&i.Email,
-		&i.PasswordHash,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getUserByID = `-- name: GetUserByID :one
-SELECT
-  id,
-  CAST(COALESCE(email, '') AS TEXT) AS email,
-  CAST(COALESCE(password_hash, '') AS TEXT) AS password_hash,
-  created_at,
-  updated_at
-FROM users
-WHERE id = ?
-LIMIT 1
-`
-
-type GetUserByIDRow struct {
-	ID           string `json:"id"`
-	Email        string `json:"email"`
-	PasswordHash string `json:"password_hash"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
-}
-
-func (q *Queries) GetUserByID(ctx context.Context, id string) (GetUserByIDRow, error) {
-	row := q.db.QueryRowContext(ctx, getUserByID, id)
-	var i GetUserByIDRow
-	err := row.Scan(
-		&i.ID,
-		&i.Email,
-		&i.PasswordHash,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const listUsers = `-- name: ListUsers :many
 SELECT
-  id,
-  CAST(email AS TEXT) AS email,
-  created_at
-FROM users
-WHERE email IS NOT NULL
-ORDER BY created_at ASC
+  u.id,
+  ai.login,
+  u.created_at
+FROM users u
+JOIN auth_identities ai
+  ON ai.user_id = u.id
+ AND ai.provider = 'github'
+ORDER BY u.created_at ASC, u.id ASC
 `
 
 type ListUsersRow struct {
 	ID        string `json:"id"`
-	Email     string `json:"email"`
+	Login     string `json:"login"`
 	CreatedAt string `json:"created_at"`
 }
 
@@ -255,7 +121,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 	var items []ListUsersRow
 	for rows.Next() {
 		var i ListUsersRow
-		if err := rows.Scan(&i.ID, &i.Email, &i.CreatedAt); err != nil {
+		if err := rows.Scan(&i.ID, &i.Login, &i.CreatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -321,60 +187,4 @@ type UpdateGitHubIdentityLoginParams struct {
 func (q *Queries) UpdateGitHubIdentityLogin(ctx context.Context, arg UpdateGitHubIdentityLoginParams) error {
 	_, err := q.db.ExecContext(ctx, updateGitHubIdentityLogin, arg.Login, arg.ID)
 	return err
-}
-
-const updateUserEmail = `-- name: UpdateUserEmail :one
-UPDATE users
-SET
-  email = CAST(?1 AS TEXT),
-  updated_at = ?2
-WHERE id = ?3
-RETURNING id, created_at, updated_at
-`
-
-type UpdateUserEmailParams struct {
-	Email     string `json:"email"`
-	UpdatedAt string `json:"updated_at"`
-	ID        string `json:"id"`
-}
-
-type UpdateUserEmailRow struct {
-	ID        string `json:"id"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
-}
-
-func (q *Queries) UpdateUserEmail(ctx context.Context, arg UpdateUserEmailParams) (UpdateUserEmailRow, error) {
-	row := q.db.QueryRowContext(ctx, updateUserEmail, arg.Email, arg.UpdatedAt, arg.ID)
-	var i UpdateUserEmailRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
-}
-
-const updateUserPassword = `-- name: UpdateUserPassword :one
-UPDATE users
-SET
-  password_hash = CAST(?1 AS TEXT),
-  updated_at = ?2
-WHERE id = ?3
-RETURNING id, created_at, updated_at
-`
-
-type UpdateUserPasswordParams struct {
-	PasswordHash string `json:"password_hash"`
-	UpdatedAt    string `json:"updated_at"`
-	ID           string `json:"id"`
-}
-
-type UpdateUserPasswordRow struct {
-	ID        string `json:"id"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
-}
-
-func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (UpdateUserPasswordRow, error) {
-	row := q.db.QueryRowContext(ctx, updateUserPassword, arg.PasswordHash, arg.UpdatedAt, arg.ID)
-	var i UpdateUserPasswordRow
-	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
-	return i, err
 }

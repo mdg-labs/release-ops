@@ -507,8 +507,8 @@ func serverEnv(t *testing.T, extra ...string) []string {
 }
 
 func TestTheServerCommandLogsNoSecretAndPrintsTheGeneratedSetupTokenOnce(t *testing.T) {
-	out := runMain(t, nil, serverEnv(t, "BOOTSTRAP_ADMIN_EMAIL=admin@example.com", "BOOTSTRAP_ADMIN_PASSWORD=opaque-bootstrap-password-0001"), "release-ops server listening")
-	for _, secret := range []string{"opaque-session-secret-for-the-process-test-0001", "opaque-bootstrap-password-0001", strings.Repeat("a1b2c3d4", 8)} {
+	out := runMain(t, nil, serverEnv(t), "release-ops server listening")
+	for _, secret := range []string{"opaque-session-secret-for-the-process-test-0001", strings.Repeat("a1b2c3d4", 8)} {
 		if strings.Contains(out, secret) {
 			t.Errorf("the server's log carries %.12q...:\n%s", secret, out)
 		}

@@ -168,9 +168,9 @@ func TestGitHubAppSignInReturnsTheDecryptedClientSecret(t *testing.T) {
 	}
 }
 
-// A GitHub-only user has no email and no password; the local-account queries still read the
-// users table without error: the user is not listed, and reads back with empty strings.
-func TestLocalAccountQueriesTolerateAGitHubOnlyUser(t *testing.T) {
+// ListUsers lists the users that have a GitHub identity, by their current login, and leaves out
+// a user row with no identity (one a local account left behind).
+func TestListUsersListsGitHubIdentitiesOnly(t *testing.T) {
 	t.Parallel()
 	st, db, _ := newGitHubAppStore(t)
 	ctx := context.Background()
@@ -178,20 +178,12 @@ func TestLocalAccountQueriesTolerateAGitHubOnlyUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sign-in: %v", err)
 	}
-	if _, err := db.Writer.Exec(`INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES ('local', 'a@example.com', 'h', 't', 't')`); err != nil {
-		t.Fatalf("seed local user: %v", err)
+	if _, err := db.Writer.Exec(`INSERT INTO users (id, created_at, updated_at) VALUES ('orphan', 't', 't')`); err != nil {
+		t.Fatalf("seed user without identity: %v", err)
 	}
 
-	q := storedb.New(db.Reader)
-	listed, err := q.ListUsers(ctx)
-	if err != nil || len(listed) != 1 || listed[0].ID != "local" {
-		t.Fatalf("ListUsers = %+v, %v; want only the local account", listed, err)
-	}
-	got, err := q.GetUserByID(ctx, userID)
-	if err != nil || got.Email != "" || got.PasswordHash != "" {
-		t.Fatalf("GetUserByID = %+v, %v; want empty email and hash, no error", got, err)
-	}
-	if _, err := q.GetUserByEmail(ctx, ""); err == nil {
-		t.Fatal("GetUserByEmail(\"\") found the GitHub-only user")
+	listed, err := storedb.New(db.Reader).ListUsers(ctx)
+	if err != nil || len(listed) != 1 || listed[0].ID != userID || listed[0].Login != "octocat" {
+		t.Fatalf("ListUsers = %+v, %v; want only the GitHub user octocat", listed, err)
 	}
 }

@@ -129,8 +129,8 @@ func seedSessionUser(t *testing.T, db *sql.DB, id string) {
 	t.Helper()
 
 	_, err := db.Exec(
-		`INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES (?, ?, 'x', '2026-08-06T12:00:00.000Z', '2026-08-06T12:00:00.000Z')`,
-		id, id+"@example.com",
+		`INSERT INTO users (id, created_at, updated_at) VALUES (?, '2026-08-06T12:00:00.000Z', '2026-08-06T12:00:00.000Z')`,
+		id,
 	)
 	if err != nil {
 		t.Fatalf("seed user %s: %v", id, err)

@@ -8,13 +8,6 @@ import (
 	"database/sql"
 )
 
-type AppSetting struct {
-	ID                              int64  `json:"id"`
-	InviteTokenExpiryHours          int64  `json:"invite_token_expiry_hours"`
-	PasswordResetTokenExpiryMinutes int64  `json:"password_reset_token_expiry_minutes"`
-	UpdatedAt                       string `json:"updated_at"`
-}
-
 type AuthIdentity struct {
 	ID        string `json:"id"`
 	UserID    string `json:"user_id"`
@@ -25,15 +18,12 @@ type AuthIdentity struct {
 }
 
 type AuthToken struct {
-	ID              string         `json:"id"`
-	Kind            string         `json:"kind"`
-	Email           string         `json:"email"`
-	TokenHash       string         `json:"token_hash"`
-	NewEmail        sql.NullString `json:"new_email"`
-	InvitedByUserID sql.NullString `json:"invited_by_user_id"`
-	ExpiresAt       string         `json:"expires_at"`
-	UsedAt          sql.NullString `json:"used_at"`
-	CreatedAt       string         `json:"created_at"`
+	ID        string         `json:"id"`
+	Kind      string         `json:"kind"`
+	TokenHash string         `json:"token_hash"`
+	ExpiresAt string         `json:"expires_at"`
+	UsedAt    sql.NullString `json:"used_at"`
+	CreatedAt string         `json:"created_at"`
 }
 
 type GithubApp struct {
@@ -254,11 +244,9 @@ type UpdateTicket struct {
 }
 
 type User struct {
-	ID           string         `json:"id"`
-	Email        sql.NullString `json:"email"`
-	PasswordHash sql.NullString `json:"password_hash"`
-	CreatedAt    string         `json:"created_at"`
-	UpdatedAt    string         `json:"updated_at"`
+	ID        string `json:"id"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 type WebhookDelivery struct {

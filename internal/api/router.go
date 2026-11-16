@@ -19,7 +19,6 @@ import (
 	"github.com/mdg-labs/release-ops/internal/api/hooks"
 	apimw "github.com/mdg-labs/release-ops/internal/api/middleware"
 	"github.com/mdg-labs/release-ops/internal/github"
-	"github.com/mdg-labs/release-ops/internal/mail"
 	"github.com/mdg-labs/release-ops/internal/queue"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
@@ -34,9 +33,7 @@ type ServerDeps struct {
 	Queries           *storedb.Queries
 	Store             *store.Store
 	IntegrationTester handlers.IntegrationTester
-	Mailer            mail.Mailer
-	// AppURL is the browser-facing URL of the instance (APP_URL), used in the links of
-	// outgoing mail.
+	// AppURL is the browser-facing URL of the instance (APP_URL).
 	AppURL string
 	// WebhookURL is the configured WEBHOOK_URL, empty when unset, and GitHubBaseURL the
 	// configured GITHUB_BASE_URL; with GitHub they serve the manifest flow on /setup.
