@@ -92,9 +92,9 @@ func walk(node parse.Node, dot scope) error {
 	case *parse.IfNode:
 		return walkBranch(&n.BranchNode, dot, dot)
 	case *parse.WithNode:
-		return walkBranch(&n.BranchNode, dot, innerScope(n.Pipe, dot))
+		return walkBranch(&n.BranchNode, dot, pipeScope(n.Pipe, dot))
 	case *parse.RangeNode:
-		return walkBranch(&n.BranchNode, dot, innerScope(n.Pipe, dot))
+		return walkBranch(&n.BranchNode, dot, elementScope(pipeScope(n.Pipe, dot)))
 	case *parse.TemplateNode:
 		return walk(n.Pipe, dot)
 	}
@@ -114,28 +114,35 @@ func walkBranch(b *parse.BranchNode, dot, inner scope) error {
 	return nil
 }
 
-// innerScope is the dot inside a with or range over the pipeline: a single field gives the
-// type of its value, or of the elements of the Dependencies list; anything else is not
-// tracked.
-func innerScope(pipe *parse.PipeNode, dot scope) scope {
-	if pipe == nil || len(pipe.Cmds) != 1 || len(pipe.Cmds[0].Args) != 1 {
+// pipeScope is the scope of the value a pipeline yields when it is a single field or the dot
+// itself, which is the dot inside a with over it; anything else is not tracked.
+func pipeScope(pipe *parse.PipeNode, dot scope) scope {
+	if pipe == nil || len(pipe.Cmds) != 1 || len(pipe.Cmds[0].Args) != 1 || dot == scopeOpaque {
 		return scopeOpaque
 	}
-	field, ok := pipe.Cmds[0].Args[0].(*parse.FieldNode)
-	if !ok || dot == scopeOpaque {
-		return scopeOpaque
+	switch arg := pipe.Cmds[0].Args[0].(type) {
+	case *parse.DotNode:
+		return dot
+	case *parse.FieldNode:
+		current := dot
+		for _, name := range arg.Ident {
+			current = next(current, name)
+		}
+		return current
 	}
-	current := dot
-	for _, name := range field.Ident {
-		current = next(current, name)
-	}
-	switch current {
+	return scopeOpaque
+}
+
+// elementScope is the dot inside a range over a value of scope s: the elements of the
+// Dependencies list have the dependency's fields, and a string has none that are tracked.
+func elementScope(s scope) scope {
+	switch s {
 	case scopeList:
 		return scopeDependency
 	case scopeValue:
 		return scopeOpaque
 	}
-	return current
+	return s
 }
 
 func checkField(ident []string, dot scope) error {
