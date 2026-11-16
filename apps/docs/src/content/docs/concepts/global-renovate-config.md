@@ -5,7 +5,7 @@ description: "Where Renovate's self-hosted configuration comes from, which setti
 
 Renovate has two levels of configuration. A repository's own `renovate.json` and the shared presets it extends decide what Renovate updates. The global (self-hosted) configuration decides how Renovate runs on your host: concurrency limits, schedules, which commands it may run and similar. Release Ops runs Renovate unmodified, so it uses the same global configuration file you may already have.
 
-The file is yours. It lives in git or on the host, it keeps its own review and validation, and Release Ops never parses, evaluates or edits it. The file can be JavaScript, so Release Ops only passes it on.
+The file is yours. It lives in git or on the host, it keeps its own review and validation, and Release Ops never edits your copy of it. The file can be JavaScript, which Release Ops never runs. For a JSON file, Release Ops drops the settings it owns (see below) from the copy it hands to Renovate. A JavaScript file goes to Renovate as it is.
 
 ## Where the file comes from
 
@@ -31,7 +31,7 @@ Release Ops sets four settings itself, for every job:
 | `repositories` | The one repository of the job |
 | `allowScripts` | Always `false`: package-manager install scripts never run |
 
-If your file contains one of these, Release Ops removes it before it hands the file to Renovate and logs a warning that names the setting, never a value. When you reuse an existing file, delete `repositories`, `platform` and `token` from it.
+If a JSON file contains one of these, at the top level or inside `force`, Release Ops removes it from the copy it hands to Renovate and logs a warning that names the setting, never a value. A JavaScript file is not changed, and neither is a JSON file Release Ops cannot parse. For those, the settings Release Ops sets for the job win over your file, except inside `force`, which Renovate applies over everything else. When you reuse a JavaScript file, delete `platform`, `token`, `repositories` and `allowScripts` from it yourself, including any inside `force`.
 
 Everything else in the file is Renovate's: presets, `prConcurrentLimit`, schedules, `binarySource` and so on. Release Ops does not set these for you, so your file carries them.
 
