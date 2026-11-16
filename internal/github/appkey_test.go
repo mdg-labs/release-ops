@@ -50,6 +50,36 @@ func TestVerifyKeyAcceptsOnlyAKeyGitHubKnowsForThisApp(t *testing.T) {
 	}
 }
 
+func TestVerifyKeyRefusesAMalformedPEMWithoutCallingGitHub(t *testing.T) {
+	t.Parallel()
+	r := newRig(t)
+	ctx := context.Background()
+	before := len(r.fake.Requests())
+
+	validDER := x509.MarshalPKCS1PrivateKey(mustKey(t))
+	cases := map[string][]byte{
+		"valid markers with invalid base64": []byte("-----BEGIN RSA PRIVATE KEY-----\n!!!not base64!!!\n-----END RSA PRIVATE KEY-----\n"),
+		"truncated PKCS#1 DER":              pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: validDER[:len(validDER)/2]}),
+	}
+	for name, candidate := range cases {
+		if _, err := r.client.VerifyKey(ctx, candidate); !errors.Is(err, github.ErrInvalidPrivateKey) {
+			t.Errorf("VerifyKey(%s) = %v, want ErrInvalidPrivateKey", name, err)
+		}
+	}
+	if after := len(r.fake.Requests()); after != before {
+		t.Errorf("GitHub received %d requests for malformed keys, want none", after-before)
+	}
+}
+
+func mustKey(t *testing.T) *rsa.PrivateKey {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key
+}
+
 func TestVerifyKeyDoesNotPrintTheKeyInItsErrors(t *testing.T) {
 	t.Parallel()
 	r := newRig(t)
