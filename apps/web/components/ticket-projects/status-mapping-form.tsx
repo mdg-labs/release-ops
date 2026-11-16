@@ -9,7 +9,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { CheckboxGroup } from "@/components/ui/checkbox-group";
 import { Label } from "@/components/ui/label";
 import { useTicketMetadataStatuses } from "@/lib/hooks/use-ticket-metadata";
+import type { TicketMetadataItem } from "@/lib/query/types";
 import type { StatusMappingValues } from "@/lib/ticket-projects/status-mapping";
+import { cn } from "@/lib/utils";
 
 type StatusMappingFormProps = {
   integrationId: string | null;
@@ -17,6 +19,55 @@ type StatusMappingFormProps = {
   values: StatusMappingValues;
   onChange: (values: StatusMappingValues) => void;
 };
+
+type StatusGroupProps = {
+  kind: "open" | "done" | "cancelled";
+  groupId: string;
+  label: string;
+  hint: string;
+  statuses: TicketMetadataItem[];
+  value: string[];
+  onValueChange: (value: string[]) => void;
+  className?: string;
+};
+
+function StatusGroup({
+  kind,
+  groupId,
+  label,
+  hint,
+  statuses,
+  value,
+  onValueChange,
+  className,
+}: StatusGroupProps): React.ReactElement {
+  const labelId = `${groupId}-${kind}`;
+  const hintId = `${labelId}-hint`;
+
+  return (
+    <div className={cn("flex flex-col items-start gap-2", className)}>
+      <Label render={<p id={labelId} />}>
+        {label} <span aria-hidden="true">*</span>
+      </Label>
+      <CheckboxGroup
+        aria-describedby={hintId}
+        aria-labelledby={labelId}
+        onValueChange={onValueChange}
+        value={value}
+      >
+        {statuses.map((status) => (
+          <Label key={status.id}>
+            <Checkbox value={status.id} />
+            {status.label?.trim() || status.name}
+          </Label>
+        ))}
+      </CheckboxGroup>
+      <p className="text-muted-foreground text-xs" id={hintId}>
+        {hint}
+      </p>
+    </div>
+  );
+}
 
 export function StatusMappingForm({
   integrationId,
@@ -68,91 +119,34 @@ export function StatusMappingForm({
       {metadataEnabled && statuses.length > 0 ? (
         <>
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="flex flex-col items-start gap-2">
-              <p
-                className="inline-flex items-center gap-2 font-medium text-base/4.5 text-foreground sm:text-sm/4"
-                id={`${groupId}-open`}
-              >
-                {t("statusOpen")} <span aria-hidden="true">*</span>
-              </p>
-              <CheckboxGroup
-                aria-describedby={`${groupId}-open-hint`}
-                aria-labelledby={`${groupId}-open`}
-                onValueChange={(next) => onChange({ ...values, open: next })}
-                value={values.open}
-              >
-                {statuses.map((status) => (
-                  <Label key={status.id}>
-                    <Checkbox value={status.id} />
-                    {status.label?.trim() || status.name}
-                  </Label>
-                ))}
-              </CheckboxGroup>
-              <p
-                className="text-muted-foreground text-xs"
-                id={`${groupId}-open-hint`}
-              >
-                {t("statusOpenHint")}
-              </p>
-            </div>
-
-            <div className="flex flex-col items-start gap-2">
-              <p
-                className="inline-flex items-center gap-2 font-medium text-base/4.5 text-foreground sm:text-sm/4"
-                id={`${groupId}-done`}
-              >
-                {t("statusDone")} <span aria-hidden="true">*</span>
-              </p>
-              <CheckboxGroup
-                aria-describedby={`${groupId}-done-hint`}
-                aria-labelledby={`${groupId}-done`}
-                onValueChange={(next) => onChange({ ...values, done: next })}
-                value={values.done}
-              >
-                {statuses.map((status) => (
-                  <Label key={status.id}>
-                    <Checkbox value={status.id} />
-                    {status.label?.trim() || status.name}
-                  </Label>
-                ))}
-              </CheckboxGroup>
-              <p
-                className="text-muted-foreground text-xs"
-                id={`${groupId}-done-hint`}
-              >
-                {t("statusDoneHint")}
-              </p>
-            </div>
-
-            <div className="flex flex-col items-start gap-2 md:col-span-2">
-              <p
-                className="inline-flex items-center gap-2 font-medium text-base/4.5 text-foreground sm:text-sm/4"
-                id={`${groupId}-cancelled`}
-              >
-                {t("statusCancelled")} <span aria-hidden="true">*</span>
-              </p>
-              <CheckboxGroup
-                aria-describedby={`${groupId}-cancelled-hint`}
-                aria-labelledby={`${groupId}-cancelled`}
-                onValueChange={(next) =>
-                  onChange({ ...values, cancelled: next })
-                }
-                value={values.cancelled}
-              >
-                {statuses.map((status) => (
-                  <Label key={status.id}>
-                    <Checkbox value={status.id} />
-                    {status.label?.trim() || status.name}
-                  </Label>
-                ))}
-              </CheckboxGroup>
-              <p
-                className="text-muted-foreground text-xs"
-                id={`${groupId}-cancelled-hint`}
-              >
-                {t("statusCancelledHint")}
-              </p>
-            </div>
+            <StatusGroup
+              groupId={groupId}
+              hint={t("statusOpenHint")}
+              kind="open"
+              label={t("statusOpen")}
+              onValueChange={(next) => onChange({ ...values, open: next })}
+              statuses={statuses}
+              value={values.open}
+            />
+            <StatusGroup
+              groupId={groupId}
+              hint={t("statusDoneHint")}
+              kind="done"
+              label={t("statusDone")}
+              onValueChange={(next) => onChange({ ...values, done: next })}
+              statuses={statuses}
+              value={values.done}
+            />
+            <StatusGroup
+              className="md:col-span-2"
+              groupId={groupId}
+              hint={t("statusCancelledHint")}
+              kind="cancelled"
+              label={t("statusCancelled")}
+              onValueChange={(next) => onChange({ ...values, cancelled: next })}
+              statuses={statuses}
+              value={values.cancelled}
+            />
           </div>
 
           <MetadataSelect
