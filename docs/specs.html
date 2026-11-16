@@ -1416,6 +1416,7 @@ func CreateDefinitelyNotStored(err error) bool</code></pre>
   "id": "uuid", "fullName": "your-org/api", "defaultBranch": "main",
   "enabled": true, "configState": "present",
   "ticketProjectId": null, "effectiveTicketProjectId": "uuid", "effectiveTicketProjectName": "Jira — DEV",
+  "htmlUrl": "https://github.com/your-org/api",                 // the repository's page on GitHub, null when the GitHub web URL is not known
   "dashboardUrl": "https://github.com/your-org/api/issues/7",   // the Dependency Dashboard, null when unknown
   "openUpdatePrs": 3,
   "lastJob": { "id": "uuid", "state": "succeeded", "finishedAt": "2026-11-14T12:00:00.000Z" }
@@ -1423,6 +1424,7 @@ func CreateDefinitelyNotStored(err error) bool</code></pre>
 
 // PATCH /api/v1/repositories/{id}
 { "enabled": false, "ticketProjectId": "uuid-or-null" }</code></pre>
+  <p><code>htmlUrl</code> is part of the list items and of the single-repository response, for viewers and admins alike. It is the repository's page on GitHub, built by the app from <code>GITHUB_BASE_URL</code> (§9) and the repository's full name, and the page links the full name to it (§8.3); the browser cannot know <code>GITHUB_BASE_URL</code> itself. It is <code>null</code> when the app has no GitHub web URL to build it from, as <code>dashboardUrl</code> is.</p>
 
   <h3>7.6 Update PRs</h3>
   <p>The dashboard's data (§5.1, §8.3). The reads are read-only: PR state comes from GitHub, tickets from the engine, and no read changes either. The one write is the admin's clear action for a stuck pending marker. A viewer sees only the PRs of their repositories.</p>
@@ -1453,7 +1455,7 @@ func CreateDefinitelyNotStored(err error) bool</code></pre>
     <tr><th>Method</th><th>Path</th><th>Role</th><th>Description</th></tr>
     <tr><td>GET</td><td><code>/api/v1/jobs</code></td><td>viewer</td><td>List, newest first. <code>?repositoryId=</code>, <code>?state=</code> (<code>queued</code>, <code>running</code>, <code>succeeded</code>, <code>failed</code>)</td></tr>
     <tr><td>GET</td><td><code>/api/v1/jobs/{id}</code></td><td>viewer</td><td>One job with its attempts (<code>runs</code>, each with its bounded, redacted <strong>log excerpt</strong>) and its <code>events</code></td></tr>
-    <tr><td>GET</td><td><code>/api/v1/problems</code></td><td>viewer</td><td>The open problems. An admin sees all kinds; a viewer sees <code>job_failed</code> and <code>ticket_failed</code> for their repositories only (installation-level problems carry no repository and are admin only). For a viewer a <code>ticket_failed</code> problem carries <strong>no error text</strong>: <code>message</code> is <code>null</code> and only <code>kind</code>, <code>repository</code>, <code>since</code> and the update PR in <code>ref</code> are given; the message from <code>update_tickets.last_error</code> is returned to an admin only</td></tr>
+    <tr><td>GET</td><td><code>/api/v1/problems</code></td><td>viewer</td><td>The open problems. An admin sees all kinds; a viewer sees <code>job_failed</code> and <code>ticket_failed</code> for their repositories only (installation-level problems carry no repository and are admin only). For a viewer a <code>ticket_failed</code> problem carries <strong>no error text</strong>: <code>message</code> is <code>null</code> and only <code>kind</code>, <code>repository</code>, <code>since</code> and the update PR in <code>ref</code> (<code>updatePrId</code>, <code>updatePrUrl</code>) are given; the message from <code>update_tickets.last_error</code> is returned to an admin only</td></tr>
   </table>
   <pre><code>// GET /api/v1/jobs — item
 {
@@ -1472,12 +1474,18 @@ func CreateDefinitelyNotStored(err error) bool</code></pre>
 
 // GET /api/v1/problems — item
 { "kind": "job_failed", "repository": { "id": "uuid", "fullName": "your-org/api" },
-  "since": "...", "message": "...", "ref": { "jobId": "uuid" } }</code></pre>
+  "since": "...", "message": "...", "ref": { "jobId": "uuid" } }
+
+// GET /api/v1/problems — a ticket_failed item, as an admin sees it
+{ "kind": "ticket_failed", "repository": { "id": "uuid", "fullName": "your-org/api" },
+  "since": "...", "message": "...",
+  "ref": { "updatePrId": "uuid", "updatePrUrl": "https://github.com/your-org/api/pull/42", "updateTicketId": "uuid" } }</code></pre>
+  <p><strong><code>ref</code> of a <code>ticket_failed</code> problem.</strong> <code>updatePrUrl</code> is the update PR's URL, the link §8.3 gives the problem. <code>updateTicketId</code> is the <code>update_tickets</code> row id the clear action takes (<code>POST /api/v1/update-tickets/{id}/clear-pending-marker</code>, §7.6). It is returned to an <strong>admin only</strong>, and only for a row whose pending marker can be cleared: the marker is set and no ticket is stored (§5.2.2). A viewer never receives it, and an admin does not receive it for a row that only has an error or already has its ticket stored.</p>
   <p><strong>Problem kinds.</strong> Problems are derived from stored state when asked for, not stored; a problem disappears when its cause does.</p>
   <table>
     <tr><th><code>kind</code></th><th>Shown while</th><th>From</th></tr>
     <tr><td><code>job_failed</code></td><td>The repository's latest finished job is <code>failed</code></td><td><code>jobs</code>, <code>job_runs.error_message</code></td></tr>
-    <tr><td><code>ticket_failed</code></td><td>An <code>update_tickets</code> row has a <code>last_error</code> (creation, update or transition failing, §5.2) or a pending marker an admin has not resolved (§5.2.2)</td><td><code>update_tickets</code>; <code>ref</code> carries the update PR id; <code>message</code> is <code>last_error</code> for an admin and <code>null</code> for a viewer</td></tr>
+    <tr><td><code>ticket_failed</code></td><td>An <code>update_tickets</code> row has a <code>last_error</code> (creation, update or transition failing, §5.2) or a pending marker an admin has not resolved (§5.2.2)</td><td><code>update_tickets</code>; <code>ref</code> carries the update PR (<code>updatePrId</code>, and <code>updatePrUrl</code>, its link on GitHub, for every role that sees the problem) and, for an admin only, <code>updateTicketId</code>; <code>message</code> is <code>last_error</code> for an admin and <code>null</code> for a viewer</td></tr>
     <tr><td><code>rate_limited</code></td><td>The installation's budget is exhausted and its reset time is in the future (§2.8), or the latest attempt ended rate-limited</td><td><code>installations.rate_limit_*</code></td></tr>
     <tr><td><code>permissions_lost</code></td><td>The installation's <code>permissions</code> miss one the manifest requests (§3.3), or its status is <code>suspended</code> or <code>removed</code></td><td><code>installations</code>; the message names the missing permissions, never a credential</td></tr>
   </table>
