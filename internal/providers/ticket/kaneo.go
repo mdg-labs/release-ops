@@ -283,7 +283,7 @@ func (p *KaneoProvider) doJSON(ctx context.Context, method, path string, reqBody
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		payload, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return newHTTPStatusError(resp.StatusCode, string(payload))
+		return newHTTPStatusError(resp, string(payload))
 	}
 
 	if respBody == nil {

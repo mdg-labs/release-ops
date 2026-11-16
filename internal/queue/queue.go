@@ -10,6 +10,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/mdg-labs/release-ops/internal/ratelimit"
 )
 
 // Kind is the type of work a job asks for. v2.0 has one.
@@ -154,6 +156,10 @@ const (
 	ReportUnreadable = "unreadable"
 )
 
+// ErrorCodeRateLimited is the error code of an attempt that ended because GitHub's rate limit
+// was exhausted, whether Renovate hit it or the app refused to start the run for it.
+const ErrorCodeRateLimited = "rate_limited"
+
 // Caps on what a run report stores.
 const (
 	// MaxLogExcerptBytes caps the stored log excerpt; the tail of the log is kept.
@@ -186,6 +192,11 @@ type FailParams struct {
 	// RetryAfter is the minimum delay an upstream asked for (Retry-After, a rate-limit
 	// reset); zero when there is none.
 	RetryAfter time.Duration
+	// RateLimited marks an attempt that ended because GitHub or another upstream refused it for
+	// a rate limit. Such an attempt is deferred with Config.RateLimitDelay and has
+	// Config.RateLimitMaxAttempts attempts instead of Config.MaxAttempts: waiting out a limit
+	// is not the job failing.
+	RateLimited bool
 	// Run is the attempt's record. Every attempt leaves a job_runs row: nil stores one holding
 	// only the outcome, the times and the retry delay.
 	Run *RunRecord
@@ -299,6 +310,13 @@ type Config struct {
 	BackoffMax time.Duration
 	// BackoffJitter is the fraction of the delay the jitter spreads it by, in [0, 1).
 	BackoffJitter float64
+	// RateLimitMaxAttempts is the number of attempts a job gets when its attempts end rate
+	// limited, before it ends failed.
+	RateLimitMaxAttempts int
+	// RateLimitMaxDelay caps the exponential backoff of rate-limited attempts: it is the one
+	// hour an installation token lives. A delay an upstream asked for (Retry-After, the reset
+	// time) is never shortened by it.
+	RateLimitMaxDelay time.Duration
 	// DefaultConcurrencyCap applies while instance_settings holds no row.
 	DefaultConcurrencyCap int
 }
@@ -311,6 +329,8 @@ func DefaultConfig() Config {
 		BackoffBase:           30 * time.Second,
 		BackoffMax:            15 * time.Minute,
 		BackoffJitter:         0.2,
+		RateLimitMaxAttempts:  8,
+		RateLimitMaxDelay:     time.Hour,
 		DefaultConcurrencyCap: 2,
 	}
 }
@@ -328,6 +348,20 @@ func (c Config) Backoff(attemptsUsed int, rnd float64) time.Duration {
 	}
 	factor := 1 - c.BackoffJitter + 2*c.BackoffJitter*rnd
 	return time.Duration(float64(d) * factor)
+}
+
+// RateLimitDelay returns the delay before the retry that follows attemptsUsed attempts, the
+// last of which was rate limited: BackoffBase doubled per attempt up to RateLimitMaxDelay, or
+// retryAfter when that is longer, spread upward by the jitter so that jobs held back by the
+// same limit do not all return at the reset. It is never shorter than retryAfter. rnd is a value
+// in [0, 1).
+func (c Config) RateLimitDelay(attemptsUsed int, retryAfter time.Duration, rnd float64) time.Duration {
+	d := c.BackoffBase
+	for i := 1; i < attemptsUsed && d < c.RateLimitMaxDelay; i++ {
+		d *= 2
+	}
+	d = min(d, c.RateLimitMaxDelay)
+	return ratelimit.Jittered(max(d, retryAfter), c.BackoffJitter, rnd)
 }
 
 // RunReaper reaps expired leases once at start and then every interval until ctx ends, so

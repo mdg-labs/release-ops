@@ -3,8 +3,10 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mdg-labs/release-ops/internal/github"
+	"github.com/mdg-labs/release-ops/internal/store"
 )
 
 func validEnv(t *testing.T) {
@@ -30,6 +32,8 @@ func validEnv(t *testing.T) {
 	t.Setenv("GLOBAL_CONFIG_REPO", "")
 	t.Setenv("GLOBAL_CONFIG_REF", "")
 	t.Setenv("METRICS_ADDR", "")
+	t.Setenv("JOB_HISTORY_RETENTION_DAYS", "")
+	t.Setenv("WEBHOOK_DELIVERY_RETENTION_DAYS", "")
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -444,6 +448,50 @@ func TestLoadGlobalConfigRef(t *testing.T) {
 			}
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("Load() = %v, want %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestLoadRetentionDefaultsAndSettings(t *testing.T) {
+	validEnv(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.JobHistoryRetention != 30*24*time.Hour || cfg.WebhookDeliveryRetention != 7*24*time.Hour {
+		t.Errorf("retention = %v and %v, want the documented 30 and 7 days", cfg.JobHistoryRetention, cfg.WebhookDeliveryRetention)
+	}
+	if cfg.JobHistoryRetention != store.DefaultJobHistoryRetention || cfg.WebhookDeliveryRetention != store.DefaultWebhookDeliveryRetention {
+		t.Error("the config defaults and the store defaults differ")
+	}
+
+	t.Setenv("JOB_HISTORY_RETENTION_DAYS", "90")
+	t.Setenv("WEBHOOK_DELIVERY_RETENTION_DAYS", " 14 ")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.JobHistoryRetention != 90*24*time.Hour || cfg.WebhookDeliveryRetention != 14*24*time.Hour {
+		t.Errorf("retention = %v and %v, want 90 and 14 days", cfg.JobHistoryRetention, cfg.WebhookDeliveryRetention)
+	}
+}
+
+func TestLoadRejectsInvalidRetention(t *testing.T) {
+	for _, tc := range []struct{ key, value, want string }{
+		{"JOB_HISTORY_RETENTION_DAYS", "0", "JOB_HISTORY_RETENTION_DAYS must be a whole number of days from 1 to 3650, got 0"},
+		{"JOB_HISTORY_RETENTION_DAYS", "-3", "JOB_HISTORY_RETENTION_DAYS"},
+		{"JOB_HISTORY_RETENTION_DAYS", "30d", `got "30d"`},
+		{"JOB_HISTORY_RETENTION_DAYS", "1.5", "JOB_HISTORY_RETENTION_DAYS"},
+		{"JOB_HISTORY_RETENTION_DAYS", "99999", "from 1 to 3650"},
+		{"WEBHOOK_DELIVERY_RETENTION_DAYS", "3", "WEBHOOK_DELIVERY_RETENTION_DAYS must be a whole number of days from 4 to 3650, got 3"},
+		{"WEBHOOK_DELIVERY_RETENTION_DAYS", "abc", "WEBHOOK_DELIVERY_RETENTION_DAYS"},
+	} {
+		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+			validEnv(t)
+			t.Setenv(tc.key, tc.value)
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Load() error = %v, want it to contain %q", err, tc.want)
 			}
 		})
 	}

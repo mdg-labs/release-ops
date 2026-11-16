@@ -84,3 +84,23 @@ ON CONFLICT (installation_id) DO UPDATE SET
 
 -- name: TicketProjectExists :one
 SELECT COUNT(*) FROM ticket_projects WHERE id = ?;
+
+-- The installation's shared GitHub rate-limit budget as last seen in a response (specs.html
+-- section 2.8). The row's other columns are untouched: a budget is not a change of the
+-- installation.
+-- name: UpdateInstallationRateLimit :execrows
+UPDATE installations
+SET rate_limit_remaining = ?,
+    rate_limit_limit = ?,
+    rate_limit_reset_at = ?
+WHERE github_installation_id = ?;
+
+-- The stored budgets of the installations that are not removed, read at start so an exhausted
+-- budget is still honoured after a restart.
+-- name: ListInstallationRateLimits :many
+SELECT github_installation_id, rate_limit_remaining, rate_limit_limit, rate_limit_reset_at
+FROM installations
+WHERE status <> 'removed'
+  AND rate_limit_remaining IS NOT NULL
+  AND rate_limit_reset_at IS NOT NULL
+ORDER BY github_installation_id;

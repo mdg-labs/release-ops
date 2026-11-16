@@ -9,12 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/mdg-labs/release-ops/internal/providers/ticket"
+	"github.com/mdg-labs/release-ops/internal/ratelimit"
 	"github.com/mdg-labs/release-ops/internal/store"
 	"github.com/mdg-labs/release-ops/internal/tickettemplate"
 	"github.com/mdg-labs/release-ops/internal/updateprs"
@@ -97,6 +99,9 @@ type Engine struct {
 	Wake *updateprs.Notifier
 	// Now defaults to time.Now.
 	Now func() time.Time
+	// Rand returns a value in [0, 1) for the jitter of a retry the ticket system's rate limit
+	// asked for; it defaults to math/rand.
+	Rand func() float64
 	// SweepInterval is how often the pass over the PRs without a ticket runs by itself;
 	// it defaults to a minute.
 	SweepInterval time.Duration
@@ -391,7 +396,7 @@ func (e *Engine) fail(ctx context.Context, c store.TicketCandidate, projectID st
 	defer cancel()
 	err := e.Tickets.FailCreate(writeCtx, store.FailCreateInput{
 		UpdatePRID: c.ID, TicketProjectID: projectID, Message: redact(cause), ClearMarker: clearMarker,
-		NextAttemptAt: now.Add(backoff(attempts)), Now: now,
+		NextAttemptAt: now.Add(e.retryDelay(attempts, cause)), Now: now,
 	})
 	if err != nil {
 		return OutcomeFailed, errors.Join(cause, fmt.Errorf("record the failure: %w", err))
@@ -474,6 +479,26 @@ func dependenciesHash(deps []store.UpdatePRDependency) string {
 	slices.Sort(lines)
 	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
 	return hex.EncodeToString(sum[:])
+}
+
+// rateLimitJitter is the fraction a retry the ticket system's rate limit asked for is spread
+// by, upward only, so the retries of several PRs held back by one limit do not return together.
+const rateLimitJitter = 0.2
+
+// retryDelay is the pause before a failed operation is tried again: the backoff, or, when the
+// ticket system answered with a rate limit, at least the delay it asked for (Retry-After or the
+// reset time), spread by the jitter. A rate-limited create stored nothing
+// (ticket.CreateDefinitelyNotStored), so the retry cannot create a second ticket.
+func (e *Engine) retryDelay(attempts int64, cause error) time.Duration {
+	d := backoff(attempts)
+	if asked, limited := ticket.RateLimitDelay(cause); limited {
+		rnd := rand.Float64
+		if e.Rand != nil {
+			rnd = e.Rand
+		}
+		d = max(d, ratelimit.Jittered(asked, rateLimitJitter, rnd()))
+	}
+	return d
 }
 
 // backoff is the pause after the attempt-th failure of a PR: a minute, doubling, at most half an

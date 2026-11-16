@@ -105,7 +105,6 @@ func TestPausingKeepsTheAttemptHistoryOfAJobWaitingForItsRetry(t *testing.T) {
 	if err != nil || outcome != queue.FailRequeued {
 		t.Fatalf("Fail = %v, %v; want the job queued for its retry", outcome, err)
 	}
-	e.exec(t, `INSERT INTO job_events (id, job_id, job_run_id, at, kind) SELECT 'evt-1', job_id, id, 't', 'attempt_failed' FROM job_runs WHERE job_id = ?`, job.ID)
 	noRuns := e.enqueue(t, e.repos[1], queue.PriorityNormal)
 
 	for _, id := range e.repos {
@@ -130,8 +129,8 @@ func TestPausingKeepsTheAttemptHistoryOfAJobWaitingForItsRetry(t *testing.T) {
 		t.Errorf("queued jobs after the pauses = %d, want none", n)
 	}
 	var events int
-	if err := e.db.Writer.QueryRow(`SELECT COUNT(*) FROM job_events WHERE job_id = ?`, job.ID).Scan(&events); err != nil || events != 1 {
-		t.Errorf("job_events after the pause = %d, %v; want the one event kept", events, err)
+	if err := e.db.Writer.QueryRow(`SELECT COUNT(*) FROM job_events WHERE job_id = ? AND kind = 'retry_scheduled'`, job.ID).Scan(&events); err != nil || events != 1 {
+		t.Errorf("retry_scheduled events after the pause = %d, %v; want the one the failed attempt wrote kept", events, err)
 	}
 	if n := e.count(t, `id = ?`, noRuns.JobID); n != 0 {
 		t.Errorf("the queued job without attempts still exists, want it deleted")

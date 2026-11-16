@@ -34,12 +34,22 @@ type renovateFlow struct {
 
 func newRenovateFlow(t *testing.T, claimWait time.Duration) *renovateFlow {
 	t.Helper()
+	return newRenovateFlowWith(t, claimWait, nil)
+}
+
+// newRenovateFlowWith is newRenovateFlow with a hook to tune the queue and the internal listener
+// before they are built, which the rate-limit tests use for a fake clock and the shared budget.
+func newRenovateFlowWith(t *testing.T, claimWait time.Duration, tune func(*ServerDeps, *store.JobQueueOptions, *internalapi.Options)) *renovateFlow {
+	t.Helper()
 
 	deps := newRoutesTestDeps(t)
 	f := &renovateFlow{started: make(chan time.Duration, 8)}
-	f.jobs = store.NewJobQueue(deps.Store.DB(), store.JobQueueOptions{
-		OnJobStarted: func(lag time.Duration) { f.started <- lag },
-	})
+	queueOpts := store.JobQueueOptions{OnJobStarted: func(lag time.Duration) { f.started <- lag }}
+	apiOpts := internalapi.Options{Secret: renovateWorkerSecret, ClaimWait: claimWait}
+	if tune != nil {
+		tune(deps, &queueOpts, &apiOpts)
+	}
+	f.jobs = store.NewJobQueue(deps.Store.DB(), queueOpts)
 	deps.Queue = f.jobs
 	deps.WebhookURL = "https://release-ops.example.com/hooks/github"
 	routes := hooks.NewRoutes()
@@ -60,7 +70,7 @@ func newRenovateFlow(t *testing.T, claimWait time.Duration) *renovateFlow {
 	t.Cleanup(srv.Close)
 	f.webhookFlow = &webhookFlow{srv: srv, deps: deps}
 
-	internal := httptest.NewServer(internalapi.NewHandler(f.jobs, internalapi.Options{Secret: renovateWorkerSecret, ClaimWait: claimWait}))
+	internal := httptest.NewServer(internalapi.NewHandler(f.jobs, apiOpts))
 	t.Cleanup(internal.Close)
 	f.worker = worker.NewClient(internal.URL, renovateWorkerSecret, nil)
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mdg-labs/release-ops/internal/logging"
+	"github.com/mdg-labs/release-ops/internal/ratelimit"
 )
 
 const (
@@ -43,6 +44,9 @@ type KeyVersioner interface {
 type AppClientOptions struct {
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+	// Budget is the rate-limit budget shared by every consumer of the installation tokens; nil
+	// means none is kept. The client of api must use the same budget (Client.UseRateLimits).
+	Budget *ratelimit.Budget
 }
 
 // AppClient authenticates as the GitHub App: it signs the App JWT, confirms installations and
@@ -50,9 +54,10 @@ type AppClientOptions struct {
 // the private key. Installation tokens are cached in memory until shortly before they expire
 // and are never written anywhere.
 type AppClient struct {
-	api   *Client
-	creds CredentialsSource
-	now   func() time.Time
+	api    *Client
+	creds  CredentialsSource
+	now    func() time.Time
+	budget *ratelimit.Budget
 
 	mu      sync.Mutex
 	entries map[tokenKey]*tokenEntry
@@ -79,11 +84,17 @@ type tokenEntry struct {
 
 // NewAppClient returns an AppClient that calls GitHub through api.
 func NewAppClient(api *Client, creds CredentialsSource, opts AppClientOptions) *AppClient {
-	c := &AppClient{api: api, creds: creds, now: opts.Now, entries: map[tokenKey]*tokenEntry{}}
+	c := &AppClient{api: api, creds: creds, now: opts.Now, budget: opts.Budget, entries: map[tokenKey]*tokenEntry{}}
 	if c.now == nil {
 		c.now = time.Now
 	}
 	return c
+}
+
+// GateAny refuses work that is not tied to one installation while any installation's budget is
+// exhausted, and counts it as a deferral of the consumer.
+func (c *AppClient) GateAny(consumer string) error {
+	return c.budget.GateAny(consumer)
 }
 
 // appJWT signs a fresh App JWT. The key is cleared as soon as the signature is made.
@@ -147,24 +158,41 @@ func (c *AppClient) Installation(ctx context.Context, installationID int64) (*In
 	return inst, nil
 }
 
-// Token returns an access token for every repository of the installation.
+// Token returns an access token for every repository of the installation, for the reconcile
+// of the installation and its repositories.
 func (c *AppClient) Token(ctx context.Context, installationID int64) (InstallationToken, error) {
+	return c.tokenFor(ctx, installationID, ratelimit.ConsumerReconcile)
+}
+
+// tokenFor is Token for a consumer of the installation's rate-limit budget: while the budget is
+// exhausted no token is served and the consumer is deferred.
+func (c *AppClient) tokenFor(ctx context.Context, installationID int64, consumer string) (InstallationToken, error) {
+	if err := c.budget.Gate(installationID, consumer); err != nil {
+		return InstallationToken{}, err
+	}
 	return c.cached(tokenKey{installationID: installationID}, tokenRefreshMargin, func() (InstallationToken, error) {
 		return c.mint(ctx, installationID, nil)
 	})
 }
 
 // RepositoryToken returns an access token scoped to the target repository (owner/name) plus
-// the preset repositories. A preset owned by another account than the target cannot be covered
-// by the installation and is left out with a warning; if GitHub refuses the token because the
-// App is not installed on a preset, the token is requested for the target alone.
+// the preset repositories, for the PR reconcile. A preset owned by another account than the
+// target cannot be covered by the installation and is left out with a warning; if GitHub refuses
+// the token because the App is not installed on a preset, the token is requested for the target
+// alone.
 func (c *AppClient) RepositoryToken(ctx context.Context, installationID int64, target string, presets []string) (InstallationToken, error) {
+	if err := c.budget.Gate(installationID, ratelimit.ConsumerReconcile); err != nil {
+		return InstallationToken{}, err
+	}
 	return c.repositoryToken(ctx, installationID, target, presets, tokenRefreshMargin)
 }
 
 // JobToken is RepositoryToken for a token that a job will use unrenewed: a cached token with
 // less than JobTokenMinLife left is not served, so every job gets about the full lifetime.
 func (c *AppClient) JobToken(ctx context.Context, installationID int64, target string, presets []string) (InstallationToken, error) {
+	if err := c.budget.Gate(installationID, ratelimit.ConsumerRenovateRun); err != nil {
+		return InstallationToken{}, err
+	}
 	return c.repositoryToken(ctx, installationID, target, presets, JobTokenMinLife)
 }
 
@@ -210,7 +238,12 @@ func (c *AppClient) mint(ctx context.Context, installationID int64, names []stri
 	if err != nil {
 		return InstallationToken{}, err
 	}
-	return c.api.CreateInstallationToken(ctx, jwt, installationID, names)
+	tok, err := c.api.CreateInstallationToken(ctx, jwt, installationID, names)
+	if err != nil {
+		return InstallationToken{}, err
+	}
+	c.budget.Bind(tok.value, installationID, tok.ExpiresAt)
+	return tok, nil
 }
 
 // cached returns the entry's token while it is more than minLife from expiry and

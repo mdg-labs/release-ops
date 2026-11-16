@@ -27,6 +27,7 @@ import (
 	"github.com/mdg-labs/release-ops/internal/providers/ticket"
 	"github.com/mdg-labs/release-ops/internal/queue"
 	"github.com/mdg-labs/release-ops/internal/queue/internalapi"
+	"github.com/mdg-labs/release-ops/internal/ratelimit"
 	"github.com/mdg-labs/release-ops/internal/scheduler"
 	"github.com/mdg-labs/release-ops/internal/store"
 	storedb "github.com/mdg-labs/release-ops/internal/store/db"
@@ -185,8 +186,18 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("mail: %w", err)
 	}
 
-	githubClient := github.NewClient(github.APIBaseURL(cfg.GitHubBaseURL), 0)
-	appClient := github.NewAppClient(githubClient, appStore.GitHubApp(), github.AppClientOptions{})
+	// One rate-limit budget per installation, shared by every consumer of its tokens and kept on
+	// the installation row, so an exhausted budget is still honoured after a restart.
+	budget := ratelimit.NewBudget(ratelimit.Options{Store: appStore.RateLimits()})
+	stored, err := appStore.RateLimits().Load(ctx)
+	if err != nil {
+		return fmt.Errorf("rate limits: %w", err)
+	}
+	for _, s := range stored {
+		budget.Seed(s)
+	}
+	githubClient := github.NewClient(github.APIBaseURL(cfg.GitHubBaseURL), 0).UseRateLimits(budget)
+	appClient := github.NewAppClient(githubClient, appStore.GitHubApp(), github.AppClientOptions{Budget: budget})
 	syncer := github.NewSyncer(appClient, appStore.InstallationSync())
 	recovery := github.NewRecovery(appClient, github.RecoveryOptions{})
 	botResolver := github.NewBotResolver(githubClient, appStore.GitHubApp())
@@ -203,6 +214,9 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("metrics: %w", err)
 	}
 	if err := metrics.RegisterOpenUpdatePRs(registry, appStore.UpdatePRs()); err != nil {
+		return fmt.Errorf("metrics: %w", err)
+	}
+	if _, err := metrics.RegisterRateLimits(registry, budget); err != nil {
 		return fmt.Errorf("metrics: %w", err)
 	}
 	// ticketWake starts the ticket engine's pass over the PRs without a ticket: every committed
@@ -225,7 +239,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		Repositories: appStore.UpdatePRs(),
 		Report: func(repositoryID string, err error) {
 			if err != nil {
-				slog.Error("update PR reconcile failed", "repository", repositoryID, "err", err)
+				logPassFailure("update PR reconcile failed", err, "repository", repositoryID)
 			}
 		},
 	}
@@ -265,6 +279,12 @@ func run(ctx context.Context, cfg *config.Config) error {
 	appCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var background sync.WaitGroup
+	background.Go(func() { budget.Run(appCtx) })
+	background.Go(func() {
+		store.NewRetention(db, store.RetentionOptions{
+			JobHistory: cfg.JobHistoryRetention, WebhookDeliveries: cfg.WebhookDeliveryRetention,
+		}).Run(appCtx)
+	})
 	background.Go(func() {
 		queue.RunReaper(appCtx, jobs, reapInterval, func(err error) { slog.Error("job reaper failed", "err", err) })
 	})
@@ -297,7 +317,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 			defer ticker.Stop()
 			recovery.Run(appCtx, ticker.C, func(redelivered int, err error) {
 				if err != nil {
-					slog.Error("github redelivery failed", "err", err)
+					logPassFailure("github redelivery failed", err)
 				}
 				if redelivered > 0 {
 					slog.Info("github redelivery: asked GitHub to redeliver failed webhook deliveries", "count", redelivered)
@@ -320,7 +340,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		defer ticker.Stop()
 		syncer.Run(appCtx, ticker.C, func(err error) {
 			if err != nil {
-				slog.Error("github sync failed", "err", err)
+				logPassFailure("github sync failed", err)
 			}
 			startup.syncPass(appCtx, err, appStore.GitHubApp())
 		})
@@ -338,7 +358,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	if cfg.InternalAddr != "" {
 		background.Go(func() {
 			slog.Info("release-ops internal listener", "addr", cfg.InternalAddr)
-			if err := serveInternalWith(appCtx, cfg, jobs, appClient, prRunner.Trigger); err != nil {
+			if err := serveInternalWith(appCtx, cfg, jobs, appClient, prRunner.Trigger, budget); err != nil {
 				internalErr = fmt.Errorf("internal listener: %w", err)
 				cancel()
 			}
@@ -360,12 +380,13 @@ func run(ctx context.Context, cfg *config.Config) error {
 // serveInternal serves the worker routes on INTERNAL_ADDR until ctx ends.
 // Its token route mints job tokens with the App's key, which stays in this process.
 func serveInternal(ctx context.Context, cfg *config.Config, q queue.Queue, tokens internalapi.TokenIssuer) error {
-	return serveInternalWith(ctx, cfg, q, tokens, nil)
+	return serveInternalWith(ctx, cfg, q, tokens, nil, nil)
 }
 
 // serveInternalWith is serveInternal that tells afterResult, when not nil, the repository of
-// every stored job result.
-func serveInternalWith(ctx context.Context, cfg *config.Config, q queue.Queue, tokens internalapi.TokenIssuer, afterResult func(repositoryID string)) error {
+// every stored job result, and that records the rate-limit state a result reports in rateLimits,
+// when not nil.
+func serveInternalWith(ctx context.Context, cfg *config.Config, q queue.Queue, tokens internalapi.TokenIssuer, afterResult func(repositoryID string), rateLimits internalapi.RateLimits) error {
 	h := internalapi.NewHandler(q, internalapi.Options{
 		Secret:            cfg.WorkerSecret,
 		Tokens:            tokens,
@@ -373,8 +394,21 @@ func serveInternalWith(ctx context.Context, cfg *config.Config, q queue.Queue, t
 		GlobalConfigRepo:  cfg.GlobalConfigRepo,
 		GlobalConfigRef:   cfg.GlobalConfigRef,
 		AfterResult:       afterResult,
+		RateLimits:        rateLimits,
 	})
 	return internalapi.Serve(ctx, cfg.InternalAddr, h, internalapi.WriteTimeout)
+}
+
+// logPassFailure logs the failure of a periodic pass against GitHub. A pass that was deferred
+// because the installation's rate-limit budget is used up is expected and waits for the reset, so
+// it is a warning; anything else is an error.
+func logPassFailure(msg string, err error, attrs ...any) {
+	attrs = append(attrs, "err", err)
+	if errors.Is(err, ratelimit.ErrRateLimited) {
+		slog.Warn(msg+": deferred until the GitHub rate limit resets", attrs...)
+		return
+	}
+	slog.Error(msg, attrs...)
 }
 
 // triggerReconciles asks for a PR reconcile of every repository that takes part.

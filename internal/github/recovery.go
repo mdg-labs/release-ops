@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mdg-labs/release-ops/internal/ratelimit"
 	"github.com/mdg-labs/release-ops/internal/store"
 )
 
@@ -57,9 +58,14 @@ func NewRecovery(app *AppClient, opts RecoveryOptions) *Recovery {
 // Redeliver redelivers, once per GUID, the failed deliveries of the lookback window: a GUID
 // is left alone when any of its attempts since succeeded. It returns how many redeliveries
 // GitHub accepted. Before the App is stored it does nothing. When the list cannot be read
-// nothing is redelivered; a redelivery that fails does not stop the others, and the errors of
-// all are returned together.
+// nothing is redelivered; a redelivery that fails does not stop the others, except one that is
+// rate limited, and the errors of all are returned together. While an installation's rate-limit
+// budget is exhausted nothing is listed or redelivered and the error matches
+// ratelimit.ErrRateLimited; the next pass resumes.
 func (r *Recovery) Redeliver(ctx context.Context) (int, error) {
+	if err := r.app.GateAny(ratelimit.ConsumerRedelivery); err != nil {
+		return 0, err
+	}
 	listed, err := r.app.Deliveries(ctx, r.now().Add(-r.lookback))
 	if errors.Is(err, store.ErrGitHubAppNotFound) {
 		return 0, nil
@@ -94,6 +100,9 @@ func (r *Recovery) Redeliver(ctx context.Context) (int, error) {
 		}
 		if err := r.app.Redeliver(ctx, pending[i].ID); err != nil {
 			errs = append(errs, fmt.Errorf("redeliver delivery %d: %w", pending[i].ID, err))
+			if errors.Is(err, ratelimit.ErrRateLimited) {
+				break
+			}
 			continue
 		}
 		redelivered++

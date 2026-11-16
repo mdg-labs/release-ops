@@ -113,6 +113,9 @@ type Fake struct {
 	deliveryStatus   int                              // status of GET /app/hook/deliveries; 0 answers the list
 	redeliveryStatus map[int64]int                    // delivery id -> status for its redelivery; 0 answers 202
 	onRedelivery     func(Delivery) int               // called for each accepted redelivery; returns the receiver's status
+
+	rateHeaders http.Header // added to every answer
+	limitStatus int         // answers every request with this status instead; 0 answers normally
 }
 
 // Delivery is a webhook delivery of the App as GET /app/hook/deliveries lists it.
@@ -214,6 +217,23 @@ func (f *Fake) AnswerAppID(id int64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.appDocID = id
+}
+
+// SetRateLimitHeaders adds the headers, such as X-RateLimit-Remaining, to every answer the fake
+// gives from now on; nil removes them.
+func (f *Fake) SetRateLimitHeaders(h http.Header) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rateHeaders = h.Clone()
+}
+
+// RefuseAll makes the fake answer every request with status, without looking at it, and with
+// the rate-limit headers set by SetRateLimitHeaders; 0 restores normal answers. The requests are
+// still counted.
+func (f *Fake) RefuseAll(status int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.limitStatus = status
 }
 
 // SetBotUser makes the public GET /users/{slug}[bot] answer the bot user of the App with that
@@ -472,7 +492,15 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 
 	f.mu.Lock()
 	f.requests = append(f.requests, Request{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, IfNoneMatch: r.Header.Get("If-None-Match"), Body: string(raw), JWTValid: valid})
+	rateHeaders, limitStatus := f.rateHeaders, f.limitStatus
 	f.mu.Unlock()
+	for name, values := range rateHeaders {
+		w.Header()[name] = values
+	}
+	if limitStatus != 0 {
+		w.WriteHeader(limitStatus)
+		return
+	}
 
 	bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if login, ok := strings.CutPrefix(r.URL.Path, "/users/"); ok {

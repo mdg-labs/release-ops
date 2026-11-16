@@ -9,11 +9,6 @@ import (
 	"github.com/mdg-labs/release-ops/internal/store/db"
 )
 
-// WebhookDeliveryRetention is how long a delivery's GUID is remembered. It outlasts the
-// redelivery lookback of the recovery pass (specs.html § 2.11), so a redelivered delivery
-// is still recognised.
-const WebhookDeliveryRetention = 7 * 24 * time.Hour
-
 // WebhookDelivery is one accepted delivery of GitHub's webhook.
 type WebhookDelivery struct {
 	// GUID is the X-GitHub-Delivery value.
@@ -30,8 +25,8 @@ type WebhookDeliveryRepository interface {
 	// Receive records the delivery and runs apply in the same transaction, so the GUID is
 	// never remembered without the work it caused: when apply fails, nothing is recorded
 	// and the error is returned. A GUID recorded before changes nothing, does not run
-	// apply and reports duplicate. Records older than WebhookDeliveryRetention before
-	// the delivery's ReceivedAt are pruned in the same transaction.
+	// apply and reports duplicate. Old records are deleted by Retention, not here: the
+	// request path never runs a delete over the history.
 	Receive(ctx context.Context, d WebhookDelivery, apply func(ctx context.Context, tx *sql.Tx) error) (duplicate bool, err error)
 }
 
@@ -52,9 +47,6 @@ func (r webhookDeliveryRepo) Receive(ctx context.Context, d WebhookDelivery, app
 	defer func() { _ = tx.Rollback() }()
 	q := r.store.writes.WithTx(tx)
 
-	if _, err := q.PruneWebhookDeliveries(ctx, d.ReceivedAt.Add(-WebhookDeliveryRetention).UTC().Format(timeLayout)); err != nil {
-		return false, fmt.Errorf("prune webhook deliveries: %w", err)
-	}
 	inserted, err := q.InsertWebhookDelivery(ctx, db.InsertWebhookDeliveryParams{
 		Guid:                 d.GUID,
 		Event:                d.Event,

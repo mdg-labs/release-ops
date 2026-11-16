@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mdg-labs/release-ops/internal/logging"
+	"github.com/mdg-labs/release-ops/internal/ratelimit"
 )
 
 var (
@@ -182,6 +183,9 @@ func (c *Client) sendTo(ctx context.Context, method, rawURL, bearer string, payl
 // sendWith is sendTo with extra request headers, such as a conditional request's
 // If-None-Match.
 func (c *Client) sendWith(ctx context.Context, method, rawURL, bearer string, payload io.Reader, limit int64, extra http.Header) (int, http.Header, []byte, error) {
+	if err := c.budget.GateToken(bearer); err != nil {
+		return 0, nil, nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, payload)
 	if err != nil {
 		return 0, nil, nil, ErrRequestFailed
@@ -202,6 +206,16 @@ func (c *Client) sendWith(ctx context.Context, method, rawURL, bearer string, pa
 		return 0, nil, nil, fmt.Errorf("%w: request did not complete", ErrRequestFailed)
 	}
 	defer func() { _ = resp.Body.Close() }()
+
+	// A response to a call made with an installation token tells its installation's budget;
+	// an answer that refuses the call for a rate limit is returned as such, with nothing of the
+	// response, before any caller reads its status.
+	now := c.budget.Now()
+	signal := ratelimit.Parse(resp.StatusCode, resp.Header, now)
+	c.budget.ObserveToken(bearer, signal)
+	if signal.Limited {
+		return 0, nil, nil, ratelimit.NewLimitedError(signal.Until(now), now)
+	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {

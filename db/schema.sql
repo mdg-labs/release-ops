@@ -171,8 +171,8 @@ CREATE TABLE installation_settings (
 ) STRICT;
 
 -- GitHub's delivery GUIDs the webhook endpoint has accepted (specs.html § 2.10): a GUID seen again does
--- nothing. A row is written in the transaction of the work the delivery caused, and rows are pruned after
--- the retention of internal/store/webhook_deliveries.go. installation_id is NULL while the delivery's
+-- nothing. A row is written in the transaction of the work the delivery caused, and rows are deleted after
+-- their retention by the daily pass of internal/store/retention.go. installation_id is NULL while the delivery's
 -- installation is not recorded.
 CREATE TABLE webhook_deliveries (
   guid TEXT PRIMARY KEY,

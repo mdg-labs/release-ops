@@ -356,7 +356,7 @@ func (e *Engine) failSync(ctx context.Context, t *store.UpdateTicket, cause erro
 	now := e.now()
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), failureWriteTimeout)
 	defer cancel()
-	err := e.Tickets.FailSync(writeCtx, store.FailSyncInput{ID: t.ID, Message: redact(cause), NextAttemptAt: now.Add(backoff(t.Attempts)), Now: now})
+	err := e.Tickets.FailSync(writeCtx, store.FailSyncInput{ID: t.ID, Message: redact(cause), NextAttemptAt: now.Add(e.retryDelay(t.Attempts, cause)), Now: now})
 	if err != nil {
 		return SyncFailed, errors.Join(cause, fmt.Errorf("record the failure: %w", err))
 	}

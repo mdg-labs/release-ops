@@ -9,11 +9,13 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/mdg-labs/release-ops/internal/github"
 	"github.com/mdg-labs/release-ops/internal/queue"
+	"github.com/mdg-labs/release-ops/internal/ratelimit"
 	"github.com/mdg-labs/release-ops/internal/renovate/redact"
 )
 
@@ -45,6 +47,15 @@ type TokenIssuer interface {
 	JobToken(ctx context.Context, installationID int64, target string, extra []string) (github.InstallationToken, error)
 }
 
+// RateLimits is the installation's shared rate-limit budget (specs.html § 2.8), which the
+// handler feeds with what a worker saw and counts deferrals on. *ratelimit.Budget implements it.
+type RateLimits interface {
+	// Observe records what a response said about the installation's budget.
+	Observe(installationID int64, s ratelimit.Signal)
+	// Deferred counts one piece of work of the consumer held back because of the budget.
+	Deferred(installationID int64, consumer string)
+}
+
 // Options configures the handler.
 type Options struct {
 	// Secret is the shared worker secret every request must carry as a bearer credential.
@@ -65,6 +76,11 @@ type Options struct {
 	// repository's PRs either way, and the PR reconcile follows (specs.html section 5.1). It
 	// runs on the request's goroutine and must not block.
 	AfterResult func(repositoryID string)
+	// RateLimits, when set, receives the rate-limit state a result reports and the deferrals of
+	// a job that ended rate limited.
+	RateLimits RateLimits
+	// Now is the clock; nil means time.Now.
+	Now func() time.Time
 }
 
 type handler struct {
@@ -79,6 +95,8 @@ type handler struct {
 	// as a second line behind the worker's own redaction.
 	redactor    *redact.Redactor
 	afterResult func(repositoryID string)
+	rateLimits  RateLimits
+	now         func() time.Time
 }
 
 // NewHandler returns the worker routes over q. Every request, including one for a path no
@@ -89,6 +107,10 @@ func NewHandler(q queue.Queue, opts Options) http.Handler {
 		tokens: opts.Tokens, tokenRepositories: slices.Clone(opts.TokenRepositories),
 		globalConfigRepo: opts.GlobalConfigRepo, globalConfigRef: opts.GlobalConfigRef,
 		redactor: redact.New(opts.Secret), afterResult: opts.AfterResult,
+		rateLimits: opts.RateLimits, now: opts.Now,
+	}
+	if h.now == nil {
+		h.now = time.Now
 	}
 	if h.claimWait <= 0 {
 		h.claimWait = DefaultClaimWait
@@ -188,6 +210,12 @@ func (h *handler) token(w http.ResponseWriter, r *http.Request) {
 
 	tok, err := h.tokens.JobToken(ctx, job.InstallationID, job.RepositoryFullName, h.tokenRepositories)
 	if err != nil {
+		if after, limited := ratelimit.DelayOf(err); limited {
+			secs := int64((after + time.Second - 1) / time.Second)
+			w.Header().Set("Retry-After", strconv.FormatInt(max(secs, 1), 10))
+			writeError(w, http.StatusTooManyRequests, "the installation's GitHub rate limit is exhausted")
+			return
+		}
 		if ctx.Err() == nil {
 			slog.Error("internal api: token request failed", "job", id, "err", err)
 			writeError(w, http.StatusBadGateway, "token could not be issued")
@@ -217,12 +245,12 @@ func (h *handler) result(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	repositoryID := ""
-	if h.afterResult != nil {
-		if held, err := h.q.HeldJob(r.Context(), id, req.LeaseOwner); err == nil {
-			repositoryID = held.RepositoryID
+	var held *queue.HeldJob
+	if h.afterResult != nil || req.RateLimit != nil {
+		if job, err := h.q.HeldJob(r.Context(), id, req.LeaseOwner); err == nil {
+			held = job
 		} else if !errors.Is(err, queue.ErrLeaseLost) {
-			slog.Warn("internal api: the repository of a result could not be read; no PR reconcile follows", "job", id, "err", err)
+			slog.Warn("internal api: the job of a result could not be read; no rate-limit state and no PR reconcile follow", "job", id, "err", err)
 		}
 	}
 	var run *queue.RunRecord
@@ -234,7 +262,9 @@ func (h *handler) result(w http.ResponseWriter, r *http.Request) {
 		}
 		run = &rec
 	}
+	signal := h.rateLimitSignal(req.RateLimit)
 	var err error
+	deferred := false
 	switch req.Outcome {
 	case queue.OutcomeSucceeded:
 		if run != nil {
@@ -243,18 +273,72 @@ func (h *handler) result(w http.ResponseWriter, r *http.Request) {
 			err = h.q.Complete(r.Context(), id, req.LeaseOwner)
 		}
 	case queue.OutcomeFailed:
-		_, err = h.q.Fail(r.Context(), id, req.LeaseOwner, queue.FailParams{
-			RetryAfter: time.Duration(max(req.RetryAfterSeconds, 0)) * time.Second,
-			Run:        run,
-		})
+		params := queue.FailParams{RetryAfter: boundedSeconds(req.RetryAfterSeconds), Run: run}
+		// A run the app refused to start for the exhausted budget carries only the error code:
+		// its deferral was counted when the token was refused.
+		params.RateLimited = signal.Limited || (run != nil && run.ErrorCode == queue.ErrorCodeRateLimited)
+		if signal.Limited {
+			params.RetryAfter = max(params.RetryAfter, signal.Until(h.now()).Sub(h.now()))
+		}
+		var outcome queue.FailOutcome
+		outcome, err = h.q.Fail(r.Context(), id, req.LeaseOwner, params)
+		deferred = outcome == queue.FailRequeued && signal.Limited
 	default:
 		writeError(w, http.StatusUnprocessableEntity, "outcome must be succeeded or failed")
 		return
 	}
 	h.finish(w, r, "result", err)
-	if err == nil && repositoryID != "" {
-		h.afterResult(repositoryID)
+	if err != nil || held == nil {
+		return
 	}
+	if h.rateLimits != nil {
+		h.rateLimits.Observe(held.InstallationID, signal)
+		if deferred {
+			h.rateLimits.Deferred(held.InstallationID, ratelimit.ConsumerRenovateRun)
+		}
+	}
+	if h.afterResult != nil {
+		h.afterResult(held.RepositoryID)
+	}
+}
+
+// Bounds of what a worker may report of the rate limit; a value outside them is ignored, as the
+// worker reads it from Renovate's log.
+const (
+	maxReportedCount = 1 << 24
+	maxResetPast     = time.Hour
+	maxResetAhead    = 7 * 24 * time.Hour
+)
+
+// boundedSeconds is a delay a worker reported in seconds, at most ratelimit.MaxUpstreamDelay and
+// never negative.
+func boundedSeconds(secs int64) time.Duration {
+	return time.Duration(min(max(secs, 0), int64(ratelimit.MaxUpstreamDelay/time.Second))) * time.Second
+}
+
+// rateLimitSignal reads a worker's rate-limit report as the signal of a response. A reset time
+// that is not plausible is dropped, and a Retry-After is bounded like one read from a response.
+func (h *handler) rateLimitSignal(rep *queue.RateLimitReport) ratelimit.Signal {
+	if rep == nil {
+		return ratelimit.Signal{}
+	}
+	now := h.now()
+	s := ratelimit.Signal{Limited: rep.Limited}
+	if rep.Remaining != nil && *rep.Remaining >= 0 && *rep.Remaining <= maxReportedCount {
+		s.Remaining, s.HasRemaining = *rep.Remaining, true
+	}
+	if rep.Limit != nil && *rep.Limit > 0 && *rep.Limit <= maxReportedCount {
+		s.Limit, s.HasLimit = *rep.Limit, true
+	}
+	if rep.ResetUnix > 0 {
+		if at := time.Unix(rep.ResetUnix, 0).UTC(); at.After(now.Add(-maxResetPast)) && at.Before(now.Add(maxResetAhead)) {
+			s.ResetAt = at
+		}
+	}
+	if rep.RetryAfterSeconds > 0 {
+		s.RetryAfter = boundedSeconds(rep.RetryAfterSeconds)
+	}
+	return s
 }
 
 // checkedRun validates a posted run record against the caps and redacts it; msg is the reason

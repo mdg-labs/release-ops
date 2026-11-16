@@ -440,7 +440,7 @@ func (l *LinearProvider) doGraphQL(ctx context.Context, query string, variables 
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return newHTTPStatusError(resp.StatusCode, string(body))
+		return newHTTPStatusError(resp, string(body))
 	}
 
 	var gqlResp graphQLResponse

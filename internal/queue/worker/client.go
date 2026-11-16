@@ -11,10 +11,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/mdg-labs/release-ops/internal/queue"
+	"github.com/mdg-labs/release-ops/internal/ratelimit"
 )
 
 const (
@@ -28,6 +30,18 @@ const (
 
 // ErrLeaseLost is returned when the app answers that the worker no longer holds the lease.
 var ErrLeaseLost = errors.New("lease is not held for this job")
+
+// RateLimitedError is returned when the app refuses a request because the installation's
+// GitHub rate limit is exhausted. The job is not at fault: the attempt ends rate limited and
+// is retried no sooner than RetryAfter.
+type RateLimitedError struct {
+	// RetryAfter is the delay the app asked for.
+	RetryAfter time.Duration
+}
+
+func (e *RateLimitedError) Error() string {
+	return fmt.Sprintf("the installation's GitHub rate limit is exhausted; retry after %s", e.RetryAfter)
+}
 
 // Client talks to the app's internal listener.
 type Client struct {
@@ -74,9 +88,12 @@ func (c *Client) Claim(ctx context.Context) (*queue.ClaimedJob, error) {
 func (c *Client) Token(ctx context.Context, jobID, leaseOwner string) (queue.TokenResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
-	status, body, err := c.post(ctx, jobPath(queue.PathToken, jobID), queue.LeaseRequest{LeaseOwner: leaseOwner})
+	status, header, body, err := c.send(ctx, jobPath(queue.PathToken, jobID), queue.LeaseRequest{LeaseOwner: leaseOwner})
 	if err != nil {
 		return queue.TokenResponse{}, err
+	}
+	if status == http.StatusTooManyRequests {
+		return queue.TokenResponse{}, &RateLimitedError{RetryAfter: retryAfter(header)}
 	}
 	if status != http.StatusOK {
 		return queue.TokenResponse{}, statusError("token", status)
@@ -132,26 +149,40 @@ func (c *Client) noContent(ctx context.Context, op, path string, req any) error 
 }
 
 func (c *Client) post(ctx context.Context, path string, payload any) (int, []byte, error) {
+	status, _, body, err := c.send(ctx, path, payload)
+	return status, body, err
+}
+
+func (c *Client) send(ctx context.Context, path string, payload any) (int, http.Header, []byte, error) {
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, bytes.NewReader(raw))
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.secret)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
-	return resp.StatusCode, body, nil
+	return resp.StatusCode, resp.Header, body, nil
+}
+
+// retryAfter reads the app's Retry-After, in seconds; a missing or unreadable one is one minute.
+func retryAfter(h http.Header) time.Duration {
+	secs, err := strconv.ParseInt(strings.TrimSpace(h.Get("Retry-After")), 10, 64)
+	if err != nil || secs <= 0 {
+		return ratelimit.DefaultBlock
+	}
+	return min(time.Duration(secs)*time.Second, ratelimit.MaxUpstreamDelay)
 }
 
 func jobPath(pattern, jobID string) string {

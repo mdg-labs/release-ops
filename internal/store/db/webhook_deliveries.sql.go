@@ -36,11 +36,24 @@ func (q *Queries) InsertWebhookDelivery(ctx context.Context, arg InsertWebhookDe
 }
 
 const pruneWebhookDeliveries = `-- name: PruneWebhookDeliveries :execrows
-DELETE FROM webhook_deliveries WHERE received_at < ?
+DELETE FROM webhook_deliveries
+WHERE guid IN (
+  SELECT old.guid FROM webhook_deliveries old
+  WHERE old.received_at < ?1
+  ORDER BY old.received_at, old.guid
+  LIMIT ?2
+)
 `
 
-func (q *Queries) PruneWebhookDeliveries(ctx context.Context, receivedAt string) (int64, error) {
-	result, err := q.db.ExecContext(ctx, pruneWebhookDeliveries, receivedAt)
+type PruneWebhookDeliveriesParams struct {
+	Cutoff string `json:"cutoff"`
+	Batch  int64  `json:"batch"`
+}
+
+// A bounded batch of the delivery records older than the cutoff, the oldest first
+// (specs.html section 2.10).
+func (q *Queries) PruneWebhookDeliveries(ctx context.Context, arg PruneWebhookDeliveriesParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, pruneWebhookDeliveries, arg.Cutoff, arg.Batch)
 	if err != nil {
 		return 0, err
 	}

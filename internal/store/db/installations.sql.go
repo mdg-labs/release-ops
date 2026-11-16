@@ -67,6 +67,52 @@ func (q *Queries) GetLiveInstallation(ctx context.Context) (GetLiveInstallationR
 	return i, err
 }
 
+const listInstallationRateLimits = `-- name: ListInstallationRateLimits :many
+SELECT github_installation_id, rate_limit_remaining, rate_limit_limit, rate_limit_reset_at
+FROM installations
+WHERE status <> 'removed'
+  AND rate_limit_remaining IS NOT NULL
+  AND rate_limit_reset_at IS NOT NULL
+ORDER BY github_installation_id
+`
+
+type ListInstallationRateLimitsRow struct {
+	GithubInstallationID int64          `json:"github_installation_id"`
+	RateLimitRemaining   sql.NullInt64  `json:"rate_limit_remaining"`
+	RateLimitLimit       sql.NullInt64  `json:"rate_limit_limit"`
+	RateLimitResetAt     sql.NullString `json:"rate_limit_reset_at"`
+}
+
+// The stored budgets of the installations that are not removed, read at start so an exhausted
+// budget is still honoured after a restart.
+func (q *Queries) ListInstallationRateLimits(ctx context.Context) ([]ListInstallationRateLimitsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listInstallationRateLimits)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInstallationRateLimitsRow
+	for rows.Next() {
+		var i ListInstallationRateLimitsRow
+		if err := rows.Scan(
+			&i.GithubInstallationID,
+			&i.RateLimitRemaining,
+			&i.RateLimitLimit,
+			&i.RateLimitResetAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listInstallationsForAdmin = `-- name: ListInstallationsForAdmin :many
 SELECT i.id, i.account_login, i.account_type, i.status, i.repository_selection, i.permissions,
        i.rate_limit_remaining, i.rate_limit_limit, i.rate_limit_reset_at,
@@ -226,6 +272,37 @@ func (q *Queries) UpdateInstallation(ctx context.Context, arg UpdateInstallation
 		arg.RepositorySelection,
 		arg.Permissions,
 		arg.UpdatedAt,
+		arg.GithubInstallationID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const updateInstallationRateLimit = `-- name: UpdateInstallationRateLimit :execrows
+UPDATE installations
+SET rate_limit_remaining = ?,
+    rate_limit_limit = ?,
+    rate_limit_reset_at = ?
+WHERE github_installation_id = ?
+`
+
+type UpdateInstallationRateLimitParams struct {
+	RateLimitRemaining   sql.NullInt64  `json:"rate_limit_remaining"`
+	RateLimitLimit       sql.NullInt64  `json:"rate_limit_limit"`
+	RateLimitResetAt     sql.NullString `json:"rate_limit_reset_at"`
+	GithubInstallationID int64          `json:"github_installation_id"`
+}
+
+// The installation's shared GitHub rate-limit budget as last seen in a response (specs.html
+// section 2.8). The row's other columns are untouched: a budget is not a change of the
+// installation.
+func (q *Queries) UpdateInstallationRateLimit(ctx context.Context, arg UpdateInstallationRateLimitParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateInstallationRateLimit,
+		arg.RateLimitRemaining,
+		arg.RateLimitLimit,
+		arg.RateLimitResetAt,
 		arg.GithubInstallationID,
 	)
 	if err != nil {

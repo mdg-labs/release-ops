@@ -61,6 +61,8 @@ type trackerFailure struct {
 	Method, PathPrefix string
 	Code, Times        int
 	Applied            bool
+	// Header is sent with the failed answer, such as Retry-After.
+	Header http.Header
 }
 
 func newTracker(t *testing.T) *tracker {
@@ -76,12 +78,16 @@ func newTracker(t *testing.T) *tracker {
 		n := len(tr.requests)
 		code := tr.status(n)
 		applied := false
+		var header http.Header
 		for _, f := range tr.failures {
 			if f.Times > 0 && f.Method == r.Method && strings.HasPrefix(r.URL.Path, f.PathPrefix) {
 				f.Times--
-				code, applied = f.Code, f.Applied
+				code, applied, header = f.Code, f.Applied, f.Header
 				break
 			}
+		}
+		for name, values := range header {
+			w.Header()[name] = values
 		}
 		if code != http.StatusOK && !applied {
 			http.Error(w, "tracker says no", code)
