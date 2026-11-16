@@ -151,8 +151,14 @@ run_scenario() {
   fi
 
   [[ $(in_container 'cat /proc/1/comm') == tini ]] || fail "$name: PID 1 in the worker container is not tini"
-  local zombies
+  # tini reaps an orphan asynchronously, so a zombie seen right after the result is not yet a
+  # failure; one that is still there after a few seconds is.
+  local zombies zombie_deadline=$((SECONDS + 10))
   zombies=$(zombie_pids)
+  while [[ -n $zombies ]] && ((SECONDS < zombie_deadline)); do
+    sleep 1
+    zombies=$(zombie_pids)
+  done
   [[ -z $zombies ]] || fail "$name: zombie processes are left in the worker container: $(tr '\n' ' ' <<<"$zombies")"
 
   if [[ $name == deadline ]]; then
