@@ -90,6 +90,85 @@ describe("GitHubAppKeySection", () => {
     expect(screen.queryByText(KEY)).not.toBeInTheDocument();
   });
 
+  function chooseFile(text: () => Promise<string>): void {
+    const input = screen.getByLabelText(messages.githubAppKey.fileLabel);
+    fireEvent.change(input, { target: { files: [{ text }] } });
+  }
+
+  it("keeps submit disabled until the chosen file has been read", async () => {
+    renderWithProviders(<GitHubAppKeySection />);
+    const field = typeKey("typed-before-the-file");
+    let finish: (text: string) => void = () => undefined;
+
+    chooseFile(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    );
+
+    expect(screen.getByRole("button", { name: submitName })).toBeDisabled();
+    finish(KEY);
+    await waitFor(() => expect(field).toHaveValue(KEY));
+    expect(screen.getByRole("button", { name: submitName })).toBeEnabled();
+  });
+
+  it("ignores a file read that finishes after a newer file was chosen", async () => {
+    renderWithProviders(<GitHubAppKeySection />);
+    const field = screen.getByLabelText(messages.githubAppKey.keyLabel);
+    let finishFirst: (text: string) => void = () => undefined;
+    let finishSecond: (text: string) => void = () => undefined;
+
+    chooseFile(
+      () =>
+        new Promise<string>((resolve) => {
+          finishFirst = resolve;
+        }),
+    );
+    chooseFile(
+      () =>
+        new Promise<string>((resolve) => {
+          finishSecond = resolve;
+        }),
+    );
+
+    finishSecond("second-file-key");
+    await waitFor(() => expect(field).toHaveValue("second-file-key"));
+    finishFirst("first-file-key");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(field).toHaveValue("second-file-key");
+    expect(screen.getByRole("button", { name: submitName })).toBeEnabled();
+  });
+
+  it("keeps submit disabled while an earlier read finishes before the latest", async () => {
+    renderWithProviders(<GitHubAppKeySection />);
+    const field = screen.getByLabelText(messages.githubAppKey.keyLabel);
+    let finishFirst: (text: string) => void = () => undefined;
+    let finishSecond: (text: string) => void = () => undefined;
+
+    chooseFile(
+      () =>
+        new Promise<string>((resolve) => {
+          finishFirst = resolve;
+        }),
+    );
+    chooseFile(
+      () =>
+        new Promise<string>((resolve) => {
+          finishSecond = resolve;
+        }),
+    );
+
+    finishFirst("first-file-key");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(field).toHaveValue("");
+    expect(screen.getByRole("button", { name: submitName })).toBeDisabled();
+
+    finishSecond("second-file-key");
+    await waitFor(() => expect(field).toHaveValue("second-file-key"));
+  });
+
   it("shows a loading state while GitHub verifies the key", async () => {
     let release: (response: Response) => void = () => undefined;
     globalThis.fetch = (() =>

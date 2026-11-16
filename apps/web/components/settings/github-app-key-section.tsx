@@ -2,7 +2,7 @@
 
 import { CircleCheckIcon, KeyRoundIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { SettingsSection } from "@/components/common/settings-section";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -49,8 +49,12 @@ export function GitHubAppKeySection(): React.ReactElement {
   const [privateKey, setPrivateKey] = useState("");
   const [error, setError] = useState<ErrorKey | null>(null);
   const [rotated, setRotated] = useState(false);
+  const [reading, setReading] = useState(false);
+  const latestRead = useRef(0);
 
   function edit(value: string): void {
+    latestRead.current += 1;
+    setReading(false);
     setPrivateKey(value);
     setError(null);
     setRotated(false);
@@ -60,14 +64,28 @@ export function GitHubAppKeySection(): React.ReactElement {
     if (!file) {
       return;
     }
+    latestRead.current += 1;
+    const read = latestRead.current;
+    setReading(true);
+    setError(null);
+    setRotated(false);
     try {
-      edit(await file.text());
+      const text = await file.text();
+      if (read === latestRead.current) {
+        edit(text);
+      }
     } catch {
-      setError("fileUnreadable");
+      if (read === latestRead.current) {
+        setReading(false);
+        setError("fileUnreadable");
+      }
     }
   }
 
   async function handleSubmit(): Promise<void> {
+    if (reading) {
+      return;
+    }
     setError(null);
     setRotated(false);
     try {
@@ -139,7 +157,7 @@ export function GitHubAppKeySection(): React.ReactElement {
         ) : null}
         <div>
           <Button
-            disabled={rotate.isPending || privateKey.trim() === ""}
+            disabled={rotate.isPending || reading || privateKey.trim() === ""}
             type="submit"
           >
             {rotate.isPending ? <Spinner className="size-4" /> : null}
