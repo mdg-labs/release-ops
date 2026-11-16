@@ -17,9 +17,15 @@ type Result struct {
 	// updates the installation's shared budget, and a Limited one makes the attempt a
 	// rate-limited failure.
 	RateLimit *queue.RateLimitReport
-	// Run is the attempt's record for the app to store; nil reports the outcome alone.
+	// Run is the attempt's record for the app to store; nil reports the outcome alone. A
+	// record with NoConfig set reports a succeeded attempt Renovate skipped for a missing
+	// config as the no_config outcome.
 	Run *queue.RunRecord
 }
+
+// skippedForNoConfig reports whether the attempt ended because Renovate skipped the repository
+// for having no config.
+func (r Result) skippedForNoConfig() bool { return r.Run != nil && r.Run.NoConfig }
 
 // Handler runs one claimed job. It returns when the job is done or ctx ends: ctx is
 // cancelled when the app aborts the job or the worker runs out of its shutdown grace.

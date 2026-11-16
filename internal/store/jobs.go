@@ -621,8 +621,14 @@ func (q *JobQueue) complete(ctx context.Context, jobID, leaseOwner string, run *
 			}
 			return queue.ErrLeaseLost
 		}
-		_, err = q.endAttempt(ctx, qtx, job, attemptSucceeded, 0, false, run)
-		return err
+		result := attemptSucceeded
+		if run != nil && run.NoConfig {
+			result = attemptNoConfig
+		}
+		if _, err = q.endAttempt(ctx, qtx, job, result, 0, false, run); err != nil {
+			return err
+		}
+		return recordConfigState(ctx, qtx, job, run, q.now().UTC())
 	})
 	if err != nil {
 		return fmt.Errorf("complete: %w", err)
@@ -725,6 +731,9 @@ const (
 	attemptSucceeded attemptResult = iota
 	attemptFailed
 	attemptLeaseExpired
+	// attemptNoConfig is an attempt Renovate skipped for a missing config: it ends the job like
+	// a success.
+	attemptNoConfig
 )
 
 // runOutcome is the job_runs outcome of an attempt that ended this way.
@@ -734,6 +743,8 @@ func (r attemptResult) runOutcome() string {
 		return queue.OutcomeSucceeded
 	case attemptLeaseExpired:
 		return outcomeLeaseExpired
+	case attemptNoConfig:
+		return queue.OutcomeNoConfig
 	default:
 		return queue.OutcomeFailed
 	}
@@ -764,7 +775,7 @@ func (q *JobQueue) endAttempt(ctx context.Context, qtx *db.Queries, job db.Job, 
 	state := queue.StateSucceeded
 	outcome := queue.FailOutcome("")
 	switch {
-	case result == attemptSucceeded:
+	case result == attemptSucceeded || result == attemptNoConfig:
 	case int(used) >= maxAttempts:
 		state = queue.StateFailed
 		outcome = queue.FailExhausted
@@ -831,6 +842,18 @@ func captureGlobalConfig(ctx context.Context, qtx *db.Queries, job db.Job, run *
 	}
 	return qtx.CaptureJobGlobalConfig(ctx, db.CaptureJobGlobalConfigParams{
 		Content: c.Content, Source: c.Source, CapturedAt: formatTime(now), RepositoryID: job.RepositoryID,
+	})
+}
+
+// recordConfigState records on the job's repository that Renovate skipped the attempt that
+// just ended for having no config (specs.html section 2.7). Nothing else is recorded here: a
+// run does not show that a config exists, so present stays the installation sync's to write.
+func recordConfigState(ctx context.Context, qtx *db.Queries, job db.Job, run *queue.RunRecord, now time.Time) error {
+	if run == nil || !run.NoConfig {
+		return nil
+	}
+	return qtx.SetRepositoryConfigState(ctx, db.SetRepositoryConfigStateParams{
+		ID: job.RepositoryID, ConfigState: ConfigMissing, UpdatedAt: formatTime(now),
 	})
 }
 

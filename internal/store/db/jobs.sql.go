@@ -1090,3 +1090,23 @@ func (q *Queries) SetJobRerunRequested(ctx context.Context, arg SetJobRerunReque
 	)
 	return err
 }
+
+const setRepositoryConfigState = `-- name: SetRepositoryConfigState :exec
+UPDATE repositories
+SET config_state = ?1, updated_at = ?2
+WHERE id = ?3
+  AND config_state <> ?1
+`
+
+type SetRepositoryConfigStateParams struct {
+	ConfigState string `json:"config_state"`
+	UpdatedAt   string `json:"updated_at"`
+	ID          string `json:"id"`
+}
+
+// Records the repository's config state from the attempt that just ended (specs.html section
+// 2.7). A repository already in that state is left alone.
+func (q *Queries) SetRepositoryConfigState(ctx context.Context, arg SetRepositoryConfigStateParams) error {
+	_, err := q.db.ExecContext(ctx, setRepositoryConfigState, arg.ConfigState, arg.UpdatedAt, arg.ID)
+	return err
+}

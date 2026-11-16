@@ -272,6 +272,12 @@ func (h *handler) result(w http.ResponseWriter, r *http.Request) {
 		} else {
 			err = h.q.Complete(r.Context(), id, req.LeaseOwner)
 		}
+	case queue.OutcomeNoConfig:
+		if run == nil {
+			run = &queue.RunRecord{}
+		}
+		run.NoConfig = true
+		err = h.q.CompleteRun(r.Context(), id, req.LeaseOwner, *run)
 	case queue.OutcomeFailed:
 		params := queue.FailParams{RetryAfter: boundedSeconds(req.RetryAfterSeconds), Run: run}
 		// A run the app refused to start for the exhausted budget carries only the error code:
@@ -284,7 +290,7 @@ func (h *handler) result(w http.ResponseWriter, r *http.Request) {
 		outcome, err = h.q.Fail(r.Context(), id, req.LeaseOwner, params)
 		deferred = outcome == queue.FailRequeued && signal.Limited
 	default:
-		writeError(w, http.StatusUnprocessableEntity, "outcome must be succeeded or failed")
+		writeError(w, http.StatusUnprocessableEntity, "outcome must be succeeded, no_config or failed")
 		return
 	}
 	h.finish(w, r, "result", err)

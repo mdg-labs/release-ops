@@ -194,8 +194,11 @@ func (r *Runner) runAttempt(ctx, jobCtx context.Context, job queue.ClaimedJob) s
 		return metrics.OutcomeAborted
 	}
 	r.report(job, res)
-	if res.Err != nil {
+	switch {
+	case res.Err != nil:
 		return metrics.OutcomeFailed
+	case res.skippedForNoConfig():
+		return metrics.OutcomeNoConfig
 	}
 	return metrics.OutcomeSucceeded
 }
@@ -238,7 +241,10 @@ func (r *Runner) heartbeat(job queue.ClaimedJob, stop <-chan struct{}, lost chan
 
 func (r *Runner) report(job queue.ClaimedJob, res Result) {
 	req := queue.ResultRequest{LeaseOwner: job.LeaseOwner, Outcome: queue.OutcomeSucceeded, Run: res.Run, RateLimit: res.RateLimit}
-	if res.Err != nil {
+	switch {
+	case res.Err == nil && res.skippedForNoConfig():
+		req.Outcome = queue.OutcomeNoConfig
+	case res.Err != nil:
 		req.Outcome = queue.OutcomeFailed
 		req.RetryAfterSeconds = int64((res.RetryAfter + time.Second - 1) / time.Second)
 		r.log.Warn("worker: job failed", "job", job.ID, "kind", job.Kind)

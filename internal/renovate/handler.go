@@ -360,7 +360,36 @@ func (h *Handler) execute(ctx context.Context, job queue.ClaimedJob, rec *queue.
 	case scrubErr != nil:
 		return fail(CodeCacheScrub, "the slot's working copies could not be cleared of credentials")
 	}
+	rec.NoConfig = skippedForNoConfig(rec, job.RepositoryFullName)
 	return nil
+}
+
+// skippedForNoConfig reports whether a clean run was Renovate skipping the repository for
+// having no config (specs.html sections 2.2 and 2.7). With requireConfig=required Renovate
+// ends such a repository before it extracts anything and exits 0, and it still writes the
+// repository's report entry, with status "disabled". A run that went on has another status.
+// The report's schema is not a stable contract, so only a readable report whose entry for the
+// repository has that status counts; a missing or unreadable report, another shape or a failed
+// run is not a skip. A repository whose own config sets enabled to false reports the same and
+// is treated the same: Renovate does nothing there either.
+func skippedForNoConfig(rec *queue.RunRecord, repository string) bool {
+	if rec.ExitCode == nil || *rec.ExitCode != 0 || rec.ReportStatus != queue.ReportOK {
+		return false
+	}
+	var report struct {
+		Repositories map[string]struct {
+			Status string `json:"status"`
+		} `json:"repositories"`
+	}
+	if err := json.Unmarshal([]byte(rec.Report), &report); err != nil {
+		return false
+	}
+	for name, entry := range report.Repositories {
+		if strings.EqualFold(name, repository) {
+			return entry.Status == "disabled"
+		}
+	}
+	return false
 }
 
 // captureGlobalConfig is the config as the result carries it: the file's own text, never

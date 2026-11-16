@@ -208,6 +208,10 @@ type RunRecord struct {
 	// GlobalConfig is the global config the attempt ran with, when it got as far as reading
 	// one. Without it the stored copy stays as it is.
 	GlobalConfig *GlobalConfigCapture `json:"global_config,omitempty"`
+	// NoConfig marks an attempt Renovate skipped because the repository has no config
+	// (specs.html section 2.7). It is not part of the wire record: the result's outcome says
+	// so (OutcomeNoConfig), and the app sets it from there.
+	NoConfig bool `json:"-"`
 }
 
 // FailParams describes a failed attempt.

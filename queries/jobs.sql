@@ -299,3 +299,11 @@ WHERE r.removed_at IS NULL
     LIMIT 1
   )
 ORDER BY j.finished_at DESC, j.id DESC;
+
+-- Records the repository's config state from the attempt that just ended (specs.html section
+-- 2.7). A repository already in that state is left alone.
+-- name: SetRepositoryConfigState :exec
+UPDATE repositories
+SET config_state = sqlc.arg(config_state), updated_at = sqlc.arg(updated_at)
+WHERE id = sqlc.arg(id)
+  AND config_state <> sqlc.arg(config_state);

@@ -14,7 +14,10 @@ const (
 // Outcomes a worker reports for an attempt.
 const (
 	OutcomeSucceeded = "succeeded"
-	OutcomeFailed    = "failed"
+	// OutcomeNoConfig is an attempt Renovate skipped because the repository has no config
+	// (specs.html section 2.7): the job ends succeeded and its job_runs row no_config.
+	OutcomeNoConfig = "no_config"
+	OutcomeFailed   = "failed"
 )
 
 // LeaseRequest is the body of a heartbeat or a release.
